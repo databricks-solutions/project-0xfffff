@@ -7,6 +7,5 @@ node_modules/
 client/node_modules/
 env.local
 .venv/
-.env.local
 .venv
 workshop.db
