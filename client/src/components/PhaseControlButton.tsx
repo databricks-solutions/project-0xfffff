@@ -56,7 +56,7 @@ export const PhaseControlButton: React.FC<PhaseControlButtonProps> = ({
       }
       
     } catch (error) {
-      console.error('Failed to toggle phase status:', error);
+      
       toast.error(`Failed to ${isCompleted ? 'resume' : 'pause'} phase: ${error.message}`);
     } finally {
       setIsLoading(false);

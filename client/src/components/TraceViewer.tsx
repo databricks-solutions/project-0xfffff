@@ -82,27 +82,19 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({ trace }) => {
     if (traceId && hostCandidate && experimentId) {
       const host = normalizeHost(hostCandidate);
       const mlflowUrl = `${host}/ml/experiments/${experimentId}/traces?selectedEvaluationId=${traceId}`;
-      console.log('🔄 Using constructed MLflow URL:', mlflowUrl, {
-        source: {
-          hostFrom: trace.mlflow_host ? 'trace' : 'config',
-          experimentFrom: trace.mlflow_experiment_id ? 'trace' : 'config'
-        }
-      });
+      
       window.open(mlflowUrl, '_blank');
       return;
     }
 
     if (traceId) {
-      console.log('⚠️ No pre-generated MLflow URL available, trace ID:', traceId);
-      console.log('⚠️ Missing mlflow_host or mlflow_experiment_id fields even after config fallback', {
-        hostCandidate,
-        experimentId
-      });
+      
+      
       toast.warning('MLflow URL not available. Configure MLflow in Intake or re-ingest traces.');
       return;
     }
 
-    console.log('❌ No MLflow trace ID available');
+    
     toast.warning('MLflow trace information not available for this trace.');
   };
 

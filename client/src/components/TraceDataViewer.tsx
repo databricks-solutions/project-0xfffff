@@ -53,7 +53,7 @@ export function TraceDataViewer({
       }
       return trace.output;
     } catch (error) {
-      console.error('Failed to parse trace output:', error);
+      
       return null;
     }
   }, [trace.output]);
@@ -66,7 +66,7 @@ export function TraceDataViewer({
       }
       return trace.input;
     } catch (error) {
-      console.error('Failed to parse trace input:', error);
+      
       return trace.input;
     }
   }, [trace.input]);
@@ -106,9 +106,9 @@ export function TraceDataViewer({
     try {
       await navigator.clipboard.writeText(text);
       // You could add a toast notification here
-      console.log(`${type} copied to clipboard`);
+      
     } catch (error) {
-      console.error('Failed to copy to clipboard:', error);
+      
     }
   };
 

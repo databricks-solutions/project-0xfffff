@@ -66,12 +66,10 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children, onWorkshop
       if (savedUser) {
         try {
           const userData = JSON.parse(savedUser);
-          console.log('🔄 Restoring user from localStorage:', userData.email);
           
           // Validate user exists by trying to fetch their data
           try {
             const validatedUser = await UsersService.getUserUsersUserIdGet(userData.id);
-            console.log('✅ User validated successfully:', validatedUser.email);
             setUser(validatedUser);
             
             // Also restore workshop ID if user has one and it's not already set
@@ -88,19 +86,16 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children, onWorkshop
           } catch (validationError: any) {
             const is404 = validationError.status === 404 || validationError.message?.includes('404');
             if (is404) {
-              console.log('🔧 Stale user detected - clearing and requiring re-login');
               localStorage.removeItem('workshop_user');
               setUser(null);
               setPermissions(null);
             } else {
-              // Other errors - still try to use cached user but log the error
-              console.error('⚠️ Failed to validate user, using cached data:', validationError);
+              // Other errors - still try to use cached user
               setUser(userData);
               await loadPermissions(userData.id);
             }
           }
         } catch (e) {
-          console.error('Failed to parse saved user:', e);
           localStorage.removeItem('workshop_user');
         }
       }
@@ -121,22 +116,12 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children, onWorkshop
 
   const loadPermissions = async (userId: string) => {
     try {
-      console.log('🔍 Loading permissions for user ID:', userId);
       const permissions = await UsersService.getUserPermissionsUsersUserIdPermissionsGet(userId);
-      console.log('✅ Permissions loaded successfully:', permissions);
       setPermissions(permissions);
     } catch (error: any) {
-      console.error('❌ Failed to load user permissions for user ID:', userId);
-      console.error('Error details:', {
-        status: error.status,
-        message: error.message,
-        body: error.body
-      });
-      
       // Auto-recovery: If user not found (404), clear stale user data
       const is404 = error.status === 404 || error.message?.includes('404') || error.body?.detail?.includes('not found');
       if (is404) {
-        console.log('🔧 User not found - clearing stale user data and logging out');
         localStorage.removeItem('workshop_user');
         setUser(null);
         setPermissions(null);
@@ -152,41 +137,34 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children, onWorkshop
       try {
         await UsersService.updateLastActiveUsersUsersUserIdLastActivePut(user.id);
       } catch (error) {
-        console.error('Failed to update last active:', error);
+        // Silent fail for last active updates
       }
     }
   };
 
   const setUserWithPermissions = async (newUser: User | null) => {
-    console.log('👤 Setting user:', newUser);
     setUser(newUser);
     if (newUser) {
-      console.log(`🔑 Loading permissions for user ${newUser.id} with role ${newUser.role}`);
       await loadPermissions(newUser.id);
       
       // Invalidate all queries to refresh data after login
-      console.log('🔄 Invalidating all queries to refresh data after login');
       queryClient.invalidateQueries();
       
       // Store workshop ID if present
       if (newUser.workshop_id) {
         const currentWorkshopId = localStorage.getItem('workshop_id');
         if (currentWorkshopId !== newUser.workshop_id) {
-          console.log('💾 Updating workshop ID in localStorage:', newUser.workshop_id);
           localStorage.setItem('workshop_id', newUser.workshop_id);
           onWorkshopIdRestored?.(newUser.workshop_id);
         }
       }
     } else {
-      console.log('🔑 Clearing permissions (user logged out)');
       setPermissions(null);
     }
   };
 
   const login = async (email: string, password: string) => {
     try {
-      console.log('🔐 Attempting login for:', email);
-      
       const response = await fetch('/users/auth/login', {
         method: 'POST',
         headers: {
@@ -201,22 +179,16 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children, onWorkshop
       }
 
       const data = await response.json();
-      console.log('✅ Login successful:', data);
-      console.log('🎭 User role automatically determined:', data.user.role);
       
       // Set the user with permissions
       await setUserWithPermissions(data.user);
       
-      
-      
     } catch (error: any) {
-      console.error('❌ Login failed:', error);
       throw new Error(error.message || 'Login failed');
     }
   };
 
   const logout = () => {
-    console.log('🚪 Logging out user');
     setUser(null);
     setPermissions(null);
 
@@ -244,14 +216,6 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children, onWorkshop
 // Role-based access control helpers
 export const useRoleCheck = () => {
   const { user, permissions } = useUser();
-  
-  // Debug: Log permissions state
-  console.log('🔑 useRoleCheck - Current permissions:', {
-    userId: user?.id,
-    role: user?.role,
-    permissions: permissions,
-    can_create_findings: permissions?.can_create_findings
-  });
   
   const isFacilitator = user?.role === 'facilitator';
   const isSME = user?.role === 'sme';

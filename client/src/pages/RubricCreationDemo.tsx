@@ -240,14 +240,14 @@ export function RubricCreationDemo() {
           const parsed = JSON.parse(storedData);
           // Only load if data is less than 24 hours old
           if (Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000) {
-            console.log('🔄 Loading scratch pad from localStorage:', parsed.scratchPad.length, 'items');
+            
             setScratchPad(parsed.scratchPad);
           } else {
-            console.log('🗑️ Clearing old scratch pad localStorage data');
+            
             localStorage.removeItem(storageKey);
           }
         } catch (error) {
-          console.error('❌ Failed to parse scratch pad localStorage data:', error);
+          
           localStorage.removeItem(storageKey);
         }
       }
@@ -264,11 +264,11 @@ export function RubricCreationDemo() {
           scratchPad: scratchPad
         };
         localStorage.setItem(storageKey, JSON.stringify(dataToSave));
-        console.log('✅ Saved scratch pad to localStorage:', scratchPad.length, 'items');
+        
       } else {
         // Clear localStorage when scratch pad is empty
         localStorage.removeItem(storageKey);
-        console.log('🗑️ Cleared scratch pad from localStorage');
+        
       }
     }
   }, [scratchPad, workshopId]);
@@ -319,7 +319,7 @@ export function RubricCreationDemo() {
         // Invalidate queries to refresh the UI
         queryClient.invalidateQueries({ queryKey: ['rubric', workshopId] });
       } catch (error) {
-        console.error('Failed to save rubric:', error);
+        
       }
     }
   };
@@ -337,9 +337,9 @@ export function RubricCreationDemo() {
       // Invalidate queries to refresh the UI
       queryClient.invalidateQueries({ queryKey: ['rubric', workshopId] });
       
-      console.log(`Question "${id}" deleted successfully`);
+      
     } catch (error) {
-      console.error('Failed to delete question:', error);
+      
       toast.error('Failed to delete question. Please try again.');
     }
   };
@@ -377,7 +377,7 @@ export function RubricCreationDemo() {
       // Invalidate queries to refresh the UI
       queryClient.invalidateQueries({ queryKey: ['rubric', workshopId] });
       
-      console.log(`Question "${question.title}" updated successfully`);
+      
       setLastUpdatedQuestionId(questionId);
       
       // Clear success state after 3 seconds
@@ -385,7 +385,7 @@ export function RubricCreationDemo() {
         setLastUpdatedQuestionId(null);
       }, 3000);
     } catch (error) {
-      console.error('Failed to update question:', error);
+      
       toast.error('Failed to update question. Please try again.');
     } finally {
       setUpdatingQuestionId(null);
@@ -403,7 +403,7 @@ export function RubricCreationDemo() {
         };
         await updateRubric.mutateAsync(apiRubric);
       } catch (error) {
-        console.error('Failed to save rubric:', error);
+        
       }
     }
   };

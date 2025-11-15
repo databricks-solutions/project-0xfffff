@@ -44,12 +44,6 @@ export const FacilitatorUserManager: React.FC = () => {
     }
   }, [workshopId]);
 
-  // Debug logging
-  useEffect(() => {
-    console.log('FacilitatorUserManager - workshopId:', workshopId);
-    console.log('FacilitatorUserManager - workshop:', workshop);
-    console.log('FacilitatorUserManager - users:', users);
-  }, [workshopId, workshop, users]);
 
   const loadUsers = async () => {
     if (!workshopId) return;
@@ -57,13 +51,10 @@ export const FacilitatorUserManager: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      console.log('Loading users for workshop:', workshopId);
       const response = await UsersService.listWorkshopUsersUsersWorkshopsWorkshopIdUsersGet(workshopId);
-      console.log('Users response:', response);
       // The API returns { workshop_id, users: [], total_users }
       setUsers(response.users || []);
     } catch (error: any) {
-      console.error('Failed to load users:', error);
       setError(`Failed to load users: ${error.message || 'Unknown error'}`);
     } finally {
       setIsLoading(false);
@@ -93,7 +84,6 @@ export const FacilitatorUserManager: React.FC = () => {
       setNewUser({ email: '', name: '', role: 'participant' });
       loadUsers(); // Refresh the user list
     } catch (error: any) {
-      console.error('Failed to add user:', error);
       setError(error.response?.data?.detail || 'Failed to add user');
     } finally {
       setIsLoading(false);

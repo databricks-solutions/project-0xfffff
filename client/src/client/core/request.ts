@@ -243,7 +243,7 @@ export const getResponseBody = async (response: Response): Promise<any> => {
                 }
             }
         } catch (error) {
-            console.error(error);
+            // Silent fail for error body parsing
         }
     }
     return undefined;

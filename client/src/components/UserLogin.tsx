@@ -35,7 +35,7 @@ export const UserLogin: React.FC = () => {
 
       await setUser(newUser);
     } catch (error: any) {
-      console.error('Login failed:', error);
+      
       setError(error.response?.data?.detail || 'Failed to create user');
     } finally {
       setIsLoading(false);
@@ -48,13 +48,13 @@ export const UserLogin: React.FC = () => {
 
     try {
       const demoEmail = `${role}@workshop.demo`;
-      console.log(`🔄 Quick login as ${role} (${demoEmail}) for workshop ${workshopId}`);
+      
       
       let currentWorkshopId = workshopId;
       
       // If no workshop exists and user is facilitator, create one
       if (!currentWorkshopId && role === 'facilitator') {
-        console.log('🏗️ No workshop exists, creating new workshop for facilitator...');
+        
         try {
           const newWorkshop = await createWorkshop.mutateAsync({
             name: `Demo Workshop - ${new Date().toLocaleDateString()}`,
@@ -62,14 +62,14 @@ export const UserLogin: React.FC = () => {
             facilitator_id: 'demo_facilitator'
           });
           
-          console.log('✅ Created new workshop:', newWorkshop);
+          
           currentWorkshopId = newWorkshop.id;
           setWorkshopId(currentWorkshopId);
           
           // Update URL to include workshop ID
           window.history.pushState({}, '', `?workshop=${currentWorkshopId}`);
         } catch (error) {
-          console.error('❌ Failed to create workshop:', error);
+          
           setError(`Failed to create workshop: ${error.message || 'Unknown error'}`);
           return;
         }
@@ -87,11 +87,11 @@ export const UserLogin: React.FC = () => {
       
       if (existingUser) {
         // Use existing user
-        console.log('✅ Found existing user:', existingUser);
+        
         await setUser(existingUser);
       } else {
         // Create new user if doesn't exist
-        console.log('🆕 Creating new user...');
+        
         const newUser = await UsersService.createUserUsersUsersPost({
           email: demoEmail,
           name: `Demo ${role.charAt(0).toUpperCase() + role.slice(1)}`,
@@ -99,16 +99,12 @@ export const UserLogin: React.FC = () => {
           workshop_id: currentWorkshopId
         });
 
-        console.log('✅ Created new user:', newUser);
+        
         await setUser(newUser);
       }
     } catch (error: any) {
-      console.error('❌ Quick login failed:', error);
-      console.error('Error details:', {
-        status: error.status,
-        message: error.message,
-        body: error.body
-      });
+      
+      
       setError(error.response?.data?.detail || 'Failed to login as demo user');
     } finally {
       setIsLoading(false);

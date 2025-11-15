@@ -55,7 +55,7 @@ export function IntakePage() {
 
   const loadStatus = async () => {
     if (!workshopId) {
-      console.log('No workshop ID available, skipping MLflow status load');
+      
       return;
     }
     
@@ -71,7 +71,7 @@ export function IntakePage() {
         }
       }
     } catch (err) {
-      console.error('Failed to load MLflow status:', err);
+      
     }
   };
 
@@ -98,10 +98,10 @@ export function IntakePage() {
     setError(null);
 
     try {
-      console.log('🔄 Starting ingestion process...');
+      
       
       // First, save the configuration (which stores the token in memory)
-      console.log('📝 Saving MLflow configuration...');
+      
       const configResponse = await fetch(`/workshops/${workshopId}/mlflow-config`, {
         method: 'POST',
         headers: {
@@ -115,10 +115,10 @@ export function IntakePage() {
         setError(errorData.detail || 'Failed to save configuration');
         return;
       }
-      console.log('✅ Configuration saved successfully');
+      
 
       // Then, ingest traces (token will be retrieved from memory)
-      console.log('📥 Starting trace ingestion...');
+      
       const response = await fetch(`/workshops/${workshopId}/mlflow-ingest`, {
         method: 'POST',
         headers: {
@@ -127,11 +127,11 @@ export function IntakePage() {
         body: JSON.stringify({}), // No need to send token - it's retrieved from memory
       });
 
-      console.log('📡 Ingestion response status:', response.status);
+      
 
       if (response.ok) {
         const result = await response.json();
-        console.log('✅ Ingestion successful:', result);
+        
         await loadStatus();
         
         // Invalidate trace caches to ensure new traces are visible
@@ -150,10 +150,10 @@ export function IntakePage() {
         setError(errorData.detail || `Failed to ingest traces (HTTP ${response.status})`);
       }
     } catch (err) {
-      console.error('❌ Ingestion error:', err);
+      
       setError('Network error: Unable to connect to the server. Please check your connection and try again.');
     } finally {
-      console.log('🔄 Stopping ingestion spinner...');
+      
       setIsIngesting(false);
     }
   };

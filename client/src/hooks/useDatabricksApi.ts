@@ -168,7 +168,7 @@ export const useTestDatabricksConnection = () => {
   return useMutation({
     mutationFn: testConnection,
     onError: (error) => {
-      console.error('Databricks connection test failed:', error);
+      
     },
   });
 };
@@ -196,7 +196,7 @@ export const useCallDatabricksEndpoint = () => {
     mutationFn: ({ request, config }: { request: DatabricksEndpointCall; config: DatabricksConfig }) =>
       callEndpoint(request, config),
     onError: (error) => {
-      console.error('Databricks endpoint call failed:', error);
+      
     },
   });
 };
@@ -206,7 +206,7 @@ export const useCallDatabricksChat = () => {
     mutationFn: ({ request, config }: { request: DatabricksChatCompletion; config: DatabricksConfig }) =>
       callChatCompletion(request, config),
     onError: (error) => {
-      console.error('Databricks chat completion failed:', error);
+      
     },
   });
 };
@@ -227,7 +227,7 @@ export const useSimpleDatabricksCall = () => {
       maxTokens?: number;
     }) => simpleCall(endpointName, prompt, config, temperature, maxTokens),
     onError: (error) => {
-      console.error('Simple Databricks call failed:', error);
+      
     },
   });
 };
@@ -273,10 +273,10 @@ export const useJudgeEvaluate = () => {
   return useMutation({
     mutationFn: judgeEvaluate,
     onSuccess: (data) => {
-      console.log('Judge evaluation successful:', data);
+      
     },
     onError: (error) => {
-      console.error('Judge evaluation failed:', error);
+      
     },
   });
 };

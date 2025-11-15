@@ -92,27 +92,11 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
   const traceCoverageDetails = React.useMemo(() => {
     if (!traces || !allFindings) return [];
     
-    // Debug logging
-    console.log('🔍 Facilitator Dashboard - Trace Coverage Calculation:', {
-      focusPhase,
-      tracesCount: traces.length,
-      allFindingsCount: allFindings?.length,
-      annotationsCount: annotations?.length,
-      activeUsers: activeUsers.size,
-      activeAnnotators: activeAnnotators.size,
-      sampleAnnotation: annotations?.[0],
-      sampleAnnotationTraceId: annotations?.[0]?.trace_id,
-      sampleTrace: traces?.[0],
-      sampleTraceId: traces?.[0]?.id,
-      annotationTraceIds: annotations?.map(a => a.trace_id),
-      traceIds: traces?.slice(0, 5).map(t => t.id)
-    });
     
     // Filter traces based on focusPhase
     let relevantTraces = traces;
     if (focusPhase === 'discovery' && workshop?.active_discovery_trace_ids?.length) {
       relevantTraces = traces.filter(trace => workshop.active_discovery_trace_ids.includes(trace.id));
-      console.log(`🔍 Filtered to ${relevantTraces.length} discovery traces from ${workshop.active_discovery_trace_ids.length} active IDs`);
     } else if (focusPhase === 'annotation') {
       // For annotation phase: show all traces that have annotations OR are in active_annotation_trace_ids
       if (annotations && annotations.length > 0) {
@@ -121,13 +105,9 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
         const allRelevantIds = new Set([...annotatedTraceIds, ...activeTraceIds]);
         
         relevantTraces = traces.filter(trace => allRelevantIds.has(trace.id));
-        console.log(`🔍 Filtered to ${relevantTraces.length} annotation traces (${annotatedTraceIds.size} with annotations + ${activeTraceIds.size} active)`);
-        console.log(`🔍 Annotated trace IDs:`, Array.from(annotatedTraceIds));
-        console.log(`🔍 Active annotation trace IDs:`, Array.from(activeTraceIds));
       } else if (workshop?.active_annotation_trace_ids?.length) {
         // Fallback: use active_annotation_trace_ids if no annotations yet
         relevantTraces = traces.filter(trace => workshop.active_annotation_trace_ids.includes(trace.id));
-        console.log(`🔍 Filtered to ${relevantTraces.length} annotation traces from ${workshop.active_annotation_trace_ids.length} active IDs`);
       }
     }
     
@@ -136,8 +116,6 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
       if (focusPhase === 'annotation' && annotations) {
         const annotationsForTrace = annotations.filter(a => a.trace_id === trace.id);
         const reviewerIds = new Set(annotationsForTrace.map(a => a.user_id));
-        
-        console.log(`📊 Trace ${trace.id.slice(0, 8)}: ${annotationsForTrace.length} annotations from ${reviewerIds.size} reviewers`);
         
         // Use activeAnnotators instead of activeUsers for annotation phase
         const minReviewers = Math.min(2, activeAnnotators.size); // At least 2 reviewers for IRR
@@ -256,7 +234,6 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
       }
       
       const result = await response.json();
-      console.log('Phase advancement result:', result);
       
       // Update local state
       setCurrentPhase(nextPhase);
@@ -265,7 +242,6 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
       queryClient.invalidateQueries();
       
     } catch (error) {
-      console.error('Failed to advance phase:', error);
       toast.error(`Failed to start ${nextPhase} phase: ${error.message}`);
     }
   };
@@ -310,8 +286,6 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
       }
 
       const result = await response.json();
-      console.log('Additional traces added:', result);
-      console.log('Current workshop active_discovery_trace_ids before invalidation:', workshop?.active_discovery_trace_ids?.length);
       
       // Clear the appropriate input and refresh data
       setCountValue('');
@@ -322,14 +296,8 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
       queryClient.invalidateQueries({ queryKey: ['findings', workshopId] });
       queryClient.invalidateQueries({ queryKey: ['annotations', workshopId] });
       
-      // Log after refetch
-      setTimeout(() => {
-        console.log('Workshop active_discovery_trace_ids after refetch should be updated');
-      }, 100);
-      
       toast.success(`Successfully added ${result.traces_added} traces to ${phaseLabel}! (Total: ${result.total_active_traces})`);
     } catch (error) {
-      console.error('Failed to add additional traces:', error);
       toast.error(`Failed to add traces: ${error.message}`);
     } finally {
       setIsAddingTraces(false);
@@ -352,7 +320,6 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
       }
 
       const result = await response.json();
-      console.log('Traces reordered:', result);
       
       // Refresh data
       await queryClient.refetchQueries({ queryKey: ['workshop', workshopId] });
@@ -361,7 +328,6 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
       
       toast.success(`Successfully reordered ${result.reordered_count} traces! Completed traces now appear first.`);
     } catch (error) {
-      console.error('Failed to reorder traces:', error);
       toast.error(`Failed to reorder traces: ${error.message}`);
     } finally {
       setIsReorderingTraces(false);

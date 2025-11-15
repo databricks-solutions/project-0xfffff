@@ -95,17 +95,6 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
     },
     enabled: !!workshopId && currentPhase === 'discovery' // Only enable during discovery phase
   });
-  
-  // Debug logging for discovery completion (only when in discovery phase)
-  if (currentPhase === 'discovery') {
-    console.log('🔍 RoleBasedWorkflow Discovery Debug:', {
-      currentPhase,
-      isDiscoveryComplete,
-      discoveryCompletionStatus,
-      allCompleted: discoveryCompletionStatus?.all_completed,
-      userDiscoveryComplete
-    });
-  }
 
   // Use real user or show login prompt
   if (!user) {

@@ -66,7 +66,7 @@ export function DBSQLExportPage() {
           localStorage.removeItem(storageKey);
         }
       } catch (error) {
-        console.error('Failed to parse localStorage data:', error);
+        
         localStorage.removeItem(storageKey);
       }
     }
@@ -247,13 +247,7 @@ export function DBSQLExportPage() {
       const [catalog, schema, volume] = parts;
       const finalFileName = fileName || `workshop_${workshopId}.db`;
       
-      console.log('🚀 Starting volume upload:', {
-        volumePath,
-        fileName: finalFileName,
-        catalog,
-        schema,
-        volume
-      });
+      
 
       // Call the backend upload endpoint
       const response = await fetch(`/workshops/${workshopId}/upload-to-volume`, {
@@ -275,7 +269,7 @@ export function DBSQLExportPage() {
       }
 
       const result = await response.json();
-      console.log('✅ Volume upload successful:', result);
+      
       
       setUploadResult(result);
       
@@ -283,7 +277,7 @@ export function DBSQLExportPage() {
       setUploadError(null);
       
     } catch (err: any) {
-      console.error('❌ Volume upload failed:', err);
+      
       setUploadError(err.message || 'Upload failed');
       setUploadResult(null);
     } finally {

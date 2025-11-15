@@ -35,20 +35,13 @@ export const DiscoveryStartPage: React.FC<DiscoveryStartPageProps> = ({ onStartD
       // Calculate actual limit based on selection
       const limit = traceLimit === 'custom' ? parseInt(customLimit) : parseInt(traceLimit);
       
-      console.log('🎯 Discovery Start - Trace Selection:', { 
-        traceLimit, 
-        customLimit, 
-        calculatedLimit: limit,
-        totalTraces,
-        isCustomSelected: traceLimit === 'custom'
-      });
+
       
       // Make direct API call with trace_limit parameter
       const url = limit 
         ? `/workshops/${workshopId}/begin-discovery?trace_limit=${limit}`
         : `/workshops/${workshopId}/begin-discovery`;
       
-      console.log('🎯 Discovery Start - API URL:', url);
       
       const response = await fetch(url, {
         method: 'POST',
@@ -62,7 +55,6 @@ export const DiscoveryStartPage: React.FC<DiscoveryStartPageProps> = ({ onStartD
       }
       
       const result = await response.json();
-      console.log('Discovery started:', result);
       // Invalidate queries to refresh the UI
       queryClient.invalidateQueries({ queryKey: ['workshop', workshopId] });
       queryClient.invalidateQueries({ queryKey: ['traces', workshopId] });
@@ -73,7 +65,6 @@ export const DiscoveryStartPage: React.FC<DiscoveryStartPageProps> = ({ onStartD
         onStartDiscovery();
       }
     } catch (error: any) {
-      console.error('Failed to start discovery phase:', error);
       toast.error('Failed to start discovery phase. Please try again.');
     } finally {
       setIsStarting(false);

@@ -211,7 +211,7 @@ export function TraceViewerDemo() {
         });
         setSubmittedFindings(prev => new Set([...prev, currentTrace.id]));
       } catch (error) {
-        console.error('Failed to submit finding:', error);
+        
         return; // Don't navigate if submission failed
       }
     }
@@ -243,7 +243,7 @@ export function TraceViewerDemo() {
       
       toast.success('Discovery phase completed! You can now wait for the facilitator to move to the next phase.');
     } catch (error) {
-      console.error('Failed to complete discovery:', error);
+      
       toast.error('Failed to complete discovery. Please try again.');
     } finally {
       setIsCompletingDiscovery(false);
@@ -277,7 +277,7 @@ export function TraceViewerDemo() {
       setQuestion1Response('');
       setQuestion2Response('');
     } catch (error) {
-      console.error('Failed to submit finding:', error);
+      
     }
   };
 
@@ -331,7 +331,7 @@ export function TraceViewerDemo() {
                   // Refresh the page to show updated phase
                   window.location.reload();
                 } catch (error) {
-                  console.error('Failed to start discovery phase:', error);
+                  
                   toast.error('Failed to start discovery phase. Please try again.');
                 }
               }}

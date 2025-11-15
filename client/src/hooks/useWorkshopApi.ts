@@ -71,9 +71,11 @@ export function useWorkshop(workshopId: string) {
     queryKey: QUERY_KEYS.workshop(workshopId),
     queryFn: () => WorkshopsService.getWorkshopWorkshopsWorkshopIdGet(workshopId),
     enabled: !!workshopId,
-    staleTime: 5000, // Consider data stale after 5 seconds for real-time updates
-    refetchInterval: 15000, // Refetch every 15 seconds for real-time updates
+    staleTime: 10000, // Consider data stale after 10 seconds
+    refetchInterval: 10000, // Refetch every 10 seconds
+    refetchOnMount: true, // Always refetch on component mount to get latest traces
     refetchIntervalInBackground: false, // Don't refetch when window is not focused
+    refetchOnWindowFocus: true, 
     retry: (failureCount, error) => {
       // Don't retry on 404 errors - workshop doesn't exist
       if (error && typeof error === 'object' && 'status' in error && error.status === 404) {
@@ -115,14 +117,14 @@ export function useTraces(workshopId: string, userId: string) {
       return response.json();
     },
     enabled: !!workshopId && !!userId,
-    // More aggressive refetching to ensure users see new traces
-    staleTime: 10 * 1000, // Data is always considered stale, refetch more often
+    // Reduced refetching to prevent Chrome performance issues
+    staleTime: 30 * 1000, // Data is fresh for 30 seconds
     gcTime: 5 * 60 * 1000, // Cache for 5 minutes
     retry: 3, // Retry failed requests 3 times
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
-    refetchOnWindowFocus: true, // Refetch when window regains focus to catch new traces
-    refetchOnMount: true, // Always refetch on component mount to get latest traces
-    refetchInterval: 10000, // Auto-refetch every 10 seconds for near real-time updates
+    refetchOnWindowFocus: false, // Disabled to prevent excessive refetching
+    refetchOnMount: true, // Refetch on component mount to get latest traces
+    refetchInterval: false, // DISABLED: Was causing Chrome hangs
   });
 }
 
@@ -207,8 +209,9 @@ export function useUserFindings(workshopId: string, user: any) {
       user?.id  // EVERYONE (including facilitators) gets only their own findings for personal progress
     ),
     enabled: !!workshopId && !!user?.id, // REQUIRE user to be logged in
-    staleTime: 0, // Always consider data stale for real-time updates
-    refetchInterval: 10000, // Refetch every 10 seconds for real-time updates
+    staleTime: 30 * 1000, // Data is fresh for 30 seconds  
+    refetchInterval: false, // DISABLED: Was causing Chrome hangs with excessive refetching
+    refetchOnWindowFocus: false, // Disabled to prevent excessive refetching
   });
 }
 
@@ -338,7 +341,7 @@ export function useUserAnnotations(workshopId: string, user: any) {
   return useQuery({
     queryKey: QUERY_KEYS.annotations(workshopId, user?.id),
     queryFn: () => {
-      console.log('🔍 Fetching annotations for user:', user?.id, 'workshop:', workshopId);
+      
       return WorkshopsService.getAnnotationsWorkshopsWorkshopIdAnnotationsGet(
         workshopId, 
         user?.id  // EVERYONE gets only their own annotations

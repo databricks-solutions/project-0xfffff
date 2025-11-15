@@ -36,14 +36,14 @@ export function WorkshopCreationPage() {
         facilitator_id: user?.id || 'demo_facilitator'
       });
       
-      console.log('✅ Workshop created:', workshop);
+      
       setWorkshopId(workshop.id);
       
       // Update URL to include workshop ID
       window.history.pushState({}, '', `?workshop=${workshop.id}`);
       
     } catch (error) {
-      console.error('❌ Failed to create workshop:', error);
+      
     }
   };
 
@@ -55,14 +55,14 @@ export function WorkshopCreationPage() {
         facilitator_id: user?.id || 'demo_facilitator'
       });
       
-      console.log('✅ Workshop created:', workshop);
+      
       setWorkshopId(workshop.id);
       
       // Update URL to include workshop ID
       window.history.pushState({}, '', `?workshop=${workshop.id}`);
       
     } catch (error) {
-      console.error('❌ Failed to create workshop:', error);
+      
     }
   };
 

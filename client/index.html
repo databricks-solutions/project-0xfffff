@@ -20,7 +20,6 @@
         if (e.target.tagName === 'SCRIPT' || e.target.tagName === 'LINK') {
           const hasReloaded = sessionStorage.getItem('asset-reload');
           if (!hasReloaded) {
-            console.log('🔄 Asset loading failed, clearing cache and reloading...');
             sessionStorage.setItem('asset-reload', 'true');
             window.location.reload(true);
           }

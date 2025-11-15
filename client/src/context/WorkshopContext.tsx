@@ -32,12 +32,12 @@ const getWorkshopIdFromUrl = (): string | null => {
   let workshopMatch = path.match(/\/workshop\/([a-f0-9-]{36})/);
   if (workshopMatch) {
     const workshopId = workshopMatch[1];
-    console.log('📍 Workshop ID from path:', workshopId);
+    
     
     // Clear localStorage if URL has a different workshop ID
     const savedWorkshopId = localStorage.getItem('workshop_id');
     if (savedWorkshopId && savedWorkshopId !== workshopId) {
-      console.log('🧹 Clearing old workshop ID from localStorage:', savedWorkshopId);
+      
       localStorage.removeItem('workshop_id');
     }
     
@@ -48,12 +48,12 @@ const getWorkshopIdFromUrl = (): string | null => {
   const urlParams = new URLSearchParams(search);
   const workshopParam = urlParams.get('workshop');
   if (workshopParam && workshopParam.match(/^[a-f0-9-]{36}$/)) {
-    console.log('📍 Workshop ID from query param:', workshopParam);
+    
     
     // Clear localStorage if URL has a different workshop ID
     const savedWorkshopId = localStorage.getItem('workshop_id');
     if (savedWorkshopId && savedWorkshopId !== workshopParam) {
-      console.log('🧹 Clearing old workshop ID from localStorage:', savedWorkshopId);
+      
       localStorage.removeItem('workshop_id');
     }
     
@@ -65,16 +65,16 @@ const getWorkshopIdFromUrl = (): string | null => {
   if (savedWorkshopId && savedWorkshopId.match(/^[a-f0-9-]{36}$/)) {
     // Check if this is the known invalid workshop ID and clear it
     if (savedWorkshopId === '569c0be9-3782-4587-a595-98033265c7dc') {
-      console.log('🧹 Clearing invalid workshop ID from localStorage:', savedWorkshopId);
+      
       localStorage.removeItem('workshop_id');
       return null;
     }
-    console.log('📍 Workshop ID from localStorage:', savedWorkshopId);
+    
     return savedWorkshopId;
   }
   
   // No workshop ID found
-  console.log('⚠️ No workshop ID found in URL or localStorage');
+  
   return null;
 };
 
@@ -84,12 +84,12 @@ export function WorkshopProvider({ children, restoredWorkshopId }: WorkshopProvi
   
   const [workshopId, setWorkshopId] = useState<string | null>(() => {
     const urlWorkshopId = getWorkshopIdFromUrl();
-    console.log('🚀 WorkshopProvider initializing with workshop ID:', urlWorkshopId);
+    
     
     // Clear React Query cache if we have a workshop ID from URL
     // This ensures we don't use stale data from a previous workshop
     if (urlWorkshopId) {
-      console.log('🧹 Clearing React Query cache on initialization due to URL workshop ID');
+      
       queryClient.clear();
     }
     
@@ -100,7 +100,7 @@ export function WorkshopProvider({ children, restoredWorkshopId }: WorkshopProvi
 
   const handleSetWorkshopId = (id: string | null) => {
     if (id !== workshopId) {
-      console.log('🔄 Switching workshop ID from', workshopId, 'to', id);
+      
       
       // Clear all cached queries when workshop ID changes
       queryClient.invalidateQueries();
@@ -111,16 +111,16 @@ export function WorkshopProvider({ children, restoredWorkshopId }: WorkshopProvi
       // Persist workshop ID to localStorage
       if (id) {
         localStorage.setItem('workshop_id', id);
-        console.log('💾 Saved workshop ID to localStorage:', id);
+        
       } else {
         localStorage.removeItem('workshop_id');
-        console.log('🧹 Removed workshop ID from localStorage');
+        
       }
     }
   };
 
   const clearInvalidWorkshopId = () => {
-    console.log('🧹 Clearing invalid workshop ID due to 500 error');
+    
     localStorage.removeItem('workshop_id');
     queryClient.invalidateQueries();
     queryClient.clear();
@@ -131,7 +131,7 @@ export function WorkshopProvider({ children, restoredWorkshopId }: WorkshopProvi
   // Handle restored workshop ID from user context
   React.useEffect(() => {
     if (restoredWorkshopId && !workshopId) {
-      console.log('🔄 Restoring workshop ID from user data:', restoredWorkshopId);
+      
       handleSetWorkshopId(restoredWorkshopId);
     }
   }, [restoredWorkshopId, workshopId]);
@@ -146,13 +146,13 @@ export function WorkshopProvider({ children, restoredWorkshopId }: WorkshopProvi
   React.useEffect(() => {
     const handleUrlChange = () => {
       const newWorkshopId = getWorkshopIdFromUrl();
-      console.log('🔄 URL changed, workshop ID:', { current: workshopId, new: newWorkshopId });
+      
       if (newWorkshopId && newWorkshopId !== workshopId) {
-        console.log('✅ Updating workshop ID to:', newWorkshopId);
+        
         
         // IMPORTANT: Clear ALL queries before switching workshop
         // This prevents stale data from old workshop ID
-        console.log('🧹 Clearing all React Query cache before workshop switch');
+        
         queryClient.clear();
         queryClient.removeQueries(); // More aggressive cleanup
         

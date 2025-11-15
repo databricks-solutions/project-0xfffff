@@ -42,10 +42,8 @@ export function WorkflowProvider({ children }: WorkflowProviderProps) {
       const response = await fetch(`/workshops/${workshopId}/participants`);
       if (response.ok) {
         const data = await response.json();
-        console.log('🔍 WorkflowContext fetched participants:', data);
         return data;
       } else {
-        console.error('Failed to fetch participants for WorkflowContext:', response.status);
         return [];
       }
     },
@@ -57,21 +55,9 @@ export function WorkflowProvider({ children }: WorkflowProviderProps) {
   const { data: rubric } = useRubric(workshopId || '');
   const { data: annotations } = useAnnotations(workshopId || '');
 
-  // Debug: Log when the effect runs
-  console.log('🔄 WorkflowContext effect running with:', {
-    workshopId,
-    userId: user?.id,
-    userRole: user?.role,
-    tracesCount: traces?.length,
-    annotationsCount: annotations?.length,
-    participantsCount: participants?.length,
-    currentCompletedPhases: completedPhases
-  });
-
   // Sync currentPhase with backend workshop phase - backend is source of truth
   useEffect(() => {
     if (workshop?.current_phase) {
-      console.log('🔄 WorkflowContext: Updating currentPhase from', currentPhase, 'to', workshop.current_phase);
       setCurrentPhase(workshop.current_phase);
     }
   }, [workshop?.current_phase]);
@@ -79,7 +65,6 @@ export function WorkflowProvider({ children }: WorkflowProviderProps) {
   // Sync completed phases with backend - backend is source of truth for phase completion
   useEffect(() => {
     if (workshop?.completed_phases) {
-      console.log('🔄 WorkflowContext: Syncing completed phases from backend:', workshop.completed_phases);
       setCompletedPhases(workshop.completed_phases);
     }
   }, [workshop?.completed_phases]);
@@ -102,19 +87,16 @@ export function WorkflowProvider({ children }: WorkflowProviderProps) {
     // Results phase: completed when we have enough annotations for IRR analysis OR when we're past this phase
     if ((annotations && annotations.length >= 2) || workshop?.current_phase === 'judge_tuning' || workshop?.current_phase === 'unity_volume') {
       newCompletedPhases.push('results');
-      console.log('✅ Results phase marked as complete!');
     }
     
     // Judge tuning phase: mark complete when we're in judge_tuning or have progressed past it
     if (workshop?.current_phase === 'judge_tuning' || workshop?.current_phase === 'unity_volume') {
       newCompletedPhases.push('judge_tuning');
-      console.log('✅ Judge tuning phase marked as complete!');
     }
     
     // Unity Volume phase: mark complete when workshop is in unity_volume phase
     if (workshop?.current_phase === 'unity_volume') {
       newCompletedPhases.push('unity_volume');
-      console.log('✅ Unity Volume phase marked as complete!');
     }
         
     // Only update if there are actual changes and avoid overriding backend-controlled phases
@@ -134,10 +116,6 @@ export function WorkflowProvider({ children }: WorkflowProviderProps) {
     if (currentSet.size !== newSet.size || ![...currentSet].every(phase => newSet.has(phase))) {
       setCompletedPhases(finalPhases);
     }
-    
-    // Debug: Log the final completed phases
-    console.log('🎯 Final completed phases:', newCompletedPhases);
-    console.log('🎯 Workshop current phase:', workshop?.current_phase);
     
     // REMOVED: Auto-advancement that was causing phase/navigation confusion
     // Phase changes now only happen through explicit facilitator actions via API calls

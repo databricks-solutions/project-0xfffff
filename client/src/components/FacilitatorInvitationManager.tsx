@@ -45,10 +45,10 @@ export const FacilitatorInvitationManager: React.FC = () => {
         const data = await response.json();
         setInvitations(data);
       } else {
-        console.error('Failed to fetch invitations:', response.statusText);
+        
       }
     } catch (error) {
-      console.error('Failed to fetch invitations:', error);
+      
     }
   };
 
@@ -95,7 +95,7 @@ export const FacilitatorInvitationManager: React.FC = () => {
       // Refresh invitations list
       fetchInvitations();
     } catch (error: any) {
-      console.error('Failed to create invitation:', error);
+      
       setError(error.message || 'Failed to create invitation');
       toast.error(error.message || 'Failed to create invitation');
     } finally {

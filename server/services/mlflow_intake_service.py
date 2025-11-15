@@ -57,8 +57,13 @@ class MLflowIntakeService:
         try:
           if hasattr(trace, 'info') and hasattr(trace.info, 'request_id'):
             # Extract content from JSON for previews
-            input_content = self._extract_content_from_json(trace.data.request)
-            output_content = self._extract_content_from_json(trace.data.response)
+            # Safely handle traces with missing or incomplete data
+            input_content = self._extract_content_from_json(
+              getattr(trace.data, 'request', None) if hasattr(trace, 'data') else None
+            )
+            output_content = self._extract_content_from_json(
+              getattr(trace.data, 'response', None) if hasattr(trace, 'data') else None
+            )
 
             trace_info = MLflowTraceInfo(
               trace_id=trace.info.request_id,
@@ -73,7 +78,13 @@ class MLflowIntakeService:
             trace_info_list.append(trace_info)
         except Exception as trace_error:
           # Log individual trace processing errors but continue
-          print(f'Warning: Failed to process trace {getattr(trace.info, "request_id", "unknown")}: {str(trace_error)}')
+          trace_id = getattr(trace.info, 'request_id', 'unknown') if hasattr(trace, 'info') else 'unknown'
+          error_type = type(trace_error).__name__
+          # Provide more context for common errors
+          if 'NoneType' in str(trace_error):
+            print(f'Warning: Trace {trace_id} has incomplete data (missing request/response)')
+          else:
+            print(f'Warning: Failed to process trace {trace_id} ({error_type}): {str(trace_error)}')
           continue
 
       return trace_info_list
@@ -104,8 +115,13 @@ class MLflowIntakeService:
           full_trace = mlflow.get_trace(trace_info.trace_id)
 
           # Extract content from JSON input/output
-          input_content = self._extract_content_from_json(full_trace.data.request)
-          output_content = self._extract_content_from_json(full_trace.data.response)
+          # Safely handle traces with missing or incomplete data
+          input_content = self._extract_content_from_json(
+            getattr(full_trace.data, 'request', None) if hasattr(full_trace, 'data') else None
+          )
+          output_content = self._extract_content_from_json(
+            getattr(full_trace.data, 'response', None) if hasattr(full_trace, 'data') else None
+          )
 
           trace_upload = TraceUpload(
             input=input_content,
@@ -140,7 +156,12 @@ class MLflowIntakeService:
 
         except Exception as trace_error:
           # Log individual trace processing errors but continue
-          print(f'Warning: Failed to process trace {trace_info.trace_id}: {str(trace_error)}')
+          error_type = type(trace_error).__name__
+          # Provide more context for common errors
+          if 'NoneType' in str(trace_error):
+            print(f'Warning: Trace {trace_info.trace_id} has incomplete data (missing request/response)')
+          else:
+            print(f'Warning: Failed to process trace {trace_info.trace_id} ({error_type}): {str(trace_error)}')
           continue
 
       # Add traces to workshop
@@ -169,6 +190,10 @@ class MLflowIntakeService:
     """Extract content from JSON input/output format."""
     try:
       import json
+
+      # Handle None or empty trace data gracefully
+      if json_text is None or json_text == "":
+        return ""
 
       data = json.loads(json_text)
 

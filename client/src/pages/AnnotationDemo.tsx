@@ -90,14 +90,6 @@ export function AnnotationDemo() {
   const { canAnnotate } = useRoleCheck();
   const currentUserId = user?.id || 'demo_user';
 
-  // Debug permissions (only on mount/change)
-  useEffect(() => {
-    console.log('📝 AnnotationDemo - User and permissions:', {
-      user: user,
-      canAnnotate: canAnnotate,
-      currentUserId: currentUserId
-    });
-  }, [user?.id, canAnnotate]);
 
   // Check if user is logged in
   if (!user || !user.id) {
@@ -125,45 +117,15 @@ export function AnnotationDemo() {
   const submitAnnotation = useSubmitAnnotation(workshopId!);
   const queryClient = useQueryClient();
 
-  // Debug existing annotations
-  useEffect(() => {
-    if (existingAnnotations) {
-      console.log('📝 AnnotationDemo - Existing annotations loaded:', {
-        count: existingAnnotations.length,
-        annotations: existingAnnotations.map(a => ({
-          trace_id: a.trace_id,
-          rating: a.rating,
-          comment: a.comment,
-          user_id: a.user_id
-        }))
-      });
-    }
-  }, [existingAnnotations]);
+
 
   // Convert traces to TraceData format
   const traceData = traces?.map(convertTraceToTraceData) || [];
   const currentTrace = traceData[currentTraceIndex];
   const rubricQuestions = rubric ? parseRubricQuestions(rubric) : [];
 
-  // Debug rubric questions
-  useEffect(() => {
-    if (rubricQuestions) {
-      console.log('📋 Rubric questions parsed:', {
-        count: rubricQuestions.length,
-        questions: rubricQuestions.map(q => ({
-          id: q.id,
-          title: q.title,
-          description: q.description
-        }))
-      });
-    }
-  }, [rubricQuestions]);
 
-  // Debug current ratings state
-  useEffect(() => {
-    console.log('🎯 Current ratings state:', currentRatings);
-  }, [currentRatings]);
-  
+
 
   // Reset annotation state when user changes
   useEffect(() => {
@@ -180,9 +142,9 @@ export function AnnotationDemo() {
   // Initialize annotation state for current trace
   useEffect(() => {
     if (currentTrace?.id && currentTrace.id !== previousTraceId.current) {
-      console.log('🔄 Switching to trace:', currentTrace.id);
-      console.log('📊 Available annotations:', existingAnnotations?.length || 0);
-      console.log('📍 Current trace index:', currentTraceIndex, 'of', traceData.length);
+      
+      
+      
       
       // Reset form for each trace
       setCurrentRatings({});
@@ -194,26 +156,19 @@ export function AnnotationDemo() {
         a => a.trace_id === currentTrace.id && a.user_id === currentUserId
       );
       
-      console.log('🔍 Looking for annotation for trace:', currentTrace.id, 'user:', currentUserId);
-      console.log('✅ Found existing annotation:', existingAnnotation);
-      
       if (existingAnnotation) {
-        console.log('📝 Loading existing annotation data:', {
-          rating: existingAnnotation.rating,
-          ratings: existingAnnotation.ratings,
-          comment: existingAnnotation.comment
-        });
+        
         
         // Load existing annotation data into the form
         // Use the new 'ratings' field if available (multiple questions), otherwise fall back to legacy 'rating' field
         if (existingAnnotation.ratings && Object.keys(existingAnnotation.ratings).length > 0) {
           // New format: multiple ratings
-          console.log('🔑 Loading multiple ratings:', existingAnnotation.ratings);
+          
           setCurrentRatings(existingAnnotation.ratings);
         } else {
           // Legacy format: single rating - map it to the first question
           const firstQuestionId = rubricQuestions.length > 0 ? rubricQuestions[0].id : 'accuracy';
-          console.log('🔑 Using question ID:', firstQuestionId, 'for legacy rating:', existingAnnotation.rating);
+          
           setCurrentRatings({ [firstQuestionId]: existingAnnotation.rating });
         }
         setComment(existingAnnotation.comment || '');
@@ -226,7 +181,7 @@ export function AnnotationDemo() {
           return prev;
         });
       } else {
-        console.log('❌ No existing annotation found for this trace');
+        
       }
     }
   }, [currentTrace?.id, existingAnnotations, currentUserId]);
@@ -248,23 +203,19 @@ export function AnnotationDemo() {
       const currentTraceAnnotation = existingAnnotations.find(
         a => a.trace_id === currentTrace?.id && a.user_id === currentUserId
       );
-      console.log('🚀 Initial load - current trace annotation:', currentTraceAnnotation);
+      
       if (currentTraceAnnotation) {
-        console.log('📝 Initial load - setting annotation data:', {
-          rating: currentTraceAnnotation.rating,
-          ratings: currentTraceAnnotation.ratings,
-          comment: currentTraceAnnotation.comment
-        });
+        
         
         // Use the new 'ratings' field if available (multiple questions), otherwise fall back to legacy 'rating' field
         if (currentTraceAnnotation.ratings && Object.keys(currentTraceAnnotation.ratings).length > 0) {
           // New format: multiple ratings
-          console.log('🔑 Initial load - Loading multiple ratings:', currentTraceAnnotation.ratings);
+          
           setCurrentRatings(currentTraceAnnotation.ratings);
         } else {
           // Legacy format: single rating - map it to the first question
           const firstQuestionId = rubricQuestions.length > 0 ? rubricQuestions[0].id : 'accuracy';
-          console.log('🔑 Initial load - Using question ID:', firstQuestionId, 'for legacy rating:', currentTraceAnnotation.rating);
+          
           setCurrentRatings({ [firstQuestionId]: currentTraceAnnotation.rating });
         }
         setComment(currentTraceAnnotation.comment || '');
@@ -302,16 +253,7 @@ export function AnnotationDemo() {
         comment: comment.trim() || null
       };
       
-      console.log('📝 Submitting annotation:', {
-        ...annotationData,
-        ratingsKeys: Object.keys(currentRatings),
-        ratingsValues: Object.values(currentRatings),
-        hasMultipleRatings: Object.keys(currentRatings).length > 1
-      });
-      
       await submitAnnotation.mutateAsync(annotationData);
-      
-      console.log('✅ Annotation submitted successfully');
       
       // Mark as submitted and reset form
       setSubmittedAnnotations(prev => new Set([...prev, currentTrace.id]));
@@ -321,7 +263,7 @@ export function AnnotationDemo() {
       setComment('');
       
     } catch (error) {
-      console.error('❌ Failed to submit annotation:', error);
+      
     }
   };
 
@@ -332,24 +274,15 @@ export function AnnotationDemo() {
   };
 
   const nextTrace = async () => {
-    console.log('🚀 Next button clicked!');
     
     if (!currentTrace) {
-      console.error('❌ No current trace available');
       return;
     }
-    
-    console.log('📊 Current state:', {
-      currentTraceId: currentTrace.id,
-      alreadySubmitted: submittedAnnotations.has(currentTrace.id),
-      currentRatings,
-      currentUserId
-    });
     
     // Auto-submit annotation if not already submitted and rating is provided
     if (!submittedAnnotations.has(currentTrace.id) && Object.keys(currentRatings).length > 0) {
       try {
-        console.log('📤 Submitting annotation...');
+        
         // Submit all ratings for multiple questions
         // Use the first rating as the legacy 'rating' field for backward compatibility
         const firstRating = Object.values(currentRatings)[0];
@@ -360,53 +293,36 @@ export function AnnotationDemo() {
           ratings: currentRatings,  // New field: all ratings for all questions
           comment: comment.trim() || null
         };
-        console.log('📝 Submitting annotation:', {
-          ...annotationData,
-          ratingsKeys: Object.keys(currentRatings),
-          ratingsValues: Object.values(currentRatings),
-          hasMultipleRatings: Object.keys(currentRatings).length > 1
-        });
+        
         await submitAnnotation.mutateAsync(annotationData);
-        console.log('✅ Annotation submitted successfully');
+        
         setSubmittedAnnotations(prev => new Set([...prev, currentTrace.id]));
       } catch (error) {
-        console.error('❌ Failed to submit annotation:', error);
         return; // Don't navigate if submission failed
       }
     }
     
     // Navigate to next trace
     if (currentTraceIndex < traceData.length - 1) {
-      console.log('➡️ Navigating to next trace:', currentTraceIndex + 1);
+      
       setHasNavigatedManually(true);
       setCurrentTraceIndex(prev => prev + 1);
       // Reset form for next trace
       setCurrentRatings({});
       setComment('');
     } else {
-      console.log('🏁 Already at last trace');
+      
     }
   };
 
   const prevTrace = async () => {
-    console.log('⬅️ Previous button clicked!');
-    
     if (!currentTrace) {
-      console.error('❌ No current trace available');
       return;
     }
-    
-    console.log('📊 Current state:', {
-      currentTraceId: currentTrace.id,
-      alreadySubmitted: submittedAnnotations.has(currentTrace.id),
-      currentRatings,
-      currentUserId
-    });
-    
     // Auto-submit annotation if not already submitted and rating is provided
     if (!submittedAnnotations.has(currentTrace.id) && Object.keys(currentRatings).length > 0) {
       try {
-        console.log('📤 Auto-submitting annotation before going back...');
+        
         // Submit all ratings for multiple questions
         const firstRating = Object.values(currentRatings)[0];
         await submitAnnotation.mutateAsync({
@@ -416,21 +332,21 @@ export function AnnotationDemo() {
           ratings: currentRatings,  // New field: all ratings for all questions
           comment: comment.trim() || null
         });
-        console.log('✅ Annotation submitted successfully');
+        
         setSubmittedAnnotations(prev => new Set([...prev, currentTrace.id]));
       } catch (error) {
-        console.error('❌ Failed to submit annotation:', error);
+        
         return; // Don't navigate if submission failed
       }
     }
     
     // Navigate to previous trace
     if (currentTraceIndex > 0) {
-      console.log('⬅️ Navigating to previous trace:', currentTraceIndex - 1);
+      
       setHasNavigatedManually(true);
       setCurrentTraceIndex(prev => prev - 1);
     } else {
-      console.log('🏁 Already at first trace');
+      
     }
   };
 
@@ -442,16 +358,6 @@ export function AnnotationDemo() {
     !submittedAnnotations.has(currentTrace?.id || '') && Object.keys(currentRatings).length === 0
   );
   
-  useEffect(() => {
-    console.log('🔘 Next button state:', {
-      canAnnotate,
-      hasSubmittedCurrentTrace: submittedAnnotations.has(currentTrace?.id || ''),
-      currentRatings,
-      isNextDisabled,
-      currentTraceId: currentTrace?.id
-    });
-  }, [canAnnotate, currentTrace?.id, currentRatings, isNextDisabled]);
-
   if (tracesLoading || rubricLoading) {
     return (
       <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
@@ -581,7 +487,7 @@ export function AnnotationDemo() {
                       const mlflowUrl = `${host}/ml/experiments/${experiment_id}/traces?selectedEvaluationId=${trace_id}`;
                       window.open(mlflowUrl, '_blank');
                     } else {
-                      console.log('⚠️ No MLflow URL available for trace:', currentTrace.mlflow_trace_id);
+                      
                     }
                   }}
                   className="flex items-center gap-2 text-xs"

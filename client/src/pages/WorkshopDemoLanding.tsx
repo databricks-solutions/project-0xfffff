@@ -77,8 +77,6 @@ export function WorkshopDemoLanding() {
   ) => {
     if (!role) return 'loading';
     
-    console.log('🔍 getViewForPhaseWithState:', { role, requestedPhase, state });
-    
     // FACILITATOR - Simple backend-driven navigation
     if (role === 'facilitator') {
       switch(requestedPhase) {
@@ -87,21 +85,17 @@ export function WorkshopDemoLanding() {
         case 'discovery': 
           // Show start page ONLY if discovery has never been started
           if (!state.discovery_started) {
-            console.log('🎯 Showing discovery-start (never started):', { discovery_started: state.discovery_started });
             return 'discovery-start';
           }
           // Otherwise show monitor (discovery has been started)
-          console.log('🎯 Showing discovery-monitor:', { discovery_started: state.discovery_started });
           return 'discovery-monitor';
         case 'rubric': return 'rubric-create';
         case 'annotation': 
           // Show start page ONLY if annotation has never been started
           if (!state.annotation_started) {
-            console.log('🎯 Showing annotation-start (never started):', { annotation_started: state.annotation_started });
             return 'annotation-start';
           }
           // Otherwise show monitor (annotation has been started)
-          console.log('🎯 Showing annotation-monitor:', { annotation_started: state.annotation_started });
           return 'annotation-monitor';
         case 'results': return 'results-view';
         case 'judge_tuning': return 'judge-tuning';
@@ -121,7 +115,6 @@ export function WorkshopDemoLanding() {
       const hasStarted = phase === 'annotation' ? state.annotation_started : 
                         phase === 'discovery' ? state.discovery_started : true;
       const isActive = state.currentPhase === phase && !isPaused && hasStarted;
-      console.log('🚨 isPhaseActive check:', { phase, currentPhase: state.currentPhase, isPaused, hasStarted, isActive, completedPhases: state.completedPhases });
       return isActive;
     };
     
@@ -133,18 +126,14 @@ export function WorkshopDemoLanding() {
         return 'discovery-pending';
       case 'annotation':
         if (isPhaseActive('annotation')) {
-          console.log('🚨 SME annotation: ACTIVE - showing annotation-participate');
           return 'annotation-participate';
         }
         if (state.currentPhase === 'annotation') {
-          console.log('🚨 SME annotation: PAUSED - showing annotation-review');
           return 'annotation-review'; // Paused
         }
         if (['results', 'judge_tuning', 'unity_volume'].includes(state.currentPhase)) {
-          console.log('🚨 SME annotation: COMPLETED - showing annotation-review');
           return 'annotation-review';
         }
-        console.log('🚨 SME annotation: PENDING - showing annotation-pending');
         return 'annotation-pending';
       default: return 'phase-waiting';
     }
@@ -159,8 +148,6 @@ export function WorkshopDemoLanding() {
   React.useEffect(() => {
     // Prevent infinite loops - only attempt recovery once
     if (workshopError && !isAutoRecovering && !hasAttemptedRecovery.current) {
-      console.log('🔍 Workshop error detected:', workshopError);
-      
       const is404Error = (
         ('status' in workshopError && (workshopError as any).status === 404) ||
         ('response' in workshopError && (workshopError as any).response?.status === 404) ||
@@ -175,13 +162,10 @@ export function WorkshopDemoLanding() {
       );
       
       if ((is404Error || is500Error) && workshopId) {
-        console.log('🔍 Workshop error (404/500), attempting auto-recovery:', workshopId);
-        
         // Mark that we've attempted recovery to prevent infinite loops
         hasAttemptedRecovery.current = true;
         
         // Clear the invalid workshop ID and all related data
-        console.log('🧹 Clearing localStorage...');
         localStorage.removeItem('workshop_id');
         localStorage.removeItem('workshop_user');
         // Clear any other workshop-related data
@@ -193,7 +177,6 @@ export function WorkshopDemoLanding() {
         
         // If user is a facilitator, auto-create a new workshop
         if (user?.role === 'facilitator') {
-          console.log('🔧 Auto-creating new workshop for facilitator...');
           setIsAutoRecovering(true);
           
           createWorkshop.mutateAsync({
@@ -201,7 +184,6 @@ export function WorkshopDemoLanding() {
             description: 'A collaborative workshop to calibrate LLM judges through structured evaluation and consensus building.',
             facilitator_id: user.id
           }).then((newWorkshop) => {
-            console.log('✅ Auto-created workshop:', newWorkshop.id);
             setWorkshopId(newWorkshop.id);
             window.history.replaceState({}, '', `?workshop=${newWorkshop.id}`);
             setIsAutoRecovering(false);
@@ -210,7 +192,6 @@ export function WorkshopDemoLanding() {
               hasAttemptedRecovery.current = false;
             }, 1000);
           }).catch((error) => {
-            console.error('❌ Failed to auto-create workshop:', error);
             setWorkshopId(null);
             setIsAutoRecovering(false);
             // Reset recovery flag after failure
@@ -218,7 +199,6 @@ export function WorkshopDemoLanding() {
           });
         } else {
           // For non-facilitators, just clear and redirect
-          console.log('🔍 Non-facilitator user, redirecting to login...');
           setWorkshopId(null);
           // Don't use timeout with location.href as it can cause loops
           window.history.replaceState({}, '', '/');
@@ -290,7 +270,6 @@ export function WorkshopDemoLanding() {
         });
       }
       
-      console.log('🎯 Setting initial view:', { userRole: user.role, currentPhase, selectedView: view });
       setCurrentView(view);
     }
   }, [user, workshop, currentPhase]);
@@ -318,8 +297,6 @@ export function WorkshopDemoLanding() {
   
   // Show auto-recovery screen while handling invalid workshop
   if (workshopError) {
-    console.log('🔍 Workshop error present, checking for 404...');
-    
     const is404Error = (
       ('status' in workshopError && (workshopError as any).status === 404) ||
       ('response' in workshopError && (workshopError as any).response?.status === 404) ||
@@ -426,16 +403,7 @@ export function WorkshopDemoLanding() {
   
   // Simple navigation handler
   const handleNavigation = (requestedPhase: string) => {
-    console.log('🔥 Navigation requested:', { 
-      requestedPhase, 
-      userRole: user?.role,
-      currentPhase,
-      currentView
-    });
-    
     const view = getViewForPhase(user?.role, requestedPhase);
-    
-    console.log('🔥 Navigation result:', { requestedPhase, calculatedView: view });
     setCurrentView(view);
   };
   
@@ -550,14 +518,6 @@ export function WorkshopDemoLanding() {
         {/* Main Content */}
         <div className="flex-1 overflow-y-auto">
           {(() => {
-            console.log('🔍 Render Decision:', { 
-              currentView, 
-              userRole: user?.role,
-              isFacilitator,
-              currentPhase,
-              hasUser: !!user
-            });
-            
             // Normal rendering logic  
             if (currentView === 'loading' || !user?.role) {
               return (

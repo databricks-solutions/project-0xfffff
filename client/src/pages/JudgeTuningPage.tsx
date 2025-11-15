@@ -105,16 +105,13 @@ export function JudgeTuningPage() {
           const parsed = JSON.parse(storedData);
           // Only load if data is less than 1 hour old
           if (Date.now() - parsed.timestamp < 60 * 60 * 1000) {
-            console.log('🔄 Loading evaluations from localStorage:', parsed.evaluations.length, 'items');
             setEvaluations(parsed.evaluations);
             setMetrics(parsed.metrics);
             setHasEvaluated(true);
           } else {
-            console.log('🗑️ Clearing old localStorage data');
             localStorage.removeItem(storageKey);
           }
         } catch (error) {
-          console.error('❌ Failed to parse localStorage data:', error);
           localStorage.removeItem(storageKey);
         }
       }
@@ -146,19 +143,10 @@ export function JudgeTuningPage() {
         if (!databricksWorkspaceUrl) setDatabricksWorkspaceUrl(parsed.workspace_url || '');
         if (!databricksToken) setDatabricksToken(parsed.token || '');
       } catch (error) {
-        console.error('Failed to parse stored Databricks config:', error);
+        // Silent fail for config parsing
       }
     }
   }, [mlflowConfig, workshopId]);
-
-  // Debug evaluations state changes
-  useEffect(() => {
-    console.log('🔍 JudgeTuningPage: Evaluations state changed:', {
-      count: evaluations.length,
-      hasEvaluated,
-      metrics: metrics ? 'present' : 'null'
-    });
-  }, [evaluations, hasEvaluated, metrics]);
 
   // Reset pagination when traces change
   useEffect(() => {
@@ -183,30 +171,18 @@ export function JudgeTuningPage() {
       const [promptsData, rubricData, annotationsData, mlflowConfigData] = await Promise.all([
         WorkshopsService.getJudgePromptsWorkshopsWorkshopIdJudgePromptsGet(workshopId)
           .catch((err) => {
-            console.error('Failed to load judge prompts:', err);
             return []; // Return empty array on error
           }),
         WorkshopsService.getRubricWorkshopsWorkshopIdRubricGet(workshopId).catch((err) => {
-          console.error('Failed to load rubric:', err);
           return null;
         }),
         WorkshopsService.getAnnotationsWorkshopsWorkshopIdAnnotationsGet(workshopId).catch((err) => {
-          console.error('Failed to load annotations:', err);
           return [];
         }),
         WorkshopsService.getMlflowConfigWorkshopsWorkshopIdMlflowConfigGet(workshopId).catch((err) => {
-          console.error('Failed to load MLflow config:', err);
           return null;
         })
       ]);
-
-      console.log('JudgeTuningPage data loaded:', {
-        prompts: promptsData.length,
-        rubric: !!rubricData,
-        traces: traces?.length || 0, 
-        annotations: annotationsData.length,
-        mlflowConfig: !!mlflowConfigData
-      });
 
       setPrompts(promptsData);
       setRubric(rubricData);
@@ -219,17 +195,11 @@ export function JudgeTuningPage() {
         setCurrentPrompt(defaultPrompt);
         setOriginalPromptText(defaultPrompt); // Track original for new prompt
         
-        console.log('🚨 No prompts exist, setting up default prompt but NOT auto-creating');
         // Don't auto-create baseline - let user create it manually
         // This prevents the v2 issue where auto-creation makes first manual save become v2
       } else if (promptsData.length > 0) {
         // Select the latest prompt (first in array since ordered by version desc)
         const latestPrompt = promptsData[0];
-        console.log('🎯 Loading latest prompt:', { 
-          id: latestPrompt.id, 
-          version: latestPrompt.version,
-          hasMetrics: !!latestPrompt.performance_metrics 
-        });
         
         setSelectedPromptId(latestPrompt.id);
         setCurrentPrompt(latestPrompt.prompt_text);
@@ -250,8 +220,7 @@ export function JudgeTuningPage() {
       }
 
     } catch (err: any) {
-      console.error('Critical error loading judge tuning data:', err);
-      // Don't set error that blocks UI, just log it
+      // Don't set error that blocks UI, silent fail
     } finally {
       setIsLoading(false);
     }
@@ -343,13 +312,10 @@ The response partially meets the criteria because...`;
       // Set metrics from the prompt's performance data if available
       const prompt = prompts.find(p => p.id === promptId);
       if (prompt?.performance_metrics) {
-        console.log('🎯 Loading metrics from prompt:', prompt.performance_metrics);
         setMetrics(prompt.performance_metrics as JudgePerformanceMetrics);
-      } else {
-        console.log('🎯 No metrics found for prompt:', promptId);
       }
     } catch (err) {
-      console.error('Failed to load evaluations:', err);
+      // Silent fail for evaluation loading
     }
   };
 
@@ -374,9 +340,6 @@ The response partially meets the criteria because...`;
 
       // If we have current metrics, save them to the database
       if (metrics) {
-        console.log('🔄 Saving metrics to database for prompt:', newPrompt.id, 'in workshop:', workshopId);
-        console.log('📊 Metrics to save:', metrics);
-        
         try {
           const response = await fetch(`/workshops/${workshopId}/judge-prompts/${newPrompt.id}/metrics`, {
             method: 'PUT',
@@ -397,16 +360,13 @@ The response partially meets the criteria because...`;
           }
           
           const result = await response.json();
-          console.log('✅ Metrics saved to database:', result);
         } catch (metricsErr) {
-          console.error('❌ Failed to save metrics to database:', metricsErr);
           // Don't fail the whole save operation if metrics save fails
         }
       }
 
       // If we have evaluations in state, save them to the database
       if (evaluations && evaluations.length > 0) {
-        console.log('🔄 Saving evaluations to database for prompt:', newPrompt.id);
         try {
           // Save evaluations using the bulk endpoint
           const response = await fetch(`/workshops/${workshopId}/judge-evaluations/${newPrompt.id}`, {
@@ -424,14 +384,10 @@ The response partially meets the criteria because...`;
           
           if (!response.ok) {
             const errorText = await response.text();
-            console.error('❌ Failed to save evaluations:', errorText);
           } else {
             const result = await response.json();
-            console.log('✅ Evaluations saved:', result);
           }
-          console.log('✅ All evaluations saved to database');
         } catch (evalErr) {
-          console.error('❌ Failed to save evaluations:', evalErr);
           // Don't fail the whole save operation if evaluations save fails
         }
       }
@@ -469,12 +425,7 @@ The response partially meets the criteria because...`;
     setEvaluations([]);
 
     try {
-      console.log('🚀 Starting evaluation with model:', selectedModel);
-      console.log('📊 Traces to evaluate:', traces?.length || 0);
-      console.log('📝 Prompt:', currentPrompt.substring(0, 100) + '...');
-      
       if (selectedModel === 'demo') {
-        console.log('🎭 Using DEMO mode evaluation');
         // Use the existing demo evaluation endpoint
         const evaluationRequest = {
           prompt_text: currentPrompt,
@@ -483,13 +434,11 @@ The response partially meets the criteria because...`;
           trace_ids: undefined // Evaluate all traces
         };
 
-        console.log('📤 Sending demo evaluation request:', evaluationRequest);
         const evaluationResult = await WorkshopsService.evaluateJudgePromptDirectWorkshopsWorkshopIdEvaluateJudgeDirectPost(
           workshopId,
           evaluationRequest
         );
 
-        console.log('✅ Demo evaluation result:', evaluationResult);
         setMetrics(evaluationResult.metrics);
         setEvaluations(evaluationResult.evaluations);
       } else {
@@ -517,8 +466,6 @@ The response partially meets the criteria because...`;
         let totalAgreement = 0;
         let totalEvaluations = 0;
         
-        console.log(`Evaluating ${traces.length} traces with Databricks model...`);
-        
         for (const trace of traces) {
           try {
             // Create the specific prompt for this trace
@@ -539,21 +486,15 @@ The response partially meets the criteria because...`;
             });
 
             if (result.success) {
-              console.log(`Trace ${trace.id} evaluation successful:`, result.data);
-              
               // Extract the rating from the response
               const responseText = result.data?.choices?.[0]?.message?.content || 
                                   result.data?.response || 
                                   result.data?.text || 
                                   JSON.stringify(result.data);
               
-              console.log(`Raw response for trace ${trace.id}:`, responseText);
-              
               // Parse the rating (expecting format like "3\nReasoning...")
               const ratingMatch = responseText.match(/^(\d+)/);
               const judgeRating = ratingMatch ? parseInt(ratingMatch[1]) : null;
-              
-              console.log(`Parsed rating for trace ${trace.id}:`, judgeRating, 'from text:', responseText);
               
               if (judgeRating && judgeRating >= 1 && judgeRating <= 5) {
                 // Find human rating for this trace
@@ -583,16 +524,10 @@ The response partially meets the criteria because...`;
                   totalAgreement += agreement;
                   totalEvaluations++;
                 }
-                
-                console.log(`Trace ${trace.id}: Judge=${judgeRating}, Human=${humanRating}, Agreement=${humanRating ? Math.abs(judgeRating - humanRating) <= 1 : 'N/A'}`);
-              } else {
-                console.warn(`Invalid rating for trace ${trace.id}:`, responseText);
               }
-            } else {
-              console.error(`Failed to evaluate trace ${trace.id}:`, result.error);
             }
           } catch (error) {
-            console.error(`Error evaluating trace ${trace.id}:`, error);
+            // Silent fail for individual trace evaluation
           }
         }
         
@@ -610,14 +545,6 @@ The response partially meets the criteria because...`;
           confusion_matrix: [[0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0]]
         };
         
-        console.log(`🎯 Evaluation complete: ${evaluations.length} evaluations, accuracy=${(accuracy * 100).toFixed(1)}%`);
-        console.log('📋 Final evaluations array:', evaluations);
-        console.log('📊 Final metrics:', metrics);
-        
-        if (evaluations.length === 0) {
-          console.warn('⚠️ No evaluations were generated! This might indicate an issue with the evaluation process.');
-        }
-        
         setMetrics(metrics);
         setEvaluations(evaluations);
         
@@ -632,25 +559,7 @@ The response partially meets the criteria because...`;
         
         // Verify localStorage save worked
         const savedData = localStorage.getItem(storageKey);
-        if (savedData) {
-          const parsed = JSON.parse(savedData);
-          console.log('✅ localStorage save verified:', {
-            saved: parsed.evaluations?.length || 0,
-            expected: evaluations.length,
-            timestamp: new Date(parsed.timestamp).toLocaleTimeString()
-          });
-        } else {
-          console.error('❌ localStorage save failed - no data found after save');
-        }
-        
-        console.log('✅ Set evaluations state with', evaluations.length, 'items and saved to localStorage');
       }
-      
-      // Verify state was actually set
-      console.log('🔍 State verification after evaluation:');
-      console.log('  - evaluations.length:', evaluations.length);
-      console.log('  - metrics:', metrics);
-      console.log('  - hasEvaluated:', true);
       
       // Clear selected prompt since we didn't save one
       setSelectedPromptId(null);
@@ -675,12 +584,6 @@ The response partially meets the criteria because...`;
   const handleAdvanceToLogFeedback = async () => {
     if (!isFacilitator) return;
     
-    console.log('🚀 Advancing to Manage Workshop Data...', { 
-      workshopId, 
-      isFacilitator,
-      currentPhase: workshop?.current_phase 
-    });
-    
     try {
       // Call the Unity volume advance endpoint directly (keeping the same backend endpoint)
       const response = await fetch(`/workshops/${workshopId}/advance-to-unity-volume`, {
@@ -695,7 +598,6 @@ The response partially meets the criteria because...`;
       }
       
       const result = await response.json();
-      console.log('✅ Successfully advanced to Log Feedback phase:', result);
       
       // Add a small delay to ensure backend has processed the change
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -716,7 +618,6 @@ The response partially meets the criteria because...`;
       window.location.href = `/workshop/${workshopId}?phase=unity_volume`;
       
     } catch (error) {
-      console.error('❌ Failed to advance to Log Feedback phase:', error);
       // You might want to show an error message to the user here
     }
   };
@@ -915,14 +816,9 @@ The response partially meets the criteria because...`;
               <Select 
                 value={selectedPromptId || undefined}
                 onValueChange={(value) => {
-                  console.log('🔄 Dropdown selection changed to:', value);
                   setSelectedPromptId(value);
                   const prompt = prompts.find(p => p.id === value);
                   if (prompt) {
-                    console.log('🎯 Selected prompt:', { 
-                      version: prompt.version, 
-                      hasMetrics: !!prompt.performance_metrics 
-                    });
                     setCurrentPrompt(prompt.prompt_text);
                     setOriginalPromptText(prompt.prompt_text); // Track original for modification detection
                     // Sync UI model selection with saved prompt's model

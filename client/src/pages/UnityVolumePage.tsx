@@ -110,7 +110,7 @@ export function UnityVolumePage() {
       }, 2000);
 
     } catch (err: any) {
-      console.error('Error uploading to volume:', err);
+      
       setError(err.message || 'Failed to upload to volume');
       toast.error('Failed to upload to volume');
     } finally {
@@ -143,7 +143,7 @@ export function UnityVolumePage() {
       toast.success('Workshop database downloaded successfully!');
 
     } catch (err: any) {
-      console.error('Error downloading database:', err);
+      
       setError(err.message || 'Failed to download database');
       toast.error('Failed to download database');
     } finally {

@@ -34,7 +34,7 @@ export const ProductionLogin: React.FC = () => {
       // Set the user in context
       await setUser(response.user);
     } catch (error: any) {
-      console.error('Login failed:', error);
+      
       setError(error.response?.data?.detail || 'Login failed. Please check your credentials.');
     } finally {
       setIsLoading(false);

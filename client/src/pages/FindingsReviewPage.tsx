@@ -302,7 +302,7 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
                           }
                           
                           try {
-                            console.log('Starting discovery phase completion for workshop:', workshopId);
+                            
                             
                             // Check workshop state first
                             const workshopResponse = await fetch(`/workshops/${workshopId}`);
@@ -310,7 +310,7 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
                               throw new Error(`Failed to fetch workshop: ${workshopResponse.statusText}`);
                             }
                             const workshop = await workshopResponse.json();
-                            console.log('Current workshop state:', { current_phase: workshop.current_phase, completed_phases: workshop.completed_phases });
+                            
                             
                             if (workshop.current_phase !== 'discovery') {
                               throw new Error(`Cannot advance to rubric: workshop is in ${workshop.current_phase} phase, not discovery phase`);
@@ -320,7 +320,7 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
                             if (!allFindingsWithUsers || allFindingsWithUsers.length === 0) {
                               throw new Error('Cannot advance to rubric: No discovery findings submitted yet');
                             }
-                            console.log('Found', allFindingsWithUsers.length, 'discovery findings');
+                            
                             
                             // First, mark discovery phase as complete
                             const completeResponse = await fetch(`/workshops/${workshopId}/complete-phase/discovery`, {
@@ -330,14 +330,14 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
                               }
                             });
                             
-                            console.log('Complete phase response status:', completeResponse.status);
+                            
                             
                             if (!completeResponse.ok) {
                               const errorData = await completeResponse.json().catch(() => ({}));
                               throw new Error(`Failed to complete discovery phase: ${errorData.detail || completeResponse.statusText}`);
                             }
                             
-                            console.log('Discovery phase completed successfully, advancing to rubric...');
+                            
                             
                             // Then, advance to rubric phase
                             const advanceResponse = await fetch(`/workshops/${workshopId}/advance-to-rubric`, {
@@ -347,7 +347,7 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
                               }
                             });
                             
-                            console.log('Advance to rubric response status:', advanceResponse.status);
+                            
                             
                             if (!advanceResponse.ok) {
                               const errorData = await advanceResponse.json().catch(() => ({}));
@@ -365,7 +365,7 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
                               onBack(); // Go back to dashboard
                             }
                           } catch (error) {
-                            console.error('Failed to complete discovery phase:', error);
+                            
                             const errorMessage = error instanceof Error ? error.message : 'Failed to complete discovery phase. Please try again.';
                             toast.error(errorMessage);
                           }
