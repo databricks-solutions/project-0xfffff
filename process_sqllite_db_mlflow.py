@@ -149,9 +149,13 @@ def log_annotation_feedback(
             question_id_to_title = {}
             if rubric_questions:
                 for rubric_id, question_text in rubric_questions:
-                    # Parse the full rubric text which has questions separated by \n\n
-                    question_parts = question_text.split('\n\n')
+                    # Parse the full rubric text which has questions separated by the special delimiter
+                    QUESTION_DELIMITER = '|||QUESTION_SEPARATOR|||'
+                    question_parts = question_text.split(QUESTION_DELIMITER)
                     for index, part in enumerate(question_parts):
+                        part = part.strip()
+                        if not part:
+                            continue
                         question_id = f"{rubric_id}_{index}"
                         # Extract just the title (before the colon if present)
                         title = part.split(':')[0].strip() if ':' in part else part.strip()

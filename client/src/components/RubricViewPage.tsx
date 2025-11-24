@@ -16,32 +16,17 @@ import {
 } from 'lucide-react';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useRubric } from '@/hooks/useWorkshopApi';
-
-interface RubricQuestion {
-  id: string;
-  title: string;
-  description: string;
-}
+import { parseRubricQuestions, type RubricQuestion } from '@/utils/rubricUtils';
 
 // Convert API Rubric to local RubricQuestion format
 const convertApiRubricToQuestions = (rubric: any): RubricQuestion[] => {
   if (!rubric || !rubric.question) return [];
   
-  // Split the rubric question by double newlines to get individual questions
-  const questionParts = rubric.question.split('\n\n');
-  
-  return questionParts.map((questionText: string, index: number) => {
-    // Parse each question to extract title and description
-    const parts = questionText.split(':');
-    const title = parts[0]?.trim() || `Question ${index + 1}`;
-    const description = parts.slice(1).join(':').trim() || questionText;
-    
-    return {
-      id: `${rubric.id}_${index}`,
-      title,
-      description
-    };
-  });
+  return parseRubricQuestions(rubric.question).map((q, index) => ({
+    id: `${rubric.id}_${index}`,
+    title: q.title,
+    description: q.description
+  }));
 };
 
 export function RubricViewPage() {

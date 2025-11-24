@@ -40,30 +40,18 @@ import type { IRRResult } from '@/client';
 import { TraceViewer } from '@/components/TraceViewer';
 import { convertTraceToTraceData } from '@/utils/traceUtils';
 import { toast } from 'sonner';
+import { parseRubricQuestions as parseQuestions } from '@/utils/rubricUtils';
 
 // Parse rubric questions to get question IDs and titles
 const parseRubricQuestions = (rubric: any) => {
   if (!rubric || !rubric.question) return [];
   
-  // Split the rubric question by double newlines to get individual questions
-  const questionParts = rubric.question.split('\n\n');
-  
-  return questionParts.map((questionText: string, index: number) => {
-    // Parse each question to extract title and description
-    const parts = questionText.split(':');
-    const title = parts[0]?.trim() || `Question ${index + 1}`;
-    const description = parts.slice(1).join(':').trim() || questionText;
-    
-    // Create ID using the same format as AnnotationDemo: rubric.id_index
-    const id = `${rubric.id}_${index}`;
-    
-    return {
-      id,
-      title,
-      description,
-      index
-    };
-  });
+  return parseQuestions(rubric.question).map((q, index) => ({
+    id: `${rubric.id}_${index}`,
+    title: q.title,
+    description: q.description,
+    index
+  }));
 };
 
 // Helper function to calculate real per-trace agreement from annotations for a specific metric

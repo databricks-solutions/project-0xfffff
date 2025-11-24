@@ -231,6 +231,11 @@ async def evaluate_judge_prompt(request: dict, db: Session = Depends(get_db)) ->
     # Call the serving endpoint with judge-specific parameters using SDK (same as intake)
     result = service.call_serving_endpoint(endpoint_name=endpoint_name, prompt=prompt, temperature=temperature, max_tokens=max_tokens)
 
+    # Log evaluation result to console
+    
+    if result and 'choices' in result:
+      content = result['choices'][0]['message']['content']
+    
     return DatabricksResponse(success=True, data=result, endpoint_name=endpoint_name)
 
   except Exception as e:

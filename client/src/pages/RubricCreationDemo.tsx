@@ -39,30 +39,12 @@ import { useQueryClient } from '@tanstack/react-query';
 import { WorkshopsService } from '@/client';
 import type { Rubric, RubricCreate } from '@/client';
 import { toast } from 'sonner';
+import { parseRubricQuestions, formatRubricQuestions, QUESTION_DELIMITER, type RubricQuestion } from '@/utils/rubricUtils';
 
-interface RubricQuestion {
-  id: string;
-  title: string;
-  description: string;
-}
 
 // Convert API Rubric to local RubricQuestion format
 const convertApiRubricToQuestions = (rubric: Rubric): RubricQuestion[] => {
-  // Split the rubric question by double newlines to get individual questions
-  const questionParts = rubric.question.split('\n\n');
-  
-  return questionParts.map((questionText, index) => {
-    // Parse each question to extract title and description
-    const parts = questionText.split(':');
-    const title = parts[0]?.trim() || `Question ${index + 1}`;
-    const description = parts.slice(1).join(':').trim() || questionText;
-    
-    return {
-      id: `q_${index + 1}`, // Use the same format as the backend
-      title,
-      description
-    };
-  });
+  return parseRubricQuestions(rubric.question);
 };
 
 // Convert local RubricQuestion to API format
@@ -293,8 +275,9 @@ export function RubricCreationDemo() {
         const updatedQuestions = [...questions, newQuestionWithId];
         setQuestions(updatedQuestions);
         
-        // Combine all questions into a single rubric string
-        const combinedQuestionText = updatedQuestions.map(q => `${q.title}: ${q.description}`).join('\n\n');
+        // Combine all questions into a single rubric string using the utility
+        const combinedQuestionText = formatRubricQuestions(updatedQuestions);
+        
         const apiRubric = {
           question: combinedQuestionText,
           created_by: 'facilitator'
@@ -395,8 +378,9 @@ export function RubricCreationDemo() {
   const saveExistingRubric = async () => {
     if (questions.length > 0) {
       try {
-        // Combine all questions into a single rubric string
-        const combinedQuestionText = questions.map(q => `${q.title}: ${q.description}`).join('\n\n');
+        // Combine all questions into a single rubric string using the utility
+        const combinedQuestionText = formatRubricQuestions(questions);
+        
         const apiRubric = {
           question: combinedQuestionText,
           created_by: 'facilitator'
@@ -838,7 +822,7 @@ export function RubricCreationDemo() {
                       disabled={!newQuestion.title.trim() || !newQuestion.description.trim() || createRubric.isPending || updateRubric.isPending}
                     >
                       <Plus className="h-4 w-4" />
-                      {createRubric.isPending || updateRubric.isPending ? 'Saving...' : 'Add Question'}
+                      {createRubric.isPending || updateRubric.isPending ? 'Saving...' : 'Save'}
                     </Button>
                     <Button 
                       variant="outline" 

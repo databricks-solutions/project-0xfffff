@@ -61,7 +61,7 @@ export function JudgeTuningPage() {
   const [prompts, setPrompts] = useState<JudgePrompt[]>([]);
   const [currentPrompt, setCurrentPrompt] = useState<string>('');
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
-  const [selectedModel, setSelectedModel] = useState<string>('Claude 3.7 Sonnet');
+  const [selectedModel, setSelectedModel] = useState<string>('GPT-5.1');
   const [evaluations, setEvaluations] = useState<JudgeEvaluation[]>([]);
   const [metrics, setMetrics] = useState<JudgePerformanceMetrics | null>(null);
   const [rubric, setRubric] = useState<Rubric | null>(null);
@@ -462,18 +462,40 @@ The response partially meets the criteria because...`;
         localStorage.setItem(`databricks-config-${workshopId}`, JSON.stringify(databricksConfig));
 
         // Evaluate each trace individually using the Databricks endpoint
+        // Only evaluate traces that have human ratings
         const evaluations: JudgeEvaluation[] = [];
         let totalAgreement = 0;
         let totalEvaluations = 0;
         
-        for (const trace of traces) {
+        console.log('🎯 Starting judge evaluation...');
+        console.log(`📊 Total traces: ${traces?.length || 0}`);
+        console.log(`📝 Total annotations: ${annotations.length}`);
+        
+        for (const trace of traces || []) {
           try {
+            // Find human rating for this trace FIRST - skip if no human rating
+            const traceAnnotations = annotations.filter(a => a.trace_id === trace.id);
+            
+            if (traceAnnotations.length === 0) {
+              console.log(`⏭️  Skipping trace ${trace.id} - no human ratings`);
+              continue; // Skip traces without human ratings
+            }
+            
+            // Calculate mode (most common rating) as ground truth
+            const humanRating = traceAnnotations
+              .map(a => a.rating)
+              .sort((a, b) => 
+                traceAnnotations.filter(v => v.rating === b).length - 
+                traceAnnotations.filter(v => v.rating === a).length
+              )[0];
+            
+            console.log(`🔍 Evaluating trace ${trace.id} with human rating: ${humanRating}`);
+            
             // Create the specific prompt for this trace
             const tracePrompt = currentPrompt
               .replace('{input}', trace.input || '')
               .replace('{output}', trace.output || '');
             
-
             
             // Call the Databricks judge evaluation endpoint for this trace
             const result = await judgeEvaluate.mutateAsync({
@@ -482,7 +504,7 @@ The response partially meets the criteria because...`;
               config: databricksConfig,
               workshop_id: workshopId,
               temperature: 0.0,
-              maxTokens: 10
+              maxTokens: 1000  // Increased from 10 to 100 to allow model to respond
             });
 
             if (result.success) {
@@ -492,17 +514,14 @@ The response partially meets the criteria because...`;
                                   result.data?.text || 
                                   JSON.stringify(result.data);
               
+              console.log(`📥 Model response: ${responseText}`);
+              
               // Parse the rating (expecting format like "3\nReasoning...")
               const ratingMatch = responseText.match(/^(\d+)/);
               const judgeRating = ratingMatch ? parseInt(ratingMatch[1]) : null;
               
               if (judgeRating && judgeRating >= 1 && judgeRating <= 5) {
-                // Find human rating for this trace
-                const traceAnnotations = annotations.filter(a => a.trace_id === trace.id);
-                const humanRating = traceAnnotations.length > 0 ? 
-                  traceAnnotations.map(a => a.rating)
-                    .sort((a, b) => traceAnnotations.filter(v => v.rating === b).length - traceAnnotations.filter(v => v.rating === a).length)[0]
-                  : null;
+                console.log(`✅ Parsed rating: ${judgeRating} (human: ${humanRating})`);
                 
                 // Create evaluation object
                 const evaluation: JudgeEvaluation = {
@@ -511,25 +530,30 @@ The response partially meets the criteria because...`;
                   prompt_id: 'temp-prompt',
                   trace_id: trace.id,
                   predicted_rating: judgeRating,
-                  human_rating: humanRating || 0,
+                  human_rating: humanRating,
                   confidence: 1.0,
                   reasoning: responseText
                 };
                 
                 evaluations.push(evaluation);
                 
-                // Calculate agreement if we have human rating
-                if (humanRating) {
-                  const agreement = Math.abs(judgeRating - humanRating) <= 1 ? 1 : 0;
-                  totalAgreement += agreement;
-                  totalEvaluations++;
-                }
+                // Calculate agreement
+                const agreement = Math.abs(judgeRating - humanRating) <= 1 ? 1 : 0;
+                totalAgreement += agreement;
+                totalEvaluations++;
+              } else {
+                console.warn(`⚠️  Could not parse rating from response: ${responseText}`);
               }
+            } else {
+              console.error(`❌ Evaluation failed for trace ${trace.id}:`, result.error);
             }
-          } catch (error) {
-            // Silent fail for individual trace evaluation
+          } catch (error: any) {
+            console.error(`❌ Error evaluating trace ${trace.id}:`, error.message || error);
           }
         }
+        
+        console.log(`✨ Evaluation complete: ${totalEvaluations} traces evaluated`);
+        console.log(`📊 Agreement rate: ${totalEvaluations > 0 ? (totalAgreement / totalEvaluations * 100).toFixed(1) : 0}%`);
         
         // Calculate metrics
         const accuracy = totalEvaluations > 0 ? totalAgreement / totalEvaluations : 0;

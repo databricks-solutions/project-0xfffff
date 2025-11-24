@@ -30,6 +30,8 @@ import { useUser, useRoleCheck } from '@/context/UserContext';
 import { useTraces, useRubric, useUserAnnotations, useSubmitAnnotation, useMLflowConfig, refetchAllWorkshopQueries } from '@/hooks/useWorkshopApi';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Trace, Rubric, Annotation } from '@/client';
+import { parseRubricQuestions as parseQuestions } from '@/utils/rubricUtils';
+import { toast } from 'sonner';
 
 // Convert API trace to TraceData format
 const convertTraceToTraceData = (trace: Trace): TraceData => ({
@@ -47,21 +49,11 @@ const convertTraceToTraceData = (trace: Trace): TraceData => ({
 const parseRubricQuestions = (rubric: Rubric) => {
   if (!rubric || !rubric.question) return [];
   
-  // Split the rubric question by double newlines to get individual questions
-  const questionParts = rubric.question.split('\n\n');
-  
-  return questionParts.map((questionText, index) => {
-    // Parse each question to extract title and description
-    const parts = questionText.split(':');
-    const title = parts[0]?.trim() || `Question ${index + 1}`;
-    const description = parts.slice(1).join(':').trim() || questionText;
-    
-    return {
-      id: `${rubric.id}_${index}`,
-      title,
-      description
-    };
-  });
+  return parseQuestions(rubric.question).map((q, index) => ({
+    id: `${rubric.id}_${index}`,
+    title: q.title,
+    description: q.description
+  }));
 };
 
 interface Rating {
@@ -84,6 +76,10 @@ export function AnnotationDemo() {
   const [hasNavigatedManually, setHasNavigatedManually] = useState(false);
   const [showTableView, setShowTableView] = useState(false);
   const previousTraceId = useRef<string | null>(null);
+  
+  // Track original annotation values to detect changes
+  const [originalRatings, setOriginalRatings] = useState<Record<string, number>>({});
+  const [originalComment, setOriginalComment] = useState<string>('');
   
   // Get current user and permissions
   const { user } = useUser();
@@ -124,6 +120,45 @@ export function AnnotationDemo() {
   const currentTrace = traceData[currentTraceIndex];
   const rubricQuestions = rubric ? parseRubricQuestions(rubric) : [];
 
+  // Helper function to check if annotation values have changed
+  const hasAnnotationChanged = () => {
+    // Check if ratings changed
+    const ratingKeys = Object.keys(currentRatings);
+    const originalRatingKeys = Object.keys(originalRatings);
+    
+    // If originalRatings is empty, this might be a newly created annotation
+    // being navigated away from, or we haven't loaded the original yet
+    // In this case, consider it as having changes if currentRatings exist
+    if (originalRatingKeys.length === 0 && ratingKeys.length > 0) {
+      // Check if this is actually a submitted annotation
+      // If it's submitted and originalRatings is empty, it means we haven't
+      // loaded the original values yet, so we should NOT consider it changed
+      if (submittedAnnotations.has(currentTrace?.id || '')) {
+        return false; // Don't save if it's already submitted and we haven't loaded original
+      }
+      return true; // New annotation, has changes
+    }
+    
+    if (ratingKeys.length !== originalRatingKeys.length) {
+      return true;
+    }
+    
+    for (const key of ratingKeys) {
+      if (currentRatings[key] !== originalRatings[key]) {
+        return true;
+      }
+    }
+    
+    // Check if comment changed
+    const currentCommentTrimmed = comment.trim();
+    const originalCommentTrimmed = originalComment.trim();
+    if (currentCommentTrimmed !== originalCommentTrimmed) {
+      return true;
+    }
+    
+    return false;
+  };
+
 
 
 
@@ -149,6 +184,8 @@ export function AnnotationDemo() {
       // Reset form for each trace
       setCurrentRatings({});
       setComment('');
+      setOriginalRatings({});
+      setOriginalComment('');
       previousTraceId.current = currentTrace.id;
       
       // Check if this trace already has an annotation from existing data
@@ -161,17 +198,25 @@ export function AnnotationDemo() {
         
         // Load existing annotation data into the form
         // Use the new 'ratings' field if available (multiple questions), otherwise fall back to legacy 'rating' field
+        let loadedRatings = {};
         if (existingAnnotation.ratings && Object.keys(existingAnnotation.ratings).length > 0) {
           // New format: multiple ratings
           
-          setCurrentRatings(existingAnnotation.ratings);
+          loadedRatings = existingAnnotation.ratings;
         } else {
           // Legacy format: single rating - map it to the first question
           const firstQuestionId = rubricQuestions.length > 0 ? rubricQuestions[0].id : 'accuracy';
           
-          setCurrentRatings({ [firstQuestionId]: existingAnnotation.rating });
+          loadedRatings = { [firstQuestionId]: existingAnnotation.rating };
         }
-        setComment(existingAnnotation.comment || '');
+        const loadedComment = existingAnnotation.comment || '';
+        
+        setCurrentRatings(loadedRatings);
+        setComment(loadedComment);
+        
+        // Store original values for comparison
+        setOriginalRatings(loadedRatings);
+        setOriginalComment(loadedComment);
         
         // Mark it as submitted
         setSubmittedAnnotations(prev => {
@@ -208,17 +253,25 @@ export function AnnotationDemo() {
         
         
         // Use the new 'ratings' field if available (multiple questions), otherwise fall back to legacy 'rating' field
+        let loadedRatings = {};
         if (currentTraceAnnotation.ratings && Object.keys(currentTraceAnnotation.ratings).length > 0) {
           // New format: multiple ratings
           
-          setCurrentRatings(currentTraceAnnotation.ratings);
+          loadedRatings = currentTraceAnnotation.ratings;
         } else {
           // Legacy format: single rating - map it to the first question
           const firstQuestionId = rubricQuestions.length > 0 ? rubricQuestions[0].id : 'accuracy';
           
-          setCurrentRatings({ [firstQuestionId]: currentTraceAnnotation.rating });
+          loadedRatings = { [firstQuestionId]: currentTraceAnnotation.rating };
         }
-        setComment(currentTraceAnnotation.comment || '');
+        const loadedComment = currentTraceAnnotation.comment || '';
+        
+        setCurrentRatings(loadedRatings);
+        setComment(loadedComment);
+        
+        // Store original values for comparison
+        setOriginalRatings(loadedRatings);
+        setOriginalComment(loadedComment);
       }
       
       // Find first incomplete trace
@@ -255,13 +308,8 @@ export function AnnotationDemo() {
       
       await submitAnnotation.mutateAsync(annotationData);
       
-      // Mark as submitted and reset form
+      // Mark as submitted
       setSubmittedAnnotations(prev => new Set([...prev, currentTrace.id]));
-      
-      // Reset form state for next annotation
-      setCurrentRatings({});
-      setComment('');
-      
     } catch (error) {
       
     }
@@ -279,25 +327,39 @@ export function AnnotationDemo() {
       return;
     }
     
-    // Auto-submit annotation if not already submitted and rating is provided
-    if (!submittedAnnotations.has(currentTrace.id) && Object.keys(currentRatings).length > 0) {
+    // Auto-submit annotation if rating is provided
+    if (Object.keys(currentRatings).length > 0) {
       try {
+        const isExistingAnnotation = submittedAnnotations.has(currentTrace.id);
+        const hasChanges = hasAnnotationChanged();
         
-        // Submit all ratings for multiple questions
-        // Use the first rating as the legacy 'rating' field for backward compatibility
-        const firstRating = Object.values(currentRatings)[0];
-        const annotationData = {
-          trace_id: currentTrace.id,
-          user_id: currentUserId,
-          rating: firstRating,  // Legacy field (backward compatibility)
-          ratings: currentRatings,  // New field: all ratings for all questions
-          comment: comment.trim() || null
-        };
-        
-        await submitAnnotation.mutateAsync(annotationData);
-        
-        setSubmittedAnnotations(prev => new Set([...prev, currentTrace.id]));
+        // Only save if it's new OR if it has changes
+        if (!isExistingAnnotation || hasChanges) {
+          // Submit all ratings for multiple questions
+          // Use the first rating as the legacy 'rating' field for backward compatibility
+          const firstRating = Object.values(currentRatings)[0];
+          const annotationData = {
+            trace_id: currentTrace.id,
+            user_id: currentUserId,
+            rating: firstRating,  // Legacy field (backward compatibility)
+            ratings: currentRatings,  // New field: all ratings for all questions
+            comment: comment.trim() || null
+          };
+          
+          await submitAnnotation.mutateAsync(annotationData);
+          
+          setSubmittedAnnotations(prev => new Set([...prev, currentTrace.id]));
+          
+          // Show appropriate success message
+          if (isExistingAnnotation && hasChanges) {
+            toast.success('Annotation updated!');
+          } else if (!isExistingAnnotation) {
+            toast.success('Annotation saved!');
+          }
+        }
+        // If no changes, don't show any toast
       } catch (error) {
+        toast.error('Failed to save annotation. Please try again.');
         return; // Don't navigate if submission failed
       }
     }
@@ -319,23 +381,36 @@ export function AnnotationDemo() {
     if (!currentTrace) {
       return;
     }
-    // Auto-submit annotation if not already submitted and rating is provided
-    if (!submittedAnnotations.has(currentTrace.id) && Object.keys(currentRatings).length > 0) {
+    // Auto-submit annotation if rating is provided
+    if (Object.keys(currentRatings).length > 0) {
       try {
+        const isExistingAnnotation = submittedAnnotations.has(currentTrace.id);
+        const hasChanges = hasAnnotationChanged();
         
-        // Submit all ratings for multiple questions
-        const firstRating = Object.values(currentRatings)[0];
-        await submitAnnotation.mutateAsync({
-          trace_id: currentTrace.id,
-          user_id: currentUserId,
-          rating: firstRating,  // Legacy field (backward compatibility)
-          ratings: currentRatings,  // New field: all ratings for all questions
-          comment: comment.trim() || null
-        });
-        
-        setSubmittedAnnotations(prev => new Set([...prev, currentTrace.id]));
+        // Only save if it's new OR if it has changes
+        if (!isExistingAnnotation || hasChanges) {
+          // Submit all ratings for multiple questions
+          const firstRating = Object.values(currentRatings)[0];
+          await submitAnnotation.mutateAsync({
+            trace_id: currentTrace.id,
+            user_id: currentUserId,
+            rating: firstRating,  // Legacy field (backward compatibility)
+            ratings: currentRatings,  // New field: all ratings for all questions
+            comment: comment.trim() || null
+          });
+          
+          setSubmittedAnnotations(prev => new Set([...prev, currentTrace.id]));
+          
+          // Show appropriate success message
+          if (isExistingAnnotation && hasChanges) {
+            toast.success('Annotation updated!');
+          } else if (!isExistingAnnotation) {
+            toast.success('Annotation saved!');
+          }
+        }
+        // If no changes, don't show any toast
       } catch (error) {
-        
+        toast.error('Failed to save annotation. Please try again.');
         return; // Don't navigate if submission failed
       }
     }
@@ -353,10 +428,9 @@ export function AnnotationDemo() {
   const completedCount = submittedAnnotations.size;
   const hasRated = Object.keys(currentRatings).length > 0;
   
-  // Debug Next button state (only on change)
-  const isNextDisabled = !canAnnotate || (
-    !submittedAnnotations.has(currentTrace?.id || '') && Object.keys(currentRatings).length === 0
-  );
+  // Next button should only be disabled if user hasn't provided any ratings
+  // Allow navigation even if already submitted (to enable editing)
+  const isNextDisabled = !canAnnotate || Object.keys(currentRatings).length === 0;
   
   if (tracesLoading || rubricLoading) {
     return (
@@ -586,18 +660,22 @@ export function AnnotationDemo() {
                 onChange={(e) => {
                   setComment(e.target.value);
                 }}
-                className="w-full min-h-[80px] p-2 border rounded"
+                className="w-full min-h-[80px] p-2 border rounded whitespace-pre-wrap"
                 disabled={!canAnnotate}
+                style={{ whiteSpace: 'pre-wrap' }}
               />
             </div>
 
             {/* Status indicator */}
             {submittedAnnotations.has(currentTrace.id) && (
-              <div className="flex justify-end">
-                <Badge className="bg-green-500 text-white">
-                  <CheckCircle className="h-3 w-3 mr-1" />
-                  Annotation Submitted
-                </Badge>
+              <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-lg p-3">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                  <span className="text-sm text-green-800 font-medium">Annotation Saved</span>
+                </div>
+                <span className="text-xs text-green-700">
+                  Edit and click Next/Previous to save changes
+                </span>
               </div>
             )}
           </CardContent>
@@ -616,7 +694,6 @@ export function AnnotationDemo() {
                 <ChevronLeft className="h-4 w-4" />
                 Previous
               </Button>
-              
               
               <Button
                 onClick={nextTrace}

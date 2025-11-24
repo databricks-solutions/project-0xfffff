@@ -304,16 +304,17 @@ class DatabaseService:
     return [self._trace_from_db(db_trace) for db_trace in db_traces]
 
   def get_active_discovery_traces(self, workshop_id: str, user_id: str) -> List[Trace]:
-    """Get only the active discovery traces for a workshop in the order they were added.
+    """Get only the active discovery traces for a workshop in user-specific randomized order.
 
-    All users see the same order of traces - the order they were added to discovery.
+    Each user sees the same set of traces but in a different randomized order.
+    The order is deterministic per user (based on user_id seed).
 
     Args:
         workshop_id: The workshop ID
-        user_id: The user ID (required for API compatibility)
+        user_id: The user ID (required for personalized trace ordering)
 
     Returns:
-        List of traces in the order they were added to active_discovery_trace_ids
+        List of traces in user-specific randomized order
 
     Raises:
         ValueError: If user_id is not provided
@@ -332,9 +333,30 @@ class DatabaseService:
 
     active_trace_ids = workshop.active_discovery_trace_ids
 
-    # IMPORTANT: Preserve the order from active_discovery_trace_ids
-    # This maintains chronological order and order of additions
-    ordered_ids = active_trace_ids  # Use the list as-is, don't sort
+    # Get or create user-specific trace order
+    user_order = self.get_user_trace_order(workshop_id, user_id)
+    
+    if not user_order:
+      # Create new user trace order with randomized discovery traces
+      user_order = self.create_user_trace_order(workshop_id, user_id)
+      # Generate randomized order for this user
+      user_order.discovery_traces = self._generate_randomized_trace_order(active_trace_ids, user_id)
+      self.update_user_trace_order(user_order)
+    elif not user_order.discovery_traces or set(user_order.discovery_traces) != set(active_trace_ids):
+      # Update if trace set has changed (e.g., new traces added)
+      # Preserve existing order for traces already seen, add new ones randomly
+      existing_traces = [tid for tid in user_order.discovery_traces if tid in active_trace_ids]
+      new_traces = [tid for tid in active_trace_ids if tid not in user_order.discovery_traces]
+      
+      # Randomize only the new traces
+      randomized_new_traces = self._generate_randomized_trace_order(new_traces, user_id)
+      
+      # Combine: existing traces first (in their original order), then new randomized traces
+      user_order.discovery_traces = existing_traces + randomized_new_traces
+      self.update_user_trace_order(user_order)
+
+    # Use the user's personalized trace order
+    ordered_ids = user_order.discovery_traces
 
     # Optimized trace fetching - single query with IN clause
     if not ordered_ids:
@@ -342,7 +364,7 @@ class DatabaseService:
 
     db_traces = self.db.query(TraceDB).filter(TraceDB.id.in_(ordered_ids)).all()
 
-    # Create ordered result efficiently - preserve the order from ordered_ids
+    # Create ordered result efficiently - preserve the user-specific order
     trace_map = {t.id: t for t in db_traces}
     result = []
     for tid in ordered_ids:
@@ -356,17 +378,54 @@ class DatabaseService:
 
     return result
 
-  def get_active_annotation_traces(self, workshop_id: str, user_id: str) -> List[Trace]:
-    """Get only the active annotation traces for a workshop in the order they were added.
+  def _generate_randomized_trace_order(self, trace_ids: List[str], user_id: str) -> List[str]:
+    """Generate a randomized order of trace IDs for a specific user.
 
-    All users see the same order of traces - the order they were added to annotation.
+    Uses the user_id combined with the sorted trace IDs as a seed to ensure:
+    1. Consistent randomization per user for the same set of traces
+    2. Different randomization when the trace set changes
+
+    Args:
+        trace_ids: List of trace IDs to randomize
+        user_id: User ID to use as random seed
+
+    Returns:
+        Randomized list of trace IDs
+    """
+    import random
+    import hashlib
+
+    if not trace_ids:
+      return []
+
+    # Create a deterministic seed from user_id + sorted trace IDs
+    # This ensures that the same user sees the same order for the same set of traces,
+    # but different traces (e.g., newly added ones) will have different randomization
+    sorted_trace_ids = sorted(trace_ids)
+    seed_string = f"{user_id}::{','.join(sorted_trace_ids)}"
+    seed = int(hashlib.md5(seed_string.encode()).hexdigest(), 16) % (2**31)
+    
+    # Create a new random instance with the user-specific seed
+    rng = random.Random(seed)
+    
+    # Create a copy and shuffle it
+    randomized_ids = trace_ids.copy()
+    rng.shuffle(randomized_ids)
+    
+    return randomized_ids
+
+  def get_active_annotation_traces(self, workshop_id: str, user_id: str) -> List[Trace]:
+    """Get only the active annotation traces for a workshop in user-specific randomized order.
+
+    Each user sees the same set of traces but in a different randomized order.
+    The order is deterministic per user (based on user_id seed).
 
     Args:
         workshop_id: The workshop ID
-        user_id: The user ID (required for API compatibility)
+        user_id: The user ID (required for personalized trace ordering)
 
     Returns:
-        List of traces in the order they were added to active_annotation_trace_ids
+        List of traces in user-specific randomized order
 
     Raises:
         ValueError: If user_id is not provided
@@ -384,9 +443,30 @@ class DatabaseService:
 
     active_trace_ids = workshop.active_annotation_trace_ids
 
-    # IMPORTANT: Preserve the order from active_annotation_trace_ids
-    # This maintains chronological order and order of additions
-    ordered_ids = active_trace_ids  # Use the list as-is, don't sort
+    # Get or create user-specific trace order
+    user_order = self.get_user_trace_order(workshop_id, user_id)
+    
+    if not user_order:
+      # Create new user trace order with randomized annotation traces
+      user_order = self.create_user_trace_order(workshop_id, user_id)
+      # Generate randomized order for this user
+      user_order.annotation_traces = self._generate_randomized_trace_order(active_trace_ids, user_id)
+      self.update_user_trace_order(user_order)
+    elif not user_order.annotation_traces or set(user_order.annotation_traces) != set(active_trace_ids):
+      # Update if trace set has changed (e.g., new traces added)
+      # Preserve existing order for traces already seen, add new ones randomly
+      existing_traces = [tid for tid in user_order.annotation_traces if tid in active_trace_ids]
+      new_traces = [tid for tid in active_trace_ids if tid not in user_order.annotation_traces]
+      
+      # Randomize only the new traces
+      randomized_new_traces = self._generate_randomized_trace_order(new_traces, user_id)
+      
+      # Combine: existing traces first (in their original order), then new randomized traces
+      user_order.annotation_traces = existing_traces + randomized_new_traces
+      self.update_user_trace_order(user_order)
+
+    # Use the user's personalized trace order
+    ordered_ids = user_order.annotation_traces
 
     # Optimized trace fetching - single query with IN clause
     if not ordered_ids:
@@ -394,7 +474,7 @@ class DatabaseService:
 
     db_traces = self.db.query(TraceDB).filter(TraceDB.id.in_(ordered_ids)).all()
 
-    # Create ordered result efficiently - preserve the order from ordered_ids
+    # Create ordered result efficiently - preserve the user-specific order
     trace_map = {t.id: t for t in db_traces}
     result = []
     for tid in ordered_ids:
@@ -609,9 +689,16 @@ class DatabaseService:
     if not question_text:
       return questions
 
-    # Split by double newlines to get individual questions
-    question_parts = question_text.split('\n\n')
+    # Use a special delimiter to separate questions (supports newlines within descriptions)
+    QUESTION_DELIMITER = '|||QUESTION_SEPARATOR|||'
+    question_parts = question_text.split(QUESTION_DELIMITER)
+    
     for i, part in enumerate(question_parts):
+      part = part.strip()
+      if not part:
+        continue
+        
+      # Split only at the first colon to separate title from description
       if ':' in part:
         title, description = part.split(':', 1)
         questions.append({'id': f'q_{i + 1}', 'title': title.strip(), 'description': description.strip()})
@@ -623,13 +710,14 @@ class DatabaseService:
     if not questions:
       return ''
 
+    QUESTION_DELIMITER = '|||QUESTION_SEPARATOR|||'
     question_parts = []
     for i, question in enumerate(questions):
       # Update the ID to be sequential
       question['id'] = f'q_{i + 1}'
       question_parts.append(f'{question["title"]}: {question["description"]}')
 
-    return '\n\n'.join(question_parts)
+    return QUESTION_DELIMITER.join(question_parts)
 
   def get_rubric(self, workshop_id: str) -> Optional[Rubric]:
     """Get the rubric for a workshop."""

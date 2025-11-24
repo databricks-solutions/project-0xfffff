@@ -24,6 +24,7 @@ import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useUser } from '@/context/UserContext';
 import { useTraces, useRubric, useUserAnnotations } from '@/hooks/useWorkshopApi';
 import type { Trace, Annotation } from '@/client';
+import { parseRubricQuestions as parseQuestions } from '@/utils/rubricUtils';
 
 // Convert API trace to TraceData format
 const convertTraceToTraceData = (trace: Trace): TraceData => ({
@@ -41,21 +42,11 @@ const convertTraceToTraceData = (trace: Trace): TraceData => ({
 const parseRubricQuestions = (rubric: any) => {
   if (!rubric || !rubric.question) return [];
   
-  // Split the rubric question by double newlines to get individual questions
-  const questionParts = rubric.question.split('\n\n');
-  
-  return questionParts.map((questionText: string, index: number) => {
-    // Parse each question to extract title and description
-    const parts = questionText.split(':');
-    const title = parts[0]?.trim() || `Question ${index + 1}`;
-    const description = parts.slice(1).join(':').trim() || questionText;
-    
-    return {
-      id: `${rubric.id}_${index}`,
-      title,
-      description
-    };
-  });
+  return parseQuestions(rubric.question).map((q, index) => ({
+    id: `${rubric.id}_${index}`,
+    title: q.title,
+    description: q.description
+  }));
 };
 
 interface AnnotationReviewPageProps {

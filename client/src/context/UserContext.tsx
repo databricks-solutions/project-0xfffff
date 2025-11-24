@@ -82,6 +82,7 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children, onWorkshop
               }
             }
             
+            // Load permissions and wait for them before setting isLoading to false
             await loadPermissions(validatedUser.id);
           } catch (validationError: any) {
             const is404 = validationError.status === 404 || validationError.message?.includes('404');
@@ -92,13 +93,30 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children, onWorkshop
             } else {
               // Other errors - still try to use cached user
               setUser(userData);
-              await loadPermissions(userData.id);
+              // Try to load permissions but don't fail if it doesn't work
+              try {
+                await loadPermissions(userData.id);
+              } catch (permError) {
+                console.error('Failed to load permissions on cached user:', permError);
+                // Set default minimal permissions to allow login
+                setPermissions({
+                  can_annotate: true,
+                  can_view_rubric: true,
+                  can_create_rubric: false,
+                  can_manage_workshop: false,
+                  can_assign_annotations: false,
+                });
+              }
             }
           }
         } catch (e) {
+          console.error('Error initializing user:', e);
           localStorage.removeItem('workshop_user');
+          setUser(null);
+          setPermissions(null);
         }
       }
+      // Always set isLoading to false at the end, even if no saved user
       setIsLoading(false);
     };
     
@@ -118,7 +136,9 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children, onWorkshop
     try {
       const permissions = await UsersService.getUserPermissionsUsersUserIdPermissionsGet(userId);
       setPermissions(permissions);
+      setError(null); // Clear any previous errors on successful load
     } catch (error: any) {
+      console.error('Error loading permissions:', error);
       // Auto-recovery: If user not found (404), clear stale user data
       const is404 = error.status === 404 || error.message?.includes('404') || error.body?.detail?.includes('not found');
       if (is404) {
@@ -127,7 +147,16 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children, onWorkshop
         setPermissions(null);
         setError('Your session has expired. Please log in again.');
       } else {
-        setError(`Failed to load user permissions: ${error.status || 'Unknown error'}`);
+        // For other errors, set default permissions to allow basic access
+        console.warn('Failed to load permissions, using defaults');
+        setPermissions({
+          can_annotate: true,
+          can_view_rubric: true,
+          can_create_rubric: false,
+          can_manage_workshop: false,
+          can_assign_annotations: false,
+        });
+        setError(null); // Don't show error to user for non-404 permission errors
       }
     }
   };
@@ -145,26 +174,35 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children, onWorkshop
   const setUserWithPermissions = async (newUser: User | null) => {
     setUser(newUser);
     if (newUser) {
-      await loadPermissions(newUser.id);
-      
-      // Invalidate all queries to refresh data after login
-      queryClient.invalidateQueries();
-      
-      // Store workshop ID if present
-      if (newUser.workshop_id) {
-        const currentWorkshopId = localStorage.getItem('workshop_id');
-        if (currentWorkshopId !== newUser.workshop_id) {
-          localStorage.setItem('workshop_id', newUser.workshop_id);
-          onWorkshopIdRestored?.(newUser.workshop_id);
+      try {
+        await loadPermissions(newUser.id);
+        
+        // Invalidate all queries to refresh data after login
+        queryClient.invalidateQueries();
+        
+        // Store workshop ID if present
+        if (newUser.workshop_id) {
+          const currentWorkshopId = localStorage.getItem('workshop_id');
+          if (currentWorkshopId !== newUser.workshop_id) {
+            localStorage.setItem('workshop_id', newUser.workshop_id);
+            onWorkshopIdRestored?.(newUser.workshop_id);
+          }
         }
+      } catch (error) {
+        console.error('Error setting user with permissions:', error);
+        // Don't fail the login, permissions will have defaults
       }
     } else {
       setPermissions(null);
+      setError(null);
     }
   };
 
   const login = async (email: string, password: string) => {
     try {
+      setError(null); // Clear any previous errors before attempting login
+      setIsLoading(true); // Set loading during login
+      
       const response = await fetch('/users/auth/login', {
         method: 'POST',
         headers: {
@@ -183,8 +221,12 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children, onWorkshop
       // Set the user with permissions
       await setUserWithPermissions(data.user);
       
+      setError(null); // Clear errors on successful login
     } catch (error: any) {
+      setError(error.message || 'Login failed');
       throw new Error(error.message || 'Login failed');
+    } finally {
+      setIsLoading(false); // Always set loading to false after login attempt
     }
   };
 

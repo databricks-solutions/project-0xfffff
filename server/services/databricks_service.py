@@ -3,6 +3,7 @@
 This service handles calls to Databricks model serving endpoints using the OpenAI client.
 """
 
+import hashlib
 import logging
 import os
 from typing import Any, Dict, List, Optional
@@ -12,6 +13,15 @@ from fastapi import HTTPException
 from openai import OpenAI
 
 logger = logging.getLogger(__name__)
+
+# Global client cache to reuse OpenAI clients across requests
+# Key: (workspace_url, token_hash) -> OpenAI client
+_client_cache = {}
+
+
+def _get_token_hash(token: str) -> str:
+  """Get a hash of the token for cache key (don't store actual token in cache key)."""
+  return hashlib.sha256(token.encode()).hexdigest()[:16]
 
 
 class DatabricksService:
@@ -68,13 +78,23 @@ class DatabricksService:
       raise ValueError('Databricks workspace URL and token are required')
 
     # Initialize the OpenAI client for calling serving endpoints
+    # Use cached client if available to avoid reinitializing for every request
     try:
-      print(f'Initializing OpenAI client for Databricks workspace: {self.workspace_url}')
-
-      # Create OpenAI client configured for Databricks serving endpoints
-      self.client = OpenAI(api_key=self.token, base_url=f'{self.workspace_url}/serving-endpoints')
-
-      logger.info(f'Successfully initialized OpenAI client for Databricks workspace: {self.workspace_url}')
+      cache_key = (self.workspace_url, _get_token_hash(self.token))
+      
+      if cache_key in _client_cache:
+        self.client = _client_cache[cache_key]
+        logger.info(f'✅ Reusing cached OpenAI client for Databricks workspace: {self.workspace_url}')
+      else:
+        print(f'Initializing OpenAI client for Databricks workspace: {self.workspace_url}')
+        
+        # Create OpenAI client configured for Databricks serving endpoints
+        self.client = OpenAI(api_key=self.token, base_url=f'{self.workspace_url}/serving-endpoints')
+        
+        # Cache the client for future requests
+        _client_cache[cache_key] = self.client
+        
+        logger.info(f'Successfully initialized and cached OpenAI client for Databricks workspace: {self.workspace_url}')
     except Exception as e:
       logger.error(f'Failed to initialize OpenAI client: {e}')
       raise HTTPException(status_code=500, detail=f'Failed to initialize OpenAI client: {str(e)}')
@@ -168,10 +188,10 @@ class DatabricksService:
       # In a real implementation, you might want to make direct HTTP calls to Databricks API
       endpoint_list = [
         {
-          'name': 'databricks-claude-3-7-sonnet',
+          'name': 'databricks-claude-sonnet-4-5',
           'id': 'placeholder-id',
           'state': 'active',
-          'config': {'model_name': 'claude-3-7-sonnet'},
+          'config': {'model_name': 'claude-4-5-sonnet'},
         }
       ]
 
@@ -232,7 +252,6 @@ class DatabricksService:
       # TODO: this is a noop, actually handle connection testing?
       # test_response = self.client.chat.completions.create(
       #   messages=[{'role': 'user', 'content': 'Hello'}],
-      #   model='databricks-claude-3-7-sonnet',
       #   max_tokens=5,
       # )
 

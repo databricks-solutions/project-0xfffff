@@ -331,6 +331,8 @@ async def clear_rubric(workshop_id: str, db: Session = Depends(get_db)):
 @router.post('/{workshop_id}/begin-discovery')
 async def begin_discovery_phase(workshop_id: str, trace_limit: Optional[int] = None, db: Session = Depends(get_db)):
   """Begin the discovery phase and distribute traces to participants.
+  
+  Each user will see the same set of traces, but in a randomized order unique to them.
 
   Args:
       workshop_id: The workshop ID
@@ -361,9 +363,10 @@ async def begin_discovery_phase(workshop_id: str, trace_limit: Optional[int] = N
   print(f'🔍 DEBUG begin_discovery: workshop_id={workshop_id}, trace_limit={trace_limit}, total_traces={total_traces}')
   print(f'🔍 DEBUG trace_ids: {[t.id for t in traces]}')
 
-  # Apply trace limit - take first N traces in chronological order (no randomization)
+  # Apply trace limit - take first N traces in chronological order
+  # Note: Each user will see these traces in their own randomized order
   if trace_limit and trace_limit > 0 and trace_limit < total_traces:
-    print(f'🎯 DEBUG: Taking first {trace_limit} traces from {total_traces} (in chronological order)')
+    print(f'🎯 DEBUG: Taking first {trace_limit} traces from {total_traces} (will be randomized per user)')
     # Take the first N traces in chronological order
     selected_traces = traces[:min(trace_limit, total_traces)]
     trace_ids_to_use = [trace.id for trace in selected_traces]
@@ -379,7 +382,7 @@ async def begin_discovery_phase(workshop_id: str, trace_limit: Optional[int] = N
   db_service.update_active_discovery_traces(workshop_id, trace_ids_to_use)
 
   return {
-    'message': f'Discovery phase started with {traces_used} traces (in chronological order from {total_traces} total)',
+    'message': f'Discovery phase started with {traces_used} traces from {total_traces} total (each user will see traces in randomized order)',
     'phase': 'discovery',
     'total_traces': total_traces,
     'traces_used': traces_used,
@@ -441,8 +444,9 @@ async def add_traces(workshop_id: str, request: dict, db: Session = Depends(get_
       'phase': phase_name,
     }
 
-  # Take the first N available traces in order (no randomization)
-  # This ensures participants continue from where they left off
+  # Take the first N available traces in order
+  # Note: User-specific randomization is handled automatically when traces are fetched
+  # Each user will see new traces added to their randomized order
   additional_traces = available_traces[:traces_to_add]
   additional_trace_ids = [trace.id for trace in additional_traces]
 
@@ -525,7 +529,9 @@ async def reorder_annotation_traces(workshop_id: str, db: Session = Depends(get_
 
 @router.post('/{workshop_id}/begin-annotation')
 async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Session = Depends(get_db)):
-  """Begin the annotation phase with a subset of traces."""
+  """Begin the annotation phase with a subset of traces.
+  
+  Each user will see the same set of traces, but in a randomized order unique to them."""
   import random
 
   # Get the optional trace limit from request (default to 10)
@@ -570,7 +576,7 @@ async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Sessi
   db_service.update_phase_started(workshop_id, annotation_started=True)
 
   return {
-    'message': f'Annotation phase started with {traces_used} traces (randomly sampled from {total_traces})',
+    'message': f'Annotation phase started with {traces_used} traces from {total_traces} total (each user will see traces in randomized order)',
     'phase': 'annotation',
     'total_traces': total_traces,
     'traces_used': traces_used,
@@ -1611,8 +1617,9 @@ async def migrate_annotations_to_multi_metric(workshop_id: str, db: Session = De
   if not rubric:
     raise HTTPException(status_code=404, detail='Rubric not found for workshop')
   
-  # Parse rubric questions to get question IDs
-  question_parts = rubric.question.split('\n\n')
+  # Parse rubric questions to get question IDs (using the new delimiter)
+  QUESTION_DELIMITER = '|||QUESTION_SEPARATOR|||'
+  question_parts = rubric.question.split(QUESTION_DELIMITER)
   question_ids = [f"{rubric.id}_{index}" for index in range(len(question_parts))]
   
   # Get all annotations for this workshop
