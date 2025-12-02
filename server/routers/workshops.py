@@ -1544,16 +1544,16 @@ async def get_mlflow_traces(workshop_id: str, config: MLflowIntakeConfigCreate, 
 
 @router.post('/{workshop_id}/csv-upload')
 async def upload_csv_traces(workshop_id: str, file: UploadFile = File(...), db: Session = Depends(get_db)) -> Dict[str, Any]:
-  """Upload traces from a CSV file.
+  """Upload traces from a MLflow trace export CSV file.
 
-  Expected CSV format:
-  - Required columns: input, output
-  - Optional columns: context (JSON string)
+  Expected CSV format (MLflow export):
+  - Required columns: request_preview, response_preview
+  - Optional columns: trace_id, execution_duration_ms, state, request, response,
+    spans, tags, trace_metadata, trace_location, assessments, etc.
 
-  Example CSV:
-  input,output
-  "What is Python?","Python is a programming language"
-  "Explain AI","AI stands for Artificial Intelligence"
+  Example from MLflow export:
+  trace_id,request_preview,response_preview,execution_duration_ms,state,...
+  "tr-abc123","What is Python?","Python is a programming language",150,"OK",...
   """
   db_service = DatabaseService(db)
   workshop = db_service.get_workshop(workshop_id)
@@ -1576,11 +1576,11 @@ async def upload_csv_traces(workshop_id: str, file: UploadFile = File(...), db: 
     # Parse CSV
     csv_reader = csv.DictReader(io.StringIO(decoded_content))
 
-    # Validate required columns
-    if not csv_reader.fieldnames or 'input' not in csv_reader.fieldnames or 'output' not in csv_reader.fieldnames:
+    # Validate required columns for MLflow export format
+    if not csv_reader.fieldnames or 'request_preview' not in csv_reader.fieldnames or 'response_preview' not in csv_reader.fieldnames:
       raise HTTPException(
         status_code=400,
-        detail='CSV must contain "input" and "output" columns. Found columns: ' + ', '.join(csv_reader.fieldnames or [])
+        detail='CSV must contain "request_preview" and "response_preview" columns (MLflow export format). Found columns: ' + ', '.join(csv_reader.fieldnames or [])
       )
 
     # Convert CSV rows to TraceUpload objects
@@ -1590,22 +1590,63 @@ async def upload_csv_traces(workshop_id: str, file: UploadFile = File(...), db: 
       row_number += 1
 
       # Skip empty rows
-      if not row.get('input') or not row.get('output'):
+      if not row.get('request_preview') or not row.get('response_preview'):
         continue
 
-      # Parse context if provided
-      context = None
-      if 'context' in row and row['context']:
+      # Build rich context from MLflow metadata
+      context = {
+        'source': 'mlflow_csv_upload',
+        'filename': file.filename,
+        'csv_row_number': row_number
+      }
+
+      # Add all available MLflow metadata to context
+      mlflow_fields = {
+        'execution_duration_ms': row.get('execution_duration_ms'),
+        'state': row.get('state'),
+        'request_time': row.get('request_time'),
+        'client_request_id': row.get('client_request_id'),
+      }
+
+      # Add non-empty fields to context
+      for key, value in mlflow_fields.items():
+        if value:
+          context[key] = value
+
+      # Parse JSON fields if present
+      json_fields = ['request', 'response', 'spans', 'tags', 'trace_metadata', 'trace_location', 'assessments']
+      for field in json_fields:
+        if field in row and row[field]:
+          try:
+            context[field] = json.loads(row[field])
+          except json.JSONDecodeError:
+            logger.warning(f'Row {row_number}: Invalid JSON in {field} column, storing as string')
+            context[field] = row[field]
+
+      # Extract MLflow trace ID if available
+      mlflow_trace_id = row.get('trace_id')
+
+      # Build trace metadata
+      trace_metadata = {
+        'source': 'mlflow_csv_upload',
+        'filename': file.filename,
+        'csv_row_number': row_number
+      }
+
+      if row.get('trace_metadata'):
         try:
-          context = json.loads(row['context'])
+          parsed_metadata = json.loads(row['trace_metadata'])
+          if isinstance(parsed_metadata, dict):
+            trace_metadata.update(parsed_metadata)
         except json.JSONDecodeError:
-          logger.warning(f'Row {row_number}: Invalid JSON in context column, skipping context')
+          pass
 
       trace_upload = TraceUpload(
-        input=row['input'].strip(),
-        output=row['output'].strip(),
+        input=row['request_preview'].strip(),
+        output=row['response_preview'].strip(),
         context=context,
-        trace_metadata={'source': 'csv_upload', 'filename': file.filename}
+        trace_metadata=trace_metadata,
+        mlflow_trace_id=mlflow_trace_id
       )
       trace_uploads.append(trace_upload)
 
@@ -1619,7 +1660,7 @@ async def upload_csv_traces(workshop_id: str, file: UploadFile = File(...), db: 
     db_service.update_mlflow_ingestion_status(workshop_id, len(added_traces))
 
     return {
-      'message': f'Successfully uploaded {len(added_traces)} traces from CSV',
+      'message': f'Successfully uploaded {len(added_traces)} traces from MLflow CSV export',
       'trace_count': len(added_traces),
       'workshop_id': workshop_id,
       'filename': file.filename

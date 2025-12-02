@@ -376,7 +376,8 @@ export function IntakePage() {
             Upload Traces from CSV
           </CardTitle>
           <CardDescription>
-            Upload traces from a CSV file for customers without MLflow. CSV must have "input" and "output" columns.
+            Upload traces from an MLflow trace export CSV for customers without direct MLflow access.
+            CSV must have "request_preview" and "response_preview" columns.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -410,7 +411,7 @@ export function IntakePage() {
               </p>
             )}
             <p className="text-xs text-gray-500">
-              Expected format: CSV with "input" and "output" columns
+              Expected format: MLflow trace export CSV with "request_preview" and "response_preview" columns
             </p>
           </div>
 
