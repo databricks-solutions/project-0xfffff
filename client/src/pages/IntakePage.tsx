@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, CheckCircle, AlertCircle, Database, Settings, Download } from 'lucide-react';
+import { Loader2, CheckCircle, AlertCircle, Database, Settings, Download, Upload, FileText } from 'lucide-react';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { toast } from 'sonner';
 import { useWorkflowContext } from '@/context/WorkflowContext';
@@ -47,6 +47,8 @@ export function IntakePage() {
   const [status, setStatus] = useState<MLflowStatus | null>(null);
   const [isIngesting, setIsIngesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [isUploadingCsv, setIsUploadingCsv] = useState(false);
 
   // Load existing configuration and status
   useEffect(() => {
@@ -155,6 +157,51 @@ export function IntakePage() {
     } finally {
       
       setIsIngesting(false);
+    }
+  };
+
+  const uploadCsvFile = async () => {
+    if (!workshopId) {
+      setError('No workshop available. Please create a workshop first.');
+      return;
+    }
+
+    if (!csvFile) {
+      setError('Please select a CSV file to upload.');
+      return;
+    }
+
+    setIsUploadingCsv(true);
+    setError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', csvFile);
+
+      const response = await fetch(`/workshops/${workshopId}/csv-upload`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+
+        await loadStatus();
+
+        // Invalidate trace caches to ensure new traces are visible
+        queryClient.invalidateQueries({ queryKey: ['traces', workshopId] });
+        queryClient.invalidateQueries({ queryKey: ['all-traces', workshopId] });
+
+        toast.success(`Successfully uploaded ${result.trace_count} traces from CSV!`);
+        setCsvFile(null); // Clear the file input
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        setError(errorData.detail || `Failed to upload CSV (HTTP ${response.status})`);
+      }
+    } catch (err) {
+      setError('Network error: Unable to connect to the server. Please check your connection and try again.');
+    } finally {
+      setIsUploadingCsv(false);
     }
   };
 
@@ -318,6 +365,73 @@ export function IntakePage() {
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
+        </CardContent>
+      </Card>
+
+      {/* CSV Upload Card */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Upload className="h-5 w-5" />
+            Upload Traces from CSV
+          </CardTitle>
+          <CardDescription>
+            Upload traces from an MLflow trace export CSV for customers without direct MLflow access.
+            CSV must have "request_preview" and "response_preview" columns.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400 transition-colors">
+            <FileText className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+            <div className="mb-4">
+              <label htmlFor="csv-upload" className="cursor-pointer">
+                <input
+                  id="csv-upload"
+                  type="file"
+                  accept=".csv"
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files[0]) {
+                      setCsvFile(e.target.files[0]);
+                      setError(null);
+                    }
+                  }}
+                />
+                <Button variant="outline" type="button" asChild>
+                  <span>
+                    <FileText className="mr-2 h-4 w-4" />
+                    Select CSV File
+                  </span>
+                </Button>
+              </label>
+            </div>
+            {csvFile && (
+              <p className="text-sm text-gray-600 mb-4">
+                Selected: <span className="font-medium">{csvFile.name}</span>
+              </p>
+            )}
+            <p className="text-xs text-gray-500">
+              Expected format: MLflow trace export CSV with "request_preview" and "response_preview" columns
+            </p>
+          </div>
+
+          <Button
+            onClick={uploadCsvFile}
+            disabled={isUploadingCsv || !csvFile}
+            className="w-full"
+          >
+            {isUploadingCsv ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Uploading CSV...
+              </>
+            ) : (
+              <>
+                <Upload className="mr-2 h-4 w-4" />
+                Upload CSV Traces
+              </>
+            )}
+          </Button>
         </CardContent>
       </Card>
 
