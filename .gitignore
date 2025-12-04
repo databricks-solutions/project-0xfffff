@@ -11,3 +11,5 @@ env.local
 .venv/
 .venv
 workshop.db
+*.csv
+.vscode/
