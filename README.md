@@ -1,3 +1,17 @@
+# Workshop Annotation Platform
+
+A collaborative platform for annotating and evaluating LLM traces with MLflow integration, discovery phases, and inter-rater reliability analysis.
+
+## 📚 Documentation
+
+For detailed documentation, see the [/doc](doc/) folder:
+
+- **[Release Notes](doc/RELEASE_NOTES.md)** - Latest release information and quick start
+- **[Build Guide](doc/BUILD_GUIDE.md)** - Client build instructions
+- **[Authentication Fix](doc/AUTHENTICATION_FIX.md)** - Authentication improvements
+- **[Annotation Editing](doc/ANNOTATION_EDITING_FIX.md)** - Annotation editing features
+- **[All Documentation](doc/README.md)** - Complete documentation index
+
 ## 📋 Prerequisites
 
 - **Python 3.11+**
@@ -201,8 +215,6 @@ mlflow.log_feedback(
     )
 )
 ```
-
-📖 **See [README_MLflow_Sync.md](README_MLflow_Sync.md) for complete documentation**
 
 ## ⚙️ Configuration
 
