@@ -64,7 +64,7 @@ uv run uvicorn server.app:app --reload --port 8000
 
 ## 🔧 Configuration
 
-See the main [README.md](README.md) for detailed configuration options including:
+See the main [README.md](../README.md) for detailed configuration options including:
 - Database setup
 - Databricks integration
 - Authentication configuration
@@ -72,9 +72,12 @@ See the main [README.md](README.md) for detailed configuration options including
 
 ## 📚 Documentation
 
-- [BUILD_GUIDE.md](client/BUILD_GUIDE.md) - Client build instructions
+- [BUILD_GUIDE.md](BUILD_GUIDE.md) - Client build instructions
+- [COLOR_THEME_GUIDE.md](COLOR_THEME_GUIDE.md) - UI color theme guide
 - [AUTHENTICATION_FIX.md](AUTHENTICATION_FIX.md) - Authentication details
 - [ANNOTATION_EDITING_FIX.md](ANNOTATION_EDITING_FIX.md) - Annotation editing
+- [COMMENT_NEWLINE_HANDLING.md](COMMENT_NEWLINE_HANDLING.md) - Comment newline handling
+- [RUBRIC_FORMAT_UPDATE.md](RUBRIC_FORMAT_UPDATE.md) - Rubric format improvements
 - [TRACE_RANDOMIZATION.md](TRACE_RANDOMIZATION.md) - Randomization logic
 
 ## 🐛 Known Issues
@@ -83,5 +86,5 @@ None at this time. Please report issues on GitHub.
 
 ## 📝 License
 
-See [LICENSE.md](LICENSE.md) for details.
+See [LICENSE.md](../LICENSE.md) for details.
 
