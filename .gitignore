@@ -12,3 +12,5 @@ env.local
 workshop.db
 *.csv
 .vscode/
+.claude/
+.databricks/
