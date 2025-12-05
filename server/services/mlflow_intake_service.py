@@ -1,6 +1,6 @@
 """MLflow intake service for pulling traces from MLflow experiments."""
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Literal
 
 import mlflow
 import mlflow.genai
@@ -186,6 +186,7 @@ class MLflowIntakeService:
       return text
     return text[:max_length] + '...'
 
+
   def _extract_content_from_json(self, json_text: str) -> str:
     """Extract content from JSON input/output format."""
     try:
@@ -311,10 +312,75 @@ class MLflowIntakeService:
       # If JSON parsing fails, return the original text
       return json_text
 
+  def _extract_content_from_json_2(self, data: str, side: Literal['input', 'output'] = 'output') -> str:
+    """Extracts display friendly content from MLflow trace JSON."""
+    try:
+      import json
+
+      from mlflow.types.agent import ChatAgentRequest, ChatAgentResponse
+      from mlflow.types.responses import ResponsesAgentRequest, ResponsesAgentResponse
+
+      data = json.loads(data)
+
+      if side == 'input':
+        # Try ResponsesAgentRequest first
+        try:
+          inputs = ResponsesAgentRequest.model_validate(data).request.input
+          return inputs[-1].content
+        except Exception as e:
+          pass
+          # maybe logging info
+          print(f'Error with ResponsesAgentRequest: {e}')
+
+        # Fallback to ChatAgentRequest
+        try:
+          chat_request = ChatAgentRequest.model_validate(data)
+          return chat_request.messages[-1].content
+        except Exception as e:
+          pass
+          # maybe logging info
+          print(f'Error with ChatAgentRequest: {e}')
+          return data
+
+      if side == 'output':
+        # Try ResponsesAgentResponse first
+        try:
+          outputs = ResponsesAgentResponse.model_validate(data)
+          # Access the first content item's text field
+          if outputs and outputs[0].content and len(outputs[0].content) > 0:
+            first_content = outputs[0].content[0]
+            # Check if it's an output_text type content with a text field
+            if isinstance(first_content, dict) and first_content.get('type') == 'output_text' and 'text' in first_content:
+              return first_content['text']
+        except Exception as e:
+          pass
+          # maybe logging info
+          # print(f'Error with ResponsesAgentResponse: {e}')
+
+        # Fallback to ChatAgentResponse
+        try:
+          outputs = ChatAgentResponse.model_validate(data).messages
+          if isinstance(outputs[0].content, str):
+            return outputs[0].content
+        except Exception as e:
+          pass
+          # maybe logging info
+          # print(f'Error with ChatAgentResponse: {e}')
+
+        return data
+
+    except Exception as e:
+      print(f'Error parsing JSON: {e}')
+      return str(data)
+
+    except (KeyError, IndexError, TypeError):
+      # If fallback processing fails, return the original text
+      return data
+
   def _generate_mlflow_url(self, databricks_host: str, experiment_id: str, trace_id: str) -> str:
     """Generate MLflow URL for an experiment."""
-    # Remove protocol if present
-    host = databricks_host.replace('https://', '').replace('http://', '')
+    # Remove protocol if present and trailing slash
+    host = databricks_host.replace('https://', '').replace('http://', '').rstrip('/')
     # Use the experiment URL format: https://{host}/ml/experiments/{experiment_id}
     return f'https://{host}/ml/experiments/{experiment_id}/traces?selectedEvaluationId={trace_id}'
 
