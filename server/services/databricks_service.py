@@ -50,6 +50,10 @@ class DatabricksService:
         from server.services.token_storage_service import token_storage
 
         databricks_token = token_storage.get_token(workshop_id)
+        if not databricks_token and db_service:
+          databricks_token = db_service.get_databricks_token(workshop_id)
+          if databricks_token:
+            token_storage.store_token(workshop_id, databricks_token)
         if databricks_token:
           mlflow_config = db_service.get_mlflow_config(workshop_id)
           if mlflow_config:
@@ -201,9 +205,6 @@ class DatabricksService:
     except Exception as e:
       logger.error(f'Error listing endpoints: {e}')
       raise HTTPException(status_code=500, detail=f'Error listing endpoints: {str(e)}')
-    except Exception as e:
-      logger.error(f'Unexpected error listing endpoints: {e}')
-      raise HTTPException(status_code=500, detail=f'Unexpected error: {str(e)}')
 
   def get_endpoint_info(self, endpoint_name: str) -> Dict[str, Any]:
     """Get information about a specific serving endpoint.
@@ -236,9 +237,6 @@ class DatabricksService:
     except Exception as e:
       logger.error(f'Error getting endpoint info for {endpoint_name}: {e}')
       raise HTTPException(status_code=500, detail=f'Error getting endpoint info: {str(e)}')
-    except Exception as e:
-      logger.error(f'Unexpected error getting endpoint info for {endpoint_name}: {e}')
-      raise HTTPException(status_code=500, detail=f'Unexpected error: {str(e)}')
 
   def test_connection(self) -> Dict[str, Any]:
     """Test the connection to Databricks workspace.

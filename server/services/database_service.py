@@ -1,5 +1,7 @@
 """Database service layer for workshop operations."""
 
+import logging
+import os
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -9,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from server.database import (
   AnnotationDB,
+  DatabricksTokenDB,
   DiscoveryFindingDB,
   FacilitatorConfigDB,
   JudgeEvaluationDB,
@@ -48,8 +51,12 @@ from server.models import (
   WorkshopParticipant,
   WorkshopPhase,
 )
+from server.services.token_storage_service import token_storage
 from server.utils.config import get_facilitator_config
 from server.utils.password import generate_default_password, hash_password, verify_password
+
+
+logger = logging.getLogger(__name__)
 
 
 class DatabaseService:
@@ -749,6 +756,7 @@ class DatabaseService:
       existing_annotation.comment = annotation_data.comment
       self.db.commit()
       self.db.refresh(existing_annotation)
+      self._sync_annotation_with_mlflow(workshop_id, existing_annotation)
 
       return Annotation(
         id=existing_annotation.id,
@@ -776,6 +784,7 @@ class DatabaseService:
       self.db.add(db_annotation)
       self.db.commit()
       self.db.refresh(db_annotation)
+      self._sync_annotation_with_mlflow(workshop_id, db_annotation)
 
       return Annotation(
         id=db_annotation.id,
@@ -788,6 +797,85 @@ class DatabaseService:
         mlflow_trace_id=db_annotation.trace.mlflow_trace_id,
         created_at=db_annotation.created_at,
       )
+
+  def _sync_annotation_with_mlflow(self, workshop_id: str, annotation_db: AnnotationDB) -> None:
+    """Ensure MLflow trace carries SME tag + feedback once an annotation is captured."""
+    if not annotation_db or not getattr(annotation_db, 'trace', None):
+      return
+
+    mlflow_trace_id = getattr(annotation_db.trace, 'mlflow_trace_id', None)
+    if not mlflow_trace_id:
+      return
+
+    config = (
+      self.db.query(MLflowIntakeConfigDB)
+      .filter(MLflowIntakeConfigDB.workshop_id == workshop_id)
+      .first()
+    )
+    if not config or not config.databricks_host or not config.experiment_id:
+      logger.debug('Skipping MLflow sync: config missing for workshop %s', workshop_id)
+      return
+
+    databricks_token = token_storage.get_token(workshop_id)
+    if not databricks_token:
+      databricks_token = self.get_databricks_token(workshop_id)
+      if databricks_token:
+        token_storage.store_token(workshop_id, databricks_token)
+    if not databricks_token:
+      logger.debug('Skipping MLflow sync: token missing for workshop %s', workshop_id)
+      return
+
+    try:
+      import mlflow
+      from mlflow.entities import AssessmentSource, AssessmentSourceType
+    except ImportError:
+      logger.warning('MLflow is not available; cannot sync annotation feedback.')
+      return
+
+    os.environ['DATABRICKS_HOST'] = config.databricks_host.rstrip('/')
+    os.environ['DATABRICKS_TOKEN'] = databricks_token
+    os.environ.pop('DATABRICKS_CLIENT_ID', None)
+    os.environ.pop('DATABRICKS_CLIENT_SECRET', None)
+
+    mlflow.set_tracking_uri('databricks')
+
+    try:
+      mlflow.set_experiment(experiment_id=config.experiment_id)
+    except Exception as exc:
+      logger.warning('Failed to set MLflow experiment %s: %s', config.experiment_id, exc)
+      return
+
+    set_trace_tag = getattr(mlflow, 'set_trace_tag', None)
+    tags = {
+      'label': 'jbws',
+      'workshop_id': workshop_id,
+    }
+    if set_trace_tag:
+      for key, value in tags.items():
+        try:
+          set_trace_tag(trace_id=mlflow_trace_id, key=key, value=value)
+        except Exception as exc:
+          logger.warning('Failed to set MLflow trace tag %s for %s: %s', key, mlflow_trace_id, exc)
+    else:
+      logger.debug('mlflow.set_trace_tag not available; skip tagging for trace %s', mlflow_trace_id)
+
+    if annotation_db.rating is None:
+      return
+
+    try:
+      rationale = annotation_db.comment.strip() if annotation_db.comment else None
+      mlflow.log_feedback(
+        trace_id=mlflow_trace_id,
+        name='workshop_judge',
+        value=annotation_db.rating,
+        source=AssessmentSource(
+          source_type=AssessmentSourceType.HUMAN,
+          source_id=annotation_db.user_id or workshop_id,
+        ),
+        rationale=rationale,
+      )
+    except Exception as exc:
+      logger.warning('Failed to log MLflow feedback for trace %s: %s', mlflow_trace_id, exc)
 
   def get_annotations(self, workshop_id: str, user_id: Optional[str] = None) -> List[Annotation]:
     """Get annotations for a workshop, optionally filtered by user."""
@@ -1386,6 +1474,29 @@ class DatabaseService:
       filter_string=db_config.filter_string,
     )
 
+  def set_databricks_token(self, workshop_id: str, token: str) -> None:
+    """Persist Databricks token for a workshop."""
+    if not token:
+      return
+
+    db_token = self.db.query(DatabricksTokenDB).filter(DatabricksTokenDB.workshop_id == workshop_id).first()
+
+    if db_token:
+      db_token.token = token
+      db_token.updated_at = datetime.now()
+    else:
+      db_token = DatabricksTokenDB(workshop_id=workshop_id, token=token)
+      self.db.add(db_token)
+
+    self.db.commit()
+
+  def get_databricks_token(self, workshop_id: str) -> Optional[str]:
+    """Retrieve persisted Databricks token for a workshop."""
+    db_token = self.db.query(DatabricksTokenDB).filter(DatabricksTokenDB.workshop_id == workshop_id).first()
+    if db_token:
+      return db_token.token
+    return None
+
   def update_mlflow_ingestion_status(self, workshop_id: str, trace_count: int, error_message: Optional[str] = None) -> None:
     """Update MLflow ingestion status for a workshop."""
     db_config = self.db.query(MLflowIntakeConfigDB).filter(MLflowIntakeConfigDB.workshop_id == workshop_id).first()
@@ -1619,21 +1730,6 @@ class DatabaseService:
 
     return self._trace_from_db(db_trace)
 
-  def _trace_to_db(self, workshop_id: str, trace: TraceUpload) -> TraceDB:
-    """Convert a trace upload to a database model."""
-    return TraceDB(
-      id=str(uuid.uuid4()),
-      workshop_id=workshop_id,
-      input=trace.input,
-      output=trace.output,
-      context=trace.context,
-      trace_metadata=trace.trace_metadata,  # Renamed from metadata
-      mlflow_trace_id=trace.mlflow_trace_id,
-      mlflow_url=trace.mlflow_url,
-      mlflow_host=trace.mlflow_host,
-      mlflow_experiment_id=trace.mlflow_experiment_id,
-    )
-
   def _trace_from_db(self, db_trace: TraceDB) -> Trace:
     """Convert a database trace to a response model."""
     return Trace(
@@ -1647,5 +1743,63 @@ class DatabaseService:
       mlflow_url=db_trace.mlflow_url,
       mlflow_host=db_trace.mlflow_host,
       mlflow_experiment_id=db_trace.mlflow_experiment_id,
+      include_in_alignment=db_trace.include_in_alignment if db_trace.include_in_alignment is not None else True,
+      sme_feedback=db_trace.sme_feedback,
       created_at=db_trace.created_at,
     )
+
+  def update_trace_alignment_inclusion(self, trace_id: str, include_in_alignment: bool) -> Optional[Trace]:
+    """Update whether a trace should be included in judge alignment."""
+    db_trace = self.db.query(TraceDB).filter(TraceDB.id == trace_id).first()
+    if not db_trace:
+      return None
+
+    db_trace.include_in_alignment = include_in_alignment
+    self.db.commit()
+    self.db.refresh(db_trace)
+
+    return self._trace_from_db(db_trace)
+
+  def update_trace_sme_feedback(self, trace_id: str, sme_feedback: str) -> Optional[Trace]:
+    """Update the concatenated SME feedback for a trace."""
+    db_trace = self.db.query(TraceDB).filter(TraceDB.id == trace_id).first()
+    if not db_trace:
+      return None
+
+    db_trace.sme_feedback = sme_feedback
+    self.db.commit()
+    self.db.refresh(db_trace)
+
+    return self._trace_from_db(db_trace)
+
+  def get_traces_for_alignment(self, workshop_id: str) -> List[Trace]:
+    """Get all traces that are marked for inclusion in alignment."""
+    db_traces = (
+      self.db.query(TraceDB)
+      .filter(
+        TraceDB.workshop_id == workshop_id,
+        TraceDB.include_in_alignment == True  # noqa: E712
+      )
+      .order_by(TraceDB.created_at)
+      .all()
+    )
+    return [self._trace_from_db(db_trace) for db_trace in db_traces]
+
+  def aggregate_sme_feedback_for_trace(self, workshop_id: str, trace_id: str) -> Optional[str]:
+    """Aggregate all SME comments for a trace into a single feedback string.
+    
+    Returns the concatenated feedback from all annotations on this trace.
+    """
+    annotations = self.get_annotations(workshop_id)
+    trace_annotations = [a for a in annotations if a.trace_id == trace_id and a.comment]
+    
+    if not trace_annotations:
+      return None
+    
+    # Concatenate all non-empty comments
+    feedback_parts = []
+    for ann in trace_annotations:
+      if ann.comment and ann.comment.strip():
+        feedback_parts.append(f"[{ann.user_id}]: {ann.comment.strip()}")
+    
+    return "\n\n".join(feedback_parts) if feedback_parts else None

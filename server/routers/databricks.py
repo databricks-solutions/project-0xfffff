@@ -186,6 +186,10 @@ async def evaluate_judge_prompt(request: dict, db: Session = Depends(get_db)) ->
         from server.services.token_storage_service import token_storage
 
         databricks_token = token_storage.get_token(workshop_id)
+        if not databricks_token:
+          databricks_token = db_service.get_databricks_token(workshop_id)
+          if databricks_token:
+            token_storage.store_token(workshop_id, databricks_token)
         if databricks_token:
           # Use token from memory storage - same approach as intake service
           # Set environment variables like the intake service does

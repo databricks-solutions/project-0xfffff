@@ -172,6 +172,8 @@ class Trace(BaseModel):
   mlflow_url: Optional[str] = None
   mlflow_host: Optional[str] = None
   mlflow_experiment_id: Optional[str] = None
+  include_in_alignment: bool = True  # Whether to include in judge alignment
+  sme_feedback: Optional[str] = None  # Concatenated SME feedback for alignment
   created_at: datetime = Field(default_factory=datetime.now)
 
 

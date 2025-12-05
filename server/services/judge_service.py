@@ -83,9 +83,13 @@ class JudgeService:
 
       databricks_token = token_storage.get_token(workshop_id)
       if not databricks_token:
+        databricks_token = self.db_service.get_databricks_token(workshop_id)
+        if databricks_token:
+          token_storage.store_token(workshop_id, databricks_token)
+      if not databricks_token:
         raise HTTPException(
           status_code=400,
-          detail='Databricks token not found in memory. Please reconfigure MLflow intake with your token.',
+          detail='Databricks token not found. Please configure MLflow intake with your token.',
         )
 
       # Validate MLflow credentials before proceeding

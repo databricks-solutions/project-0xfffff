@@ -243,16 +243,19 @@ export function AnnotationReviewPage({ onBack }: AnnotationReviewPageProps) {
                 </CardContent>
               </Card>
               
-              {/* Comments */}
+              {/* Feedback for Judge Alignment */}
               {currentAnnotation?.comment && (
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <MessageCircle className="h-5 w-5" />
-                      Your Comments
+                      Your Feedback for Judge Alignment
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
+                    <p className="text-xs text-gray-500 mb-2">
+                      This feedback will be used to train and align the AI judge.
+                    </p>
                     <div className="p-3 bg-gray-50 rounded-lg">
                       <p className="text-sm text-gray-700 whitespace-pre-wrap">
                         {currentAnnotation.comment}

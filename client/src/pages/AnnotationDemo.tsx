@@ -648,19 +648,25 @@ export function AnnotationDemo() {
               </div>
             )}
 
-            {/* Comment Field */}
+            {/* Comment Field - Feedback for Judge Alignment */}
             <div className="space-y-2">
               <Label htmlFor="comment" className="text-sm font-medium">
-                Optional Comment
+                Feedback for Judge Alignment
+                <span className="text-gray-500 font-normal ml-2">(Optional)</span>
               </Label>
+              <p className="text-xs text-gray-600 mb-2">
+                <strong>Important:</strong> Your feedback here will be used to train and align the AI judge. 
+                Focus on explaining <em>why</em> you gave this rating - what specific aspects of the response 
+                influenced your score? This helps the AI judge learn to evaluate similarly.
+              </p>
               <textarea
                 id="comment"
-                placeholder={canAnnotate ? "Add any additional notes or observations about this response..." : "You don't have permission to submit annotations"}
+                placeholder={canAnnotate ? "Explain your reasoning for this rating. What made this response good or poor? What criteria did you focus on? This feedback will be used to train the AI judge..." : "You don't have permission to submit annotations"}
                 value={comment}
                 onChange={(e) => {
                   setComment(e.target.value);
                 }}
-                className="w-full min-h-[80px] p-2 border rounded whitespace-pre-wrap"
+                className="w-full min-h-[100px] p-2 border rounded whitespace-pre-wrap"
                 disabled={!canAnnotate}
                 style={{ whiteSpace: 'pre-wrap' }}
               />
