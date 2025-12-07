@@ -132,6 +132,7 @@ class WorkshopDB(Base):
   annotation_started = Column(Boolean, default=False)
   active_discovery_trace_ids = Column(JSON, default=list)
   active_annotation_trace_ids = Column(JSON, default=list)
+  judge_name = Column(String, default='workshop_judge')  # Name used for feedback entries
   created_at = Column(DateTime, default=func.now())
 
   # Relationships

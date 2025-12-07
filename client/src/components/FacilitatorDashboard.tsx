@@ -7,13 +7,14 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useFacilitatorFindings, useFacilitatorFindingsWithUserDetails, useTraces, useAllTraces, useRubric, useFacilitatorAnnotations, useWorkshop } from '@/hooks/useWorkshopApi';
+import { useFacilitatorFindings, useFacilitatorFindingsWithUserDetails, useTraces, useAllTraces, useRubric, useFacilitatorAnnotations, useFacilitatorAnnotationsWithUserDetails, useWorkshop } from '@/hooks/useWorkshopApi';
 import { Settings, Users, FileText, CheckCircle, Clock, AlertCircle, BarChart, ChevronRight, Play, Eye, Plus } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useQueryClient } from '@tanstack/react-query';
 import { PhaseControlButton } from './PhaseControlButton';
 import { toast } from 'sonner';
+import { parseRubricQuestions } from '@/utils/rubricUtils';
 
 interface FacilitatorDashboardProps {
   onNavigate: (phase: string) => void;
@@ -35,6 +36,7 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
   const { data: traces } = useAllTraces(workshopId!);
   const { data: rubric } = useRubric(workshopId!);
   const { data: annotations } = useFacilitatorAnnotations(workshopId!);
+  const { data: annotationsWithUserDetails } = useFacilitatorAnnotationsWithUserDetails(workshopId!);
 
   // Redirect non-facilitators
   if (!isFacilitator) {
@@ -75,18 +77,38 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
   // For annotation phase, use annotation-based active users
   const activeAnnotators = annotations ? new Set(annotations.map(a => a.user_id)) : new Set();
   
-  const userContributions = allFindingsWithUserDetails ? 
-    Object.entries(
-      allFindingsWithUserDetails.reduce((acc, finding) => {
-        const userId = finding.user_id;
-        if (!acc[userId]) {
-          acc[userId] = { count: 0, userName: finding.user_name || userId };
-        }
-        acc[userId].count += 1;
-        return acc;
-      }, {} as Record<string, { count: number; userName: string }>)
-    ).map(([userId, data]) => ({ userId, userName: data.userName, count: data.count }))
-    : [];
+  // Calculate user contributions based on phase
+  const userContributions = React.useMemo(() => {
+    if (focusPhase === 'annotation') {
+      // Use annotations with user details
+      return annotationsWithUserDetails ? 
+        Object.entries(
+          annotationsWithUserDetails.reduce((acc, annotation) => {
+            const userId = annotation.user_id;
+            if (!acc[userId]) {
+              acc[userId] = { count: 0, userName: annotation.user_name || userId };
+            }
+            acc[userId].count += 1;
+            return acc;
+          }, {} as Record<string, { count: number; userName: string }>)
+        ).map(([userId, data]) => ({ userId, userName: data.userName, count: data.count }))
+        : [];
+    } else {
+      // Use discovery findings with user details (default)
+      return allFindingsWithUserDetails ? 
+        Object.entries(
+          allFindingsWithUserDetails.reduce((acc, finding) => {
+            const userId = finding.user_id;
+            if (!acc[userId]) {
+              acc[userId] = { count: 0, userName: finding.user_name || userId };
+            }
+            acc[userId].count += 1;
+            return acc;
+          }, {} as Record<string, { count: number; userName: string }>)
+        ).map(([userId, data]) => ({ userId, userName: data.userName, count: data.count }))
+        : [];
+    }
+  }, [focusPhase, allFindingsWithUserDetails, annotationsWithUserDetails]);
 
   // Calculate trace coverage details
   const traceCoverageDetails = React.useMemo(() => {
@@ -251,6 +273,59 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
   const [annotationTracesCount, setAnnotationTracesCount] = React.useState<string>('');
   const [isAddingTraces, setIsAddingTraces] = React.useState(false);
   const [isReorderingTraces, setIsReorderingTraces] = React.useState(false);
+  
+  // Judge name state - used for MLflow feedback entries
+  const [judgeName, setJudgeName] = React.useState<string>(workshop?.judge_name || 'workshop_judge');
+  const [isSavingJudgeName, setIsSavingJudgeName] = React.useState(false);
+  
+  // Derive judge name from rubric question title
+  const deriveJudgeNameFromRubric = (questionTitle: string): string => {
+    // Convert to snake_case and append _judge
+    const snakeCase = questionTitle.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+    return `${snakeCase}_judge`;
+  };
+  
+  // Sync judge name when workshop data loads, or derive from rubric if default
+  React.useEffect(() => {
+    if (workshop?.judge_name && workshop.judge_name !== 'workshop_judge') {
+      // Use the saved judge name
+      setJudgeName(workshop.judge_name);
+    } else if (rubric?.question) {
+      // Parse rubric questions and derive from first question title
+      const questions = parseRubricQuestions(rubric.question);
+      if (questions.length > 0 && questions[0].title) {
+        const derivedName = deriveJudgeNameFromRubric(questions[0].title);
+        setJudgeName(derivedName);
+      }
+    }
+  }, [workshop?.judge_name, rubric]);
+  
+  const handleSaveJudgeName = async () => {
+    if (!judgeName.trim()) {
+      toast.error('Please enter a valid judge name');
+      return;
+    }
+    
+    setIsSavingJudgeName(true);
+    try {
+      const response = await fetch(`/workshops/${workshopId}/judge-name?judge_name=${encodeURIComponent(judgeName.trim())}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to save judge name');
+      }
+      
+      // Refresh workshop data
+      queryClient.invalidateQueries({ queryKey: ['workshop', workshopId] });
+      toast.success('Judge name saved successfully');
+    } catch (error) {
+      toast.error(`Failed to save judge name: ${error.message}`);
+    } finally {
+      setIsSavingJudgeName(false);
+    }
+  };
 
   const handleAddAdditionalTraces = async () => {
     const phase = focusPhase || currentPhase;
@@ -438,9 +513,7 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
 
           {/* Rubric Status - Hide during discovery AND annotation focus */}
           {focusPhase !== 'discovery' && focusPhase !== 'annotation' && (
-            <Card className={`bg-gradient-to-br from-blue-50 to-blue-50 border-blue-200 ${
-              focusPhase === 'annotation' ? 'ring-2 ring-blue-400 shadow-lg' : ''
-            }`}>
+            <Card className={`bg-gradient-to-br from-blue-50 to-blue-50 border-blue-200`}>
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-blue-800">
                   <Settings className="w-5 h-5" />
@@ -456,7 +529,7 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                         <span className="text-sm text-blue-700">Rubric Created</span>
                       </div>
                       <p className="text-xs text-blue-600 line-clamp-2">
-                        {rubric[0]?.question || 'Evaluation rubric is ready'}
+                        {rubric?.question ? parseRubricQuestions(rubric.question)[0]?.title || 'Evaluation rubric is ready' : 'Evaluation rubric is ready'}
                       </p>
                       <Button 
                         variant="outline" 
@@ -858,6 +931,38 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                         )}
                       </Button>
                     </div>
+                  </div>
+
+                  {/* Judge Name */}
+                  <div className="border rounded-lg p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Settings className="w-5 h-5 text-purple-600" />
+                      <div className="text-left">
+                        <div className="font-medium">Judge Name</div>
+                        <div className="text-xs text-muted-foreground">Used for MLflow feedback entries</div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Input
+                        type="text"
+                        placeholder="workshop_judge"
+                        value={judgeName}
+                        onChange={(e) => setJudgeName(e.target.value)}
+                        className="flex-1 h-8 text-xs"
+                        disabled={isSavingJudgeName || (annotations && annotations.length > 0)}
+                      />
+                      <Button
+                        onClick={handleSaveJudgeName}
+                        disabled={isSavingJudgeName || !judgeName.trim() || (annotations && annotations.length > 0)}
+                        size="sm"
+                        className="h-8 px-3"
+                      >
+                        {isSavingJudgeName ? '...' : 'Save'}
+                      </Button>
+                    </div>
+                    {annotations && annotations.length > 0 && (
+                      <p className="text-xs text-amber-600 mt-1">🔒 Locked (annotations exist)</p>
+                    )}
                   </div>
 
                   {/* Phase Control Button */}

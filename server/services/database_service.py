@@ -142,11 +142,29 @@ class DatabaseService:
       annotation_started=db_workshop.annotation_started or False,
       active_discovery_trace_ids=db_workshop.active_discovery_trace_ids or [],
       active_annotation_trace_ids=db_workshop.active_annotation_trace_ids or [],
+      judge_name=db_workshop.judge_name or 'workshop_judge',
       created_at=db_workshop.created_at,
     )
 
     self._set_cache(cache_key, workshop)
     return workshop
+
+  def update_workshop_judge_name(self, workshop_id: str, judge_name: str) -> Optional[Workshop]:
+    """Update the judge name for a workshop."""
+    db_workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if not db_workshop:
+      return None
+
+    db_workshop.judge_name = judge_name
+    self.db.commit()
+    self.db.refresh(db_workshop)
+
+    # Clear cache for this workshop
+    cache_key = self._get_cache_key('workshop', workshop_id)
+    if cache_key in self._cache:
+      del self._cache[cache_key]
+
+    return self.get_workshop(workshop_id)
 
   def update_workshop_phase(self, workshop_id: str, new_phase: WorkshopPhase) -> Optional[Workshop]:
     """Update the current phase of a workshop."""
@@ -595,6 +613,26 @@ class DatabaseService:
       self.db.commit()
       self.db.refresh(db_rubric)
 
+    # Auto-derive and save judge_name from the first rubric question title
+    # This ensures the backend always has the correct judge name for MLflow feedback
+    workshop_db = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if workshop_db and (not workshop_db.judge_name or workshop_db.judge_name == 'workshop_judge'):
+      # Parse the rubric question to get the first title
+      questions = self._parse_rubric_questions(rubric_data.question)
+      if questions and questions[0].get('title'):
+        title = questions[0]['title']
+        # Convert to snake_case and append _judge
+        import re
+        snake_case = re.sub(r'[^a-z0-9]+', '_', title.lower()).strip('_')
+        derived_judge_name = f"{snake_case}_judge"
+        workshop_db.judge_name = derived_judge_name
+        self.db.commit()
+        logger.info("Auto-derived judge_name '%s' from rubric title '%s'", derived_judge_name, title)
+        # Clear workshop cache
+        cache_key = self._get_cache_key('workshop', workshop_id)
+        if cache_key in self._cache:
+          del self._cache[cache_key]
+
     return Rubric(
       id=db_rubric.id,
       workshop_id=db_rubric.workshop_id,
@@ -862,11 +900,15 @@ class DatabaseService:
     if annotation_db.rating is None:
       return
 
+    # Get the workshop's judge_name (used for MLflow feedback entries)
+    workshop_db = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    judge_name = workshop_db.judge_name if workshop_db and workshop_db.judge_name else 'workshop_judge'
+
     try:
       rationale = annotation_db.comment.strip() if annotation_db.comment else None
       mlflow.log_feedback(
         trace_id=mlflow_trace_id,
-        name='workshop_judge',
+        name=judge_name,
         value=annotation_db.rating,
         source=AssessmentSource(
           source_type=AssessmentSourceType.HUMAN,
@@ -876,6 +918,42 @@ class DatabaseService:
       )
     except Exception as exc:
       logger.warning('Failed to log MLflow feedback for trace %s: %s', mlflow_trace_id, exc)
+
+  def resync_annotations_to_mlflow(self, workshop_id: str) -> Dict[str, Any]:
+    """Re-sync all annotations to MLflow with the current workshop judge_name.
+    
+    This is useful when the judge_name changes after annotations were created.
+    Creates new MLflow feedback entries with the correct judge_name.
+    """
+    workshop_db = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if not workshop_db:
+      return {'error': 'Workshop not found', 'synced': 0}
+    
+    judge_name = workshop_db.judge_name if workshop_db.judge_name else 'workshop_judge'
+    
+    # Get all annotations
+    annotations = self.get_annotations(workshop_id)
+    
+    synced_count = 0
+    errors = []
+    
+    for annotation in annotations:
+      try:
+        # Get the annotation DB record to access trace relationship
+        annotation_db = self.db.query(AnnotationDB).filter(AnnotationDB.id == annotation.id).first()
+        if annotation_db:
+          self._sync_annotation_with_mlflow(workshop_id, annotation_db)
+          synced_count += 1
+      except Exception as e:
+        errors.append(f"Annotation {annotation.id}: {str(e)}")
+        logger.warning('Failed to resync annotation %s: %s', annotation.id, e)
+    
+    return {
+      'synced': synced_count,
+      'total': len(annotations),
+      'judge_name': judge_name,
+      'errors': errors if errors else None
+    }
 
   def get_annotations(self, workshop_id: str, user_id: Optional[str] = None) -> List[Annotation]:
     """Get annotations for a workshop, optionally filtered by user."""

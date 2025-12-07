@@ -163,6 +163,7 @@ class AlignmentRequest(BaseModel):
   judge_prompt: str
   evaluation_model_name: str  # Model for evaluate() job
   alignment_model_name: Optional[str] = None  # Model for SIMBA optimizer (judge_model_uri), required for alignment
+  prompt_id: Optional[str] = None  # Existing prompt ID to update (instead of creating a new one)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -183,6 +184,35 @@ async def get_workshop(workshop_id: str, db: Session = Depends(get_db)) -> Works
   if not workshop:
     raise HTTPException(status_code=404, detail='Workshop not found')
   return workshop
+
+
+@router.put('/{workshop_id}/judge-name')
+async def update_judge_name(workshop_id: str, judge_name: str, db: Session = Depends(get_db)):
+  """Update the judge name for the workshop. Should be set before annotation phase."""
+  db_service = DatabaseService(db)
+  workshop = db_service.get_workshop(workshop_id)
+  if not workshop:
+    raise HTTPException(status_code=404, detail='Workshop not found')
+  
+  # Update the judge name in the database
+  db_service.update_workshop_judge_name(workshop_id, judge_name)
+  return {'message': 'Judge name updated successfully', 'judge_name': judge_name}
+
+
+@router.post('/{workshop_id}/resync-annotations')
+async def resync_annotations(workshop_id: str, db: Session = Depends(get_db)):
+  """Re-sync all annotations to MLflow with the current workshop judge_name.
+  
+  This is useful when the judge_name changes after annotations were created.
+  Creates new MLflow feedback entries with the correct judge_name.
+  """
+  db_service = DatabaseService(db)
+  workshop = db_service.get_workshop(workshop_id)
+  if not workshop:
+    raise HTTPException(status_code=404, detail='Workshop not found')
+  
+  result = db_service.resync_annotations_to_mlflow(workshop_id)
+  return result
 
 
 @router.post('/{workshop_id}/traces')
@@ -2275,49 +2305,85 @@ async def start_evaluation_job(
             logger.info("Evaluation log: %s", message[:100] if len(message) > 100 else message)
         
         if result and result.get("success"):
-          # Save the evaluated prompt as a new version with metrics and evaluations
+          # Save evaluation results - use existing prompt if provided, otherwise create new
           try:
+            import uuid
             from server.models import JudgePromptCreate, JudgeEvaluation
             
-            # 1. Create new prompt version
-            new_prompt_data = JudgePromptCreate(
-              prompt_text=request.judge_prompt,
-              few_shot_examples=[],  # TODO: Pass these if available in request
-              model_name=request.evaluation_model_name,
-              model_parameters={}, 
-            )
-            new_prompt = thread_db_service.create_judge_prompt(workshop_id, new_prompt_data)
-            result["saved_prompt_id"] = new_prompt.id
-            result["saved_prompt_version"] = new_prompt.version
+            logger.info(f"Saving evaluation results for {len(result.get('evaluations', []))} traces")
             
-            # 2. Save metrics
+            # Use existing prompt_id if provided, otherwise create a new prompt
+            if request.prompt_id:
+              # Use existing prompt - just update metrics and save evaluations
+              prompt_id_to_use = request.prompt_id
+              existing_prompt = thread_db_service.get_judge_prompt(workshop_id, request.prompt_id)
+              if existing_prompt:
+                result["saved_prompt_id"] = existing_prompt.id
+                result["saved_prompt_version"] = existing_prompt.version
+                logger.info(f"Using existing JudgePrompt v{existing_prompt.version} (id={existing_prompt.id})")
+              else:
+                logger.warning(f"Prompt {request.prompt_id} not found, will create new")
+                prompt_id_to_use = None
+            else:
+              prompt_id_to_use = None
+            
+            # Create new prompt only if no existing prompt_id was provided/found
+            if not prompt_id_to_use:
+              new_prompt_data = JudgePromptCreate(
+                prompt_text=request.judge_prompt,
+                few_shot_examples=[],
+                model_name=request.evaluation_model_name,
+                model_parameters={}, 
+              )
+              new_prompt = thread_db_service.create_judge_prompt(workshop_id, new_prompt_data)
+              prompt_id_to_use = new_prompt.id
+              result["saved_prompt_id"] = new_prompt.id
+              result["saved_prompt_version"] = new_prompt.version
+              logger.info(f"Created JudgePrompt v{new_prompt.version} (id={new_prompt.id})")
+            
+            # 2. Save metrics (update the prompt)
             if "metrics" in result:
-              thread_db_service.update_judge_prompt_metrics(new_prompt.id, result["metrics"])
+              thread_db_service.update_judge_prompt_metrics(prompt_id_to_use, result["metrics"])
             
-            # 3. Save individual evaluations
+            # 3. Save individual evaluations (store_judge_evaluations clears old ones first)
             if "evaluations" in result:
               evaluations_to_save = []
               for eval_data in result["evaluations"]:
-                evaluations_to_save.append(
-                  JudgeEvaluation(
-                    id=str(uuid.uuid4()),
-                    workshop_id=workshop_id,
-                    prompt_id=new_prompt.id,
-                    trace_id=eval_data["trace_id"],
-                    predicted_rating=int(round(float(eval_data["predicted_rating"]))) if eval_data.get("predicted_rating") is not None else 0,
-                    human_rating=int(eval_data["human_rating"]) if eval_data.get("human_rating") is not None else 0,
-                    confidence=eval_data.get("confidence"),
-                    reasoning=eval_data.get("reasoning")
+                try:
+                  pred = eval_data.get("predicted_rating")
+                  pred_val = int(round(float(pred))) if pred is not None else 0
+                  
+                  # Use workshop_uuid (DB UUID) if available, otherwise fallback to trace_id (MLflow ID)
+                  # JudgeEvaluationDB requires the foreign key to the traces table (UUID)
+                  trace_id_for_db = eval_data.get("workshop_uuid") or eval_data["trace_id"]
+                  
+                  evaluations_to_save.append(
+                    JudgeEvaluation(
+                      id=str(uuid.uuid4()),
+                      workshop_id=workshop_id,
+                      prompt_id=prompt_id_to_use,
+                      trace_id=trace_id_for_db,
+                      predicted_rating=pred_val,
+                      human_rating=int(eval_data["human_rating"]) if eval_data.get("human_rating") is not None else 0,
+                      confidence=eval_data.get("confidence"),
+                      reasoning=eval_data.get("reasoning")
+                    )
                   )
-                )
-              thread_db_service.store_judge_evaluations(evaluations_to_save)
-              job.add_log(f"Saved {len(evaluations_to_save)} trace evaluations to database")
+                except Exception as inner_err:
+                  logger.error(f"Error parsing evaluation row: {inner_err}, data={eval_data}")
+              
+              if evaluations_to_save:
+                thread_db_service.store_judge_evaluations(evaluations_to_save)
+                job.add_log(f"Saved {len(evaluations_to_save)} trace evaluations to database")
+                logger.info(f"Successfully stored {len(evaluations_to_save)} evaluations")
+              else:
+                logger.warning("No evaluations prepared to save")
 
-            job.add_log(f"Saved evaluation results as Judge Prompt v{new_prompt.version}")
-            logger.info("Saved evaluation results as prompt %s (v%d)", new_prompt.id, new_prompt.version)
+            job.add_log(f"Saved evaluation results for Judge Prompt (id={prompt_id_to_use})")
+            logger.info("Saved evaluation results for prompt %s", prompt_id_to_use)
             
           except Exception as save_err:
-            logger.warning("Failed to save evaluation results to database: %s", save_err)
+            logger.exception("Failed to save evaluation results to database")
             job.add_log(f"WARNING: Could not save evaluation results to database: {save_err}")
 
           job.set_status("completed")

@@ -30,6 +30,7 @@ import { useUser, useRoleCheck } from '@/context/UserContext';
 import { WorkshopsService } from '@/client';
 import { useWorkshop, useOriginalTraces, useAggregateAllFeedback } from '@/hooks/useWorkshopApi';
 import { getModelOptions, getBackendModelName, getFrontendModelName, getDisplayName } from '@/utils/modelMapping';
+import { parseRubricQuestions } from '@/utils/rubricUtils';
 import { Pagination } from '@/components/Pagination';
 import { TraceDataViewer } from '@/components/TraceDataViewer';
 import { toast } from 'sonner';
@@ -94,7 +95,28 @@ export function JudgeTuningPage() {
   const [alignmentLogs, setAlignmentLogs] = useState<string[]>([]);
   const [alignmentResult, setAlignmentResult] = useState<any>(null);
   const [showAlignmentLogs, setShowAlignmentLogs] = useState(false);
-  const [judgeName, setJudgeName] = useState('workshop_judge');
+  
+  // Judge name derivation logic
+  const judgeName = useMemo(() => {
+    // If saved name exists and is not default, use it
+    if (workshop?.judge_name && workshop.judge_name !== 'workshop_judge') {
+      return workshop.judge_name;
+    }
+    
+    // Otherwise try to derive from rubric
+    if (rubric?.question) {
+      const questions = parseRubricQuestions(rubric.question);
+      if (questions.length > 0 && questions[0].title) {
+        const title = questions[0].title;
+        const snakeCase = title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+        return `${snakeCase}_judge`;
+      }
+    }
+    
+    // Fallback to default
+    return 'workshop_judge';
+  }, [workshop?.judge_name, rubric?.question]);
+
   const logsStorageKey = useMemo(
     () => (workshopId ? `judge-alignment-logs-${workshopId}` : 'judge-alignment-logs'),
     [workshopId]
@@ -221,6 +243,9 @@ export function JudgeTuningPage() {
   const loadInitialData = async () => {
     if (!workshopId) return;
     
+    // Force refresh of workshop data to get latest judge name
+    queryClient.invalidateQueries({ queryKey: ['workshop', workshopId] });
+    
     setIsLoading(true);
     setError(null);
     
@@ -247,11 +272,19 @@ export function JudgeTuningPage() {
       setAnnotations(annotationsData);
       setMlflowConfig(mlflowConfigData);
 
+      // Determine default model first (used in multiple places)
+      const modelOptions = getModelOptions(!!mlflowConfigData);
+      const defaultModel = modelOptions.find(opt => !opt.disabled)?.value || modelOptions[0]?.value || 'GPT-5.1';
+      
       // Initialize with rubric question if no prompts exist
       if (promptsData.length === 0 && rubricData) {
         const defaultPrompt = createDefaultPrompt(rubricData.question);
         setCurrentPrompt(defaultPrompt);
         setOriginalPromptText(defaultPrompt); // Track original for new prompt
+        
+        // Set default models when no prompts exist
+        setSelectedEvaluationModel(defaultModel);
+        setSelectedAlignmentModel(defaultModel);
         
         // Don't auto-create baseline - let user create it manually
         // This prevents the v2 issue where auto-creation makes first manual save become v2
@@ -266,8 +299,21 @@ export function JudgeTuningPage() {
         // Sync model selection with saved prompt
         if (latestPrompt.model_name) {
           const frontendModel = getFrontendModelName(latestPrompt.model_name);
-          setSelectedEvaluationModel(frontendModel);
-          setSelectedAlignmentModel(frontendModel);
+          // Validate that the model is actually in our dropdown options
+          const isValidOption = modelOptions.some(opt => opt.value === frontendModel);
+          
+          if (isValidOption) {
+            setSelectedEvaluationModel(frontendModel);
+            setSelectedAlignmentModel(frontendModel);
+          } else {
+            // Fall back to default if saved model isn't recognized (e.g., 'demo')
+            setSelectedEvaluationModel(defaultModel);
+            setSelectedAlignmentModel(defaultModel);
+          }
+        } else {
+          // No model saved - use default
+          setSelectedEvaluationModel(defaultModel);
+          setSelectedAlignmentModel(defaultModel);
         }
         
         // Set metrics if available from the saved prompt
@@ -368,6 +414,15 @@ The response partially meets the criteria because...`;
         promptId
       );
       setEvaluations(evaluationsResult);
+      
+      // If we loaded evaluations from the DB, mark evaluation as complete
+      // This enables the Align button when returning to the page
+      if (evaluationsResult && evaluationsResult.length > 0) {
+        setHasEvaluated(true);
+        if (evaluationsResult.length >= 10) {
+          setEvaluationComplete(true);
+        }
+      }
       
       // Set metrics from the prompt's performance data if available
       const prompt = prompts.find(p => p.id === promptId);
@@ -517,6 +572,7 @@ The response partially meets the criteria because...`;
           judge_prompt: normalizedPrompt,
           evaluation_model_name: getBackendModelName(selectedEvaluationModel),
           alignment_model_name: getBackendModelName(selectedAlignmentModel),
+          prompt_id: selectedPromptId || undefined, // Reuse existing prompt if available
         }),
       });
 
@@ -572,6 +628,10 @@ The response partially meets the criteria because...`;
                 setSelectedPromptId(status.result.saved_prompt_id);
                 setOriginalPromptText(currentPrompt); // It's now saved, so not modified
                 setIsModified(false);
+                
+                // Explicitly load the persisted evaluations for this new version
+                // This ensures consistency with what will be loaded on refresh
+                loadEvaluations(status.result.saved_prompt_id);
               }
 
               const storageKey = `judge-evaluations-${workshopId}`;
@@ -713,8 +773,40 @@ The response partially meets the criteria because...`;
             if (status.result) {
               setAlignmentResult(status.result);
               if (status.result.success) {
-                  toast.success('Alignment complete! Judge has been optimized.');
+                toast.success('Alignment complete! Judge has been optimized.');
+                
+                // Update editor with aligned instructions
+                if (status.result.aligned_instructions) {
+                  setCurrentPrompt(status.result.aligned_instructions);
+                  setOriginalPromptText(status.result.aligned_instructions);
+                  setIsModified(false);
                 }
+                
+                // Refresh prompts list and select the new aligned version
+                if (status.result.saved_prompt_id) {
+                  try {
+                    const updatedPrompts = await WorkshopsService.getJudgePromptsWorkshopsWorkshopIdJudgePromptsGet(workshopId);
+                    setPrompts(updatedPrompts);
+                    setSelectedPromptId(status.result.saved_prompt_id);
+                    
+                    // Load the aligned prompt text from the database to ensure consistency
+                    const alignedPrompt = updatedPrompts.find(p => p.id === status.result.saved_prompt_id);
+                    if (alignedPrompt) {
+                      setCurrentPrompt(alignedPrompt.prompt_text);
+                      setOriginalPromptText(alignedPrompt.prompt_text);
+                      setIsModified(false);
+                    }
+                    
+                    // Reset evaluation state for the new version (needs fresh evaluation)
+                    setEvaluations([]);
+                    setMetrics(null);
+                    setHasEvaluated(false);
+                    setEvaluationComplete(false);
+                  } catch (refreshErr) {
+                    console.error('[ALIGN] Failed to refresh prompts:', refreshErr);
+                  }
+                }
+              }
             }
             setIsRunningAlignment(false);
             return;
@@ -947,7 +1039,11 @@ The response partially meets the criteria because...`;
                         <div className="flex items-center gap-2">
                           <span>v{prompt.version}</span>
                           <Badge variant="outline" className="text-xs">
-                            {prompt.model_name === 'demo' ? 'Demo' : getDisplayName(getFrontendModelName(prompt.model_name || ''))}
+                            {(prompt.model_parameters as any)?.aligned 
+                              ? 'Aligned' 
+                              : prompt.model_name === 'demo' 
+                                ? 'Demo' 
+                                : getDisplayName(getFrontendModelName(prompt.model_name || ''))}
                           </Badge>
                         </div>
                         {prompt.performance_metrics && (
@@ -1466,11 +1562,12 @@ The response partially meets the criteria because...`;
               <label className="text-sm font-medium text-gray-700 mb-2 block">Judge Name</label>
               <Input
                 value={judgeName}
-                onChange={(e) => setJudgeName(e.target.value)}
+                readOnly
+                className="bg-gray-50"
                 placeholder="workshop_judge"
               />
               <p className="text-xs text-gray-500 mt-1">
-                This name must match between evaluate() and align()
+                Set in Annotation Phase (Facilitator Dashboard)
               </p>
             </div>
           </div>
