@@ -5,6 +5,7 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Workshop } from '@/client';
+import { useUser } from './UserContext';
 
 interface WorkshopContextType {
   workshopId: string | null;
@@ -81,6 +82,7 @@ const getWorkshopIdFromUrl = (): string | null => {
 export function WorkshopProvider({ children, restoredWorkshopId }: WorkshopProviderProps) {
   // Get query client FIRST, before state initialization
   const queryClient = useQueryClient();
+  const { user } = useUser();
   
   const [workshopId, setWorkshopId] = useState<string | null>(() => {
     const urlWorkshopId = getWorkshopIdFromUrl();
@@ -127,6 +129,15 @@ export function WorkshopProvider({ children, restoredWorkshopId }: WorkshopProvi
     setWorkshopId(null);
     setWorkshop(null);
   };
+
+  // Sync with UserContext
+  React.useEffect(() => {
+    // If user is logged in and has a workshop ID that differs from current context, sync it.
+    // This handles the login redirection case where UserContext updates but WorkshopContext needs to follow.
+    if (user?.workshop_id && user.workshop_id !== workshopId) {
+      handleSetWorkshopId(user.workshop_id);
+    }
+  }, [user, workshopId]);
 
   // Handle restored workshop ID from user context
   React.useEffect(() => {

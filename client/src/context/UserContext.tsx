@@ -49,10 +49,9 @@ export const useUser = () => {
 
 interface UserProviderProps {
   children: ReactNode;
-  onWorkshopIdRestored?: (workshopId: string) => void;
 }
 
-export const UserProvider: React.FC<UserProviderProps> = ({ children, onWorkshopIdRestored }) => {
+export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
   const queryClient = useQueryClient();
   const [user, setUser] = useState<User | null>(null);
   const [permissions, setPermissions] = useState<UserPermissions | null>(null);
@@ -77,8 +76,6 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children, onWorkshop
               const currentWorkshopId = localStorage.getItem('workshop_id');
               if (!currentWorkshopId) {
                 localStorage.setItem('workshop_id', validatedUser.workshop_id);
-                // Notify workshop context about the restored workshop ID
-                onWorkshopIdRestored?.(validatedUser.workshop_id);
               }
             }
             
@@ -121,7 +118,7 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children, onWorkshop
     };
     
     initializeUser();
-  }, [onWorkshopIdRestored]);
+  }, []);
 
   // Save user to localStorage when it changes
   useEffect(() => {
@@ -185,7 +182,6 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children, onWorkshop
           const currentWorkshopId = localStorage.getItem('workshop_id');
           if (currentWorkshopId !== newUser.workshop_id) {
             localStorage.setItem('workshop_id', newUser.workshop_id);
-            onWorkshopIdRestored?.(newUser.workshop_id);
           }
         }
       } catch (error) {
