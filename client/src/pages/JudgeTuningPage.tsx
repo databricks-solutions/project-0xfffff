@@ -23,7 +23,6 @@ import {
   Loader2,
   Database,
   Cloud,
-  MessageSquare,
 } from 'lucide-react';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useUser, useRoleCheck } from '@/context/UserContext';
@@ -514,12 +513,40 @@ The response partially meets the criteria because...`;
       setSelectedPromptId(newPrompt.id);
       setOriginalPromptText(currentPrompt); // Reset modification tracking
       setHasEvaluated(false); // Reset evaluation state after saving
+      
+      toast.success(`Prompt saved as v${newPrompt.version}`);
 
     } catch (err: any) {
       setError(err.message || 'Failed to save prompt');
+      toast.error('Failed to save prompt: ' + (err.message || 'Unknown error'));
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleDownloadPrompt = () => {
+    if (!currentPrompt.trim()) return;
+    
+    const promptData = {
+      prompt_text: currentPrompt,
+      model_name: getBackendModelName(selectedEvaluationModel),
+      model_parameters: selectedEvaluationModel === 'demo' ? null : { temperature: 0.0, max_tokens: 10 },
+      exported_at: new Date().toISOString(),
+      workshop_id: workshopId,
+      metrics: metrics || null,
+    };
+    
+    const blob = new Blob([JSON.stringify(promptData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `judge-prompt-${workshopId}-${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    toast.success('Prompt downloaded successfully');
   };
 
   const handleEvaluatePrompt = async () => {
@@ -850,47 +877,6 @@ The response partially meets the criteria because...`;
     }
   };
 
-  const handleAdvanceToLogFeedback = async () => {
-    if (!isFacilitator) return;
-    
-    try {
-      // Call the Unity volume advance endpoint directly (keeping the same backend endpoint)
-      const response = await fetch(`/workshops/${workshopId}/advance-to-unity-volume`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to advance to Log Feedback phase: ${response.statusText}`);
-      }
-      
-      const result = await response.json();
-      
-      // Add a small delay to ensure backend has processed the change
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Clear all workshop-related queries from cache
-      queryClient.removeQueries({ queryKey: ['workshop', workshopId] });
-      queryClient.removeQueries({ queryKey: ['annotations', workshopId] });
-      queryClient.removeQueries({ queryKey: ['rubric', workshopId] });
-      queryClient.removeQueries({ queryKey: ['judge-prompts', workshopId] });
-      
-      // Force a fresh refetch of the workshop data
-      await queryClient.prefetchQuery({
-        queryKey: ['workshop', workshopId],
-        queryFn: () => WorkshopsService.getWorkshopWorkshopsWorkshopIdGet(workshopId!)
-      });
-      
-      // Navigate to Unity Volume page (which now focuses on Log Feedback)
-      window.location.href = `/workshop/${workshopId}?phase=unity_volume`;
-      
-    } catch (error) {
-      // You might want to show an error message to the user here
-    }
-  };
-
   const handleExportJudge = async (format: string) => {
     if (!workshopId || !selectedPromptId) return;
 
@@ -982,20 +968,6 @@ The response partially meets the criteria because...`;
         </Alert>
       )}
 
-      {/* Advance to Manage Workshop Data Button */}
-      {isFacilitator && prompts.length > 0 && (
-        <div className="mb-6 flex justify-end">
-          <Button
-            onClick={handleAdvanceToLogFeedback}
-            className="bg-green-600 hover:bg-green-700 text-white"
-            size="lg"
-          >
-            <MessageSquare className="h-4 w-4 mr-2" />
-            Proceed to Manage Workshop Data
-          </Button>
-        </div>
-      )}
-
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column - Prompt Editor (1/3) */}
         <div className="lg:col-span-1 space-y-4">
@@ -1081,19 +1053,15 @@ The response partially meets the criteria because...`;
               </div>
               
               <div className="space-y-3">
-                <div className="space-y-2">
-                  {/* Save to History (Only after evaluating modified prompt) */}
+                <div className="flex gap-2">
+                  {/* Save to Database */}
                   <Button 
                     onClick={handleSavePrompt}
-                    disabled={!currentPrompt.trim() || isLoading || !isModified || !hasEvaluated}
+                    disabled={!currentPrompt.trim() || isLoading}
                     variant="outline"
-                    className={`w-full ${(!isModified || !hasEvaluated) ? 'opacity-50' : ''}`}
+                    className="flex-1"
                     size="sm"
-                    title={
-                      !isModified ? "No changes to save" :
-                      !hasEvaluated ? "Evaluate the modified prompt first" :
-                      "Save as new version to prompt history"
-                    }
+                    title="Save prompt to database as new version"
                   >
                     {isLoading ? (
                       <>
@@ -1102,10 +1070,20 @@ The response partially meets the criteria because...`;
                       </>
                     ) : (
                       <>
-                        <Zap className="mr-2 h-4 w-4" />
+                        <Database className="mr-2 h-4 w-4" />
                         Save as New Version
                       </>
                     )}
+                  </Button>
+                  {/* Download Prompt */}
+                  <Button 
+                    onClick={handleDownloadPrompt}
+                    disabled={!currentPrompt.trim()}
+                    variant="outline"
+                    size="sm"
+                    title="Download prompt as JSON file"
+                  >
+                    <Download className="h-4 w-4" />
                   </Button>
                 </div>
               </div>
