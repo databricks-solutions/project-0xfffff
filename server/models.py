@@ -147,6 +147,7 @@ class Workshop(BaseModel):
   annotation_started: bool = False
   active_discovery_trace_ids: List[str] = Field(default_factory=list)
   active_annotation_trace_ids: List[str] = Field(default_factory=list)
+  judge_name: str = 'workshop_judge'  # Name used for MLflow feedback entries
   created_at: datetime = Field(default_factory=datetime.now)
 
 
@@ -172,6 +173,8 @@ class Trace(BaseModel):
   mlflow_url: Optional[str] = None
   mlflow_host: Optional[str] = None
   mlflow_experiment_id: Optional[str] = None
+  include_in_alignment: bool = True  # Whether to include in judge alignment
+  sme_feedback: Optional[str] = None  # Concatenated SME feedback for alignment
   created_at: datetime = Field(default_factory=datetime.now)
 
 

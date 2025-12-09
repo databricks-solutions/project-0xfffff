@@ -3,16 +3,25 @@
 .DS_Store
 __pycache__
 .idea/
+.vscode/
 .env
 node_modules/
 client/node_modules/
-client/build/*
-!client/build/README.md
+# Allow client/build for deployment (built files needed for Databricks Apps)
+# client/build/*
+# !client/build/README.md
 env.local
 .venv/
 .venv
 workshop.db
 *.csv
-.vscode/
 .claude/
 .databricks/
+
+# Coding agent guide files
+instructions.md
+ANNOTATION_EDITING_FIX.md
+AUTHENTICATION_FIX.md
+COMMENT_NEWLINE_HANDLING.md
+RUBRIC_FORMAT_UPDATE.md
+TRACE_RANDOMIZATION.md

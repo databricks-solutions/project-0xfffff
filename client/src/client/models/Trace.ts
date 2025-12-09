@@ -13,6 +13,8 @@ export type Trace = {
     mlflow_url?: (string | null);
     mlflow_host?: (string | null);
     mlflow_experiment_id?: (string | null);
+    include_in_alignment?: boolean;
+    sme_feedback?: (string | null);
     created_at?: string;
 };
 

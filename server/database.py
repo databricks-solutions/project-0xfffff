@@ -132,6 +132,7 @@ class WorkshopDB(Base):
   annotation_started = Column(Boolean, default=False)
   active_discovery_trace_ids = Column(JSON, default=list)
   active_annotation_trace_ids = Column(JSON, default=list)
+  judge_name = Column(String, default='workshop_judge')  # Name used for feedback entries
   created_at = Column(DateTime, default=func.now())
 
   # Relationships
@@ -144,6 +145,7 @@ class WorkshopDB(Base):
   mlflow_config = relationship('MLflowIntakeConfigDB', back_populates='workshop', uselist=False, cascade='all, delete-orphan')
   judge_prompts = relationship('JudgePromptDB', back_populates='workshop', cascade='all, delete-orphan')
   judge_evaluations = relationship('JudgeEvaluationDB', back_populates='workshop', cascade='all, delete-orphan')
+  databricks_token = relationship('DatabricksTokenDB', back_populates='workshop', uselist=False, cascade='all, delete-orphan')
   user_trace_orders = relationship('UserTraceOrderDB', back_populates='workshop', cascade='all, delete-orphan')
   user_discovery_completions = relationship('UserDiscoveryCompletionDB', back_populates='workshop', cascade='all, delete-orphan')
 
@@ -163,6 +165,8 @@ class TraceDB(Base):
   mlflow_url = Column(String, nullable=True)  # Optional MLflow URL
   mlflow_host = Column(String, nullable=True)  # Optional MLflow host
   mlflow_experiment_id = Column(String, nullable=True)  # Optional MLflow experiment ID
+  include_in_alignment = Column(Boolean, default=True)  # Whether to include in judge alignment
+  sme_feedback = Column(Text, nullable=True)  # Concatenated SME feedback for alignment
   created_at = Column(DateTime, default=func.now())
 
   # Relationships
@@ -258,6 +262,19 @@ class MLflowIntakeConfigDB(Base):
 
   # Relationships
   workshop = relationship('WorkshopDB', back_populates='mlflow_config')
+
+
+class DatabricksTokenDB(Base):
+  """Database model for storing Databricks tokens per workshop."""
+
+  __tablename__ = 'databricks_tokens'
+
+  workshop_id = Column(String, ForeignKey('workshops.id'), primary_key=True)
+  token = Column(Text, nullable=False)
+  created_at = Column(DateTime, default=func.now())
+  updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+  workshop = relationship('WorkshopDB', back_populates='databricks_token')
 
 
 class JudgePromptDB(Base):
@@ -376,6 +393,22 @@ def create_tables():
       except Exception as e:
         # Column already exists or table doesn't exist yet
         print(f'ℹ️ annotations schema update skipped (ratings column may already exist): {e}')
+
+      try:
+        # Add include_in_alignment column to traces table for alignment filtering
+        conn.execute(text('ALTER TABLE traces ADD COLUMN include_in_alignment BOOLEAN DEFAULT 1'))
+        conn.commit()
+        print('✅ Database schema updated for traces (added include_in_alignment column)')
+      except Exception as e:
+        print(f'ℹ️ traces schema update skipped (include_in_alignment column may already exist): {e}')
+
+      try:
+        # Add sme_feedback column to traces table for concatenated SME feedback
+        conn.execute(text('ALTER TABLE traces ADD COLUMN sme_feedback TEXT'))
+        conn.commit()
+        print('✅ Database schema updated for traces (added sme_feedback column)')
+      except Exception as e:
+        print(f'ℹ️ traces schema update skipped (sme_feedback column may already exist): {e}')
 
   except Exception as e:
     print(f'❌ Error creating database tables: {e}')

@@ -469,3 +469,59 @@ export function useMLflowConfig(workshopId: string) {
     enabled: !!workshopId,
   });
 }
+
+// Trace alignment hooks
+export function useUpdateTraceAlignment(workshopId: string) {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async ({ traceId, includeInAlignment }: { traceId: string; includeInAlignment: boolean }) => {
+      const response = await fetch(
+        `/workshops/${workshopId}/traces/${traceId}/alignment?include_in_alignment=${includeInAlignment}`,
+        { method: 'PATCH' }
+      );
+      if (!response.ok) {
+        throw new Error('Failed to update trace alignment');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      // Invalidate traces and alignment-related queries
+      queryClient.invalidateQueries({ queryKey: ['traces', workshopId] });
+      queryClient.invalidateQueries({ queryKey: ['traces-for-alignment', workshopId] });
+    },
+  });
+}
+
+export function useTracesForAlignment(workshopId: string) {
+  return useQuery({
+    queryKey: ['traces-for-alignment', workshopId],
+    queryFn: async () => {
+      const response = await fetch(`/workshops/${workshopId}/traces-for-alignment`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch traces for alignment');
+      }
+      return response.json();
+    },
+    enabled: !!workshopId,
+  });
+}
+
+export function useAggregateAllFeedback(workshopId: string) {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`/workshops/${workshopId}/aggregate-all-feedback`, { method: 'POST' });
+      if (!response.ok) {
+        throw new Error('Failed to aggregate feedback');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      // Invalidate traces to reflect updated sme_feedback
+      queryClient.invalidateQueries({ queryKey: ['traces', workshopId] });
+      queryClient.invalidateQueries({ queryKey: ['traces-for-alignment', workshopId] });
+    },
+  });
+}

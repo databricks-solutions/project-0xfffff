@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -23,16 +23,16 @@ import {
   Loader2,
   Database,
   Cloud,
-  MessageSquare,
 } from 'lucide-react';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useUser, useRoleCheck } from '@/context/UserContext';
 import { WorkshopsService } from '@/client';
-import { useWorkshop, useOriginalTraces } from '@/hooks/useWorkshopApi';
+import { useWorkshop, useOriginalTraces, useAggregateAllFeedback } from '@/hooks/useWorkshopApi';
 import { getModelOptions, getBackendModelName, getFrontendModelName, getDisplayName } from '@/utils/modelMapping';
-import { useJudgeEvaluate } from '@/hooks/useDatabricksApi';
+import { parseRubricQuestions } from '@/utils/rubricUtils';
 import { Pagination } from '@/components/Pagination';
 import { TraceDataViewer } from '@/components/TraceDataViewer';
+import { toast } from 'sonner';
 
 import type { 
   JudgePrompt, 
@@ -52,16 +52,15 @@ export function JudgeTuningPage() {
   const { isFacilitator } = useRoleCheck();
   const { data: workshop } = useWorkshop(workshopId!);
   const { data: traces } = useOriginalTraces(workshopId!);
+  const aggregateAllFeedback = useAggregateAllFeedback(workshopId!);
   const queryClient = useQueryClient();
-  
-  // Databricks judge evaluation hook
-  const judgeEvaluate = useJudgeEvaluate();
   
   // State management
   const [prompts, setPrompts] = useState<JudgePrompt[]>([]);
   const [currentPrompt, setCurrentPrompt] = useState<string>('');
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
-  const [selectedModel, setSelectedModel] = useState<string>('GPT-5.1');
+  const [selectedEvaluationModel, setSelectedEvaluationModel] = useState<string>('GPT-5.1');
+  const [selectedAlignmentModel, setSelectedAlignmentModel] = useState<string>('GPT-5.1');
   const [evaluations, setEvaluations] = useState<JudgeEvaluation[]>([]);
   const [metrics, setMetrics] = useState<JudgePerformanceMetrics | null>(null);
   const [rubric, setRubric] = useState<Rubric | null>(null);
@@ -83,14 +82,99 @@ export function JudgeTuningPage() {
   
   // Loading states
   const [isLoading, setIsLoading] = useState(false);
-  const [isEvaluating, setIsEvaluating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [evaluationError, setEvaluationError] = useState<string | null>(null);
   
   // Databricks configuration state
-  const [databricksWorkspaceUrl, setDatabricksWorkspaceUrl] = useState<string>('');
-  const [databricksToken, setDatabricksToken] = useState<string>('');
-  const [showDatabricksConfig, setShowDatabricksConfig] = useState<boolean>(false);
+  
+  // Alignment + evaluation state
+  const [isRunningEvaluation, setIsRunningEvaluation] = useState(false);
+  const [isRunningAlignment, setIsRunningAlignment] = useState(false);
+  const [evaluationComplete, setEvaluationComplete] = useState(false);
+  const [alignmentLogs, setAlignmentLogs] = useState<string[]>([]);
+  const [alignmentResult, setAlignmentResult] = useState<any>(null);
+  const [showAlignmentLogs, setShowAlignmentLogs] = useState(false);
+  
+  // Judge name derivation logic
+  const judgeName = useMemo(() => {
+    // If saved name exists and is not default, use it
+    if (workshop?.judge_name && workshop.judge_name !== 'workshop_judge') {
+      return workshop.judge_name;
+    }
+    
+    // Otherwise try to derive from rubric
+    if (rubric?.question) {
+      const questions = parseRubricQuestions(rubric.question);
+      if (questions.length > 0 && questions[0].title) {
+        const title = questions[0].title;
+        const snakeCase = title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+        return `${snakeCase}_judge`;
+      }
+    }
+    
+    // Fallback to default
+    return 'workshop_judge';
+  }, [workshop?.judge_name, rubric?.question]);
+
+  const logsStorageKey = useMemo(
+    () => (workshopId ? `judge-alignment-logs-${workshopId}` : 'judge-alignment-logs'),
+    [workshopId]
+  );
+
+  const updateAlignmentLogs = useCallback(
+    (value: string[] | ((prev: string[]) => string[])) => {
+      setAlignmentLogs((prev) => {
+        const next = typeof value === 'function' ? value(prev) : value;
+        try {
+          localStorage.setItem(logsStorageKey, JSON.stringify(next));
+        } catch (error) {
+          // no-op if localStorage unavailable
+        }
+        return next;
+      });
+    },
+    [logsStorageKey]
+  );
+
+  useEffect(() => {
+    if (!logsStorageKey) return;
+    try {
+      const stored = localStorage.getItem(logsStorageKey);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          setAlignmentLogs(parsed);
+        } else if (Array.isArray(parsed?.logs)) {
+          setAlignmentLogs(parsed.logs);
+        }
+      }
+    } catch (error) {
+      // ignore parse errors
+    }
+  }, [logsStorageKey]);
+
+  const annotatedTraceCount = useMemo(() => {
+    if (!annotations?.length) return 0;
+    const traceIds = new Set(
+      annotations
+        .filter((ann) => ann.rating !== null && ann.rating !== undefined)
+        .map((ann) => ann.trace_id)
+    );
+    return traceIds.size;
+  }, [annotations]);
+
+  const ensurePromptHasPlaceholders = (prompt: string) => {
+    let normalized = prompt || '';
+    const hasInput = /{input}|{{\s*inputs\s*}}/i.test(normalized);
+    const hasOutput = /{output}|{{\s*outputs\s*}}/i.test(normalized);
+    if (!hasInput) {
+      normalized += `${normalized.trim().length ? '\n\n' : ''}Input: {input}`;
+    }
+    if (!hasOutput) {
+      normalized += `\nOutput: {output}`;
+    }
+    return normalized;
+  };
 
   // Load initial data
   useEffect(() => {
@@ -125,35 +209,30 @@ export function JudgeTuningPage() {
     // Reset evaluation state when prompt changes
     if (modified) {
       setHasEvaluated(false);
+      setEvaluationComplete(false);
+      setAlignmentResult(null);
     }
   }, [currentPrompt, originalPromptText]);
   
-  // Load Databricks config from MLflow config or localStorage
-  useEffect(() => {
-    if (mlflowConfig) {
-      setDatabricksWorkspaceUrl(mlflowConfig.databricks_host || '');
-      setDatabricksToken(mlflowConfig.databricks_token || '');
-    }
-    
-    // Also try to load from localStorage
-    const storedConfig = localStorage.getItem(`databricks-config-${workshopId}`);
-    if (storedConfig) {
-      try {
-        const parsed = JSON.parse(storedConfig);
-        if (!databricksWorkspaceUrl) setDatabricksWorkspaceUrl(parsed.workspace_url || '');
-        if (!databricksToken) setDatabricksToken(parsed.token || '');
-      } catch (error) {
-        // Silent fail for config parsing
-      }
-    }
-  }, [mlflowConfig, workshopId]);
+  // Databricks config is now sourced solely from Intake phase (mlflowConfig)
+
+  // Derived list: only traces that actually have human annotations (responses)
+  const annotatedTraces = useMemo(() => {
+    if (!traces || !annotations.length) return [];
+    const annotatedTraceIds = new Set(
+      annotations
+        .filter((ann) => ann.rating !== undefined && ann.rating !== null)
+        .map((ann) => ann.trace_id)
+    );
+    return traces.filter((trace) => annotatedTraceIds.has(trace.id));
+  }, [traces, annotations]);
 
   // Reset pagination when traces change
   useEffect(() => {
-    if (traces && traces.length > 0) {
+    if (annotatedTraces && annotatedTraces.length > 0) {
       setCurrentPage(1);
     }
-  }, [traces]);
+  }, [annotatedTraces]);
 
   // Reset expanded row when changing pages
   useEffect(() => {
@@ -162,6 +241,9 @@ export function JudgeTuningPage() {
 
   const loadInitialData = async () => {
     if (!workshopId) return;
+    
+    // Force refresh of workshop data to get latest judge name
+    queryClient.invalidateQueries({ queryKey: ['workshop', workshopId] });
     
     setIsLoading(true);
     setError(null);
@@ -189,11 +271,19 @@ export function JudgeTuningPage() {
       setAnnotations(annotationsData);
       setMlflowConfig(mlflowConfigData);
 
+      // Determine default model first (used in multiple places)
+      const modelOptions = getModelOptions(!!mlflowConfigData);
+      const defaultModel = modelOptions.find(opt => !opt.disabled)?.value || modelOptions[0]?.value || 'GPT-5.1';
+      
       // Initialize with rubric question if no prompts exist
       if (promptsData.length === 0 && rubricData) {
         const defaultPrompt = createDefaultPrompt(rubricData.question);
         setCurrentPrompt(defaultPrompt);
         setOriginalPromptText(defaultPrompt); // Track original for new prompt
+        
+        // Set default models when no prompts exist
+        setSelectedEvaluationModel(defaultModel);
+        setSelectedAlignmentModel(defaultModel);
         
         // Don't auto-create baseline - let user create it manually
         // This prevents the v2 issue where auto-creation makes first manual save become v2
@@ -207,7 +297,22 @@ export function JudgeTuningPage() {
         
         // Sync model selection with saved prompt
         if (latestPrompt.model_name) {
-          setSelectedModel(getFrontendModelName(latestPrompt.model_name));
+          const frontendModel = getFrontendModelName(latestPrompt.model_name);
+          // Validate that the model is actually in our dropdown options
+          const isValidOption = modelOptions.some(opt => opt.value === frontendModel);
+          
+          if (isValidOption) {
+            setSelectedEvaluationModel(frontendModel);
+            setSelectedAlignmentModel(frontendModel);
+          } else {
+            // Fall back to default if saved model isn't recognized (e.g., 'demo')
+            setSelectedEvaluationModel(defaultModel);
+            setSelectedAlignmentModel(defaultModel);
+          }
+        } else {
+          // No model saved - use default
+          setSelectedEvaluationModel(defaultModel);
+          setSelectedAlignmentModel(defaultModel);
         }
         
         // Set metrics if available from the saved prompt
@@ -309,6 +414,15 @@ The response partially meets the criteria because...`;
       );
       setEvaluations(evaluationsResult);
       
+      // If we loaded evaluations from the DB, mark evaluation as complete
+      // This enables the Align button when returning to the page
+      if (evaluationsResult && evaluationsResult.length > 0) {
+        setHasEvaluated(true);
+        if (evaluationsResult.length >= 10) {
+          setEvaluationComplete(true);
+        }
+      }
+      
       // Set metrics from the prompt's performance data if available
       const prompt = prompts.find(p => p.id === promptId);
       if (prompt?.performance_metrics) {
@@ -329,8 +443,8 @@ The response partially meets the criteria because...`;
       const promptData: JudgePromptCreate = {
         prompt_text: currentPrompt,
         few_shot_examples: [],
-        model_name: getBackendModelName(selectedModel),
-        model_parameters: selectedModel === 'demo' ? null : { temperature: 0.0, max_tokens: 10 }
+        model_name: getBackendModelName(selectedEvaluationModel),
+        model_parameters: selectedEvaluationModel === 'demo' ? null : { temperature: 0.0, max_tokens: 10 }
       };
 
       const newPrompt = await WorkshopsService.createJudgePromptWorkshopsWorkshopIdJudgePromptsPost(
@@ -399,250 +513,367 @@ The response partially meets the criteria because...`;
       setSelectedPromptId(newPrompt.id);
       setOriginalPromptText(currentPrompt); // Reset modification tracking
       setHasEvaluated(false); // Reset evaluation state after saving
+      
+      toast.success(`Prompt saved as v${newPrompt.version}`);
 
     } catch (err: any) {
       setError(err.message || 'Failed to save prompt');
+      toast.error('Failed to save prompt: ' + (err.message || 'Unknown error'));
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleEvaluatePrompt = async () => {
-    if (!workshopId || !currentPrompt.trim()) return;
+  const handleDownloadPrompt = () => {
+    if (!currentPrompt.trim()) return;
+    
+    const promptData = {
+      prompt_text: currentPrompt,
+      model_name: getBackendModelName(selectedEvaluationModel),
+      model_parameters: selectedEvaluationModel === 'demo' ? null : { temperature: 0.0, max_tokens: 10 },
+      exported_at: new Date().toISOString(),
+      workshop_id: workshopId,
+      metrics: metrics || null,
+    };
+    
+    const blob = new Blob([JSON.stringify(promptData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `judge-prompt-${workshopId}-${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    toast.success('Prompt downloaded successfully');
+  };
 
-    // Check if Databricks config is required but not configured
-    if (selectedModel !== 'demo' && !mlflowConfig) {
-      setEvaluationError('Databricks configuration required for AI judge evaluation. Please configure MLflow settings in the Intake phase.');
+  const handleEvaluatePrompt = async () => {
+    if (!workshopId || !currentPrompt.trim()) {
+      toast.error('Please enter a judge prompt first');
       return;
     }
 
-    setIsEvaluating(true);
-    setError(null);
+    if (!judgeName.trim()) {
+      toast.error('Please enter a judge name');
+      return;
+    }
+
+    if (!mlflowConfig) {
+      const message = 'Databricks configuration required for AI judge evaluation. Please configure MLflow settings in the Intake phase.';
+      setEvaluationError(message);
+      toast.error(message);
+      return;
+    }
+
+    setIsRunningEvaluation(true);
     setEvaluationError(null);
-    
-    // Clear old cached data immediately to prevent showing stale results
+    updateAlignmentLogs(['Starting evaluation job...']);
+    setShowAlignmentLogs(true);
+    setAlignmentResult(null);
+    setEvaluationComplete(false);
     setMetrics(null);
     setEvaluations([]);
+    const normalizedPrompt = ensurePromptHasPlaceholders(currentPrompt);
 
     try {
-      if (selectedModel === 'demo') {
-        // Use the existing demo evaluation endpoint
-        const evaluationRequest = {
-          prompt_text: currentPrompt,
-          model_name: getBackendModelName(selectedModel),
-          model_parameters: null,
-          trace_ids: undefined // Evaluate all traces
-        };
+      toast.info('Aggregating SME feedback...');
+      await aggregateAllFeedback.mutateAsync();
+    } catch (err: any) {
+      const message = err?.message || 'Failed to aggregate SME feedback';
+      toast.error(message);
+      setEvaluationError(message);
+      setIsRunningEvaluation(false);
+      return;
+    }
 
-        const evaluationResult = await WorkshopsService.evaluateJudgePromptDirectWorkshopsWorkshopIdEvaluateJudgeDirectPost(
-          workshopId,
-          evaluationRequest
-        );
+    try {
+      // Step 1: Start the evaluation job
+      console.log('[EVAL] Starting evaluation with polling approach...');
+      const startResponse = await fetch(`/workshops/${workshopId}/start-evaluation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          judge_name: judgeName,
+          judge_prompt: normalizedPrompt,
+          evaluation_model_name: getBackendModelName(selectedEvaluationModel),
+          alignment_model_name: getBackendModelName(selectedAlignmentModel),
+          prompt_id: selectedPromptId || undefined, // Reuse existing prompt if available
+        }),
+      });
 
-        setMetrics(evaluationResult.metrics);
-        setEvaluations(evaluationResult.evaluations);
-      } else {
-        // Use the new Databricks service for real models
-        if (!mlflowConfig) {
-          throw new Error('MLflow configuration required for AI judge evaluation');
-        }
+      if (!startResponse.ok) {
+        const errorText = await startResponse.text();
+        throw new Error(`Failed to start evaluation: ${startResponse.status} ${errorText}`);
+      }
 
-        // Create Databricks config from state (user input) or MLflow config
-        const databricksConfig = {
-          workspace_url: databricksWorkspaceUrl || mlflowConfig.databricks_host,
-          token: databricksToken || mlflowConfig.databricks_token
-        };
+      const { job_id } = await startResponse.json();
+      console.log('[EVAL] Job started with ID:', job_id);
+      updateAlignmentLogs(prev => [...prev, `Evaluation job started (ID: ${job_id.substring(0, 8)}...)`]);
+
+      // Step 2: Poll for status updates
+      let logIndex = 0;
+      let pollCount = 0;
+      const maxPolls = 600; // 10 minutes at 1 poll/second
+      
+      const poll = async (): Promise<void> => {
+        pollCount++;
         
-        // Validate that we have the required credentials
-        if (!databricksConfig.workspace_url || !databricksConfig.token) {
-          throw new Error('Databricks workspace URL and token are required. Please configure them in the Databricks Configuration section.');
-        }
-        
-        // Save config to localStorage for future use
-        localStorage.setItem(`databricks-config-${workshopId}`, JSON.stringify(databricksConfig));
-
-        // Evaluate each trace individually using the Databricks endpoint
-        // Only evaluate traces that have human ratings
-        const evaluations: JudgeEvaluation[] = [];
-        let totalAgreement = 0;
-        let totalEvaluations = 0;
-        
-        console.log('🎯 Starting judge evaluation...');
-        console.log(`📊 Total traces: ${traces?.length || 0}`);
-        console.log(`📝 Total annotations: ${annotations.length}`);
-        
-        for (const trace of traces || []) {
-          try {
-            // Find human rating for this trace FIRST - skip if no human rating
-            const traceAnnotations = annotations.filter(a => a.trace_id === trace.id);
-            
-            if (traceAnnotations.length === 0) {
-              console.log(`⏭️  Skipping trace ${trace.id} - no human ratings`);
-              continue; // Skip traces without human ratings
-            }
-            
-            // Calculate mode (most common rating) as ground truth
-            const humanRating = traceAnnotations
-              .map(a => a.rating)
-              .sort((a, b) => 
-                traceAnnotations.filter(v => v.rating === b).length - 
-                traceAnnotations.filter(v => v.rating === a).length
-              )[0];
-            
-            console.log(`🔍 Evaluating trace ${trace.id} with human rating: ${humanRating}`);
-            
-            // Create the specific prompt for this trace
-            const tracePrompt = currentPrompt
-              .replace('{input}', trace.input || '')
-              .replace('{output}', trace.output || '');
-            
-            
-            // Call the Databricks judge evaluation endpoint for this trace
-            const result = await judgeEvaluate.mutateAsync({
-              endpointName: getBackendModelName(selectedModel),
-              prompt: tracePrompt,
-              config: databricksConfig,
-              workshop_id: workshopId,
-              temperature: 0.0,
-              maxTokens: 1000  // Increased from 10 to 100 to allow model to respond
-            });
-
-            if (result.success) {
-              // Extract the rating from the response
-              const responseText = result.data?.choices?.[0]?.message?.content || 
-                                  result.data?.response || 
-                                  result.data?.text || 
-                                  JSON.stringify(result.data);
+        try {
+          const statusResponse = await fetch(
+            `/workshops/${workshopId}/evaluation-job/${job_id}?since_log_index=${logIndex}`
+          );
+          
+          if (!statusResponse.ok) {
+            console.error('[EVAL] Status poll failed:', statusResponse.status);
+            return;
+          }
+          
+          const status = await statusResponse.json();
+          
+          // Add new logs
+          if (status.logs && status.logs.length > 0) {
+            updateAlignmentLogs(prev => [...prev, ...status.logs]);
+            logIndex = status.log_count;
+          }
+          
+          // Check if job is complete
+          if (status.status === 'completed') {
+            console.log('[EVAL] Job completed!', status.result);
+            if (status.result?.success) {
+              setMetrics(status.result.metrics || null);
+              setEvaluations(status.result.evaluations || []);
+              setHasEvaluated(true);
+              setEvaluationComplete(true);
+              toast.success('Evaluation complete!');
               
-              console.log(`📥 Model response: ${responseText}`);
-              
-              // Parse the rating (expecting format like "3\nReasoning...")
-              const ratingMatch = responseText.match(/^(\d+)/);
-              const judgeRating = ratingMatch ? parseInt(ratingMatch[1]) : null;
-              
-              if (judgeRating && judgeRating >= 1 && judgeRating <= 5) {
-                console.log(`✅ Parsed rating: ${judgeRating} (human: ${humanRating})`);
+              // If backend saved it as a version, update our state to reflect that
+              if (status.result.saved_prompt_id) {
+                const updatedPrompts = await WorkshopsService.getJudgePromptsWorkshopsWorkshopIdJudgePromptsGet(workshopId);
+                setPrompts(updatedPrompts);
+                setSelectedPromptId(status.result.saved_prompt_id);
+                setOriginalPromptText(currentPrompt); // It's now saved, so not modified
+                setIsModified(false);
                 
-                // Create evaluation object
-                const evaluation: JudgeEvaluation = {
-                  id: `temp-${trace.id}-${Date.now()}`,
-                  workshop_id: workshopId!,
-                  prompt_id: 'temp-prompt',
-                  trace_id: trace.id,
-                  predicted_rating: judgeRating,
-                  human_rating: humanRating,
-                  confidence: 1.0,
-                  reasoning: responseText
-                };
-                
-                evaluations.push(evaluation);
-                
-                // Calculate agreement
-                const agreement = Math.abs(judgeRating - humanRating) <= 1 ? 1 : 0;
-                totalAgreement += agreement;
-                totalEvaluations++;
-              } else {
-                console.warn(`⚠️  Could not parse rating from response: ${responseText}`);
+                // Explicitly load the persisted evaluations for this new version
+                // This ensures consistency with what will be loaded on refresh
+                loadEvaluations(status.result.saved_prompt_id);
               }
-            } else {
-              console.error(`❌ Evaluation failed for trace ${trace.id}:`, result.error);
+
+              const storageKey = `judge-evaluations-${workshopId}`;
+              localStorage.setItem(storageKey, JSON.stringify({
+                evaluations: status.result.evaluations || [],
+                metrics: status.result.metrics || null,
+                timestamp: Date.now(),
+              }));
             }
-          } catch (error: any) {
-            console.error(`❌ Error evaluating trace ${trace.id}:`, error.message || error);
+            setIsRunningEvaluation(false);
+            return;
+          }
+          
+          if (status.status === 'failed') {
+            console.error('[EVAL] Job failed:', status.error);
+            toast.error(`Evaluation failed: ${status.error || 'Unknown error'}`);
+            setEvaluationError(status.error || 'Unknown error');
+            updateAlignmentLogs(prev => [...prev, `ERROR: ${status.error || 'Unknown error'}`]);
+            setIsRunningEvaluation(false);
+            return;
+          }
+          
+          // Continue polling if still running
+          if (status.status === 'running' && pollCount < maxPolls) {
+            // Poll every 2 seconds
+            setTimeout(poll, 2000);
+          } else if (pollCount >= maxPolls) {
+            console.warn('[EVAL] Max poll count reached');
+            updateAlignmentLogs(prev => [...prev, 'Warning: Polling timeout reached. Job may still be running.']);
+            setIsRunningEvaluation(false);
+              }
+        } catch (pollError) {
+          console.error('[EVAL] Poll error:', pollError);
+          // On error, try again after a delay
+          if (pollCount < maxPolls) {
+            setTimeout(poll, 5000);
           }
         }
-        
-        console.log(`✨ Evaluation complete: ${totalEvaluations} traces evaluated`);
-        console.log(`📊 Agreement rate: ${totalEvaluations > 0 ? (totalAgreement / totalEvaluations * 100).toFixed(1) : 0}%`);
-        
-        // Calculate metrics
-        const accuracy = totalEvaluations > 0 ? totalAgreement / totalEvaluations : 0;
-        const correlation = accuracy; // Simplified correlation for now
-        
-        const metrics: JudgePerformanceMetrics = {
-          prompt_id: 'temp-' + Date.now(),
-          correlation: correlation,
-          accuracy: accuracy,
-          mean_absolute_error: 0.5, // Placeholder
-          total_evaluations: totalEvaluations,
-          agreement_by_rating: { "1": accuracy, "2": accuracy, "3": accuracy, "4": accuracy, "5": accuracy },
-          confusion_matrix: [[0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0]]
-        };
-        
-        setMetrics(metrics);
-        setEvaluations(evaluations);
-        
-        // Save to local storage for persistence
-        const storageKey = `judge-evaluations-${workshopId}`;
-        const dataToSave = {
-          evaluations,
-          metrics,
-          timestamp: Date.now()
-        };
-        localStorage.setItem(storageKey, JSON.stringify(dataToSave));
-        
-        // Verify localStorage save worked
-        const savedData = localStorage.getItem(storageKey);
-      }
-      
-      // Clear selected prompt since we didn't save one
-      setSelectedPromptId(null);
-      
-      // Mark as evaluated so save button becomes available
-      setHasEvaluated(true);
+      };
 
-    } catch (err: any) {
-      // Show evaluation-specific error and ensure UI shows no stale data
-      const errorMessage = err.body?.detail || err.message || 'Failed to evaluate prompt';
-      setEvaluationError(errorMessage);
+      // Start polling
+      await poll();
       
-      // Ensure no stale data is shown on error
-      setMetrics(null);
-      setEvaluations([]);
-      setHasEvaluated(false);
-    } finally {
-      setIsEvaluating(false);
+    } catch (error: any) {
+      console.error('[EVAL] Exception caught:', error);
+      const message = error?.message || 'Evaluation failed';
+      toast.error(`Evaluation failed: ${message}`);
+      updateAlignmentLogs(prev => [...prev, `ERROR: ${message}`]);
+      setEvaluationError(message);
+      setIsRunningEvaluation(false);
     }
   };
 
-  const handleAdvanceToLogFeedback = async () => {
-    if (!isFacilitator) return;
+  const handleRunAlignment = async () => {
+    console.log('[ALIGN] ===== FUNCTION CALLED =====');
     
+    // Validation
+    if (!workshopId || !currentPrompt.trim()) {
+      toast.error('Please enter a judge prompt first');
+      return;
+    }
+    if (!judgeName.trim()) {
+      toast.error('Please enter a judge name');
+      return;
+    }
+    if (!mlflowConfig) {
+      toast.error('Databricks configuration required for alignment');
+      return;
+    }
+    if (!evaluationComplete) {
+      toast.error('Please run evaluate() first');
+      return;
+    }
+    if (evaluations.length < 10) {
+      toast.error('Need at least 10 evaluated traces before running align()');
+      return;
+    }
+
+    console.log('[ALIGN] Starting alignment with polling approach...');
+    setIsRunningAlignment(true);
+    updateAlignmentLogs(['Starting alignment job...']);
+    setShowAlignmentLogs(true);
+    setAlignmentResult(null);
+    const normalizedPrompt = ensurePromptHasPlaceholders(currentPrompt);
+
     try {
-      // Call the Unity volume advance endpoint directly (keeping the same backend endpoint)
-      const response = await fetch(`/workshops/${workshopId}/advance-to-unity-volume`, {
+      // Step 1: Start the alignment job
+      const requestBody = {
+          judge_name: judgeName,
+          judge_prompt: normalizedPrompt,
+        evaluation_model_name: getBackendModelName(selectedEvaluationModel),
+        alignment_model_name: getBackendModelName(selectedAlignmentModel),
+      };
+      
+      const startResponse = await fetch(`/workshops/${workshopId}/start-alignment`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
       });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to advance to Log Feedback phase: ${response.statusText}`);
+
+      if (!startResponse.ok) {
+        const errorText = await startResponse.text();
+        throw new Error(`Failed to start alignment: ${startResponse.status} ${errorText}`);
       }
+
+      const { job_id } = await startResponse.json();
+      console.log('[ALIGN] Job started with ID:', job_id);
+      updateAlignmentLogs(prev => [...prev, `Alignment job started (ID: ${job_id.substring(0, 8)}...)`]);
+
+      // Step 2: Poll for status updates
+      let logIndex = 0;
+      let pollCount = 0;
+      const maxPolls = 1800; // 30 minutes at 1 poll/second
       
-      const result = await response.json();
+      const poll = async (): Promise<void> => {
+        pollCount++;
+        
+        try {
+          const statusResponse = await fetch(
+            `/workshops/${workshopId}/alignment-job/${job_id}?since_log_index=${logIndex}`
+          );
+          
+          if (!statusResponse.ok) {
+            console.error('[ALIGN] Status poll failed:', statusResponse.status);
+            return;
+          }
+          
+          const status = await statusResponse.json();
+          
+          // Add new logs
+          if (status.logs && status.logs.length > 0) {
+            updateAlignmentLogs(prev => [...prev, ...status.logs]);
+            logIndex = status.log_count;
+          }
+          
+          // Check if job is complete
+          if (status.status === 'completed') {
+            console.log('[ALIGN] Job completed!', status.result);
+            if (status.result) {
+              setAlignmentResult(status.result);
+              if (status.result.success) {
+                toast.success('Alignment complete! Judge has been optimized.');
+                
+                // Update editor with aligned instructions
+                if (status.result.aligned_instructions) {
+                  setCurrentPrompt(status.result.aligned_instructions);
+                  setOriginalPromptText(status.result.aligned_instructions);
+                  setIsModified(false);
+                }
+                
+                // Refresh prompts list and select the new aligned version
+                if (status.result.saved_prompt_id) {
+                  try {
+                    const updatedPrompts = await WorkshopsService.getJudgePromptsWorkshopsWorkshopIdJudgePromptsGet(workshopId);
+                    setPrompts(updatedPrompts);
+                    setSelectedPromptId(status.result.saved_prompt_id);
+                    
+                    // Load the aligned prompt text from the database to ensure consistency
+                    const alignedPrompt = updatedPrompts.find(p => p.id === status.result.saved_prompt_id);
+                    if (alignedPrompt) {
+                      setCurrentPrompt(alignedPrompt.prompt_text);
+                      setOriginalPromptText(alignedPrompt.prompt_text);
+                      setIsModified(false);
+                    }
+                    
+                    // Reset evaluation state for the new version (needs fresh evaluation)
+                    setEvaluations([]);
+                    setMetrics(null);
+                    setHasEvaluated(false);
+                    setEvaluationComplete(false);
+                  } catch (refreshErr) {
+                    console.error('[ALIGN] Failed to refresh prompts:', refreshErr);
+                  }
+                }
+              }
+            }
+            setIsRunningAlignment(false);
+            return;
+          }
+          
+          if (status.status === 'failed') {
+            console.error('[ALIGN] Job failed:', status.error);
+            toast.error(`Alignment failed: ${status.error || 'Unknown error'}`);
+            updateAlignmentLogs(prev => [...prev, `ERROR: ${status.error || 'Unknown error'}`]);
+            setIsRunningAlignment(false);
+            return;
+          }
+          
+          // Continue polling if still running
+          if (status.status === 'running' && pollCount < maxPolls) {
+            // Poll every 2 seconds
+            setTimeout(poll, 2000);
+          } else if (pollCount >= maxPolls) {
+            console.warn('[ALIGN] Max poll count reached');
+            updateAlignmentLogs(prev => [...prev, 'Warning: Polling timeout reached. Job may still be running.']);
+            setIsRunningAlignment(false);
+          }
+        } catch (pollError) {
+          console.error('[ALIGN] Poll error:', pollError);
+          // On error, try again after a delay
+          if (pollCount < maxPolls) {
+            setTimeout(poll, 5000);
+          }
+        }
+      };
+
+      // Start polling
+      await poll();
       
-      // Add a small delay to ensure backend has processed the change
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Clear all workshop-related queries from cache
-      queryClient.removeQueries({ queryKey: ['workshop', workshopId] });
-      queryClient.removeQueries({ queryKey: ['annotations', workshopId] });
-      queryClient.removeQueries({ queryKey: ['rubric', workshopId] });
-      queryClient.removeQueries({ queryKey: ['judge-prompts', workshopId] });
-      
-      // Force a fresh refetch of the workshop data
-      await queryClient.prefetchQuery({
-        queryKey: ['workshop', workshopId],
-        queryFn: () => WorkshopsService.getWorkshopWorkshopsWorkshopIdGet(workshopId!)
-      });
-      
-      // Navigate to Unity Volume page (which now focuses on Log Feedback)
-      window.location.href = `/workshop/${workshopId}?phase=unity_volume`;
-      
-    } catch (error) {
-      // You might want to show an error message to the user here
+    } catch (error: any) {
+      console.error('[ALIGN] Exception caught:', error);
+      const message = error?.message || 'Alignment failed';
+      toast.error(`Alignment failed: ${message}`);
+      updateAlignmentLogs(prev => [...prev, `ERROR: ${message}`]);
+      setIsRunningAlignment(false);
     }
   };
 
@@ -696,7 +927,7 @@ The response partially meets the criteria because...`;
   // Don't block the UI with loading screen - show inline loading states instead
 
   return (
-    <div className="h-full bg-gray-50 p-6">
+    <div className="h-full bg-gray-50 p-6 space-y-6">
       {/* Header */}
       <div className="mb-6">
         <div className="flex items-center gap-3 mb-2">
@@ -729,84 +960,6 @@ The response partially meets the criteria because...`;
           </div>
         </div>
       </div>
-      
-      {/* Databricks Configuration Card */}
-      <Card className="mb-6">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Cloud className="h-5 w-5 text-blue-600" />
-              <CardTitle>Databricks Configuration</CardTitle>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowDatabricksConfig(!showDatabricksConfig)}
-            >
-              {showDatabricksConfig ? 'Hide' : 'Show'}
-            </Button>
-          </div>
-          <CardDescription>
-            {databricksWorkspaceUrl && databricksToken ? (
-              <span className="text-green-600 flex items-center gap-1">
-                <CheckCircle className="h-4 w-4" />
-                Configuration complete
-              </span>
-            ) : (
-              <span className="text-orange-600 flex items-center gap-1">
-                <AlertCircle className="h-4 w-4" />
-                Required for AI judge evaluation
-              </span>
-            )}
-          </CardDescription>
-        </CardHeader>
-        {showDatabricksConfig && (
-          <CardContent className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Databricks Workspace URL
-              </label>
-              <input
-                type="text"
-                value={databricksWorkspaceUrl}
-                onChange={(e) => setDatabricksWorkspaceUrl(e.target.value)}
-                placeholder="https://your-workspace.cloud.databricks.com"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Your Databricks workspace URL (e.g., https://your-workspace.cloud.databricks.com)
-              </p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Databricks Token
-              </label>
-              <input
-                type="password"
-                value={databricksToken}
-                onChange={(e) => setDatabricksToken(e.target.value)}
-                placeholder="dapi..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Your Databricks personal access token
-              </p>
-            </div>
-            <Button
-              onClick={() => {
-                localStorage.setItem(`databricks-config-${workshopId}`, JSON.stringify({
-                  workspace_url: databricksWorkspaceUrl,
-                  token: databricksToken
-                }));
-                setShowDatabricksConfig(false);
-              }}
-              disabled={!databricksWorkspaceUrl || !databricksToken}
-            >
-              Save Configuration
-            </Button>
-          </CardContent>
-        )}
-      </Card>
 
       {error && (
         <Alert variant="destructive" className="mb-6">
@@ -815,21 +968,7 @@ The response partially meets the criteria because...`;
         </Alert>
       )}
 
-      {/* Advance to Manage Workshop Data Button */}
-      {isFacilitator && prompts.length > 0 && (
-        <div className="mb-6 flex justify-end">
-          <Button
-            onClick={handleAdvanceToLogFeedback}
-            className="bg-green-600 hover:bg-green-700 text-white"
-            size="lg"
-          >
-            <MessageSquare className="h-4 w-4 mr-2" />
-            Proceed to Manage Workshop Data
-          </Button>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-200px)]">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column - Prompt Editor (1/3) */}
         <div className="lg:col-span-1 space-y-4">
           
@@ -847,7 +986,9 @@ The response partially meets the criteria because...`;
                     setOriginalPromptText(prompt.prompt_text); // Track original for modification detection
                     // Sync UI model selection with saved prompt's model
                     if (prompt.model_name) {
-                      setSelectedModel(getFrontendModelName(prompt.model_name));
+                        const frontendModel = getFrontendModelName(prompt.model_name);
+                        setSelectedEvaluationModel(frontendModel);
+                        setSelectedAlignmentModel(frontendModel);
                     }
                     // Clear evaluation state when switching prompts
                     setHasEvaluated(false);
@@ -856,7 +997,7 @@ The response partially meets the criteria because...`;
                   }
                 }}
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger className="w-full bg-white">
                   <SelectValue placeholder={
                     selectedPromptId && isModified 
                       ? "Modified (unsaved changes)" 
@@ -870,7 +1011,11 @@ The response partially meets the criteria because...`;
                         <div className="flex items-center gap-2">
                           <span>v{prompt.version}</span>
                           <Badge variant="outline" className="text-xs">
-                            {prompt.model_name === 'demo' ? 'Demo' : getDisplayName(getFrontendModelName(prompt.model_name || ''))}
+                            {(prompt.model_parameters as any)?.aligned 
+                              ? 'Aligned' 
+                              : prompt.model_name === 'demo' 
+                                ? 'Demo' 
+                                : getDisplayName(getFrontendModelName(prompt.model_name || ''))}
                           </Badge>
                         </div>
                         {prompt.performance_metrics && (
@@ -908,68 +1053,15 @@ The response partially meets the criteria because...`;
               </div>
               
               <div className="space-y-3">
-                <div>
-                  <label className="text-sm font-medium text-gray-700 mb-2 block">Model Configuration</label>
-                  <Select 
-                    value={selectedModel} 
-                    onValueChange={setSelectedModel}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Choose a judge model" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {getModelOptions(!!mlflowConfig).map((option) => (
-                        <SelectItem 
-                          key={option.value} 
-                          value={option.value}
-                          disabled={option.disabled}
-                        >
-                          <div className="flex items-center justify-between w-full">
-                            <span>{option.label}</span>
-                            {option.requiresDatabricks && !mlflowConfig && (
-                                                              <span className="text-xs text-gray-500 ml-2">(Requires Databricks)</span>
-                            )}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                <div className="space-y-2">
-                  {/* Evaluate Current Textbox Content */}
-                  <Button 
-                    onClick={handleEvaluatePrompt}
-                    disabled={!currentPrompt.trim() || isEvaluating}
-                    variant="default"
-                    className="w-full"
-                    size="sm"
-                  >
-                    {isEvaluating ? (
-                      <>
-                        <Clock className="mr-2 h-4 w-4 animate-spin" />
-                        Evaluating against {traces?.length || 0} traces...
-                      </>
-                    ) : (
-                      <>
-                        <Play className="mr-2 h-4 w-4" />
-                        Evaluate Current Prompt
-                      </>
-                    )}
-                  </Button>
-                  
-                  {/* Save to History (Only after evaluating modified prompt) */}
+                <div className="flex gap-2">
+                  {/* Save to Database */}
                   <Button 
                     onClick={handleSavePrompt}
-                    disabled={!currentPrompt.trim() || isLoading || !isModified || !hasEvaluated}
+                    disabled={!currentPrompt.trim() || isLoading}
                     variant="outline"
-                    className={`w-full ${(!isModified || !hasEvaluated) ? 'opacity-50' : ''}`}
+                    className="flex-1"
                     size="sm"
-                    title={
-                      !isModified ? "No changes to save" :
-                      !hasEvaluated ? "Evaluate the modified prompt first" :
-                      "Save as new version to prompt history"
-                    }
+                    title="Save prompt to database as new version"
                   >
                     {isLoading ? (
                       <>
@@ -978,10 +1070,20 @@ The response partially meets the criteria because...`;
                       </>
                     ) : (
                       <>
-                        <Zap className="mr-2 h-4 w-4" />
+                        <Database className="mr-2 h-4 w-4" />
                         Save as New Version
                       </>
                     )}
+                  </Button>
+                  {/* Download Prompt */}
+                  <Button 
+                    onClick={handleDownloadPrompt}
+                    disabled={!currentPrompt.trim()}
+                    variant="outline"
+                    size="sm"
+                    title="Download prompt as JSON file"
+                  >
+                    <Download className="h-4 w-4" />
                   </Button>
                 </div>
               </div>
@@ -991,7 +1093,7 @@ The response partially meets the criteria because...`;
         </div>
 
         {/* Right Column - Evaluation Grid (2/3) */}
-        <div className="lg:col-span-2 flex flex-col h-full">
+        <div className="lg:col-span-2 flex flex-col">
           {/* Evaluation Error */}
           {evaluationError && (
             <Alert variant="destructive" className="mb-4">
@@ -1011,7 +1113,7 @@ The response partially meets the criteria because...`;
           )}
 
           {/* Databricks Configuration Warning */}
-          {!mlflowConfig && selectedModel !== 'demo' && annotations.length > 0 && (
+          {!mlflowConfig && selectedEvaluationModel !== 'demo' && annotations.length > 0 && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
               <div className="flex gap-3">
                 <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
@@ -1026,15 +1128,17 @@ The response partially meets the criteria because...`;
           )}
 
           {/* Performance Metrics Bar */}
-          {metrics && (
-            <div className="bg-white rounded-lg border p-4 mb-4">
+          {metrics && (() => {
+            const agreementByRating = metrics.agreement_by_rating || {};
+            return (
+              <div className="bg-white rounded-lg border p-4 mb-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-6">
                   {/* Evaluation Mode Badge */}
                   <div>
                     <span className="text-sm text-gray-500">Mode</span>
                     <div className="flex items-center gap-2">
-                      {selectedModel === 'demo' ? (
+                      {selectedEvaluationModel === 'demo' ? (
                         <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
                           <TestTube className="h-3 w-3 mr-1" />
                           Demo
@@ -1079,11 +1183,11 @@ The response partially meets the criteria because...`;
                     <div key={rating} className="text-center">
                       <div className="text-xs text-gray-500">{rating}★</div>
                       <div className={`text-sm font-semibold ${
-                        (metrics.agreement_by_rating[rating.toString()] || 0) >= 0.8 ? 'text-green-600' :
-                        (metrics.agreement_by_rating[rating.toString()] || 0) >= 0.6 ? 'text-yellow-600' :
+                        (agreementByRating[rating.toString()] || 0) >= 0.8 ? 'text-green-600' :
+                        (agreementByRating[rating.toString()] || 0) >= 0.6 ? 'text-yellow-600' :
                         'text-red-600'
                       }`}>
-                        {((metrics.agreement_by_rating[rating.toString()] || 0) * 100).toFixed(0)}%
+                        {((agreementByRating[rating.toString()] || 0) * 100).toFixed(0)}%
                       </div>
                     </div>
                   ))}
@@ -1098,10 +1202,11 @@ The response partially meets the criteria because...`;
                 </div>
               )}
             </div>
-          )}
+            );
+          })()}
 
           {/* Evaluation Grid */}
-          <Card className="flex-1 flex flex-col">
+          <Card className="flex flex-col">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="flex items-center gap-2 text-lg">
@@ -1111,7 +1216,7 @@ The response partially meets the criteria because...`;
                 <div className="flex items-center gap-2">
                   {evaluations.length > 0 && (
                     <>
-                      {selectedModel === 'demo' ? (
+                      {selectedEvaluationModel === 'demo' ? (
                         <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
                           <TestTube className="h-3 w-3 mr-1" />
                           Demo Judge
@@ -1119,7 +1224,7 @@ The response partially meets the criteria because...`;
                       ) : (
                         <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
                           <Zap className="h-3 w-3 mr-1" />
-                          {selectedModel.replace('databricks-', '').replace('openai-', '')}
+                          {selectedEvaluationModel.replace('databricks-', '').replace('openai-', '')}
                         </Badge>
                       )}
                       <Badge variant="outline">
@@ -1131,7 +1236,7 @@ The response partially meets the criteria because...`;
               </div>
             </CardHeader>
             <CardContent className="flex-1 overflow-hidden p-0">
-              {traces && traces.length > 0 && annotations && annotations.length > 0 ? (
+              {annotatedTraces.length > 0 ? (
                 <div className="h-full overflow-auto">
                   <table className="w-full text-sm">
                     <thead className="sticky top-0 bg-gray-50 border-b">
@@ -1149,7 +1254,7 @@ The response partially meets the criteria because...`;
                         // Calculate pagination
                         const startIndex = (currentPage - 1) * itemsPerPage;
                         const endIndex = startIndex + itemsPerPage;
-                        const paginatedTraces = traces.slice(startIndex, endIndex);
+                        const paginatedTraces = annotatedTraces.slice(startIndex, endIndex);
                         
                         return paginatedTraces.map((trace: any, index: number) => {
                           // Find annotations for this trace and calculate mode (most common rating)
@@ -1161,7 +1266,9 @@ The response partially meets the criteria because...`;
                             : null;
                           
                           // Find evaluation for this trace
-                          const evaluation = evaluations.find(e => e.trace_id === trace.id);
+                          const evaluation = evaluations.find(
+                            (e: any) => e.workshop_uuid === trace.id || e.trace_id === trace.id
+                          );
                           const judgeRating = evaluation?.predicted_rating;
                           
                           // Calculate diff and match if both ratings exist
@@ -1264,12 +1371,12 @@ The response partially meets the criteria because...`;
                   </table>
                   
                   {/* Pagination */}
-                  {traces.length > itemsPerPage && (
+                  {annotatedTraces.length > itemsPerPage && (
                     <div className="border-t bg-gray-50 p-4">
                       <Pagination
                         currentPage={currentPage}
-                        totalPages={Math.ceil(traces.length / itemsPerPage)}
-                        totalItems={traces.length}
+                        totalPages={Math.ceil(annotatedTraces.length / itemsPerPage)}
+                        totalItems={annotatedTraces.length}
                         itemsPerPage={itemsPerPage}
                         onPageChange={setCurrentPage}
                         onItemsPerPageChange={(newItemsPerPage: number) => {
@@ -1321,9 +1428,252 @@ The response partially meets the criteria because...`;
           </Card>
         </div>
 
-
-
       </div>
+
+      {/* Judge Alignment & Evaluation */}
+      <Card className="border-purple-200 bg-gradient-to-br from-purple-50 to-indigo-50">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Brain className="h-5 w-5 text-purple-600" />
+            Judge Alignment
+          </CardTitle>
+          <CardDescription>
+            Run mlflow.genai.evaluate() and align() using the prompt and model above. Ensure traces are tagged for alignment in Results Review.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <span className="text-sm font-medium text-gray-700">Traces Included</span>
+              <div className="px-3 py-2 bg-white border border-gray-200 rounded-md mt-1">
+                <span className="text-lg font-bold text-purple-600">
+                  {annotatedTraceCount}
+                </span>
+                <span className="text-sm text-gray-600 ml-2">
+                  SME-annotated trace{annotatedTraceCount === 1 ? '' : 's'}
+                </span>
+              </div>
+            </div>
+            <div>
+              <span className="text-sm font-medium text-gray-700">Evaluation Status</span>
+              <div className="mt-2">
+                {evaluationComplete && evaluations.length >= 10 ? (
+                  <Badge className="bg-green-100 text-green-800">
+                    <CheckCircle className="h-3 w-3 mr-1" />
+                    Ready for alignment
+                  </Badge>
+                ) : (
+                  <Badge className="bg-gray-100 text-gray-600">
+                    Pending evaluate() (need ≥10 samples)
+                  </Badge>
+                )}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Evaluated traces: {Math.min(evaluations.length, 10)}/10
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-2 block">Evaluation LLM Judge</label>
+              <Select 
+                value={selectedEvaluationModel} 
+                onValueChange={setSelectedEvaluationModel}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Choose evaluation model" />
+                </SelectTrigger>
+                <SelectContent>
+                  {getModelOptions(!!mlflowConfig).map((option) => (
+                    <SelectItem 
+                      key={option.value} 
+                      value={option.value}
+                      disabled={option.disabled}
+                    >
+                      <div className="flex items-center justify-between w-full">
+                        <span>{option.label}</span>
+                        {option.requiresDatabricks && !mlflowConfig && (
+                          <span className="text-xs text-gray-500 ml-2">(Requires Databricks)</span>
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500 mt-1">
+                Used for evaluate() job
+              </p>
+            </div>
+            
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-2 block">Alignment LLM</label>
+              <Select 
+                value={selectedAlignmentModel} 
+                onValueChange={setSelectedAlignmentModel}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Choose alignment model" />
+                </SelectTrigger>
+                <SelectContent>
+                  {getModelOptions(!!mlflowConfig).map((option) => (
+                    <SelectItem 
+                      key={option.value} 
+                      value={option.value}
+                      disabled={option.disabled}
+                    >
+                      <div className="flex items-center justify-between w-full">
+                        <span>{option.label}</span>
+                        {option.requiresDatabricks && !mlflowConfig && (
+                          <span className="text-xs text-gray-500 ml-2">(Requires Databricks)</span>
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500 mt-1">
+                Used for SIMBA optimizer
+              </p>
+            </div>
+            
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-2 block">Judge Name</label>
+              <Input
+                value={judgeName}
+                readOnly
+                className="bg-gray-50"
+                placeholder="workshop_judge"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Set in Annotation Phase (Facilitator Dashboard)
+              </p>
+            </div>
+          </div>
+
+          {/* Databricks workspace + token inputs removed; use Intake configuration */}
+
+          <div className="flex flex-wrap items-center gap-4">
+            <Button
+              onClick={handleEvaluatePrompt}
+              disabled={
+                !currentPrompt.trim() ||
+                !judgeName.trim() ||
+                isRunningEvaluation ||
+                isRunningAlignment
+              }
+              className="bg-purple-600 hover:bg-purple-700"
+            >
+              {isRunningEvaluation ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Running Evaluate()...
+                </>
+              ) : (
+                <>
+                  <Target className="h-4 w-4 mr-2" />
+                  Run Evaluate()
+                </>
+              )}
+            </Button>
+
+            <Button
+              onClick={handleRunAlignment}
+              disabled={
+                isRunningAlignment ||
+                isRunningEvaluation ||
+                !judgeName.trim()
+              }
+              className={
+                evaluationComplete && evaluations.length >= 10
+                  ? 'bg-indigo-600 hover:bg-indigo-700'
+                  : 'bg-gray-600 hover:bg-gray-700 text-white'
+              }
+            >
+              {isRunningAlignment ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Running Align()...
+                </>
+              ) : (
+                <>
+                  <Brain className="h-4 w-4 mr-2" />
+                  Run Align()
+                </>
+              )}
+            </Button>
+
+            {(!evaluationComplete || evaluations.length < 10) && (
+              <span className="text-sm text-gray-500">
+                ⚠️ Run evaluate() on at least 10 traces to enable alignment
+              </span>
+            )}
+          </div>
+
+          <div className="mt-4">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium text-gray-700">Execution Logs</label>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowAlignmentLogs((prev) => !prev)}
+              >
+                {showAlignmentLogs ? 'Hide Logs' : 'Show Logs'}
+              </Button>
+            </div>
+            {showAlignmentLogs && (
+              <div className="bg-gray-900 rounded-lg p-4 max-h-[300px] overflow-y-auto">
+                {alignmentLogs.length === 0 ? (
+                  <p className="text-sm text-gray-400 font-mono">No logs yet.</p>
+                ) : (
+                  <pre className="text-sm text-green-400 font-mono whitespace-pre-wrap">
+                    {alignmentLogs.map((log, idx) => (
+                      <div key={idx} className={log.includes('ERROR') ? 'text-red-400' : ''}>
+                        {log}
+                      </div>
+                    ))}
+                  </pre>
+                )}
+              </div>
+            )}
+          </div>
+
+          {alignmentResult && alignmentResult.success && (
+            <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+              <div className="flex items-center gap-2 mb-2">
+                <CheckCircle className="h-5 w-5 text-green-600" />
+                <span className="font-medium text-green-800">Alignment Successful</span>
+              </div>
+              <p className="text-sm text-green-700">
+                Judge "{alignmentResult.judge_name}" tuned on {alignmentResult.trace_count} traces.
+                {alignmentResult.saved_prompt_version && (
+                  <span className="ml-1">(Saved as v{alignmentResult.saved_prompt_version})</span>
+                )}
+              </p>
+              {alignmentResult.aligned_instructions && (
+                <div className="mt-3 space-y-2">
+                  <Button
+                    onClick={() => {
+                      setCurrentPrompt(alignmentResult.aligned_instructions);
+                      setOriginalPromptText(alignmentResult.aligned_instructions);
+                    }}
+                    className="bg-green-600 hover:bg-green-700 text-white"
+                  >
+                    Use Aligned Prompt
+                  </Button>
+                  <details className="text-sm">
+                    <summary className="cursor-pointer text-green-600 hover:text-green-800">
+                      View Aligned Instructions
+                    </summary>
+                    <pre className="mt-2 p-2 bg-white rounded text-xs overflow-auto max-h-[200px]">
+                      {alignmentResult.aligned_instructions}
+                    </pre>
+                  </details>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

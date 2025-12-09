@@ -12,6 +12,19 @@ For detailed documentation, see the [/doc](doc/) folder:
 - **[Annotation Editing](doc/ANNOTATION_EDITING_FIX.md)** - Annotation editing features
 - **[All Documentation](doc/README.md)** - Complete documentation index
 
+## 🚀 Quick Start (Recommended)
+
+For production use, we recommend using the **latest stable release**:
+
+```bash
+# Clone the stable v1.0.0 release
+git clone --branch v1.0.0 https://github.com/databricks-solutions/project-0xfffff.git
+cd project-0xfffff
+./setup.sh
+```
+
+> 💡 **Tip:** View all releases at [Releases Page](https://github.com/databricks-solutions/project-0xfffff/releases)
+
 ## 📋 Prerequisites
 
 - **Python 3.11+**
@@ -19,8 +32,8 @@ For detailed documentation, see the [/doc](doc/) folder:
 - **Databricks workspace** with:
   - MLflow experiments
 
-### Setup
-You need to have a Databricks profile in local setup, either DEFAULT or a specific profile name.
+### Setup (Development)
+For the latest development version (may contain unreleased features):
 
 ```bash
 git clone https://github.com/databricks-solutions/project-0xfffff.git

@@ -5,3 +5,5 @@ command:
   - "2"
   - "--worker-class"
   - "uvicorn.workers.UvicornWorker"
+  - "--timeout"
+  - "1800"
