@@ -352,7 +352,47 @@ export function JudgeTuningPage() {
     const firstQuestion = parsedQuestions.length > 0 
       ? `${parsedQuestions[0].title}: ${parsedQuestions[0].description}` 
       : rubricQuestion;
+    const judgeType = parsedQuestions.length > 0 ? parsedQuestions[0].judgeType : 'likert';
     
+    // Return different prompt templates based on judge type
+    if (judgeType === 'binary') {
+      return `You are an expert evaluator. Please evaluate the following response based on this criteria: "${firstQuestion}"
+
+Make a binary judgment: does the response PASS or FAIL this criteria?
+
+- PASS: The response meets the criteria
+- FAIL: The response does not meet the criteria
+
+Input: {input}
+Output: {output}
+
+Think step by step about whether the output meets the criteria, then provide your judgment.
+
+Your response MUST start with either "PASS" or "FAIL" on its own line, followed by your reasoning.
+
+Example format:
+PASS
+The response meets the criteria because...`;
+    }
+    
+    if (judgeType === 'freeform') {
+      return `You are an expert evaluator. Please evaluate the following response based on this criteria: "${firstQuestion}"
+
+Provide detailed qualitative feedback on how well the response addresses this criteria.
+
+Input: {input}
+Output: {output}
+
+Think step by step about the strengths and weaknesses of the output with respect to the criteria.
+
+Provide your analysis as a structured response with:
+1. Key observations
+2. Strengths
+3. Areas for improvement
+4. Overall assessment`;
+    }
+    
+    // Default: Likert scale (1-5)
     return `You are an expert evaluator. Please evaluate the following response based on this criteria: "${firstQuestion}"
 
 Rate the response on a scale of 1-5, where:
