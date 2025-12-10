@@ -181,13 +181,15 @@ def _calculate_krippendorff_alpha_result(annotations: List[Annotation], analysis
     analysis=analysis,
   )
   
-  # Add per-metric scores to the result
+  # Add per-metric scores to the result with individual suggestions
   result['per_metric_scores'] = {}
   for question_id, score in per_metric_scores.items():
+    metric_suggestions = get_krippendorff_improvement_suggestions(score)
     result['per_metric_scores'][question_id] = {
       'score': score,
       'interpretation': interpret_krippendorff_alpha(score),
       'acceptable': is_krippendorff_alpha_acceptable(score),
+      'suggestions': metric_suggestions,
     }
   
   return result

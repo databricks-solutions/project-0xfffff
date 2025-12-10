@@ -216,6 +216,9 @@ class RubricDB(Base):
   id = Column(String, primary_key=True)
   workshop_id = Column(String, ForeignKey('workshops.id'), nullable=False)
   question = Column(Text, nullable=False)
+  judge_type = Column(String, default='likert')  # likert, binary, freeform
+  binary_labels = Column(JSON, nullable=True)  # {"pass": "Pass", "fail": "Fail"}
+  rating_scale = Column(Integer, default=5)
   created_by = Column(String, nullable=False)
   created_at = Column(DateTime, default=func.now())
 
@@ -285,10 +288,13 @@ class JudgePromptDB(Base):
   id = Column(String, primary_key=True)
   workshop_id = Column(String, ForeignKey('workshops.id'), nullable=False)
   prompt_text = Column(Text, nullable=False)
+  judge_type = Column(String, default='likert')  # likert, binary, freeform
   version = Column(Integer, nullable=False)
   few_shot_examples = Column(JSON, default=list)
   model_name = Column(String, default='demo')
   model_parameters = Column(JSON, nullable=True)
+  binary_labels = Column(JSON, nullable=True)  # {"pass": "Pass", "fail": "Fail"}
+  rating_scale = Column(Integer, default=5)
   created_by = Column(String, nullable=False)
   created_at = Column(DateTime, default=func.now())
   performance_metrics = Column(JSON, nullable=True)
@@ -307,8 +313,16 @@ class JudgeEvaluationDB(Base):
   workshop_id = Column(String, ForeignKey('workshops.id'), nullable=False)
   prompt_id = Column(String, ForeignKey('judge_prompts.id'), nullable=False)
   trace_id = Column(String, ForeignKey('traces.id'), nullable=False)
-  predicted_rating = Column(Integer, nullable=False)
-  human_rating = Column(Integer, nullable=False)
+  # For rubric judges (1-5 scale)
+  predicted_rating = Column(Integer, nullable=True)
+  human_rating = Column(Integer, nullable=True)
+  # For binary judges (pass/fail)
+  predicted_binary = Column(Boolean, nullable=True)
+  human_binary = Column(Boolean, nullable=True)
+  # For freeform judges (text feedback)
+  predicted_feedback = Column(Text, nullable=True)
+  human_feedback = Column(Text, nullable=True)
+  # Common fields
   confidence = Column(Float, nullable=True)
   reasoning = Column(Text, nullable=True)
   created_at = Column(DateTime, default=func.now())

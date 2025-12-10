@@ -45,16 +45,19 @@ const convertTraceToTraceData = (trace: Trace): TraceData => ({
   mlflow_experiment_id: trace.mlflow_experiment_id || undefined
 });
 
-// Parse rubric question from API format
+// Parse rubric question from API format - includes judgeType for each question
 const parseRubricQuestions = (rubric: Rubric) => {
   if (!rubric || !rubric.question) return [];
   
   return parseQuestions(rubric.question).map((q, index) => ({
     id: `${rubric.id}_${index}`,
     title: q.title,
-    description: q.description
+    description: q.description,
+    judgeType: q.judgeType || 'likert' // Include judge type from parsed question
   }));
 };
+
+type JudgeType = 'likert' | 'binary' | 'freeform';
 
 interface Rating {
   questionId: string;
@@ -71,6 +74,7 @@ export function AnnotationDemo() {
   const { workshopId } = useWorkshopContext();
   const [currentTraceIndex, setCurrentTraceIndex] = useState(0);
   const [currentRatings, setCurrentRatings] = useState<Record<string, number>>({});
+  const [freeformResponses, setFreeformResponses] = useState<Record<string, string>>({});
   const [comment, setComment] = useState<string>('');
   const [submittedAnnotations, setSubmittedAnnotations] = useState<Set<string>>(new Set());
   const [hasNavigatedManually, setHasNavigatedManually] = useState(false);
@@ -79,6 +83,7 @@ export function AnnotationDemo() {
   
   // Track original annotation values to detect changes
   const [originalRatings, setOriginalRatings] = useState<Record<string, number>>({});
+  const [originalFreeformResponses, setOriginalFreeformResponses] = useState<Record<string, string>>({});
   const [originalComment, setOriginalComment] = useState<string>('');
   
   // Get current user and permissions
@@ -120,6 +125,119 @@ export function AnnotationDemo() {
   const currentTrace = traceData[currentTraceIndex];
   const rubricQuestions = rubric ? parseRubricQuestions(rubric) : [];
 
+  // Helper function to get legacy rating (first likert rating between 1-5, or default to 3)
+  const getLegacyRating = (): number => {
+    // Find the first likert question and get its rating
+    for (const question of rubricQuestions) {
+      if (question.judgeType === 'likert') {
+        const rating = currentRatings[question.id];
+        if (typeof rating === 'number' && rating >= 1 && rating <= 5) {
+          return rating;
+        }
+      }
+    }
+    // If no likert rating found, default to 3 (neutral)
+    return 3;
+  };
+  
+  // Helper function to get only numeric ratings for the ratings field
+  const getNumericRatings = (): Record<string, number> => {
+    const numericRatings: Record<string, number> = {};
+    for (const [key, value] of Object.entries(currentRatings)) {
+      if (typeof value === 'number') {
+        numericRatings[key] = value;
+      }
+    }
+    return numericRatings;
+  };
+  
+  // Helper function to build combined comment with freeform responses
+  // Uses JSON for freeform to preserve multi-line content
+  const buildCombinedComment = () => {
+    let combined = comment.trim();
+    
+    // Add freeform responses to comment as JSON to preserve multi-line content
+    const freeformEntries = Object.entries(freeformResponses).filter(([_, v]) => v.trim());
+    if (freeformEntries.length > 0) {
+      // Build a map of title -> response for human readability
+      const freeformMap: Record<string, string> = {};
+      for (const [questionId, response] of freeformEntries) {
+        const question = rubricQuestions.find(q => q.id === questionId);
+        freeformMap[question?.title || questionId] = response.trim();
+      }
+      
+      const freeformJson = JSON.stringify(freeformMap);
+      
+      if (combined) {
+        combined = `${combined}\n\n|||FREEFORM_JSON|||${freeformJson}|||END_FREEFORM|||`;
+      } else {
+        combined = `|||FREEFORM_JSON|||${freeformJson}|||END_FREEFORM|||`;
+      }
+    }
+    
+    return combined || null;
+  };
+  
+  // Helper function to parse combined comment back into separate parts
+  const parseLoadedComment = (loadedComment: string): { userComment: string; freeformData: Record<string, string> } => {
+    const freeformData: Record<string, string> = {};
+    let userComment = loadedComment;
+    
+    // Check for new JSON format first
+    const jsonStartMarker = '|||FREEFORM_JSON|||';
+    const jsonEndMarker = '|||END_FREEFORM|||';
+    const jsonStartIndex = loadedComment.indexOf(jsonStartMarker);
+    const jsonEndIndex = loadedComment.indexOf(jsonEndMarker);
+    
+    if (jsonStartIndex !== -1 && jsonEndIndex !== -1) {
+      // Extract user comment (before the marker)
+      userComment = loadedComment.substring(0, jsonStartIndex).trim();
+      
+      // Extract and parse JSON
+      const jsonStr = loadedComment.substring(jsonStartIndex + jsonStartMarker.length, jsonEndIndex);
+      try {
+        const freeformMap = JSON.parse(jsonStr) as Record<string, string>;
+        // Map titles back to question IDs
+        for (const [title, response] of Object.entries(freeformMap)) {
+          const question = rubricQuestions.find(q => q.title === title);
+          if (question) {
+            freeformData[question.id] = response;
+          }
+        }
+      } catch (e) {
+        // JSON parse failed, ignore freeform data
+      }
+    } else {
+      // Check for old format (backward compatibility)
+      const freeformMarker = '--- Free-form Responses ---';
+      const markerIndex = loadedComment.indexOf(freeformMarker);
+      
+      if (markerIndex !== -1) {
+        // Extract user comment (before the marker)
+        userComment = loadedComment.substring(0, markerIndex).trim();
+        
+        // Extract freeform section - old format was single-line only
+        const freeformSection = loadedComment.substring(markerIndex + freeformMarker.length).trim();
+        
+        // Parse each freeform response: [Title]: Response (single line)
+        const lines = freeformSection.split('\n');
+        for (const line of lines) {
+          const match = line.match(/^\[([^\]]+)\]:\s*(.*)$/);
+          if (match) {
+            const title = match[1];
+            const response = match[2];
+            const question = rubricQuestions.find(q => q.title === title);
+            if (question) {
+              freeformData[question.id] = response;
+            }
+          }
+        }
+      }
+    }
+    
+    return { userComment, freeformData };
+  };
+  
   // Helper function to check if annotation values have changed
   const hasAnnotationChanged = () => {
     // Check if ratings changed
@@ -149,6 +267,18 @@ export function AnnotationDemo() {
       }
     }
     
+    // Check if freeform responses changed
+    const freeformKeys = Object.keys(freeformResponses);
+    const originalFreeformKeys = Object.keys(originalFreeformResponses);
+    if (freeformKeys.length !== originalFreeformKeys.length) {
+      return true;
+    }
+    for (const key of freeformKeys) {
+      if (freeformResponses[key] !== originalFreeformResponses[key]) {
+        return true;
+      }
+    }
+    
     // Check if comment changed
     const currentCommentTrimmed = comment.trim();
     const originalCommentTrimmed = originalComment.trim();
@@ -167,6 +297,7 @@ export function AnnotationDemo() {
     // Clear all submitted annotations state when user switches
     setSubmittedAnnotations(new Set());
     setCurrentRatings({});
+    setFreeformResponses({});
     setComment('');
     setCurrentTraceIndex(0);
     setHasNavigatedManually(false);
@@ -183,8 +314,10 @@ export function AnnotationDemo() {
       
       // Reset form for each trace
       setCurrentRatings({});
+      setFreeformResponses({});
       setComment('');
       setOriginalRatings({});
+      setOriginalFreeformResponses({});
       setOriginalComment('');
       previousTraceId.current = currentTrace.id;
       
@@ -209,14 +342,19 @@ export function AnnotationDemo() {
           
           loadedRatings = { [firstQuestionId]: existingAnnotation.rating };
         }
-        const loadedComment = existingAnnotation.comment || '';
+        
+        // Parse comment to separate user comment from freeform responses
+        const rawComment = existingAnnotation.comment || '';
+        const { userComment, freeformData } = parseLoadedComment(rawComment);
         
         setCurrentRatings(loadedRatings);
-        setComment(loadedComment);
+        setComment(userComment);
+        setFreeformResponses(freeformData);
         
         // Store original values for comparison
         setOriginalRatings(loadedRatings);
-        setOriginalComment(loadedComment);
+        setOriginalComment(userComment);
+        setOriginalFreeformResponses(freeformData);
         
         // Mark it as submitted
         setSubmittedAnnotations(prev => {
@@ -264,7 +402,12 @@ export function AnnotationDemo() {
           
           loadedRatings = { [firstQuestionId]: currentTraceAnnotation.rating };
         }
-        const loadedComment = currentTraceAnnotation.comment || '';
+        
+        // Parse comment to separate user comment from freeform responses
+        const rawComment = currentTraceAnnotation.comment || '';
+        const { userComment: loadedComment, freeformData } = parseLoadedComment(rawComment);
+        setFreeformResponses(freeformData);
+        setOriginalFreeformResponses(freeformData);
         
         setCurrentRatings(loadedRatings);
         setComment(loadedComment);
@@ -295,15 +438,12 @@ export function AnnotationDemo() {
 
     try {
       // Submit all ratings for multiple questions
-      // Use the first rating as the legacy 'rating' field for backward compatibility
-      const firstRating = Object.values(currentRatings)[0];
-      
       const annotationData = {
         trace_id: currentTrace.id,
         user_id: currentUserId,
-        rating: firstRating,  // Legacy field (backward compatibility)
-        ratings: currentRatings,  // New field: all ratings for all questions
-        comment: comment.trim() || null
+        rating: getLegacyRating(),  // Legacy field: first likert rating (1-5)
+        ratings: getNumericRatings(),  // New field: all numeric ratings
+        comment: buildCombinedComment()
       };
       
       await submitAnnotation.mutateAsync(annotationData);
@@ -336,14 +476,12 @@ export function AnnotationDemo() {
         // Only save if it's new OR if it has changes
         if (!isExistingAnnotation || hasChanges) {
           // Submit all ratings for multiple questions
-          // Use the first rating as the legacy 'rating' field for backward compatibility
-          const firstRating = Object.values(currentRatings)[0];
           const annotationData = {
             trace_id: currentTrace.id,
             user_id: currentUserId,
-            rating: firstRating,  // Legacy field (backward compatibility)
-            ratings: currentRatings,  // New field: all ratings for all questions
-            comment: comment.trim() || null
+            rating: getLegacyRating(),  // Legacy field: first likert rating (1-5)
+            ratings: getNumericRatings(),  // New field: all numeric ratings
+            comment: buildCombinedComment()
           };
           
           await submitAnnotation.mutateAsync(annotationData);
@@ -371,6 +509,7 @@ export function AnnotationDemo() {
       setCurrentTraceIndex(prev => prev + 1);
       // Reset form for next trace
       setCurrentRatings({});
+      setFreeformResponses({});
       setComment('');
     } else {
       
@@ -390,13 +529,12 @@ export function AnnotationDemo() {
         // Only save if it's new OR if it has changes
         if (!isExistingAnnotation || hasChanges) {
           // Submit all ratings for multiple questions
-          const firstRating = Object.values(currentRatings)[0];
           await submitAnnotation.mutateAsync({
             trace_id: currentTrace.id,
             user_id: currentUserId,
-            rating: firstRating,  // Legacy field (backward compatibility)
-            ratings: currentRatings,  // New field: all ratings for all questions
-            comment: comment.trim() || null
+            rating: getLegacyRating(),  // Legacy field: first likert rating (1-5)
+            ratings: getNumericRatings(),  // New field: all numeric ratings
+            comment: buildCombinedComment()
           });
           
           setSubmittedAnnotations(prev => new Set([...prev, currentTrace.id]));
@@ -593,51 +731,118 @@ export function AnnotationDemo() {
             {rubricQuestions.map((question, questionIndex) => (
               <div key={question.id} className="border rounded-lg p-4 bg-white">
                 <div className="mb-4">
-                  <Label className="text-base font-medium">
-                    {question.title}
-                  </Label>
+                  <div className="flex items-center gap-2">
+                    <Label className="text-base font-medium">
+                      {question.title}
+                    </Label>
+                    <Badge variant="outline" className={`text-xs ${
+                      question.judgeType === 'likert' ? 'bg-green-50 text-green-700 border-green-200' :
+                      question.judgeType === 'binary' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                      'bg-purple-50 text-purple-700 border-purple-200'
+                    }`}>
+                      {question.judgeType === 'likert' ? 'Likert' : 
+                       question.judgeType === 'binary' ? 'Binary' : 'Free-form'}
+                    </Badge>
+                  </div>
                   <p className="text-sm text-gray-600 mt-1">
                     {question.description}
                   </p>
                 </div>
                 
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    {[1, 2, 3, 4, 5].map((value) => {
-                      const labels = [
-                        '', // placeholder for value 0
-                        'Strongly Disagree',
-                        'Disagree', 
-                        'Neutral',
-                        'Agree',
-                        'Strongly Agree'
-                      ];
-                      
-                      return (
-                        <div key={value} className="flex flex-col items-center gap-2">
-                          <label className={canAnnotate ? "cursor-pointer" : "cursor-not-allowed opacity-50"}>
-                            <input
-                              type="radio"
-                              name={`rating-${question.id}`}
-                              value={value}
-                              checked={currentRatings[question.id] === value}
-                              onChange={(e) => {
-                                setCurrentRatings(prev => ({
-                                  ...prev,
-                                  [question.id]: parseInt(e.target.value)
-                                }));
-                              }}
-                              className="w-4 h-4"
-                              disabled={!canAnnotate}
-                            />
-                          </label>
-                          <span className="text-xs text-center text-gray-700 leading-tight max-w-[80px]">
-                            {labels[value]}
-                          </span>
+                  {/* Likert Scale (1-5) */}
+                  {question.judgeType === 'likert' && (
+                    <div className="flex items-center justify-between">
+                      {[1, 2, 3, 4, 5].map((value) => {
+                        const labels = [
+                          '', // placeholder for value 0
+                          'Strongly Disagree',
+                          'Disagree', 
+                          'Neutral',
+                          'Agree',
+                          'Strongly Agree'
+                        ];
+                        
+                        return (
+                          <div key={value} className="flex flex-col items-center gap-2">
+                            <label className={canAnnotate ? "cursor-pointer" : "cursor-not-allowed opacity-50"}>
+                              <input
+                                type="radio"
+                                name={`rating-${question.id}`}
+                                value={value}
+                                checked={currentRatings[question.id] === value}
+                                onChange={(e) => {
+                                  setCurrentRatings(prev => ({
+                                    ...prev,
+                                    [question.id]: parseInt(e.target.value)
+                                  }));
+                                }}
+                                className="w-4 h-4"
+                                disabled={!canAnnotate}
+                              />
+                            </label>
+                            <span className="text-xs text-center text-gray-700 leading-tight max-w-[80px]">
+                              {labels[value]}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  
+                  {/* Binary (Pass/Fail) */}
+                  {question.judgeType === 'binary' && (
+                    <div className="flex justify-center gap-8">
+                      <div 
+                        className={`flex flex-col items-center gap-2 ${canAnnotate ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}
+                        onClick={() => canAnnotate && setCurrentRatings(prev => ({ ...prev, [question.id]: 1 }))}
+                        role="button"
+                        tabIndex={canAnnotate ? 0 : -1}
+                        onKeyDown={(e) => e.key === 'Enter' && canAnnotate && setCurrentRatings(prev => ({ ...prev, [question.id]: 1 }))}
+                      >
+                        <div className={`w-16 h-16 rounded-lg border-2 flex items-center justify-center transition-all ${
+                          currentRatings[question.id] === 1
+                            ? 'border-green-500 bg-green-100 shadow-md'
+                            : 'border-green-300 bg-green-50 hover:border-green-400'
+                        }`}>
+                          <CheckCircle className={`w-8 h-8 ${currentRatings[question.id] === 1 ? 'text-green-600' : 'text-green-400'}`} />
                         </div>
-                      );
-                    })}
-                  </div>
+                        <span className="text-sm font-medium text-green-700">Pass</span>
+                      </div>
+                      <div 
+                        className={`flex flex-col items-center gap-2 ${canAnnotate ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}
+                        onClick={() => canAnnotate && setCurrentRatings(prev => ({ ...prev, [question.id]: 0 }))}
+                        role="button"
+                        tabIndex={canAnnotate ? 0 : -1}
+                        onKeyDown={(e) => e.key === 'Enter' && canAnnotate && setCurrentRatings(prev => ({ ...prev, [question.id]: 0 }))}
+                      >
+                        <div className={`w-16 h-16 rounded-lg border-2 flex items-center justify-center transition-all ${
+                          currentRatings[question.id] === 0
+                            ? 'border-red-500 bg-red-100 shadow-md'
+                            : 'border-red-300 bg-red-50 hover:border-red-400'
+                        }`}>
+                          <AlertCircle className={`w-8 h-8 ${currentRatings[question.id] === 0 ? 'text-red-600' : 'text-red-400'}`} />
+                        </div>
+                        <span className="text-sm font-medium text-red-700">Fail</span>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Free-form Text */}
+                  {question.judgeType === 'freeform' && (
+                    <div>
+                      <Textarea
+                        placeholder="Provide your detailed feedback for this criterion..."
+                        value={freeformResponses[question.id] || ''}
+                        onChange={(e) => setFreeformResponses(prev => ({ ...prev, [question.id]: e.target.value }))}
+                        className="min-h-[100px]"
+                        disabled={!canAnnotate}
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Provide detailed written feedback for this evaluation criterion.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -689,7 +894,7 @@ export function AnnotationDemo() {
 
         {/* Navigation */}
         <Card>
-          <CardContent className="pt-6">
+          <CardContent className="py-4">
             <div className="flex items-center justify-between">
               <Button
                 variant="outline"

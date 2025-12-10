@@ -26,15 +26,22 @@ jobs:
       
       - name: Create full release archive
         run: |
-          zip -r project-with-build.zip . \
-            -x "client/node_modules/*" \
-            -x ".git/*" \
-            -x "*.db" \
-            -x "__pycache__/*" \
-            -x "*.pyc" \
-            -x "client/test-results/*" \
-            -x "*.png"
-      
+          rm -rf release-staging && \
+          mkdir -p release-staging/project-0xfffff && \
+          rsync -av --progress . release-staging/project-0xfffff/ \
+            --exclude 'client/node_modules' \
+            --exclude '.git' \
+            --exclude '*.db' \
+            --exclude '__pycache__' \
+            --exclude '*.pyc' \
+            --exclude 'client/test-results' \
+            --exclude '*.png' \
+            --exclude '.venv' \
+            --exclude 'release-staging' \
+            --exclude 'project-with-build.zip' \
+            --exclude 'client-build.zip' \
+            --exclude 'client-build.tar.gz'
+            --exclude '.DS_Store'
       # Upload as artifact for manual runs (testing)
       - name: Upload as artifact (manual trigger)
         if: github.event_name == 'workflow_dispatch'

@@ -32,7 +32,7 @@ export type { JudgeEvaluationRequest } from './models/JudgeEvaluationRequest';
 export type { JudgeEvaluationResult } from './models/JudgeEvaluationResult';
 export type { JudgeExportConfig } from './models/JudgeExportConfig';
 export type { JudgePerformanceMetrics } from './models/JudgePerformanceMetrics';
-export type { JudgePrompt } from './models/JudgePrompt';
+export type { JudgePrompt, JudgeType } from './models/JudgePrompt';
 export type { JudgePromptCreate } from './models/JudgePromptCreate';
 export type { MLflowIntakeConfig } from './models/MLflowIntakeConfig';
 export type { MLflowIntakeConfigCreate } from './models/MLflowIntakeConfigCreate';

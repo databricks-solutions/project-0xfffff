@@ -41,10 +41,12 @@ import type {
   JudgePerformanceMetrics,
   JudgeEvaluationResult,
   JudgeExportConfig,
+  JudgeType,
   Rubric,
   Annotation,
   Trace
 } from '@/client';
+import { defaultPromptTemplates } from '@/components/JudgeTypeSelector';
 
 export function JudgeTuningPage() {
   const { workshopId } = useWorkshopContext();
@@ -67,6 +69,10 @@ export function JudgeTuningPage() {
   // Remove traces state since we're using the hook
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [mlflowConfig, setMlflowConfig] = useState<any>(null);
+  
+  // Judge type - derived from rubric (set during rubric creation)
+  const judgeType: JudgeType = rubric?.judge_type || 'likert';
+  const binaryLabels: Record<string, string> = rubric?.binary_labels || { pass: 'Pass', fail: 'Fail' };
   
   // Track if current prompt differs from saved version
   const [originalPromptText, setOriginalPromptText] = useState<string>('');
@@ -175,6 +181,15 @@ export function JudgeTuningPage() {
     }
     return normalized;
   };
+
+  // Load default prompt template based on judge type from rubric
+  useEffect(() => {
+    if (rubric?.judge_type && !currentPrompt.trim() && !prompts.length) {
+      // Set default template when rubric is loaded and no prompt exists
+      setCurrentPrompt(defaultPromptTemplates[rubric.judge_type]);
+      setOriginalPromptText(defaultPromptTemplates[rubric.judge_type]);
+    }
+  }, [rubric?.judge_type]);
 
   // Load initial data
   useEffect(() => {
@@ -332,7 +347,13 @@ export function JudgeTuningPage() {
   };
 
   const createDefaultPrompt = (rubricQuestion: string) => {
-    return `You are an expert evaluator. Please evaluate the following response based on this criteria: "${rubricQuestion}"
+    // Parse the rubric to get clean question text (removes |||JUDGE_TYPE||| and |||QUESTION_SEPARATOR||| metadata)
+    const parsedQuestions = parseRubricQuestions(rubricQuestion);
+    const firstQuestion = parsedQuestions.length > 0 
+      ? `${parsedQuestions[0].title}: ${parsedQuestions[0].description}` 
+      : rubricQuestion;
+    
+    return `You are an expert evaluator. Please evaluate the following response based on this criteria: "${firstQuestion}"
 
 Rate the response on a scale of 1-5, where:
 - 1 = Poor (does not meet criteria)
@@ -967,6 +988,26 @@ The response partially meets the criteria because...`;
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
+
+      {/* Judge Type Display (set during Rubric Creation) */}
+      <Card className="mb-6">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2">
+            <Brain className="h-5 w-5" />
+            Judge Type
+            <Badge variant="outline" className="ml-2">
+              {judgeType === 'likert' && 'Likert Scale'}
+              {judgeType === 'binary' && 'Binary'}
+              {judgeType === 'freeform' && 'Free-form'}
+            </Badge>
+          </CardTitle>
+          <CardDescription>
+            {judgeType === 'likert' && '1-5 Likert scale scoring with rubric criteria. Set during Rubric Creation phase.'}
+            {judgeType === 'binary' && `Binary ${binaryLabels.pass}/${binaryLabels.fail} evaluation. Set during Rubric Creation phase.`}
+            {judgeType === 'freeform' && 'Free-form qualitative feedback. Set during Rubric Creation phase.'}
+          </CardDescription>
+        </CardHeader>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column - Prompt Editor (1/3) */}

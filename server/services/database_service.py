@@ -597,6 +597,13 @@ class DatabaseService:
       # Update existing rubric
       existing_rubric.question = rubric_data.question
       existing_rubric.created_by = rubric_data.created_by
+      # Update judge type fields
+      if rubric_data.judge_type:
+        existing_rubric.judge_type = rubric_data.judge_type
+      if rubric_data.binary_labels:
+        existing_rubric.binary_labels = rubric_data.binary_labels
+      if rubric_data.rating_scale:
+        existing_rubric.rating_scale = rubric_data.rating_scale
       self.db.commit()
       self.db.refresh(existing_rubric)
       db_rubric = existing_rubric
@@ -608,6 +615,9 @@ class DatabaseService:
         workshop_id=workshop_id,
         question=rubric_data.question,
         created_by=rubric_data.created_by,
+        judge_type=rubric_data.judge_type or 'likert',
+        binary_labels=rubric_data.binary_labels,
+        rating_scale=rubric_data.rating_scale or 5,
       )
       self.db.add(db_rubric)
       self.db.commit()
@@ -777,6 +787,9 @@ class DatabaseService:
       question=db_rubric.question,
       created_by=db_rubric.created_by,
       created_at=db_rubric.created_at,
+      judge_type=db_rubric.judge_type or 'likert',
+      binary_labels=db_rubric.binary_labels,
+      rating_scale=db_rubric.rating_scale or 5,
     )
 
   # Annotation operations
