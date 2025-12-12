@@ -28,9 +28,13 @@ cd project-0xfffff
 ## 📋 Prerequisites
 
 - **Python 3.11+**
-- **Node.js 18+** and npm
+- **Node.js 22.16+**
 - **Databricks workspace** with:
   - MLflow experiments
+  - Databricks Apps
+- **Strongly recommended: just**
+   - [Installation](https://just.systems/man/en/packages.html)
+   - It's possible to use without this, but the majority of useful scripts use just.
 
 ### Setup (Development)
 For the latest development version (may contain unreleased features):
