@@ -8,6 +8,7 @@
     "dev": "npx vite",
     "build": "npx vite build",
     "preview": "npx vite preview",
+    "test": "npx playwright test",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json,css}\""
   },

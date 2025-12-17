@@ -313,6 +313,37 @@ db-bootstrap:
 
   _run("upgrade", "head")
 
+[script]
+e2e-wait-ready api_port="8000" ui_port="3000" timeout_s="60":
+  import time
+  import urllib.request
+
+  api_port = int("{{api_port}}")
+  ui_port = int("{{ui_port}}")
+  timeout_s = float("{{timeout_s}}")
+
+  urls = [
+    f"http://127.0.0.1:{api_port}/health",
+    f"http://127.0.0.1:{ui_port}/",
+  ]
+
+  deadline = time.time() + timeout_s
+  last_error = [None]
+
+  def wait_for(url: str) -> None:
+    while time.time() < deadline:
+      try:
+        with urllib.request.urlopen(url, timeout=2) as r:
+          getattr(r, "status", 200)
+          return
+      except Exception as e:
+        last_error[0] = e
+        time.sleep(0.5)
+    raise TimeoutError(f"Timed out waiting for {url}. Last error: {last_error[0]}")
+
+  for url in urls:
+    wait_for(url)
+
 [group('dev')]
 py-install-dev:
   uv pip install -e ".[dev]"
@@ -371,4 +402,108 @@ dev api_port="8000" ui_port="5173":
   # Reap exits (ignore non-zero since dev servers exit on CTRL+C etc.)
   wait "$api_pid" 2>/dev/null || true
   wait "$ui_pid" 2>/dev/null || true
+  cleanup
+
+
+# =========================
+# End-to-end (E2E) testing
+# =========================
+
+[group('e2e')]
+e2e-servers db_path=".e2e-workshop.db" api_port="8000" ui_port="3000":
+  #!/usr/bin/env bash
+  set -euo pipefail
+
+  DB_PATH="{{db_path}}"
+  DB_PATH="${DB_PATH#db_path=}"
+  API_PORT="{{api_port}}"
+  UI_PORT="{{ui_port}}"
+
+  # Ensure schema exists before starting the API (migrations are part of the workflow, not app startup)
+  ENVIRONMENT=development DATABASE_URL="sqlite:///./${DB_PATH}" just db-bootstrap
+
+  echo "🚀 Starting E2E servers"
+  echo "  DB : ${DB_PATH}"
+  echo "  API: http://localhost:${API_PORT}"
+  echo "  UI : http://localhost:${UI_PORT}"
+
+  # Start API (no reload for E2E)
+  (ENVIRONMENT=development DATABASE_URL="sqlite:///./${DB_PATH}" uv run uvicorn {{server-dir}}.app:app --host 127.0.0.1 --port "$API_PORT") &
+  api_pid=$!
+
+  # Start UI (force port for determinism)
+  (npm -C {{client-dir}} run dev -- --host 127.0.0.1 --port "$UI_PORT" --strictPort) &
+  ui_pid=$!
+
+  cleanup() {
+    kill "$api_pid" "$ui_pid" 2>/dev/null || true
+    wait "$api_pid" 2>/dev/null || true
+    wait "$ui_pid" 2>/dev/null || true
+  }
+  trap cleanup INT TERM EXIT
+
+  # Keep running until one process exits
+  while kill -0 "$api_pid" 2>/dev/null && kill -0 "$ui_pid" 2>/dev/null; do
+    sleep 1
+  done
+
+  wait "$api_pid" 2>/dev/null || true
+  wait "$ui_pid" 2>/dev/null || true
+  cleanup
+
+
+[group('e2e')]
+e2e-test mode="headless":
+  #!/usr/bin/env bash
+  set -euo pipefail
+
+  # If Playwright is configured with webServer, avoid double-starting when we already started servers via `just e2e`.
+  export PW_NO_WEBSERVER=1
+
+  echo "Running tests in {{mode}} mode"
+
+  case "{{mode}}" in
+    ui)
+      npm -C {{client-dir}} run test -- tests/e2e --ui --workers=1
+      ;;
+    headed)
+      npm -C {{client-dir}} run test -- tests/e2e --headed --workers=1
+      ;;
+    headless)
+      npm -C {{client-dir}} run test -- tests/e2e --workers=1
+      ;;
+    *)
+      echo "Unknown mode: {{mode}} (expected: headless|headed|ui)" >&2
+      exit 2
+      ;;
+  esac
+
+
+[group('e2e')]
+e2e mode="headless" db_path=".e2e-workshop.db":
+  #!/usr/bin/env bash
+  set -euo pipefail
+
+  DB_PATH="{{db_path}}"
+  DB_PATH="${DB_PATH#db_path=}"
+
+  # Always start from a clean DB for isolation
+  rm -f "$DB_PATH"
+
+  # Start servers in the background
+  (just e2e-servers db_path="$DB_PATH") &
+  servers_pid=$!
+
+  cleanup() {
+    kill "$servers_pid" 2>/dev/null || true
+    wait "$servers_pid" 2>/dev/null || true
+  }
+  trap cleanup INT TERM EXIT
+
+  # Wait for API + UI to be ready
+  just e2e-wait-ready
+
+  # Run tests
+  just e2e-test "{{mode}}"
+
   cleanup
