@@ -167,8 +167,8 @@ Provide your rating as a single number (1-5) followed by a brief explanation.`,
 ## Task
 Determine if the response meets the evaluation criteria.
 
-- TRUE: The response meets the required criteria
-- FALSE: The response does not meet the required criteria
+- 1: The response meets the required criteria (PASS)
+- 0: The response does not meet the required criteria (FAIL)
 
 ## Input
 {input}
@@ -176,7 +176,13 @@ Determine if the response meets the evaluation criteria.
 ## Output to Evaluate
 {output}
 
-You must return a boolean value: TRUE or FALSE. Do NOT use PASS/FAIL or numeric ratings. Return TRUE if the response meets the criteria, FALSE if it does not.`,
+Think step by step about whether the output meets the criteria, then provide your rating.
+
+Your response MUST start with a single integer rating (0 or 1) on its own line, followed by your reasoning.
+
+Example format:
+1
+The response meets the criteria because...`,
 
   freeform: `You are an expert evaluator providing detailed feedback on an AI assistant's response.
 

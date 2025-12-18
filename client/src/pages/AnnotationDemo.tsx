@@ -5,7 +5,7 @@
  * rate traces using the rubric questions with 1-5 Likert scale.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { TraceViewer, TraceData } from '@/components/TraceViewer';
 import { TraceDataViewer } from '@/components/TraceDataViewer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -92,6 +92,28 @@ export function AnnotationDemo() {
   const savedStateRef = useRef<Map<string, SavedAnnotationState>>(new Map());
   const savingTracesRef = useRef<Set<string>>(new Set()); // Track which traces are currently saving
   const isSavingRef = useRef(false); // Track if any user-initiated save is in progress
+  
+  // Retry utility with exponential backoff
+  const retryWithBackoff = useCallback(async <T,>(
+    fn: () => Promise<T>,
+    maxRetries: number = 3,
+    baseDelay: number = 1000
+  ): Promise<T> => {
+    let lastError: any;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error;
+        if (attempt < maxRetries) {
+          const delay = baseDelay * Math.pow(2, attempt); // Exponential backoff: 1s, 2s, 4s
+          console.log(`Save attempt ${attempt + 1} failed, retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+    throw lastError;
+  }, []);
   
   // Get current user and permissions
   const { user } = useUser();
@@ -545,7 +567,12 @@ export function AnnotationDemo() {
         isBackground
       });
       
-      await submitAnnotation.mutateAsync(annotationData);
+      // Use retry logic for background saves, direct call for user-initiated saves
+      if (isBackground) {
+        await retryWithBackoff(() => submitAnnotation.mutateAsync(annotationData), 3, 1000); // 3 retries with exponential backoff
+      } else {
+        await submitAnnotation.mutateAsync(annotationData);
+      }
       
       setSubmittedAnnotations(prev => new Set([...prev, targetTraceId]));
       
@@ -559,7 +586,7 @@ export function AnnotationDemo() {
       console.log('Successfully saved annotation for trace:', targetTraceId);
       return true;
     } catch (error: any) {
-      console.error('Failed to save annotation:', error);
+      console.error('Failed to save annotation after retries:', error);
       console.error('Error details:', {
         message: error?.message,
         response: error?.response?.data,
@@ -567,7 +594,7 @@ export function AnnotationDemo() {
         traceId: targetTraceId,
         isBackground
       });
-      // Don't show toast for background saves - we'll show a different message in navigation handlers
+      // Only show toast for user-initiated saves
       if (!isBackground) {
         toast.error('Failed to save annotation. Please try again.');
       }
@@ -642,13 +669,14 @@ export function AnnotationDemo() {
           if (success) {
             console.log('nextTrace: Background save successful for trace:', currentTraceId);
           } else {
-            console.warn('nextTrace: Background save failed (non-blocking) for trace:', currentTraceId);
-            toast.error('Failed to save previous annotation. You may need to go back and save manually.');
+            // Save failed after retries - log but don't show intrusive toast
+            // The retry logic should handle most transient failures
+            console.warn('nextTrace: Background save failed after retries for trace:', currentTraceId);
           }
         })
         .catch((error) => {
-          console.error('nextTrace: Background save error:', error);
-          toast.error('Failed to save previous annotation. You may need to go back and save manually.');
+          // This shouldn't happen as saveAnnotation catches errors, but log just in case
+          console.error('nextTrace: Unexpected background save error:', error);
         });
     } else {
       console.log('nextTrace: No ratings to save');
@@ -700,13 +728,13 @@ export function AnnotationDemo() {
           if (success) {
             console.log('prevTrace: Background save successful for trace:', currentTraceId);
           } else {
-            console.warn('prevTrace: Background save failed (non-blocking) for trace:', currentTraceId);
-            toast.error('Failed to save previous annotation. You may need to go back and save manually.');
+            // Save failed after retries - log but don't show intrusive toast
+            console.warn('prevTrace: Background save failed after retries for trace:', currentTraceId);
           }
         })
         .catch((error) => {
-          console.error('prevTrace: Background save error:', error);
-          toast.error('Failed to save previous annotation. You may need to go back and save manually.');
+          // This shouldn't happen as saveAnnotation catches errors, but log just in case
+          console.error('prevTrace: Unexpected background save error:', error);
         });
     } else {
       console.log('prevTrace: No ratings to save');

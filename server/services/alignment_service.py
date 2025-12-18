@@ -804,27 +804,26 @@ class AlignmentService:
             # The prompt template with placeholders for judge instructions
             mlflow_prompt_template = self._normalize_judge_prompt(judge_prompt)
             
-            # For binary rubrics, enhance the prompt to explicitly require True/False boolean values
+            # For binary rubrics, enhance the prompt to explicitly require 0/1 numeric values
             if judge_type == 'binary':
-                # Check if prompt already has boolean instructions
+                # Check if prompt already has 0/1 numeric instructions
                 prompt_lower = mlflow_prompt_template.lower()
-                has_boolean_instructions = any(phrase in prompt_lower for phrase in [
-                    'true or false', 'true/false', 'return true', 'return false',
-                    'respond with true', 'respond with false', 'boolean'
+                has_numeric_instructions = any(phrase in prompt_lower for phrase in [
+                    '0 or 1', '0/1', 'integer rating (0 or 1)', 'single integer rating (0 or 1)',
+                    'rating (0 or 1)', 'must start with a single integer rating'
                 ])
                 
-                if not has_boolean_instructions:
-                    # Append boolean instructions to ensure clear boolean response
-                    # This aligns with feedback_value_type=bool
-                    mlflow_prompt_template += "\n\nIMPORTANT: You must return a boolean value: TRUE or FALSE. Do NOT use PASS/FAIL or numeric ratings. Return TRUE if the response meets the criteria, FALSE if it does not. This is a binary evaluation that requires a boolean response."
-                    yield f"Enhanced prompt with boolean instructions for binary rubric (aligned with feedback_value_type=bool)"
+                if not has_numeric_instructions:
+                    # Append 0/1 numeric instructions to ensure clear binary response
+                    mlflow_prompt_template += "\n\nIMPORTANT: Your response MUST start with a single integer rating (0 or 1) on its own line, followed by your reasoning. Return 1 if the response meets the criteria, 0 if it does not."
+                    yield f"Enhanced prompt with 0/1 numeric instructions for binary rubric"
             
             # Set feedback_value_type based on judge type
-            # - Binary judges: use bool for Pass/Fail (True/False -> 1/0)
+            # - Binary judges: use float for 0/1 numeric ratings
             # - Likert judges: use float for 1-5 scale
             if judge_type == 'binary':
-                feedback_type = bool
-                yield f"Detected binary rubric - creating judge with feedback_value_type=bool"
+                feedback_type = float
+                yield f"Detected binary rubric - creating judge with feedback_value_type=float (expecting 0 or 1)"
             else:
                 feedback_type = float
                 yield f"Detected Likert rubric - creating judge with feedback_value_type=float"
@@ -962,7 +961,6 @@ class AlignmentService:
                         workshop_uuid = trace_data.get('workshop_id')
                         
                         predicted_value = row.get(judge_value_col)
-                        print(f"predicted_value: {predicted_value}")
                         # Also try to get raw text response from reasoning column if available
                         raw_text_response = None
                         if reasoning_col and reasoning_col in result_df.columns:
@@ -979,53 +977,89 @@ class AlignmentService:
                             else:
                                 yield f"⚠️ No raw text response available for trace {trace_id[:8]}..."
                         
-                        # For binary judges, prioritize parsing raw text response FIRST
-                        # This is critical because MLflow incorrectly parses responses as 3.0 (float) instead of bool
-                        # even when feedback_value_type=bool. We now ask for True/False to align with bool type.
-                        if is_binary and raw_text_response:
-                            text_lower = str(raw_text_response).lower()
-                            # Prioritize True/False boolean values (aligned with feedback_value_type=bool)
-                            # Check for explicit True/False first
-                            if 'true' in text_lower and 'false' not in text_lower[:text_lower.find('true')+10]:
-                                # Found "true" and "false" doesn't appear before it
-                                predicted_rating = 1.0
-                                if should_log:
-                                    yield f"✅ Binary judge: Parsed TRUE from text response for trace {trace_id[:8]}... - using 1.0 (MLflow parsed as: {predicted_value}, type: {type(predicted_value).__name__})"
-                            elif 'false' in text_lower and 'true' not in text_lower[:text_lower.find('false')+10]:
-                                # Found "false" and "true" doesn't appear before it
-                                predicted_rating = 0.0
-                                if should_log:
-                                    yield f"✅ Binary judge: Parsed FALSE from text response for trace {trace_id[:8]}... - using 0.0 (MLflow parsed as: {predicted_value}, type: {type(predicted_value).__name__})"
-                            else:
-                                # Fallback to other keywords (PASS/FAIL, etc.)
-                                pass_keywords = ['pass', 'yes', 'correct', 'meets', 'acceptable', 'satisfies', 'satisfactory']
-                                fail_keywords = ['fail', 'no', 'incorrect', 'does not meet', 'unacceptable', 'does not satisfy', 'unsatisfactory']
-                                
-                                if any(word in text_lower for word in pass_keywords):
-                                    predicted_rating = 1.0
-                                    if should_log:
-                                        yield f"✅ Binary judge: Parsed PASS/positive from text response for trace {trace_id[:8]}... - using 1.0 (MLflow parsed as: {predicted_value}, type: {type(predicted_value).__name__})"
-                                elif any(word in text_lower for word in fail_keywords):
+                        # For binary judges, prioritize parsing numeric 0/1 values first
+                        # We now request 0/1 numeric format, so MLflow should return float values
+                        if is_binary and predicted_value is not None and not pd.isna(predicted_value):
+                            # First, try to parse as numeric 0 or 1
+                            if isinstance(predicted_value, (int, float)):
+                                numeric_value = float(predicted_value)
+                                if numeric_value == 0 or numeric_value == 0.0:
                                     predicted_rating = 0.0
                                     if should_log:
-                                        yield f"✅ Binary judge: Parsed FAIL/negative from text response for trace {trace_id[:8]}... - using 0.0 (MLflow parsed as: {predicted_value}, type: {type(predicted_value).__name__})"
+                                        yield f"✅ Binary judge: Parsed 0 from numeric response for trace {trace_id[:8]}... - using 0.0"
+                                elif numeric_value == 1 or numeric_value == 1.0:
+                                    predicted_rating = 1.0
+                                    if should_log:
+                                        yield f"✅ Binary judge: Parsed 1 from numeric response for trace {trace_id[:8]}... - using 1.0"
+                                else:
+                                    # Invalid numeric value (not 0 or 1) - try to parse from text
+                                    if raw_text_response:
+                                        text_lower = str(raw_text_response).lower()
+                                        # Look for 0 or 1 at the start of the response
+                                        text_trimmed = text_lower.strip()
+                                        if text_trimmed.startswith('0') and (len(text_trimmed) == 1 or text_trimmed[1] in [' ', '\n', '.', ',', ':', ';']):
+                                            predicted_rating = 0.0
+                                            if should_log:
+                                                yield f"✅ Binary judge: Parsed 0 from text response for trace {trace_id[:8]}... - using 0.0 (MLflow parsed as: {predicted_value})"
+                                        elif text_trimmed.startswith('1') and (len(text_trimmed) == 1 or text_trimmed[1] in [' ', '\n', '.', ',', ':', ';']):
+                                            predicted_rating = 1.0
+                                            if should_log:
+                                                yield f"✅ Binary judge: Parsed 1 from text response for trace {trace_id[:8]}... - using 1.0 (MLflow parsed as: {predicted_value})"
                         
-                        # If we didn't parse from text, fall back to the parsed value
+                        # If we didn't parse from numeric value, try parsing from raw text response
+                        if predicted_rating is None and is_binary and raw_text_response:
+                            text_lower = str(raw_text_response).lower()
+                            # First check for 0/1 at the start of the response
+                            text_trimmed = text_lower.strip()
+                            if text_trimmed.startswith('0') and (len(text_trimmed) == 1 or text_trimmed[1] in [' ', '\n', '.', ',', ':', ';']):
+                                predicted_rating = 0.0
+                                if should_log:
+                                    yield f"✅ Binary judge: Parsed 0 from text response for trace {trace_id[:8]}... - using 0.0"
+                            elif text_trimmed.startswith('1') and (len(text_trimmed) == 1 or text_trimmed[1] in [' ', '\n', '.', ',', ':', ';']):
+                                predicted_rating = 1.0
+                                if should_log:
+                                    yield f"✅ Binary judge: Parsed 1 from text response for trace {trace_id[:8]}... - using 1.0"
+                            else:
+                                # Fallback to PASS/FAIL text parsing (for backward compatibility)
+                                if 'pass' in text_lower and 'fail' not in text_lower[:text_lower.find('pass')+10]:
+                                    predicted_rating = 1.0
+                                    if should_log:
+                                        yield f"✅ Binary judge: Parsed PASS from text response for trace {trace_id[:8]}... - using 1.0"
+                                elif 'fail' in text_lower and 'pass' not in text_lower[:text_lower.find('fail')+10]:
+                                    predicted_rating = 0.0
+                                    if should_log:
+                                        yield f"✅ Binary judge: Parsed FAIL from text response for trace {trace_id[:8]}... - using 0.0"
+                        
+                        # If we still didn't parse, try the parsed value as fallback
                         if predicted_rating is None and predicted_value is not None and not pd.isna(predicted_value):
-                            # Handle boolean values directly (from binary judges with feedback_value_type=bool)
+                            # Handle boolean values (backward compatibility)
                             if isinstance(predicted_value, bool):
                                 predicted_rating = 1.0 if predicted_value else 0.0
                                 if should_log:
                                     yield f"✅ Binary judge returned boolean: {predicted_value} -> {predicted_rating}"
-                            elif is_binary and isinstance(predicted_value, (int, float)):
-                                # MLflow incorrectly returned numeric instead of bool for binary judge
-                                if should_log:
-                                    yield f"⚠️ WARNING: Binary judge with feedback_value_type=bool returned {type(predicted_value).__name__} ({predicted_value}) instead of bool. Will try to parse from text response."
                             else:
-                                # Try to convert True/False or PASS/FAIL strings to 1/0 for binary rubrics
-                                # Prioritize True/False (aligned with feedback_value_type=bool)
+                                # Try to convert strings to 0/1 for binary rubrics
+                                # Prioritize 0/1 numeric strings (our new standard format)
                                 str_value = str(predicted_value).strip().upper()
-                                if str_value in ('TRUE', 'TRUE.', 'TRUE!', 'TRUE:', 'TRUE;'):
+                                if str_value in ('0', '0.0', '0.', '0!', '0:', '0;'):
+                                    predicted_rating = 0.0
+                                    if should_log:
+                                        yield f"✅ Converted string '{str_value}' to 0.0 (FAIL)"
+                                elif str_value in ('1', '1.0', '1.', '1!', '1:', '1;'):
+                                    predicted_rating = 1.0
+                                    if should_log:
+                                        yield f"✅ Converted string '{str_value}' to 1.0 (PASS)"
+                                # Fallback to PASS/FAIL for backward compatibility
+                                elif str_value in ('PASS', 'PASS.', 'PASS!', 'PASS:', 'PASS;'):
+                                    predicted_rating = 1.0
+                                    if should_log:
+                                        yield f"✅ Converted string '{str_value}' to 1.0 (PASS)"
+                                elif str_value in ('FAIL', 'FAIL.', 'FAIL!', 'FAIL:', 'FAIL;'):
+                                    predicted_rating = 0.0
+                                    if should_log:
+                                        yield f"✅ Converted string '{str_value}' to 0.0 (FAIL)"
+                                # Fallback to TRUE/FALSE for backward compatibility
+                                elif str_value in ('TRUE', 'TRUE.', 'TRUE!', 'TRUE:', 'TRUE;'):
                                     predicted_rating = 1.0
                                     if should_log:
                                         yield f"✅ Converted string '{str_value}' to 1.0 (TRUE)"
@@ -1033,14 +1067,15 @@ class AlignmentService:
                                     predicted_rating = 0.0
                                     if should_log:
                                         yield f"✅ Converted string '{str_value}' to 0.0 (FALSE)"
-                                elif str_value in ('PASS', 'YES', 'CORRECT', 'GOOD', 'ACCEPTABLE', '1', '1.0'):
+                                # Other positive/negative keywords
+                                elif str_value in ('YES', 'CORRECT', 'GOOD', 'ACCEPTABLE'):
                                     predicted_rating = 1.0
                                     if should_log:
-                                        yield f"✅ Converted string '{str_value}' to 1.0 (PASS/positive)"
-                                elif str_value in ('FAIL', 'NO', 'INCORRECT', 'BAD', 'UNACCEPTABLE', '0', '0.0'):
+                                        yield f"✅ Converted string '{str_value}' to 1.0 (positive)"
+                                elif str_value in ('NO', 'INCORRECT', 'BAD', 'UNACCEPTABLE'):
                                     predicted_rating = 0.0
                                     if should_log:
-                                        yield f"✅ Converted string '{str_value}' to 0.0 (FAIL/negative)"
+                                        yield f"✅ Converted string '{str_value}' to 0.0 (negative)"
                                 else:
                                     # Try numeric conversion
                                     try:
@@ -1060,13 +1095,20 @@ class AlignmentService:
                                                 # Invalid binary value - try to parse from raw text response if available
                                                 if raw_text_response:
                                                     text_lower = str(raw_text_response).lower()
-                                                    # Look for PASS/FAIL keywords in the text response
-                                                    if any(word in text_lower for word in ['pass', 'yes', 'correct', 'meets', 'acceptable', 'true']):
+                                                    # Look for PASS/FAIL keywords first (our standard format)
+                                                    if 'pass' in text_lower and 'fail' not in text_lower[:text_lower.find('pass')+10]:
                                                         predicted_rating = 1.0
                                                         yield f"⚠️ MLflow returned {numeric_value} but parsed PASS from text response for trace {trace_id[:8]}... - using 1.0"
-                                                    elif any(word in text_lower for word in ['fail', 'no', 'incorrect', 'does not meet', 'unacceptable', 'false']):
+                                                    elif 'fail' in text_lower and 'pass' not in text_lower[:text_lower.find('fail')+10]:
                                                         predicted_rating = 0.0
                                                         yield f"⚠️ MLflow returned {numeric_value} but parsed FAIL from text response for trace {trace_id[:8]}... - using 0.0"
+                                                    # Fallback to other keywords
+                                                    elif any(word in text_lower for word in ['true', 'yes', 'correct', 'meets', 'acceptable']):
+                                                        predicted_rating = 1.0
+                                                        yield f"⚠️ MLflow returned {numeric_value} but parsed positive from text response for trace {trace_id[:8]}... - using 1.0"
+                                                    elif any(word in text_lower for word in ['false', 'no', 'incorrect', 'does not meet', 'unacceptable']):
+                                                        predicted_rating = 0.0
+                                                        yield f"⚠️ MLflow returned {numeric_value} but parsed negative from text response for trace {trace_id[:8]}... - using 0.0"
                                                     else:
                                                         # Still invalid - reject it (we already tried parsing from text above)
                                                         predicted_rating = None
@@ -1224,12 +1266,26 @@ class AlignmentService:
             # Get judge type from rubric to determine feedback_value_type
             judge_type = get_judge_type_from_rubric(self.db_service, workshop_id)
             
+            # For binary rubrics, enhance the prompt to explicitly require 0/1 numeric values
+            if judge_type == 'binary':
+                # Check if prompt already has 0/1 numeric instructions
+                prompt_lower = normalized_judge_prompt.lower()
+                has_numeric_instructions = any(phrase in prompt_lower for phrase in [
+                    '0 or 1', '0/1', 'integer rating (0 or 1)', 'single integer rating (0 or 1)',
+                    'rating (0 or 1)', 'must start with a single integer rating'
+                ])
+                
+                if not has_numeric_instructions:
+                    # Append 0/1 numeric instructions to ensure clear binary response
+                    normalized_judge_prompt += "\n\nIMPORTANT: Your response MUST start with a single integer rating (0 or 1) on its own line, followed by your reasoning. Return 1 if the response meets the criteria, 0 if it does not."
+                    yield f"Enhanced prompt with 0/1 numeric instructions for binary rubric"
+            
             # Set feedback_value_type based on judge type
-            # - Binary judges: use bool for Pass/Fail classification
+            # - Binary judges: use float for 0/1 numeric ratings
             # - Likert judges: use float for 1-5 scale
             if judge_type == 'binary':
-                feedback_type = bool
-                yield f"Creating binary judge with feedback_value_type=bool"
+                feedback_type = float
+                yield f"Creating binary judge with feedback_value_type=float (expecting 0 or 1)"
             else:
                 feedback_type = float
                 yield f"Creating Likert judge with feedback_value_type=float"

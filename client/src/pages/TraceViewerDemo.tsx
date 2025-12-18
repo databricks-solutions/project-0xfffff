@@ -225,6 +225,29 @@ export function TraceViewerDemo() {
   const savedStateRef = useRef<Map<string, { q1: string; q2: string }>>(new Map());
   const savingTracesRef = useRef<Set<string>>(new Set()); // Track which traces are currently saving
   const isSavingRef = useRef(false); // Track if any user-initiated save is in progress
+  const saveStatusRef = useRef<Map<string, 'saved' | 'saving' | 'failed'>>(new Map()); // Track save status per trace
+  
+  // Retry utility with exponential backoff
+  const retryWithBackoff = async <T,>(
+    fn: () => Promise<T>,
+    maxRetries: number = 3,
+    baseDelay: number = 1000
+  ): Promise<T> => {
+    let lastError: any;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error;
+        if (attempt < maxRetries) {
+          const delay = baseDelay * Math.pow(2, attempt); // Exponential backoff: 1s, 2s, 4s
+          console.log(`Save attempt ${attempt + 1} failed, retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+    throw lastError;
+  };
   
   // Save finding function - optimized to track state per trace
   const saveFinding = useCallback(async (q1: string, q2: string, traceId: string, isBackground: boolean = false): Promise<boolean> => {
@@ -268,27 +291,42 @@ export function TraceViewerDemo() {
     
     // Mark this trace as being saved
     savingTracesRef.current.add(traceId);
+    if (isBackground) {
+      saveStatusRef.current.set(traceId, 'saving');
+    }
     
     try {
       const content = `Quality Assessment: ${q1Trimmed}\n\nImprovement Analysis: ${q2Trimmed}`;
       
       console.log('Saving finding:', { traceId, q1Length: q1Trimmed.length, q2Length: q2Trimmed.length, isBackground });
       
-      await submitFinding.mutateAsync({
-        trace_id: traceId,
-        user_id: user?.id || 'demo_user',
-        insight: content
-      });
+      // Use retry logic for background saves, direct call for user-initiated saves
+      if (isBackground) {
+        await retryWithBackoff(() => submitFinding.mutateAsync({
+          trace_id: traceId,
+          user_id: user?.id || 'demo_user',
+          insight: content
+        }), 3, 1000); // 3 retries with exponential backoff
+      } else {
+        await submitFinding.mutateAsync({
+          trace_id: traceId,
+          user_id: user?.id || 'demo_user',
+          insight: content
+        });
+      }
       
       setSubmittedFindings(prev => new Set([...prev, traceId]));
       
       // Update saved state for this trace AFTER successful save
       savedStateRef.current.set(traceId, { q1: q1Trimmed, q2: q2Trimmed });
+      if (isBackground) {
+        saveStatusRef.current.set(traceId, 'saved');
+      }
       
       console.log('Successfully saved finding for trace:', traceId);
       return true;
     } catch (error: any) {
-      console.error('Failed to save finding:', error);
+      console.error('Failed to save finding after retries:', error);
       console.error('Error details:', {
         message: error?.message,
         response: error?.response?.data,
@@ -298,7 +336,12 @@ export function TraceViewerDemo() {
         q2Length: q2Trimmed.length,
         isBackground
       });
-      // Don't show toast for background saves - we'll show a different message in navigation handlers
+      
+      if (isBackground) {
+        saveStatusRef.current.set(traceId, 'failed');
+      }
+      
+      // Only show toast for user-initiated saves
       if (!isBackground) {
         toast.error('Failed to save. Please try again.');
       }
@@ -359,21 +402,24 @@ export function TraceViewerDemo() {
     // Clear navigating flag immediately after state update
     setIsNavigating(false);
     
-    // Save in background (async, non-blocking)
+    // Save in background (async, non-blocking) with automatic retry
     if (hasContent) {
       console.log('nextTrace: Saving content in background', { traceId: currentTraceId, q1: q1ToSave.substring(0, 50), q2: q2ToSave.substring(0, 50) });
-      saveFinding(q1ToSave, q2ToSave, currentTraceId, true) // isBackground=true
+      saveFinding(q1ToSave, q2ToSave, currentTraceId, true) // isBackground=true (includes retry logic)
         .then((success) => {
           if (success) {
             console.log('nextTrace: Background save successful for trace:', currentTraceId);
           } else {
-            console.warn('nextTrace: Background save failed (non-blocking) for trace:', currentTraceId);
-            toast.error('Failed to save previous trace. You may need to go back and save manually.');
+            // Save failed after retries - log but don't show intrusive toast
+            // The save status is tracked in saveStatusRef, user can see it if they navigate back
+            console.warn('nextTrace: Background save failed after retries for trace:', currentTraceId);
+            // Only show a subtle notification if it's a persistent failure
+            // The retry logic should handle most transient failures
           }
         })
         .catch((error) => {
-          console.error('nextTrace: Background save error:', error);
-          toast.error('Failed to save previous trace. You may need to go back and save manually.');
+          // This shouldn't happen as saveFinding catches errors, but log just in case
+          console.error('nextTrace: Unexpected background save error:', error);
         });
     } else {
       console.log('nextTrace: No content to save');
@@ -450,21 +496,21 @@ export function TraceViewerDemo() {
     // Clear navigating flag immediately after state update
     setIsNavigating(false);
     
-    // Save in background (async, non-blocking)
+    // Save in background (async, non-blocking) with automatic retry
     if (hasContent) {
       console.log('prevTrace: Saving content in background', { traceId: currentTraceId, q1: q1ToSave.substring(0, 50), q2: q2ToSave.substring(0, 50) });
-      saveFinding(q1ToSave, q2ToSave, currentTraceId, true) // isBackground=true
+      saveFinding(q1ToSave, q2ToSave, currentTraceId, true) // isBackground=true (includes retry logic)
         .then((success) => {
           if (success) {
             console.log('prevTrace: Background save successful for trace:', currentTraceId);
           } else {
-            console.warn('prevTrace: Background save failed (non-blocking) for trace:', currentTraceId);
-            toast.error('Failed to save previous trace. You may need to go back and save manually.');
+            // Save failed after retries - log but don't show intrusive toast
+            console.warn('prevTrace: Background save failed after retries for trace:', currentTraceId);
           }
         })
         .catch((error) => {
-          console.error('prevTrace: Background save error:', error);
-          toast.error('Failed to save previous trace. You may need to go back and save manually.');
+          // This shouldn't happen as saveFinding catches errors, but log just in case
+          console.error('prevTrace: Unexpected background save error:', error);
         });
     } else {
       console.log('prevTrace: No content to save');

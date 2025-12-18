@@ -190,14 +190,18 @@ export function JudgeTuningPage() {
     return normalized;
   };
 
-  // Load default prompt template based on judge type from rubric
+  // Load default prompt template based on judge type from rubric (only when no prompts exist)
   useEffect(() => {
     if (rubric?.judge_type && !currentPrompt.trim() && !prompts.length) {
       // Set default template when rubric is loaded and no prompt exists
-      setCurrentPrompt(defaultPromptTemplates[rubric.judge_type]);
-      setOriginalPromptText(defaultPromptTemplates[rubric.judge_type]);
+      const parsedQuestions = parseRubricQuestions(rubric.question);
+      const currentRubricJudgeType = parsedQuestions.length > 0 
+        ? parsedQuestions[0].judgeType 
+        : (rubric?.judge_type || 'likert');
+      setCurrentPrompt(defaultPromptTemplates[currentRubricJudgeType]);
+      setOriginalPromptText(defaultPromptTemplates[currentRubricJudgeType]);
     }
-  }, [rubric?.judge_type]);
+  }, [rubric?.question, rubric?.judge_type, prompts.length]);
 
   // Load initial data
   useEffect(() => {
@@ -314,9 +318,30 @@ export function JudgeTuningPage() {
         // Select the latest prompt (first in array since ordered by version desc)
         const latestPrompt = promptsData[0];
         
+        // Check if prompt judge_type matches current rubric judge_type
+        // If rubric changed (e.g., from Likert to Binary), update prompt template
+        const currentRubricJudgeType = rubricData 
+          ? (parseRubricQuestions(rubricData.question).length > 0
+              ? parseRubricQuestions(rubricData.question)[0].judgeType
+              : (rubricData.judge_type || 'likert'))
+          : 'likert';
+        
+        const promptJudgeType = latestPrompt.judge_type || 'likert';
+        
+        // If judge types don't match, update prompt to use correct template
+        if (currentRubricJudgeType !== promptJudgeType && rubricData) {
+          console.log(`Prompt judge type (${promptJudgeType}) doesn't match rubric judge type (${currentRubricJudgeType}), updating prompt template...`);
+          const updatedPrompt = createDefaultPrompt(rubricData.question);
+          setCurrentPrompt(updatedPrompt);
+          setOriginalPromptText(updatedPrompt);
+          // Mark as modified so user knows it needs to be saved
+          setIsModified(true);
+        } else {
+          setCurrentPrompt(latestPrompt.prompt_text);
+          setOriginalPromptText(latestPrompt.prompt_text); // Track original for modification detection
+        }
+        
         setSelectedPromptId(latestPrompt.id);
-        setCurrentPrompt(latestPrompt.prompt_text);
-        setOriginalPromptText(latestPrompt.prompt_text); // Track original for modification detection
         
         // Sync model selection with saved prompt
         if (latestPrompt.model_name) {
@@ -366,20 +391,20 @@ export function JudgeTuningPage() {
     if (judgeType === 'binary') {
       return `You are an expert evaluator. Please evaluate the following response based on this criteria: "${firstQuestion}"
 
-Make a binary judgment: does the response meet this criteria?
+Rate the response on a scale of 0-1, where:
 
-- TRUE: The response meets the criteria
-- FALSE: The response does not meet the criteria
+- 0: The response does not meet the criteria (FAIL)
+- 1: The response meets the criteria (PASS)
 
-Input: {input}
-Output: {output}
+Input: {{ inputs }}
+Output: {{ outputs }}
 
-Think step by step about whether the output meets the criteria, then provide your judgment.
+Think step by step about whether the output meets the criteria, then provide your rating.
 
-Your response MUST return a boolean value: TRUE or FALSE. Do NOT use PASS/FAIL or numeric ratings. Return TRUE if the response meets the criteria, FALSE if it does not.
+Your response MUST start with a single integer rating (0 or 1) on its own line, followed by your reasoning.
 
 Example format:
-TRUE
+1
 The response meets the criteria because...`;
     }
     
@@ -1162,16 +1187,6 @@ The response partially meets the criteria because...`;
                   className="min-h-[300px] h-full font-mono text-sm resize-none"
                 />
               </div>
-              
-              {/* Warning for binary judges using PASS/FAIL */}
-              {rubric?.judge_type === 'binary' && currentPrompt && 
-                (currentPrompt.toLowerCase().includes('pass') || currentPrompt.toLowerCase().includes('fail')) &&
-                !currentPrompt.toLowerCase().includes('true') && !currentPrompt.toLowerCase().includes('false') && (
-                  <div className="text-xs text-orange-700 bg-orange-50 px-3 py-2 rounded border border-orange-200">
-                    <strong>⚠️ Recommendation:</strong> For binary judges, use <strong>TRUE/FALSE</strong> instead of PASS/FAIL to align with MLflow's <code>feedback_value_type=bool</code>. 
-                    This helps ensure MLflow returns boolean values correctly. Consider updating your prompt to use TRUE/FALSE.
-                  </div>
-                )}
               
               <div className="space-y-3">
                 <div className="flex gap-2">
