@@ -160,7 +160,7 @@ export function IRRResultsDemo({ workshopId }: IRRResultsProps) {
   
   const [expandedTraces, setExpandedTraces] = useState<Set<string>>(new Set());
   
-  const { data: irrResult, isLoading: irrLoading, error: irrError } = useIRR(activeWorkshopId!);
+  const { data: irrResult, isLoading: irrLoading, error: irrError, refetch: refetchIRR } = useIRR(activeWorkshopId!);
   const { data: workshop } = useWorkshop(activeWorkshopId!);
   const { data: rubric } = useRubric(activeWorkshopId!);
   // Use all traces for IRR results (facilitator view)
@@ -260,28 +260,15 @@ export function IRRResultsDemo({ workshopId }: IRRResultsProps) {
   const handleRecalculateIRR = async () => {
     if (!activeWorkshopId) return;
     
-    try {
-      
-      toast.info('Recalculating IRR...');
-      
-      // Trigger IRR recalculation via direct fetch
-      const response = await fetch(`/workshops/${activeWorkshopId}/irr`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      
-      if (!response.ok) {
-        throw new Error('IRR calculation failed');
+    // Use toast.promise to handle loading/success/error states automatically
+    toast.promise(
+      refetchIRR(),
+      {
+        loading: 'Recalculating IRR...',
+        success: 'IRR recalculated successfully!',
+        error: 'Failed to recalculate IRR',
       }
-      
-      // Invalidate and refetch IRR data
-      queryClient.invalidateQueries({ queryKey: ['irr', activeWorkshopId] });
-      
-      toast.success('IRR recalculated successfully!');
-    } catch (error) {
-      
-      toast.error('Failed to recalculate IRR');
-    }
+    );
   };
 
   // (Evaluation/alignment controls have moved to Judge Tuning)

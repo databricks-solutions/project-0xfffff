@@ -27,7 +27,7 @@ import {
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useUser, useRoleCheck } from '@/context/UserContext';
 import { WorkshopsService } from '@/client';
-import { useWorkshop, useOriginalTraces, useAggregateAllFeedback } from '@/hooks/useWorkshopApi';
+import { useWorkshop, useOriginalTraces, useAggregateAllFeedback, useFacilitatorAnnotations } from '@/hooks/useWorkshopApi';
 import { getModelOptions, getBackendModelName, getFrontendModelName, getDisplayName, MODEL_MAPPING } from '@/utils/modelMapping';
 import { parseRubricQuestions } from '@/utils/rubricUtils';
 import { Pagination } from '@/components/Pagination';
@@ -55,6 +55,7 @@ export function JudgeTuningPage() {
   const { data: workshop } = useWorkshop(workshopId!);
   const { data: traces } = useOriginalTraces(workshopId!);
   const aggregateAllFeedback = useAggregateAllFeedback(workshopId!);
+  const { data: annotations = [], refetch: refetchAnnotations } = useFacilitatorAnnotations(workshopId!);
   const queryClient = useQueryClient();
   
   // State management
@@ -66,8 +67,6 @@ export function JudgeTuningPage() {
   const [evaluations, setEvaluations] = useState<JudgeEvaluation[]>([]);
   const [metrics, setMetrics] = useState<JudgePerformanceMetrics | null>(null);
   const [rubric, setRubric] = useState<Rubric | null>(null);
-  // Remove traces state since we're using the hook
-  const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [mlflowConfig, setMlflowConfig] = useState<any>(null);
   
   // Judge type - derived from the first rubric question (set during rubric creation)
@@ -229,6 +228,18 @@ export function JudgeTuningPage() {
     }
   }, [workshopId]);
 
+  // Refetch annotations when page becomes visible (user navigates back)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && workshopId) {
+        refetchAnnotations();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [workshopId, refetchAnnotations]);
+
   // Track if current prompt text differs from original
   useEffect(() => {
     const modified = currentPrompt !== originalPromptText;
@@ -277,16 +288,14 @@ export function JudgeTuningPage() {
     
     try {
       // Load all required data in parallel, handling errors gracefully
-      const [promptsData, rubricData, annotationsData, mlflowConfigData] = await Promise.all([
+      // Note: annotations are now loaded via useFacilitatorAnnotations hook and will auto-refresh
+      const [promptsData, rubricData, mlflowConfigData] = await Promise.all([
         WorkshopsService.getJudgePromptsWorkshopsWorkshopIdJudgePromptsGet(workshopId)
           .catch((err) => {
             return []; // Return empty array on error
           }),
         WorkshopsService.getRubricWorkshopsWorkshopIdRubricGet(workshopId).catch((err) => {
           return null;
-        }),
-        WorkshopsService.getAnnotationsWorkshopsWorkshopIdAnnotationsGet(workshopId).catch((err) => {
-          return [];
         }),
         WorkshopsService.getMlflowConfigWorkshopsWorkshopIdMlflowConfigGet(workshopId).catch((err) => {
           return null;
@@ -295,8 +304,10 @@ export function JudgeTuningPage() {
 
       setPrompts(promptsData);
       setRubric(rubricData);
-      setAnnotations(annotationsData);
       setMlflowConfig(mlflowConfigData);
+      
+      // Refetch annotations to ensure we have the latest data
+      refetchAnnotations();
 
       // Determine default model first (used in multiple places)
       const modelOptions = getModelOptions(!!mlflowConfigData);
@@ -667,6 +678,9 @@ The response partially meets the criteria because...`;
       toast.error('Please enter a Databricks model serving endpoint name');
       return;
     }
+
+    // Refresh annotations to ensure we have the latest data before evaluation
+    await refetchAnnotations();
 
     setIsRunningEvaluation(true);
     setEvaluationError(null);
