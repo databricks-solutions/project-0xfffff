@@ -267,7 +267,7 @@ export function IRRResultsDemo({ workshopId }: IRRResultsProps) {
         loading: 'Recalculating IRR...',
         success: 'IRR recalculated successfully!',
         error: 'Failed to recalculate IRR',
-      }
+    }
     );
   };
 

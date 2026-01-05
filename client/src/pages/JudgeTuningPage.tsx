@@ -1293,6 +1293,11 @@ The response partially meets the criteria because...`;
                           <TestTube className="h-3 w-3 mr-1" />
                           Demo
                         </Badge>
+                      ) : evaluationMode === 'simple' ? (
+                        <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+                          <Cloud className="h-3 w-3 mr-1" />
+                          Simple
+                        </Badge>
                       ) : (
                         <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
                           <Zap className="h-3 w-3 mr-1" />

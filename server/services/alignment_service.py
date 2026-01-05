@@ -822,7 +822,7 @@ class AlignmentService:
             # - Binary judges: use float for 0/1 numeric ratings
             # - Likert judges: use float for 1-5 scale
             if judge_type == 'binary':
-                feedback_type = float
+                feedback_type = bool
                 yield f"Detected binary rubric - creating judge with feedback_value_type=float (expecting 0 or 1)"
             else:
                 feedback_type = float
