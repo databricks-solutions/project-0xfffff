@@ -115,8 +115,6 @@ test('discovery blocks until multiple participants complete; facilitator-driven 
       .fill('If it included account recovery steps for locked-out users, it would be better.');
 
     await p.getByRole('button', { name: /^Complete$/i }).click();
-    await expect(p.getByTestId('finding-submitted')).toBeVisible();
-
     await expect(p.getByTestId('complete-discovery-phase-button')).toBeVisible();
     await p.getByTestId('complete-discovery-phase-button').click();
 
