@@ -314,6 +314,41 @@ async def remove_user_from_workshop(workshop_id: str, user_id: str, db_service=D
   return {'message': f'User {user.email} removed from workshop successfully'}
 
 
+@router.put('/workshops/{workshop_id}/users/{user_id}/role')
+async def update_user_role_in_workshop(
+  workshop_id: str, 
+  user_id: str, 
+  role_data: dict,
+  db_service=Depends(get_database_service)
+):
+  """Update a user's role in a workshop (SME <-> Participant)."""
+  # Check if workshop exists
+  workshop = db_service.get_workshop(workshop_id)
+  if not workshop:
+    raise HTTPException(status_code=404, detail='Workshop not found')
+
+  # Check if user exists
+  user = db_service.get_user(user_id)
+  if not user:
+    raise HTTPException(status_code=404, detail='User not found')
+
+  # Cannot change facilitator role
+  if user.role == UserRole.FACILITATOR:
+    raise HTTPException(status_code=403, detail='Cannot change facilitator role')
+
+  new_role = role_data.get('role')
+  if new_role not in ['sme', 'participant']:
+    raise HTTPException(status_code=400, detail='Role must be "sme" or "participant"')
+
+  # Update the user's role
+  updated_user = db_service.update_user_role_in_workshop(workshop_id, user_id, new_role)
+  
+  return {
+    'user': updated_user,
+    'message': f'User role updated to {new_role.upper()} successfully'
+  }
+
+
 @router.post('/workshops/{workshop_id}/auto-assign-annotations')
 async def auto_assign_annotations(workshop_id: str, db_service=Depends(get_database_service)):
   """Automatically balance annotation assignments across SMEs and participants."""

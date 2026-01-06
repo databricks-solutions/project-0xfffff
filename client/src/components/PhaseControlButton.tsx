@@ -48,15 +48,29 @@ export const PhaseControlButton: React.FC<PhaseControlButtonProps> = ({
         throw new Error(error.detail || 'Failed to update phase status');
       }
       
-      // Refresh workshop data
-      await queryClient.invalidateQueries({ queryKey: ['workshop', workshopId] });
+      // Optimistically update the cache immediately for instant UI feedback
+      queryClient.setQueryData(['workshop', workshopId], (oldData: any) => {
+        if (!oldData) return oldData;
+        const currentPhases = oldData.completed_phases || [];
+        const newPhases = isCompleted
+          ? currentPhases.filter((p: string) => p !== phase) // Resume: remove from completed
+          : [...currentPhases, phase]; // Pause: add to completed
+        return { ...oldData, completed_phases: newPhases };
+      });
       
+      // Also refetch to ensure we have the server's actual state
+      queryClient.refetchQueries({ queryKey: ['workshop', workshopId] });
+      
+      // Notify callback immediately
       if (onStatusChange) {
         onStatusChange();
       }
       
-    } catch (error) {
+      toast.success(`${phase} phase ${isCompleted ? 'resumed' : 'paused'}`);
       
+    } catch (error) {
+      // On error, refetch to restore correct state
+      queryClient.refetchQueries({ queryKey: ['workshop', workshopId] });
       toast.error(`Failed to ${isCompleted ? 'resume' : 'pause'} phase: ${error.message}`);
     } finally {
       setIsLoading(false);

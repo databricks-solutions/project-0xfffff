@@ -37,6 +37,13 @@ class UserStatus(str, Enum):
   PENDING = 'pending'
 
 
+class JudgeType(str, Enum):
+  """Type of judge evaluation."""
+  LIKERT = 'likert'       # Likert scale rubric-based scoring (1-5 scale)
+  BINARY = 'binary'       # Pass/Fail or Yes/No evaluation
+  FREEFORM = 'freeform'   # Free-form feedback without structured ratings
+
+
 # User Models
 class UserCreate(BaseModel):
   email: str
@@ -196,12 +203,18 @@ class DiscoveryFinding(BaseModel):
 class RubricCreate(BaseModel):
   question: str
   created_by: str
+  judge_type: Optional[JudgeType] = Field(default=JudgeType.LIKERT, description='Type of judge: likert, binary, or freeform')
+  binary_labels: Optional[Dict[str, str]] = Field(default=None, description='Custom labels for binary judge')
+  rating_scale: Optional[int] = Field(default=5, description='Rating scale for rubric judge')
 
 
 class Rubric(BaseModel):
   id: str
   workshop_id: str
   question: str
+  judge_type: JudgeType = Field(default=JudgeType.LIKERT)
+  binary_labels: Optional[Dict[str, str]] = None
+  rating_scale: int = 5
   created_by: str
   created_at: datetime = Field(default_factory=datetime.now)
 
@@ -289,9 +302,14 @@ class JudgePromptCreate(BaseModel):
   """Request model for creating a judge prompt."""
 
   prompt_text: str = Field(..., description='The judge prompt text')
+  judge_type: JudgeType = Field(default=JudgeType.LIKERT, description='Type of judge: likert, binary, or freeform')
   few_shot_examples: Optional[List[str]] = Field(default=[], description='Selected few-shot example trace IDs')
   model_name: Optional[str] = Field(default='demo', description='Model to use: demo, databricks-dbrx-instruct, openai-gpt-4, etc.')
   model_parameters: Optional[Dict[str, Any]] = Field(default=None, description='Model parameters like temperature')
+  # Binary judge specific config
+  binary_labels: Optional[Dict[str, str]] = Field(default=None, description='Custom labels for binary judge, e.g. {"pass": "Pass", "fail": "Fail"}')
+  # Rubric judge specific config  
+  rating_scale: Optional[int] = Field(default=5, description='Rating scale for rubric judge (default 5-point)')
 
 
 class JudgePrompt(BaseModel):
@@ -300,10 +318,13 @@ class JudgePrompt(BaseModel):
   id: str
   workshop_id: str
   prompt_text: str
+  judge_type: JudgeType = Field(default=JudgeType.LIKERT)
   version: int
   few_shot_examples: List[str] = Field(default=[])
   model_name: str = Field(default='demo')
   model_parameters: Optional[Dict[str, Any]] = None
+  binary_labels: Optional[Dict[str, str]] = None
+  rating_scale: Optional[int] = 5
   created_by: str
   created_at: datetime = Field(default_factory=datetime.now)
   performance_metrics: Optional[Dict[str, Any]] = None
@@ -316,8 +337,16 @@ class JudgeEvaluation(BaseModel):
   workshop_id: str
   prompt_id: str
   trace_id: str
-  predicted_rating: int
-  human_rating: int
+  # For rubric judges (1-5 scale)
+  predicted_rating: Optional[int] = None
+  human_rating: Optional[int] = None
+  # For binary judges (pass/fail)
+  predicted_binary: Optional[bool] = None
+  human_binary: Optional[bool] = None
+  # For freeform judges (text feedback)
+  predicted_feedback: Optional[str] = None
+  human_feedback: Optional[str] = None
+  # Common fields
   confidence: Optional[float] = None
   reasoning: Optional[str] = None
 

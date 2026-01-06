@@ -9,8 +9,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useRubric, useAllTraces } from '@/hooks/useWorkshopApi';
 import { WorkshopsService } from '@/client';
-import { Play, Users, Star, ClipboardList, ChevronRight, CheckCircle, Settings, Database } from 'lucide-react';
+import { Play, Users, Star, ClipboardList, ChevronRight, CheckCircle, Settings, Database, Scale, Binary, MessageSquareText } from 'lucide-react';
 import { toast } from 'sonner';
+import { parseRubricQuestions } from '@/utils/rubricUtils';
 
 interface AnnotationStartPageProps {
   onStartAnnotation?: () => void;
@@ -124,16 +125,26 @@ export const AnnotationStartPage: React.FC<AnnotationStartPageProps> = ({ onStar
                 <ClipboardList className="w-5 h-5 text-green-600" />
                 <div>
                   <h4 className="font-semibold text-slate-900">Evaluation Criteria</h4>
-                  <p className="text-sm text-slate-600">5-point Likert scale rating</p>
+                  <p className="text-sm text-slate-600">{parseRubricQuestions(rubric.question).length} question(s)</p>
                 </div>
               </div>
-              <div className="bg-slate-50 rounded-md p-3">
-                <p className="text-sm font-medium text-slate-700 mb-1">
-                  {rubric.question.split(':')[0]}
-                </p>
-                <p className="text-sm text-slate-600">
-                  {rubric.question.split(':').slice(1).join(':').trim()}
-                </p>
+              <div className="space-y-2">
+                {parseRubricQuestions(rubric.question).map((q, index) => (
+                  <div key={q.id} className="bg-slate-50 rounded-md p-3">
+                    <div className="flex items-center gap-2 mb-1">
+                      {q.judgeType === 'likert' && <Scale className="w-3 h-3 text-blue-500" />}
+                      {q.judgeType === 'binary' && <Binary className="w-3 h-3 text-green-500" />}
+                      {q.judgeType === 'freeform' && <MessageSquareText className="w-3 h-3 text-purple-500" />}
+                      <p className="text-sm font-medium text-slate-700">{q.title}</p>
+                      <Badge variant="outline" className="text-xs ml-auto">
+                        {q.judgeType === 'likert' ? '1-5 Scale' : q.judgeType === 'binary' ? 'Pass/Fail' : 'Free-form'}
+                      </Badge>
+                    </div>
+                    {q.description && (
+                      <p className="text-sm text-slate-600 ml-5">{q.description}</p>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
           </CardContent>

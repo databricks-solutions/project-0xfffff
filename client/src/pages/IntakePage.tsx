@@ -6,11 +6,22 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, CheckCircle, AlertCircle, Database, Settings, Download, Upload, FileText } from 'lucide-react';
+import { Loader2, CheckCircle, AlertCircle, Database, Settings, Download, Upload, FileText, Trash2, RotateCcw } from 'lucide-react';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { toast } from 'sonner';
 import { useWorkflowContext } from '@/context/WorkflowContext';
 import { useQueryClient } from '@tanstack/react-query';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface MLflowConfig {
   databricks_host: string;
@@ -49,6 +60,7 @@ export function IntakePage() {
   const [error, setError] = useState<string | null>(null);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [isUploadingCsv, setIsUploadingCsv] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Load existing configuration and status
   useEffect(() => {
@@ -202,6 +214,42 @@ export function IntakePage() {
       setError('Network error: Unable to connect to the server. Please check your connection and try again.');
     } finally {
       setIsUploadingCsv(false);
+    }
+  };
+
+  const deleteAllTraces = async () => {
+    if (!workshopId) {
+      setError('No workshop available.');
+      return;
+    }
+
+    setIsDeleting(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`/workshops/${workshopId}/traces`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        
+        await loadStatus();
+        
+        // Invalidate trace caches
+        queryClient.invalidateQueries({ queryKey: ['traces', workshopId] });
+        queryClient.invalidateQueries({ queryKey: ['all-traces', workshopId] });
+        queryClient.invalidateQueries({ queryKey: ['workshop', workshopId] });
+        
+        toast.success(`Deleted ${result.deleted_count} traces. Workshop reset to intake phase.`);
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        setError(errorData.detail || `Failed to delete traces (HTTP ${response.status})`);
+      }
+    } catch (err) {
+      setError('Network error: Unable to connect to the server.');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -435,24 +483,62 @@ export function IntakePage() {
         </CardContent>
       </Card>
 
-      {/* Ready for Discovery Banner */}
-      {status?.is_ingested && status.trace_count > 0 && (
-        <Card className="mb-6 border-green-200 bg-gradient-to-r from-green-50 to-emerald-50">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                <CheckCircle className="w-5 h-5 text-green-600" />
-              </div>
-              <div className="flex-1">
-                <h4 className="font-semibold text-green-900">Ready for Discovery Phase</h4>
-                <p className="text-sm text-green-700">
-                  Traces have been successfully ingested. Use the sidebar workflow to start the discovery phase.
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Reset & Delete Card - Always visible for facilitators */}
+      <Card className="mb-6 border-red-200 bg-gradient-to-r from-red-50 to-orange-50">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-red-800">
+            <RotateCcw className="h-5 w-5" />
+            Reset & Start Over
+          </CardTitle>
+          <CardDescription className="text-red-700">
+            {status?.trace_count && status.trace_count > 0 
+              ? `Delete all ${status.trace_count} traces and reset the workshop to start fresh with new data.`
+              : 'Reset the workshop and clear all progress to start fresh.'}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button 
+                variant="destructive" 
+                disabled={isDeleting}
+                className="w-full"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Resetting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete All & Reset Workshop
+                  </>
+                )}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {status?.trace_count && status.trace_count > 0 
+                    ? `This will permanently delete all ${status.trace_count} traces and reset the workshop to the intake phase. All annotations, findings, and progress will be lost. This action cannot be undone.`
+                    : 'This will reset the workshop to the intake phase and clear all progress. This action cannot be undone.'}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction 
+                  onClick={deleteAllTraces}
+                  className="bg-red-600 hover:bg-red-700"
+                >
+                  Delete All & Reset
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </CardContent>
+      </Card>
 
 
     </div>

@@ -13,7 +13,7 @@ pandas>=2.1.0
 requests>=2.32.4
 rich>=14.0.0
 click>=8.1.0
-mlflow[databricks,genai]>=3.6.0
+mlflow[databricks,genai]==3.7
 cryptography>=41.0.0
 bcrypt>=4.0.0
 PyYAML>=6.0

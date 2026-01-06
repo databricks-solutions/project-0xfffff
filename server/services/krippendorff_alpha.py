@@ -3,13 +3,15 @@
 Krippendorff's Alpha is appropriate for:
 - Any number of raters (2 or more)
 - Ordinal data (like 1-5 Likert scales)
+- Binary/nominal data (like 0/1 Pass/Fail)
 - Missing data (not all raters rate all items)
 
 Formula: α = 1 - (D_o / D_e)
 Where:
 - D_o = observed disagreement
 - D_e = expected disagreement by chance
-- For ordinal data, uses squared distance function
+- Uses squared distance function which works for both ordinal and binary data
+  (for binary 0/1, squared distance equals nominal distance)
 """
 
 import logging
@@ -70,7 +72,11 @@ def calculate_krippendorff_alpha_per_metric(annotations: List[Annotation]) -> Di
 
 
 def calculate_krippendorff_alpha(annotations: List[Annotation], question_id: str = None) -> float:
-  """Calculate Krippendorff's Alpha for ordinal data (1-5 Likert scale).
+  """Calculate Krippendorff's Alpha for rating data.
+  
+  Supports both:
+  - Ordinal data (1-5 Likert scale)
+  - Binary data (0/1 Pass/Fail)
 
   Args:
       annotations: List of annotations from any number of raters
@@ -82,24 +88,28 @@ def calculate_krippendorff_alpha(annotations: List[Annotation], question_id: str
       float: Krippendorff's Alpha value (-1 to 1)
       - 1.0 = Perfect agreement
       - 0.0 = Agreement equal to chance
-      - <0.0 = Systematic disagreement
+      - <0.0 = Systematic disagreement (raters disagree more than by chance)
 
   Mathematical approach:
       1. Create coincidence matrix of all rating pairs
-      2. Calculate observed disagreement using ordinal distance function
+      2. Calculate observed disagreement using squared distance function
       3. Calculate expected disagreement from marginal distributions
       4. Alpha = 1 - (observed_disagreement / expected_disagreement)
+      
+  Note: For binary (0/1) data, squared distance equals nominal distance,
+  so the calculation is equivalent to using nominal Krippendorff's Alpha.
 
-  Example:
+  Example (Likert):
       >>> annotations = [
       ...     Annotation(trace_id="t1", user_id="u1", rating=4),
       ...     Annotation(trace_id="t1", user_id="u2", rating=4),
-      ...     Annotation(trace_id="t1", user_id="u3", rating=3),
-      ...     Annotation(trace_id="t2", user_id="u1", rating=2),
-      ...     Annotation(trace_id="t2", user_id="u2", rating=2),
       ... ]
-      >>> alpha = calculate_krippendorff_alpha(annotations)
-      >>> # Returns alpha value accounting for all raters and missing data
+      
+  Example (Binary):
+      >>> annotations = [
+      ...     Annotation(trace_id="t1", user_id="u1", ratings={"q1": 1}),  # Pass
+      ...     Annotation(trace_id="t1", user_id="u2", ratings={"q1": 0}),  # Fail
+      ... ]
   """
   if len(annotations) < 2:
     return 0.0
@@ -308,16 +318,17 @@ def is_krippendorff_alpha_acceptable(alpha: float, threshold: float = 0.3) -> bo
   return alpha >= threshold
 
 
-def get_krippendorff_improvement_suggestions(alpha: float) -> List[str]:
+def get_krippendorff_improvement_suggestions(alpha: float, is_binary: bool = False) -> List[str]:
   """Provide specific suggestions for improving Krippendorff's Alpha when it's low.
 
   Args:
       alpha: Krippendorff's Alpha value
+      is_binary: Whether this is a binary (Pass/Fail) scale vs Likert scale
 
   Returns:
       List[str]: List of improvement suggestions
 
-  Suggestions are tailored to the specific alpha range to provide
+  Suggestions are tailored to the specific alpha range and scale type to provide
   actionable guidance for workshop facilitators.
   """
   if alpha >= 0.3:
@@ -331,13 +342,22 @@ def get_krippendorff_improvement_suggestions(alpha: float) -> List[str]:
   ]
 
   if alpha < 0.0:
-    suggestions.extend(
-      [
-        'Systematic disagreement detected - consider completely revising the rubric',
-        'Check if annotators understood the rating scale direction (1=worst vs 1=best)',
-        'Verify that all annotators are evaluating the same aspect of responses',
-      ]
-    )
+    if is_binary:
+      suggestions.extend(
+        [
+          'Systematic disagreement detected - raters are giving opposite judgments',
+          'Check if annotators have the same understanding of what constitutes Pass vs Fail',
+          'Review the criteria for Pass/Fail - they may be ambiguous',
+        ]
+      )
+    else:
+      suggestions.extend(
+        [
+          'Systematic disagreement detected - consider completely revising the rubric',
+          'Check if annotators understood the rating scale direction (1=worst vs 1=best)',
+          'Verify that all annotators are evaluating the same aspect of responses',
+        ]
+      )
 
   if 0.0 <= alpha < 0.15:
     suggestions.append('Agreement is very low - consider starting over with a clearer rubric')

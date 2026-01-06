@@ -147,6 +147,27 @@ def _calculate_cohens_kappa_result(annotations: List[Annotation], analysis: Dict
   return result
 
 
+def _is_binary_metric(annotations: List[Annotation], question_id: str) -> bool:
+  """Check if a metric uses binary (0/1) ratings.
+  
+  Args:
+      annotations: List of annotations
+      question_id: The question ID to check
+      
+  Returns:
+      bool: True if all ratings for this metric are 0 or 1
+  """
+  ratings = []
+  for ann in annotations:
+    if ann.ratings and question_id in ann.ratings:
+      ratings.append(ann.ratings[question_id])
+  
+  if not ratings:
+    return False
+  
+  return all(r in (0, 1) for r in ratings)
+
+
 def _calculate_krippendorff_alpha_result(annotations: List[Annotation], analysis: Dict[str, Any]) -> Dict[str, Any]:
   """Calculate Krippendorff's Alpha and format result.
 
@@ -181,13 +202,18 @@ def _calculate_krippendorff_alpha_result(annotations: List[Annotation], analysis
     analysis=analysis,
   )
   
-  # Add per-metric scores to the result
+  # Add per-metric scores to the result with individual suggestions
   result['per_metric_scores'] = {}
   for question_id, score in per_metric_scores.items():
+    # Detect if this metric uses binary scale
+    is_binary = _is_binary_metric(annotations, question_id)
+    metric_suggestions = get_krippendorff_improvement_suggestions(score, is_binary=is_binary)
     result['per_metric_scores'][question_id] = {
       'score': score,
       'interpretation': interpret_krippendorff_alpha(score),
       'acceptable': is_krippendorff_alpha_acceptable(score),
+      'suggestions': metric_suggestions,
+      'is_binary': is_binary,  # Include for frontend display
     }
   
   return result

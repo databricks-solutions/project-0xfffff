@@ -11,7 +11,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, RefreshCw } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface User {
   id: string;
@@ -90,6 +91,8 @@ export const FacilitatorUserManager: React.FC = () => {
     }
   };
 
+  const [updatingRoleUserId, setUpdatingRoleUserId] = useState<string | null>(null);
+
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
       case 'facilitator':
@@ -100,6 +103,31 @@ export const FacilitatorUserManager: React.FC = () => {
         return 'bg-gray-100 text-gray-800';
       default:
         return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const handleRoleChange = async (userId: string, newRole: 'sme' | 'participant') => {
+    if (!workshopId) return;
+    
+    setUpdatingRoleUserId(userId);
+    try {
+      const response = await fetch(`/users/workshops/${workshopId}/users/${userId}/role`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: newRole }),
+      });
+      
+      if (response.ok) {
+        toast.success(`Role updated to ${newRole.toUpperCase()}`);
+        loadUsers(); // Refresh the user list
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        toast.error(errorData.detail || 'Failed to update role');
+      }
+    } catch (error: any) {
+      toast.error('Failed to update role');
+    } finally {
+      setUpdatingRoleUserId(null);
     }
   };
 
@@ -258,22 +286,10 @@ export const FacilitatorUserManager: React.FC = () => {
         {/* Users Table */}
         <Card className="mt-6">
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Workshop Users</CardTitle>
-                <CardDescription>
-                  All users in your workshop
-                </CardDescription>
-              </div>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={loadUsers}
-                disabled={isLoading}
-              >
-                {isLoading ? 'Loading...' : 'Refresh'}
-              </Button>
-            </div>
+            <CardTitle>Workshop Users</CardTitle>
+            <CardDescription>
+              All users in your workshop
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -303,30 +319,67 @@ export const FacilitatorUserManager: React.FC = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {users.map((user) => (
-                    <TableRow key={user.id}>
-                      <TableCell className="font-medium">{user.name}</TableCell>
-                      <TableCell>{user.email}</TableCell>
+                  {users.map((u) => (
+                    <TableRow key={u.id}>
+                      <TableCell className="font-medium">{u.name}</TableCell>
+                      <TableCell>{u.email}</TableCell>
                       <TableCell>
-                        <Badge className={getRoleBadgeColor(user.role)}>
-                          {user.role.toUpperCase()}
-                        </Badge>
+                        {u.role === 'facilitator' ? (
+                          <Badge className="bg-blue-50 text-blue-700 border border-blue-200">
+                            Facilitator
+                          </Badge>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <Select
+                              value={u.role}
+                              onValueChange={(value: 'sme' | 'participant') => handleRoleChange(u.id, value)}
+                              disabled={updatingRoleUserId === u.id}
+                            >
+                              <SelectTrigger 
+                                className={`w-[130px] h-8 font-medium ${
+                                  u.role === 'sme' 
+                                    ? 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100' 
+                                    : 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100'
+                                }`}
+                              >
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="sme">
+                                  <span className="flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-violet-500"></span>
+                                    SME
+                                  </span>
+                                </SelectItem>
+                                <SelectItem value="participant">
+                                  <span className="flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-violet-500"></span>
+                                    Participant
+                                  </span>
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                            {updatingRoleUserId === u.id && (
+                              <RefreshCw className="h-4 w-4 animate-spin text-gray-500" />
+                            )}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Badge 
                           variant={
-                            user.status === 'active' ? 'default' : 
-                            user.status === 'pending' ? 'outline' : 'secondary'
+                            u.status === 'active' ? 'default' : 
+                            u.status === 'pending' ? 'outline' : 'secondary'
                           }
                           className={
-                            user.status === 'pending' ? 'border-yellow-500 text-yellow-700 bg-yellow-50' : ''
+                            u.status === 'pending' ? 'border-yellow-500 text-yellow-700 bg-yellow-50' : ''
                           }
                         >
-                          {user.status}
+                          {u.status}
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        {new Date(user.created_at).toLocaleDateString()}
+                        {new Date(u.created_at).toLocaleDateString()}
                       </TableCell>
                     </TableRow>
                   ))}

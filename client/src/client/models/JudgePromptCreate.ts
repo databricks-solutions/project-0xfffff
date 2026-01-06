@@ -2,6 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { JudgeType } from './JudgePrompt';
+
 /**
  * Request model for creating a judge prompt.
  */
@@ -10,6 +12,10 @@ export type JudgePromptCreate = {
      * The judge prompt text
      */
     prompt_text: string;
+    /**
+     * Type of judge: rubric, binary, or freeform
+     */
+    judge_type?: JudgeType;
     /**
      * Selected few-shot example trace IDs
      */
@@ -22,5 +28,13 @@ export type JudgePromptCreate = {
      * Model parameters like temperature
      */
     model_parameters?: (Record<string, any> | null);
+    /**
+     * Custom labels for binary judge
+     */
+    binary_labels?: (Record<string, string> | null);
+    /**
+     * Rating scale for rubric judge (default 5-point)
+     */
+    rating_scale?: number;
 };
 

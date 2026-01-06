@@ -10,8 +10,16 @@ export type JudgeEvaluation = {
     workshop_id: string;
     prompt_id: string;
     trace_id: string;
-    predicted_rating: number;
-    human_rating: number;
+    // For rubric judges (1-5 scale)
+    predicted_rating?: (number | null);
+    human_rating?: (number | null);
+    // For binary judges (pass/fail)
+    predicted_binary?: (boolean | null);
+    human_binary?: (boolean | null);
+    // For freeform judges (text feedback)
+    predicted_feedback?: (string | null);
+    human_feedback?: (string | null);
+    // Common fields
     confidence?: (number | null);
     reasoning?: (string | null);
 };

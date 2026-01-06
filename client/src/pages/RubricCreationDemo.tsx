@@ -5,7 +5,7 @@
  * After discovery, facilitators create Likert scale questions for annotation.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -37,9 +37,10 @@ import { FocusedAnalysisView, ScratchPadEntry } from '@/components/FocusedAnalys
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useQueryClient } from '@tanstack/react-query';
 import { WorkshopsService } from '@/client';
-import type { Rubric, RubricCreate } from '@/client';
+import type { Rubric, RubricCreate, JudgeType } from '@/client';
 import { toast } from 'sonner';
 import { parseRubricQuestions, formatRubricQuestions, QUESTION_DELIMITER, type RubricQuestion } from '@/utils/rubricUtils';
+import { binaryLabelPresets } from '@/components/JudgeTypeSelector';
 
 
 // Convert API Rubric to local RubricQuestion format
@@ -173,13 +174,18 @@ export function RubricCreationDemo() {
   const [isAddingQuestion, setIsAddingQuestion] = useState(false);
   const [newQuestion, setNewQuestion] = useState<Omit<RubricQuestion, 'id'>>({
     title: '',
-    description: ''
+    description: '',
+    judgeType: 'likert'
   });
   const [isEditingExisting, setIsEditingExisting] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'focused'>('focused');
-  const [scratchPad, setScratchPad] = useState<ScratchPadEntry[]>([]);
+  const [scratchPad, setScratchPadState] = useState<ScratchPadEntry[]>([]);
   const [updatingQuestionId, setUpdatingQuestionId] = useState<string | null>(null);
   const [lastUpdatedQuestionId, setLastUpdatedQuestionId] = useState<string | null>(null);
+  
+  // Judge type selection
+  const [judgeType, setJudgeType] = useState<JudgeType>('likert');
+  const [binaryLabels, setBinaryLabels] = useState<Record<string, string>>({ pass: 'Pass', fail: 'Fail' });
   
   // Fetch data
   const { data: rubric, isLoading: rubricLoading, error: rubricError } = useRubric(workshopId!);
@@ -212,6 +218,31 @@ export function RubricCreationDemo() {
   // Get discovery responses from real findings data, enriched with trace information
   const discoveryResponses = useDiscoveryResponses(findings, traces);
   
+  // Helper to save scratch pad immediately to localStorage
+  const saveScratchPadToStorage = useCallback((entries: ScratchPadEntry[]) => {
+    if (!workshopId) return;
+    const storageKey = `scratch-pad-${workshopId}`;
+    if (entries.length > 0) {
+      const dataToSave = {
+        timestamp: Date.now(),
+        scratchPad: entries
+      };
+      localStorage.setItem(storageKey, JSON.stringify(dataToSave));
+    } else {
+      localStorage.removeItem(storageKey);
+    }
+  }, [workshopId]);
+  
+  // Wrapper that saves immediately when setting scratch pad
+  const setScratchPad = useCallback((value: ScratchPadEntry[] | ((prev: ScratchPadEntry[]) => ScratchPadEntry[])) => {
+    setScratchPadState(prev => {
+      const newValue = typeof value === 'function' ? value(prev) : value;
+      // Save immediately to localStorage
+      saveScratchPadToStorage(newValue);
+      return newValue;
+    });
+  }, [saveScratchPadToStorage]);
+
   // Load scratch pad from localStorage on mount
   useEffect(() => {
     if (workshopId) {
@@ -220,45 +251,30 @@ export function RubricCreationDemo() {
       if (storedData) {
         try {
           const parsed = JSON.parse(storedData);
-          // Only load if data is less than 24 hours old
-          if (Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000) {
-            
-            setScratchPad(parsed.scratchPad);
+          // Only load if data is less than 7 days old (extended from 24 hours)
+          if (Date.now() - parsed.timestamp < 7 * 24 * 60 * 60 * 1000) {
+            setScratchPadState(parsed.scratchPad);
           } else {
-            
             localStorage.removeItem(storageKey);
           }
         } catch (error) {
-          
           localStorage.removeItem(storageKey);
         }
       }
     }
   }, [workshopId]);
   
-  // Save scratch pad to localStorage whenever it changes
-  useEffect(() => {
-    if (workshopId) {
-      const storageKey = `scratch-pad-${workshopId}`;
-      if (scratchPad.length > 0) {
-        const dataToSave = {
-          timestamp: Date.now(),
-          scratchPad: scratchPad
-        };
-        localStorage.setItem(storageKey, JSON.stringify(dataToSave));
-        
-      } else {
-        // Clear localStorage when scratch pad is empty
-        localStorage.removeItem(storageKey);
-        
-      }
-    }
-  }, [scratchPad, workshopId]);
-  
-  // Initialize questions from API data
+  // Initialize questions and judge type from API data
   useEffect(() => {
     if (rubric && !isEditingExisting) {
       setQuestions(convertApiRubricToQuestions(rubric));
+      // Load judge type from rubric
+      if (rubric.judge_type) {
+        setJudgeType(rubric.judge_type);
+      }
+      if (rubric.binary_labels) {
+        setBinaryLabels(rubric.binary_labels);
+      }
     }
   }, [rubric, isEditingExisting]);
 
@@ -278,9 +294,12 @@ export function RubricCreationDemo() {
         // Combine all questions into a single rubric string using the utility
         const combinedQuestionText = formatRubricQuestions(updatedQuestions);
         
-        const apiRubric = {
+        const apiRubric: RubricCreate = {
           question: combinedQuestionText,
-          created_by: 'facilitator'
+          created_by: 'facilitator',
+          judge_type: judgeType,
+          binary_labels: judgeType === 'binary' ? binaryLabels : undefined,
+          rating_scale: 5
         };
         
         if (rubric) {
@@ -294,7 +313,8 @@ export function RubricCreationDemo() {
         // Reset form
         setNewQuestion({
           title: '',
-          description: ''
+          description: '',
+          judgeType: 'likert'
         });
         setIsAddingQuestion(false);
         setIsEditingExisting(false);
@@ -342,6 +362,7 @@ export function RubricCreationDemo() {
     
     try {
       // Call the new update endpoint for individual questions
+      // Include judge_type to persist evaluation type changes
       const response = await fetch(`/workshops/${workshopId}/rubric/questions/${questionId}`, {
         method: 'PUT',
         headers: {
@@ -349,7 +370,8 @@ export function RubricCreationDemo() {
         },
         body: JSON.stringify({
           title: question.title,
-          description: question.description
+          description: question.description,
+          judge_type: question.judgeType  // Include the evaluation type
         }),
       });
       
@@ -360,7 +382,7 @@ export function RubricCreationDemo() {
       // Invalidate queries to refresh the UI
       queryClient.invalidateQueries({ queryKey: ['rubric', workshopId] });
       
-      
+      toast.success('Question updated successfully');
       setLastUpdatedQuestionId(questionId);
       
       // Clear success state after 3 seconds
@@ -620,17 +642,60 @@ export function RubricCreationDemo() {
           
           {/* Rubric Questions Tab */}
           <TabsContent value="rubric">
+            {/* Info about per-question judge types */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+              <div className="flex items-start gap-3">
+                <Lightbulb className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-sm text-blue-800 font-medium mb-1">
+                    Per-Question Evaluation Types
+                  </p>
+                  <p className="text-sm text-blue-700">
+                    Each criterion can have its own evaluation type: <strong>Likert Scale</strong> (1-5 ratings), 
+                    <strong> Binary</strong> (Pass/Fail), or <strong>Free-form</strong> (open text feedback). 
+                    Select the type for each criterion individually.
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            {/* Binary label customization - shown if any questions are binary */}
+            {questions.some(q => q.judgeType === 'binary') && (
+              <Card className="mb-6">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Binary Label Settings</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Customize the labels for all binary evaluation criteria
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(binaryLabelPresets).map(([key, labels]) => (
+                      <Badge
+                        key={key}
+                        variant={binaryLabels.pass === labels.pass ? 'default' : 'outline'}
+                        className="cursor-pointer"
+                        onClick={() => setBinaryLabels(labels)}
+                      >
+                        {labels.pass} / {labels.fail}
+                      </Badge>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
-                  <span>Rubric Questions</span>
+                  <span>Evaluation Criteria</span>
                   <Button
                     onClick={() => setIsAddingQuestion(true)}
                 className="flex items-center gap-2"
                 disabled={isAddingQuestion}
               >
                 <Plus className="h-4 w-4" />
-                Add Question
+                Add Criterion
               </Button>
             </CardTitle>
           </CardHeader>
@@ -657,7 +722,7 @@ export function RubricCreationDemo() {
                   </div>
                   
                   <div className="flex-1 space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div>
                         <Label htmlFor={`title-${question.id}`} className="text-sm font-medium text-gray-700 mb-1 block">
                           Question Title
@@ -670,7 +735,7 @@ export function RubricCreationDemo() {
                           className="font-medium"
                         />
                       </div>
-                      <div className="md:col-span-1">
+                      <div>
                         <Label htmlFor={`desc-${question.id}`} className="text-sm font-medium text-gray-700 mb-1 block">
                           Question Description
                         </Label>
@@ -682,37 +747,110 @@ export function RubricCreationDemo() {
                           className="min-h-[80px]"
                         />
                       </div>
+                      <div>
+                        <Label className="text-sm font-medium text-gray-700 mb-1 block">
+                          Evaluation Type
+                        </Label>
+                        <div className="flex flex-col gap-1">
+                          <Badge 
+                            variant={question.judgeType === 'likert' ? 'default' : 'outline'}
+                            className="cursor-pointer justify-center py-1.5"
+                            onClick={() => updateQuestion(question.id, { judgeType: 'likert' })}
+                          >
+                            Likert Scale
+                          </Badge>
+                          <Badge 
+                            variant={question.judgeType === 'binary' ? 'default' : 'outline'}
+                            className="cursor-pointer justify-center py-1.5"
+                            onClick={() => updateQuestion(question.id, { judgeType: 'binary' })}
+                          >
+                            Binary
+                          </Badge>
+                          <Badge 
+                            variant={question.judgeType === 'freeform' ? 'default' : 'outline'}
+                            className="cursor-pointer justify-center py-1.5"
+                            onClick={() => updateQuestion(question.id, { judgeType: 'freeform' })}
+                          >
+                            Free-form
+                          </Badge>
+                        </div>
+                      </div>
                     </div>
 
-                    {/* Scale Preview */}
+                    {/* Scale/Response Preview - varies by question's judge type */}
                     <div className="bg-white border border-green-200 rounded-lg p-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="text-sm font-medium text-gray-700">Likert Scale Preview</div>
-                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                          1-5 Scale
-                        </Badge>
-                      </div>
-                      <div className="grid grid-cols-5 gap-4">
-                        {[1, 2, 3, 4, 5].map((value) => {
-                          const labels = [
-                            '', // placeholder for value 0
-                            'Strongly Disagree',
-                            'Disagree', 
-                            'Neutral',
-                            'Agree',
-                            'Strongly Agree'
-                          ];
-                          
-                          return (
-                            <div key={value} className="flex flex-col items-center gap-2">
-                              <div className="w-5 h-5 rounded-full border-2 border-green-300 bg-white" />
-                              <label className="text-xs text-center text-gray-600 leading-tight">
-                                {labels[value]}
-                              </label>
+                      {question.judgeType === 'likert' && (
+                        <>
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="text-sm font-medium text-gray-700">Likert Scale Preview</div>
+                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                              1-5 Scale
+                            </Badge>
+                          </div>
+                          <div className="grid grid-cols-5 gap-4">
+                            {[1, 2, 3, 4, 5].map((value) => {
+                              const labels = [
+                                '', // placeholder for value 0
+                                'Strongly Disagree',
+                                'Disagree', 
+                                'Neutral',
+                                'Agree',
+                                'Strongly Agree'
+                              ];
+                              
+                              return (
+                                <div key={value} className="flex flex-col items-center gap-2">
+                                  <div className="w-5 h-5 rounded-full border-2 border-green-300 bg-white" />
+                                  <label className="text-xs text-center text-gray-600 leading-tight">
+                                    {labels[value]}
+                                  </label>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </>
+                      )}
+                      
+                      {question.judgeType === 'binary' && (
+                        <>
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="text-sm font-medium text-gray-700">Binary Choice Preview</div>
+                            <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                              {binaryLabels.pass}/{binaryLabels.fail}
+                            </Badge>
+                          </div>
+                          <div className="flex justify-center gap-8">
+                            <div className="flex flex-col items-center gap-2">
+                              <div className="w-12 h-12 rounded-lg border-2 border-green-400 bg-green-50 flex items-center justify-center">
+                                <CheckCircle className="w-6 h-6 text-green-600" />
+                              </div>
+                              <label className="text-sm font-medium text-green-700">{binaryLabels.pass}</label>
                             </div>
-                          );
-                        })}
-                      </div>
+                            <div className="flex flex-col items-center gap-2">
+                              <div className="w-12 h-12 rounded-lg border-2 border-red-400 bg-red-50 flex items-center justify-center">
+                                <AlertCircle className="w-6 h-6 text-red-600" />
+                              </div>
+                              <label className="text-sm font-medium text-red-700">{binaryLabels.fail}</label>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                      
+                      {question.judgeType === 'freeform' && (
+                        <>
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="text-sm font-medium text-gray-700">Free-form Feedback Preview</div>
+                            <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+                              Open Text
+                            </Badge>
+                          </div>
+                          <div className="border-2 border-dashed border-purple-200 rounded-lg p-4 bg-purple-50/30">
+                            <p className="text-sm text-gray-500 italic">
+                              Annotators will provide detailed written feedback based on this focus area...
+                            </p>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -758,14 +896,14 @@ export function RubricCreationDemo() {
               <div className="border-2 border-dashed border-blue-300 rounded-xl p-6 bg-blue-50">
                 <div className="flex items-center gap-2 mb-4">
                   <Plus className="h-5 w-5 text-blue-600" />
-                  <h3 className="font-medium text-blue-900">Add New Rubric Question</h3>
+                  <h3 className="font-medium text-blue-900">Add New Evaluation Criterion</h3>
                 </div>
                 
                 <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                       <Label htmlFor="new-title" className="text-sm font-medium text-gray-700 mb-1 block">
-                        Question Title
+                        Title
                       </Label>
                       <Input
                         id="new-title"
@@ -777,7 +915,7 @@ export function RubricCreationDemo() {
                     </div>
                     <div>
                       <Label htmlFor="new-description" className="text-sm font-medium text-gray-700 mb-1 block">
-                        Question Description
+                        Description
                       </Label>
                       <Textarea
                         id="new-description"
@@ -787,32 +925,95 @@ export function RubricCreationDemo() {
                         className="min-h-[80px] bg-white"
                       />
                     </div>
+                    <div>
+                      <Label className="text-sm font-medium text-gray-700 mb-1 block">
+                        Evaluation Type
+                      </Label>
+                      <div className="flex flex-col gap-1">
+                        <Badge 
+                          variant={newQuestion.judgeType === 'likert' ? 'default' : 'outline'}
+                          className={`cursor-pointer justify-center py-1.5 ${newQuestion.judgeType !== 'likert' ? 'bg-white' : ''}`}
+                          onClick={() => setNewQuestion({ ...newQuestion, judgeType: 'likert' })}
+                        >
+                          Likert Scale
+                        </Badge>
+                        <Badge 
+                          variant={newQuestion.judgeType === 'binary' ? 'default' : 'outline'}
+                          className={`cursor-pointer justify-center py-1.5 ${newQuestion.judgeType !== 'binary' ? 'bg-white' : ''}`}
+                          onClick={() => setNewQuestion({ ...newQuestion, judgeType: 'binary' })}
+                        >
+                          Binary
+                        </Badge>
+                        <Badge 
+                          variant={newQuestion.judgeType === 'freeform' ? 'default' : 'outline'}
+                          className={`cursor-pointer justify-center py-1.5 ${newQuestion.judgeType !== 'freeform' ? 'bg-white' : ''}`}
+                          onClick={() => setNewQuestion({ ...newQuestion, judgeType: 'freeform' })}
+                        >
+                          Free-form
+                        </Badge>
+                      </div>
+                    </div>
                   </div>
                   
-                  {/* Scale Info */}
+                  {/* Preview based on selected judge type */}
                   <div className="bg-white border border-blue-200 rounded-lg p-4">
-                    <div className="text-sm font-medium text-gray-700 mb-3">Scale (standardized):</div>
-                    <div className="grid grid-cols-5 gap-4">
-                      {[1, 2, 3, 4, 5].map((value) => {
-                        const labels = [
-                          '', // placeholder for value 0
-                          'Strongly Disagree',
-                          'Disagree', 
-                          'Neutral',
-                          'Agree',
-                          'Strongly Agree'
-                        ];
-                        
-                        return (
-                          <div key={value} className="flex flex-col items-center gap-2">
-                            <div className="w-5 h-5 rounded-full border-2 border-blue-300 bg-white" />
-                            <label className="text-xs text-center text-gray-600 leading-tight">
-                              {labels[value]}
-                            </label>
+                    {newQuestion.judgeType === 'likert' && (
+                      <>
+                        <div className="text-sm font-medium text-gray-700 mb-3">Likert Scale Preview:</div>
+                        <div className="grid grid-cols-5 gap-4">
+                          {[1, 2, 3, 4, 5].map((value) => {
+                            const labels = [
+                              '', // placeholder for value 0
+                              'Strongly Disagree',
+                              'Disagree', 
+                              'Neutral',
+                              'Agree',
+                              'Strongly Agree'
+                            ];
+                            
+                            return (
+                              <div key={value} className="flex flex-col items-center gap-2">
+                                <div className="w-5 h-5 rounded-full border-2 border-blue-300 bg-white" />
+                                <label className="text-xs text-center text-gray-600 leading-tight">
+                                  {labels[value]}
+                                </label>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                    
+                    {newQuestion.judgeType === 'binary' && (
+                      <>
+                        <div className="text-sm font-medium text-gray-700 mb-3">Binary Choice Preview:</div>
+                        <div className="flex justify-center gap-8">
+                          <div className="flex flex-col items-center gap-2">
+                            <div className="w-12 h-12 rounded-lg border-2 border-green-400 bg-green-50 flex items-center justify-center">
+                              <CheckCircle className="w-6 h-6 text-green-600" />
+                            </div>
+                            <label className="text-sm font-medium text-green-700">{binaryLabels.pass}</label>
                           </div>
-                        );
-                      })}
-                    </div>
+                          <div className="flex flex-col items-center gap-2">
+                            <div className="w-12 h-12 rounded-lg border-2 border-red-400 bg-red-50 flex items-center justify-center">
+                              <AlertCircle className="w-6 h-6 text-red-600" />
+                            </div>
+                            <label className="text-sm font-medium text-red-700">{binaryLabels.fail}</label>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                    
+                    {newQuestion.judgeType === 'freeform' && (
+                      <>
+                        <div className="text-sm font-medium text-gray-700 mb-3">Free-form Response Preview:</div>
+                        <div className="border-2 border-dashed border-purple-200 rounded-lg p-4 bg-purple-50/30">
+                          <p className="text-sm text-gray-500 italic">
+                            Annotators will provide detailed written feedback for this focus area...
+                          </p>
+                        </div>
+                      </>
+                    )}
                   </div>
                   
                   <div className="flex gap-3 pt-2">
@@ -839,11 +1040,26 @@ export function RubricCreationDemo() {
               <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <ClipboardList className="h-4 w-4 text-green-600" />
-                  <span className="font-medium text-green-800">Rubric Summary</span>
+                  <span className="font-medium text-green-800">Evaluation Summary</span>
                 </div>
                 <p className="text-sm text-green-700">
-                  {questions.length} question{questions.length !== 1 ? 's' : ''} created. 
-                  Each question will be rated on a 1-5 Likert scale during the annotation phase.
+                  {questions.length} criterion{questions.length !== 1 ? 's' : ''} created:
+                  {' '}
+                  {questions.filter(q => q.judgeType === 'likert').length > 0 && (
+                    <Badge variant="outline" className="mr-1 bg-green-100">
+                      {questions.filter(q => q.judgeType === 'likert').length} Likert
+                    </Badge>
+                  )}
+                  {questions.filter(q => q.judgeType === 'binary').length > 0 && (
+                    <Badge variant="outline" className="mr-1 bg-blue-100">
+                      {questions.filter(q => q.judgeType === 'binary').length} Binary
+                    </Badge>
+                  )}
+                  {questions.filter(q => q.judgeType === 'freeform').length > 0 && (
+                    <Badge variant="outline" className="mr-1 bg-purple-100">
+                      {questions.filter(q => q.judgeType === 'freeform').length} Free-form
+                    </Badge>
+                  )}
                 </p>
               </div>
             )}

@@ -123,10 +123,10 @@ def validate_annotations_for_irr(annotations: List[Annotation]) -> Tuple[bool, s
   if len(annotations) < 2:
     return False, 'Need at least 2 annotations to calculate IRR'
 
-  # Check rating range
+  # Check rating range - support both binary (0/1) and Likert (1-5)
   for ann in annotations:
-    if not (1 <= ann.rating <= 5):
-      return False, f'Invalid rating {ann.rating}: must be between 1 and 5'
+    if not (0 <= ann.rating <= 5):
+      return False, f'Invalid rating {ann.rating}: must be between 0 and 5'
 
   # Check number of raters
   raters = set(ann.user_id for ann in annotations)
@@ -198,12 +198,13 @@ def get_irr_confidence_level(score: float) -> str:
     return 'Very low confidence - results are unreliable'
 
 
-def detect_problematic_patterns(annotations: List[Annotation], db=None) -> List[str]:
+def detect_problematic_patterns(annotations: List[Annotation], db=None, question_id: str = None) -> List[str]:
   """Detect problematic patterns in annotation data.
 
   Args:
       annotations: List of annotations to analyze
       db: Database session for user name lookups
+      question_id: Optional question ID to analyze a specific metric
 
   Returns:
       List[str]: List of detected issues
@@ -226,35 +227,64 @@ def detect_problematic_patterns(annotations: List[Annotation], db=None) -> List[
         pass  # Fall back to user_id if lookup fails
     return user_id
 
+  # Helper function to get rating from annotation
+  # Prefers per-question ratings dict, falls back to legacy rating
+  def get_rating(ann: Annotation) -> int:
+    if ann.ratings and len(ann.ratings) > 0:
+      if question_id and question_id in ann.ratings:
+        return ann.ratings[question_id]
+      # Return first rating if no specific question_id
+      return list(ann.ratings.values())[0]
+    return ann.rating
+
+  # Collect all ratings to detect if binary
+  all_ratings = [get_rating(ann) for ann in annotations if get_rating(ann) is not None]
+  is_binary = all(r in (0, 1) for r in all_ratings) if all_ratings else False
+
   # Check for raters with no variation
   rater_ratings = defaultdict(set)
   for ann in annotations:
-    rater_ratings[ann.user_id].add(ann.rating)
+    rating = get_rating(ann)
+    if rating is not None:
+      rater_ratings[ann.user_id].add(rating)
 
   for rater_id, ratings in rater_ratings.items():
     if len(ratings) == 1:
       rating = list(ratings)[0]
       rater_name = get_user_name(rater_id)
-      issues.append(f'Rater {rater_name} always gives rating {rating} (no variation)')
+      if is_binary:
+        rating_label = 'Pass' if rating == 1 else 'Fail'
+        issues.append(f'Rater {rater_name} always gives {rating_label} (no variation)')
+      else:
+        issues.append(f'Rater {rater_name} always gives rating {rating} (no variation)')
 
   # Check for traces with extreme disagreement
   trace_ratings = defaultdict(list)
   for ann in annotations:
-    trace_ratings[ann.trace_id].append(ann.rating)
+    rating = get_rating(ann)
+    if rating is not None:
+      trace_ratings[ann.trace_id].append(rating)
 
   for trace_id, ratings in trace_ratings.items():
     if len(ratings) > 1:
       rating_range = max(ratings) - min(ratings)
-      if rating_range >= 4:  # Ratings span 4+ points on 5-point scale
-        issues.append(f'Trace {trace_id} has extreme disagreement (range: {rating_range})')
+      # For binary: any disagreement is notable; for Likert: only extreme (4+ points)
+      threshold = 1 if is_binary else 4
+      if rating_range >= threshold:
+        if is_binary:
+          issues.append(f'Trace {trace_id[:16]}... has disagreement (Pass vs Fail)')
+        else:
+          issues.append(f'Trace {trace_id[:16]}... has extreme disagreement (range: {rating_range})')
 
-  # Check for systematic bias
-  if len(set(ann.user_id for ann in annotations)) >= 2:
+  # Check for systematic bias (only for Likert scale)
+  if not is_binary and len(set(ann.user_id for ann in annotations)) >= 2:
     avg_by_rater = defaultdict(list)
     for ann in annotations:
-      avg_by_rater[ann.user_id].append(ann.rating)
+      rating = get_rating(ann)
+      if rating is not None:
+        avg_by_rater[ann.user_id].append(rating)
 
-    rater_averages = {rater: sum(ratings) / len(ratings) for rater, ratings in avg_by_rater.items()}
+    rater_averages = {rater: sum(ratings) / len(ratings) for rater, ratings in avg_by_rater.items() if ratings}
 
     if len(rater_averages) >= 2:
       avg_range = max(rater_averages.values()) - min(rater_averages.values())

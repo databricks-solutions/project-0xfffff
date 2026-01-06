@@ -256,7 +256,7 @@ export function useSubmitFinding(workshopId: string) {
       // Snapshot the previous value
       const previousFindings = queryClient.getQueryData(['findings', workshopId, newFinding.user_id]);
       
-      // Optimistically update the cache
+      // Optimistically update the cache - handle both new and update cases
       queryClient.setQueryData(['findings', workshopId, newFinding.user_id], (old: any) => {
         const optimisticFinding = {
           id: `temp-${Date.now()}`,
@@ -266,7 +266,20 @@ export function useSubmitFinding(workshopId: string) {
           insight: newFinding.insight,
           created_at: new Date().toISOString(),
         };
-        return old ? [...old, optimisticFinding] : [optimisticFinding];
+        
+        if (!old) return [optimisticFinding];
+        
+        // Check if finding for this trace already exists (update case)
+        const existingIndex = old.findIndex((f: any) => f.trace_id === newFinding.trace_id);
+        if (existingIndex >= 0) {
+          // Replace existing finding with updated one
+          const updated = [...old];
+          updated[existingIndex] = { ...updated[existingIndex], insight: newFinding.insight };
+          return updated;
+        }
+        
+        // New finding
+        return [...old, optimisticFinding];
       });
       
       return { previousFindings };
@@ -277,17 +290,26 @@ export function useSubmitFinding(workshopId: string) {
         queryClient.setQueryData(['findings', workshopId, newFinding.user_id], context.previousFindings);
       }
     },
-    onSuccess: (_, finding) => {
-      // Use comprehensive invalidation to ensure all related data updates
-      invalidateAllWorkshopQueries(queryClient, workshopId);
+    onSuccess: (data, finding) => {
+      // Update cache with actual server response
+      queryClient.setQueryData(['findings', workshopId, finding.user_id], (old: any) => {
+        if (!old) return [data];
+        
+        // Replace temp or existing finding with actual server data
+        const existingIndex = old.findIndex((f: any) => 
+          f.trace_id === finding.trace_id || f.id?.startsWith('temp-')
+        );
+        if (existingIndex >= 0) {
+          const updated = [...old];
+          updated[existingIndex] = data;
+          return updated;
+        }
+        return [...old, data];
+      });
       
-      // Also specifically invalidate discovery completion status
+      // Invalidate related queries
       queryClient.invalidateQueries({ queryKey: ['discovery-completion-status', workshopId] });
       queryClient.invalidateQueries({ queryKey: ['user-discovery-complete', workshopId, finding.user_id] });
-      
-      // Force immediate refetch for critical queries
-      queryClient.refetchQueries({ queryKey: ['findings', workshopId, finding.user_id] });
-      queryClient.refetchQueries({ queryKey: ['workshop', workshopId] });
     },
   });
 }

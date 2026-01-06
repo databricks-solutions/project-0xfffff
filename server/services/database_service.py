@@ -35,6 +35,7 @@ from server.models import (
   JudgeEvaluation,
   JudgePrompt,
   JudgePromptCreate,
+  JudgeType,
   MLflowIntakeConfig,
   MLflowIntakeStatus,
   Rubric,
@@ -515,18 +516,33 @@ class DatabaseService:
 
   # Discovery finding operations
   def add_finding(self, workshop_id: str, finding_data: DiscoveryFindingCreate) -> DiscoveryFinding:
-    """Add a discovery finding."""
-    finding_id = str(uuid.uuid4())
-    db_finding = DiscoveryFindingDB(
-      id=finding_id,
-      workshop_id=workshop_id,
-      trace_id=finding_data.trace_id,
-      user_id=finding_data.user_id,
-      insight=finding_data.insight,
-    )
-    self.db.add(db_finding)
-    self.db.commit()
-    self.db.refresh(db_finding)
+    """Add or update a discovery finding (upsert)."""
+    # Check if finding already exists for this trace and user
+    existing_finding = self.db.query(DiscoveryFindingDB).filter(
+      DiscoveryFindingDB.workshop_id == workshop_id,
+      DiscoveryFindingDB.trace_id == finding_data.trace_id,
+      DiscoveryFindingDB.user_id == finding_data.user_id
+    ).first()
+    
+    if existing_finding:
+      # Update existing finding
+      existing_finding.insight = finding_data.insight
+      self.db.commit()
+      self.db.refresh(existing_finding)
+      db_finding = existing_finding
+    else:
+      # Create new finding
+      finding_id = str(uuid.uuid4())
+      db_finding = DiscoveryFindingDB(
+        id=finding_id,
+        workshop_id=workshop_id,
+        trace_id=finding_data.trace_id,
+        user_id=finding_data.user_id,
+        insight=finding_data.insight,
+      )
+      self.db.add(db_finding)
+      self.db.commit()
+      self.db.refresh(db_finding)
 
     return DiscoveryFinding(
       id=db_finding.id,
@@ -597,6 +613,13 @@ class DatabaseService:
       # Update existing rubric
       existing_rubric.question = rubric_data.question
       existing_rubric.created_by = rubric_data.created_by
+      # Update judge type fields
+      if rubric_data.judge_type:
+        existing_rubric.judge_type = rubric_data.judge_type
+      if rubric_data.binary_labels:
+        existing_rubric.binary_labels = rubric_data.binary_labels
+      if rubric_data.rating_scale:
+        existing_rubric.rating_scale = rubric_data.rating_scale
       self.db.commit()
       self.db.refresh(existing_rubric)
       db_rubric = existing_rubric
@@ -608,6 +631,9 @@ class DatabaseService:
         workshop_id=workshop_id,
         question=rubric_data.question,
         created_by=rubric_data.created_by,
+        judge_type=rubric_data.judge_type or 'likert',
+        binary_labels=rubric_data.binary_labels,
+        rating_scale=rubric_data.rating_scale or 5,
       )
       self.db.add(db_rubric)
       self.db.commit()
@@ -641,7 +667,7 @@ class DatabaseService:
       created_at=db_rubric.created_at,
     )
 
-  def update_rubric_question(self, workshop_id: str, question_id: str, title: str, description: str) -> Optional[Rubric]:
+  def update_rubric_question(self, workshop_id: str, question_id: str, title: str, description: str, judge_type: Optional[str] = None) -> Optional[Rubric]:
     """Update a specific question in the rubric.
 
     Args:
@@ -649,6 +675,7 @@ class DatabaseService:
         question_id: The ID of the question to update (e.g., "q_1", "q_2")
         title: New question title
         description: New question description
+        judge_type: Optional judge type ('likert', 'binary', 'freeform')
     """
     # Get existing rubric
     existing_rubric = self.db.query(RubricDB).filter(RubricDB.workshop_id == workshop_id).first()
@@ -665,6 +692,9 @@ class DatabaseService:
       if question.get('id') == question_id:
         questions[i]['title'] = title
         questions[i]['description'] = description
+        # Update judge_type if provided
+        if judge_type:
+          questions[i]['judge_type'] = judge_type
         question_found = True
         break
 
@@ -729,38 +759,63 @@ class DatabaseService:
     )
 
   def _parse_rubric_questions(self, question_text: str) -> list:
-    """Parse the rubric question text into individual questions."""
+    """Parse the rubric question text into individual questions.
+    
+    Format: "title: description|||JUDGE_TYPE|||judgeType" separated by "|||QUESTION_SEPARATOR|||"
+    """
     questions = []
     if not question_text:
       return questions
 
     # Use a special delimiter to separate questions (supports newlines within descriptions)
     QUESTION_DELIMITER = '|||QUESTION_SEPARATOR|||'
+    JUDGE_TYPE_DELIMITER = '|||JUDGE_TYPE|||'
     question_parts = question_text.split(QUESTION_DELIMITER)
     
     for i, part in enumerate(question_parts):
       part = part.strip()
       if not part:
         continue
+      
+      # Check if question has judge type embedded
+      content = part
+      judge_type = 'likert'  # default
+      
+      if JUDGE_TYPE_DELIMITER in part:
+        content_part, type_part = part.split(JUDGE_TYPE_DELIMITER, 1)
+        content = content_part.strip()
+        parsed_type = type_part.strip()
+        if parsed_type in ('likert', 'binary', 'freeform'):
+          judge_type = parsed_type
         
       # Split only at the first colon to separate title from description
-      if ':' in part:
-        title, description = part.split(':', 1)
-        questions.append({'id': f'q_{i + 1}', 'title': title.strip(), 'description': description.strip()})
+      if ':' in content:
+        title, description = content.split(':', 1)
+        questions.append({
+          'id': f'q_{i + 1}', 
+          'title': title.strip(), 
+          'description': description.strip(),
+          'judge_type': judge_type
+        })
 
     return questions
 
   def _reconstruct_rubric_questions(self, questions: list) -> str:
-    """Reconstruct individual questions into a single question text."""
+    """Reconstruct individual questions into a single question text.
+    
+    Format: "title: description|||JUDGE_TYPE|||judgeType" separated by "|||QUESTION_SEPARATOR|||"
+    """
     if not questions:
       return ''
 
     QUESTION_DELIMITER = '|||QUESTION_SEPARATOR|||'
+    JUDGE_TYPE_DELIMITER = '|||JUDGE_TYPE|||'
     question_parts = []
     for i, question in enumerate(questions):
       # Update the ID to be sequential
       question['id'] = f'q_{i + 1}'
-      question_parts.append(f'{question["title"]}: {question["description"]}')
+      judge_type = question.get('judge_type', 'likert')
+      question_parts.append(f'{question["title"]}: {question["description"]}{JUDGE_TYPE_DELIMITER}{judge_type}')
 
     return QUESTION_DELIMITER.join(question_parts)
 
@@ -777,23 +832,133 @@ class DatabaseService:
       question=db_rubric.question,
       created_by=db_rubric.created_by,
       created_at=db_rubric.created_at,
+      judge_type=db_rubric.judge_type or 'likert',
+      binary_labels=db_rubric.binary_labels,
+      rating_scale=db_rubric.rating_scale or 5,
     )
 
   # Annotation operations
   def add_annotation(self, workshop_id: str, annotation_data: AnnotationCreate) -> Annotation:
     """Add an annotation. If a duplicate exists, update the existing one."""
+    logger.info(f"📝 add_annotation called: trace_id={annotation_data.trace_id}, user_id={annotation_data.user_id}, rating={annotation_data.rating}, ratings={annotation_data.ratings}")
+    
+    # Get rubric to determine judge type for validation
+    rubric = self.get_rubric(workshop_id)
+    default_judge_type = rubric.judge_type if rubric else 'likert'
+    logger.info(f"🔍 Default judge type: {default_judge_type}")
+    
+    # Parse rubric questions to get per-question judge types
+    # Frontend uses format: {rubric_id}_{index} (e.g., "1daa749b-d147-45e3-a667-fa3eca40269b_0")
+    # Backend parses as: q_1, q_2, etc.
+    # We need to match by index, not by ID
+    question_judge_types_by_id = {}  # For direct ID matches (q_1, q_2, etc.)
+    question_judge_types_by_index = {}  # For index-based matches (rubric_id_0, rubric_id_1, etc.)
+    parsed_questions = []
+    
+    if rubric and rubric.question:
+      parsed_questions = self._parse_rubric_questions(rubric.question)
+      for index, question in enumerate(parsed_questions):
+        question_id = question.get('id')  # e.g., "q_1"
+        question_judge_type = question.get('judge_type', default_judge_type)
+        
+        # Store by backend ID (q_1, q_2, etc.)
+        if question_id:
+          question_judge_types_by_id[question_id] = question_judge_type
+        
+        # Store by index for frontend format matching
+        question_judge_types_by_index[index] = question_judge_type
+        
+        # Also store by frontend format: {rubric_id}_{index}
+        frontend_id = f"{rubric.id}_{index}"
+        question_judge_types_by_id[frontend_id] = question_judge_type
+      
+      logger.info(f"📋 Question judge types by ID: {question_judge_types_by_id}")
+      logger.info(f"📋 Question judge types by index: {question_judge_types_by_index}")
+      logger.info(f"📋 Parsed {len(parsed_questions)} questions from rubric")
+    
+    # Validate and normalize ratings based on judge type
+    validated_rating = None
+    validated_ratings = None
+    
+    if annotation_data.rating is not None:
+      validated_rating = self._validate_and_normalize_rating(annotation_data.rating, default_judge_type)
+      logger.info(f"✅ Validated legacy rating: {annotation_data.rating} -> {validated_rating}")
+    
+    # Process ratings - handle both None and empty dict cases
+    # Note: ratings can be None (not provided), {} (empty), or {'q1': 0} (with 0 values)
+    if annotation_data.ratings is not None:
+      validated_ratings = {}
+      for question_id, rating_value in annotation_data.ratings.items():
+        # Explicitly check for None (0 is a valid value, so we need to check is not None)
+        if rating_value is not None:
+          # Get judge type for this specific question
+          # Try direct ID match first (works for both q_1 format and rubric_id_0 format)
+          question_judge_type = question_judge_types_by_id.get(question_id)
+          
+          # If not found, try to extract index from frontend format (rubric_id_index)
+          if question_judge_type is None and '_' in question_id:
+            try:
+              # Extract index from format like "1daa749b-d147-45e3-a667-fa3eca40269b_0"
+              index_str = question_id.split('_')[-1]
+              index = int(index_str)
+              question_judge_type = question_judge_types_by_index.get(index)
+            except (ValueError, IndexError):
+              pass
+          
+          # Fallback to default if still not found
+          if question_judge_type is None:
+            question_judge_type = default_judge_type
+            logger.warning(f"⚠️ Could not find judge type for question_id={question_id}, using default={default_judge_type}")
+          
+          logger.info(f"🔍 Validating {question_id} with judge_type={question_judge_type}, rating_value={rating_value}")
+          # Validate the rating (including 0 for binary Fail)
+          validated_value = self._validate_and_normalize_rating(rating_value, question_judge_type)
+          # Only add if validation succeeded (returns a number, including 0)
+          # Note: 0 is a valid value, so we check is not None (0 is not None)
+          if validated_value is not None:
+            validated_ratings[question_id] = validated_value
+            logger.info(f"✅ Validated rating for {question_id}: {rating_value} -> {validated_value} (judge_type={question_judge_type})")
+          else:
+            logger.error(f"❌ Validation returned None for {question_id}: rating_value={rating_value}, judge_type={question_judge_type}")
+            # For debugging: try to understand why validation failed
+            logger.error(f"   rating_value type: {type(rating_value)}, value: {repr(rating_value)}")
+        else:
+          # rating_value is None - skip this question
+          logger.debug(f"⏭️ Skipping {question_id}: rating_value is None")
+      logger.info(f"📊 Final validated_ratings: {validated_ratings}")
+    
     # Check if annotation already exists for this user and trace
     existing_annotation = (
       self.db.query(AnnotationDB).filter(AnnotationDB.user_id == annotation_data.user_id, AnnotationDB.trace_id == annotation_data.trace_id).first()
     )
 
     if existing_annotation:
-      # Update existing annotation
-      existing_annotation.rating = annotation_data.rating
-      existing_annotation.ratings = annotation_data.ratings  # Support multiple ratings
-      existing_annotation.comment = annotation_data.comment
+      logger.info(f"🔄 Updating existing annotation: id={existing_annotation.id}, current ratings={existing_annotation.ratings}")
+      # Update existing annotation - only update fields that are provided
+      if validated_rating is not None:
+        existing_annotation.rating = validated_rating
+        logger.info(f"  → Updated rating: {validated_rating}")
+      # Always update ratings if provided and validated
+      # validated_ratings will be None if ratings was not provided, or a dict if it was
+      if annotation_data.ratings is not None and validated_ratings is not None:
+        # Only update if we have validated ratings
+        # Note: validated_ratings can be {} if all validations failed, but we still update to clear
+        # However, if we received ratings but got empty dict, log a warning
+        if len(validated_ratings) == 0 and len(annotation_data.ratings) > 0:
+          logger.warning(f"⚠️ All ratings failed validation! Received: {annotation_data.ratings}, but validated_ratings is empty")
+          logger.warning(f"⚠️ Not updating ratings to avoid clearing existing data")
+        else:
+          existing_annotation.ratings = validated_ratings
+          logger.info(f"  → Updated ratings: {existing_annotation.ratings}")
+      elif annotation_data.ratings is not None:
+        # Ratings were provided but validation failed completely - log error
+        logger.error(f"❌ Ratings provided but validation failed completely: {annotation_data.ratings}")
+      if annotation_data.comment is not None:
+        existing_annotation.comment = annotation_data.comment
+        logger.info("  → Updated comment")
       self.db.commit()
       self.db.refresh(existing_annotation)
+      logger.info(f"✅ Annotation updated in DB: id={existing_annotation.id}, ratings={existing_annotation.ratings}")
       self._sync_annotation_with_mlflow(workshop_id, existing_annotation)
 
       return Annotation(
@@ -809,19 +974,22 @@ class DatabaseService:
       )
     else:
       # Create new annotation
+      logger.info(f"🆕 Creating new annotation")
       annotation_id = str(uuid.uuid4())
       db_annotation = AnnotationDB(
         id=annotation_id,
         workshop_id=workshop_id,
         trace_id=annotation_data.trace_id,
         user_id=annotation_data.user_id,
-        rating=annotation_data.rating,
-        ratings=annotation_data.ratings,  # Support multiple ratings
+        rating=validated_rating,
+        ratings=validated_ratings,
         comment=annotation_data.comment,
       )
+      logger.info(f"📝 New annotation object: rating={validated_rating}, ratings={validated_ratings}")
       self.db.add(db_annotation)
       self.db.commit()
       self.db.refresh(db_annotation)
+      logger.info(f"✅ Annotation created in DB: id={db_annotation.id}, ratings={db_annotation.ratings}")
       self._sync_annotation_with_mlflow(workshop_id, db_annotation)
 
       return Annotation(
@@ -835,6 +1003,50 @@ class DatabaseService:
         mlflow_trace_id=db_annotation.trace.mlflow_trace_id,
         created_at=db_annotation.created_at,
       )
+
+  def _validate_and_normalize_rating(self, rating: any, judge_type: str) -> Optional[int]:
+    """Validate and normalize a rating based on judge type.
+    
+    Returns:
+      - For binary: 0 or 1 (normalizes any truthy value to 1, falsy to 0)
+      - For Likert: 1-5 (clamps to valid range)
+      - None if rating is invalid
+    """
+    logger.debug(f"🔍 _validate_and_normalize_rating: rating={rating} (type={type(rating)}), judge_type={judge_type}")
+    
+    if rating is None:
+      logger.debug("  → Rating is None, returning None")
+      return None
+    
+    # Convert to int if possible
+    try:
+      rating_int = int(float(rating))
+      logger.debug(f"  → Converted to int: {rating_int}")
+    except (ValueError, TypeError) as e:
+      logger.warning(f"  → Failed to convert to int: {e}")
+      return None
+    
+    if judge_type == 'binary':
+      # Binary: only 0 or 1 are valid
+      if rating_int == 0:
+        logger.debug(f"  → Binary rating 0 (Fail) - returning 0")
+        return 0
+      elif rating_int == 1:
+        logger.debug(f"  → Binary rating 1 (Pass) - returning 1")
+        return 1
+      else:
+        # Normalize: any non-zero becomes 1, but log a warning
+        logger.warning(f"Invalid binary rating {rating_int}, normalizing to 1")
+        return 1
+    else:
+      # Likert: 1-5 are valid
+      if 1 <= rating_int <= 5:
+        return rating_int
+      else:
+        # Clamp to valid range
+        clamped = max(1, min(5, rating_int))
+        logger.warning(f"Invalid Likert rating {rating_int}, clamping to {clamped}")
+        return clamped
 
   def _sync_annotation_with_mlflow(self, workshop_id: str, annotation_db: AnnotationDB) -> None:
     """Ensure MLflow trace carries SME tag + feedback once an annotation is captured."""
@@ -1393,6 +1605,33 @@ class DatabaseService:
     # self.db.refresh(db_participant)
     # return participant
 
+  def update_user_role_in_workshop(self, workshop_id: str, user_id: str, new_role: str) -> Optional[User]:
+    """Update a user's role in a workshop (SME <-> Participant)."""
+    from server.models import UserRole
+    
+    # Update the workshop participant record
+    db_participant = (
+      self.db.query(WorkshopParticipantDB)
+      .filter(and_(WorkshopParticipantDB.workshop_id == workshop_id, WorkshopParticipantDB.user_id == user_id))
+      .first()
+    )
+    
+    if db_participant:
+      # Map string to UserRole enum
+      role_enum = UserRole.SME if new_role == 'sme' else UserRole.PARTICIPANT
+      db_participant.role = role_enum
+    
+    # Also update the user's global role
+    db_user = self.db.query(UserDB).filter(UserDB.id == user_id).first()
+    if db_user:
+      role_enum = UserRole.SME if new_role == 'sme' else UserRole.PARTICIPANT
+      db_user.role = role_enum
+      
+    self.db.commit()
+    
+    # Return updated user
+    return self.get_user(user_id)
+
   # User Discovery Completion operations
   def mark_user_discovery_complete(self, workshop_id: str, user_id: str) -> None:
     """Mark a user as having completed discovery for a workshop."""
@@ -1706,14 +1945,77 @@ class DatabaseService:
     if evaluations:
       self.db.query(JudgeEvaluationDB).filter(JudgeEvaluationDB.prompt_id == evaluations[0].prompt_id).delete()
 
-    # Add new evaluations
+    # Get rubric to validate ratings if available
+    rubric = None
+    if evaluations:
+      rubric = self.get_rubric(evaluations[0].workshop_id)
+    
+    # Detect judge type: parse questions first (more accurate), then fall back to rubric-level judge_type
+    judge_type_str = 'likert'  # Default
+    if rubric:
+      # First, try to parse rubric questions to get per-question judge types
+      if rubric.question:
+        try:
+          questions = self._parse_rubric_questions(rubric.question)
+          if questions:
+            # Check if any question is binary
+            binary_questions = [q for q in questions if q.get('judge_type') == 'binary']
+            likert_questions = [q for q in questions if q.get('judge_type') == 'likert']
+            
+            if binary_questions and not likert_questions:
+              # All questions are binary
+              judge_type_str = 'binary'
+              logger.info(f"Detected binary judge type from rubric questions ({len(binary_questions)} binary questions) for evaluation validation")
+            elif likert_questions and not binary_questions:
+              # All questions are likert
+              judge_type_str = 'likert'
+            elif binary_questions:
+              # Mixed - but if we have binary questions, prefer binary
+              judge_type_str = 'binary'
+              logger.info(f"Detected binary judge type from rubric questions (mixed types, {len(binary_questions)} binary questions) for evaluation validation")
+        except Exception as parse_error:
+          logger.warning(f"Could not parse rubric questions for judge type detection: {parse_error}")
+      
+      # Fallback to rubric-level judge_type if no questions parsed or all questions are likert
+      if judge_type_str == 'likert' and hasattr(rubric, 'judge_type') and rubric.judge_type:
+        judge_type_enum = rubric.judge_type
+        if isinstance(judge_type_enum, JudgeType):
+          judge_type_str = judge_type_enum.value
+        else:
+          judge_type_str = str(judge_type_enum)
+    
+    is_binary = judge_type_str == 'binary'
+    logger.info(f"Judge type for evaluation validation: {judge_type_str}, is_binary={is_binary}")
+
+    # Add new evaluations with validation
     for evaluation in evaluations:
+      # Validate and normalize predicted_rating based on judge type
+      validated_predicted_rating = evaluation.predicted_rating
+      if validated_predicted_rating is not None:
+        if is_binary:
+          # Binary: only 0 or 1 are valid - reject anything else
+          if validated_predicted_rating == 0:
+            validated_predicted_rating = 0.0
+          elif validated_predicted_rating == 1:
+            validated_predicted_rating = 1.0
+          else:
+            # Reject invalid binary values - set to None
+            original_value = validated_predicted_rating
+            validated_predicted_rating = None
+            logger.error(f"Invalid binary predicted_rating {original_value} for trace {evaluation.trace_id[:8]}... - must be 0 or 1, rejecting evaluation")
+        else:
+          # Likert: clamp to 1-5 range
+          if not (1 <= validated_predicted_rating <= 5):
+            original_value = validated_predicted_rating
+            validated_predicted_rating = max(1.0, min(5.0, validated_predicted_rating))
+            logger.warning(f"Likert predicted_rating {original_value} out of range for trace {evaluation.trace_id[:8]}... - clamped to {validated_predicted_rating}")
+      
       db_evaluation = JudgeEvaluationDB(
         id=evaluation.id,
         workshop_id=evaluation.workshop_id,
         prompt_id=evaluation.prompt_id,
         trace_id=evaluation.trace_id,
-        predicted_rating=evaluation.predicted_rating,
+        predicted_rating=validated_predicted_rating,
         human_rating=evaluation.human_rating,
         confidence=evaluation.confidence,
         reasoning=evaluation.reasoning,
@@ -1881,3 +2183,90 @@ class DatabaseService:
         feedback_parts.append(f"[{ann.user_id}]: {ann.comment.strip()}")
     
     return "\n\n".join(feedback_parts) if feedback_parts else None
+
+  def delete_all_traces(self, workshop_id: str) -> int:
+    """Delete all traces for a workshop and reset to intake phase.
+    
+    Returns the number of traces deleted.
+    """
+    # First, delete all annotations for these traces
+    from server.database import AnnotationDB, UserTraceOrderDB, RubricDB, MLflowIntakeConfigDB
+    
+    # Get trace IDs first
+    trace_ids = [t.id for t in self.db.query(TraceDB).filter(TraceDB.workshop_id == workshop_id).all()]
+    
+    if trace_ids:
+      # Delete annotations for these traces
+      self.db.query(AnnotationDB).filter(AnnotationDB.trace_id.in_(trace_ids)).delete(synchronize_session=False)
+    
+    # Delete user trace orders for this workshop
+    self.db.query(UserTraceOrderDB).filter(UserTraceOrderDB.workshop_id == workshop_id).delete(synchronize_session=False)
+    
+    # Delete all traces
+    deleted_count = self.db.query(TraceDB).filter(TraceDB.workshop_id == workshop_id).delete(synchronize_session=False)
+    
+    # Delete rubric for this workshop
+    self.db.query(RubricDB).filter(RubricDB.workshop_id == workshop_id).delete(synchronize_session=False)
+    
+    # Reset MLflow intake status (trace_count and is_ingested)
+    mlflow_config = self.db.query(MLflowIntakeConfigDB).filter(MLflowIntakeConfigDB.workshop_id == workshop_id).first()
+    if mlflow_config:
+      mlflow_config.trace_count = 0
+      mlflow_config.is_ingested = False
+      mlflow_config.last_ingestion_time = None
+    
+    # Reset workshop to intake phase
+    workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if workshop:
+      workshop.current_phase = WorkshopPhase.INTAKE
+      workshop.completed_phases = []
+      workshop.discovery_started = False
+      workshop.annotation_started = False
+      workshop.active_discovery_trace_ids = None
+      workshop.active_annotation_trace_ids = None
+    
+    self.db.commit()
+    return deleted_count
+
+  def reset_workshop_to_discovery(self, workshop_id: str) -> Optional[Workshop]:
+    """Reset a workshop back to the discovery start page (before discovery was started).
+    
+    This allows changing the discovery configuration (e.g., number of traces).
+    The phase stays as DISCOVERY but discovery_started is set to False,
+    which causes the UI to show the Discovery Start Page.
+    
+    Returns the updated workshop or None if not found.
+    """
+    workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if not workshop:
+      return None
+    
+    # Keep phase as DISCOVERY but mark discovery as NOT started
+    # This causes the UI to show the Discovery Start Page
+    workshop.current_phase = WorkshopPhase.DISCOVERY
+    workshop.discovery_started = False
+    
+    # Keep completed phases up to intake (discovery not yet complete)
+    completed = workshop.completed_phases or []
+    workshop.completed_phases = [p for p in completed if p in ['intake']]
+    
+    # Clear active discovery trace list so new selection can be made
+    workshop.active_discovery_trace_ids = None
+    
+    self.db.commit()
+    self.db.refresh(workshop)
+    
+    return Workshop(
+      id=workshop.id,
+      name=workshop.name,
+      description=workshop.description,
+      facilitator_id=workshop.facilitator_id,
+      status=workshop.status,
+      current_phase=workshop.current_phase,
+      completed_phases=workshop.completed_phases or [],
+      discovery_started=workshop.discovery_started or False,
+      annotation_started=workshop.annotation_started or False,
+      active_discovery_trace_ids=workshop.active_discovery_trace_ids or [],
+      active_annotation_trace_ids=workshop.active_annotation_trace_ids or [],
+      created_at=workshop.created_at,
+    )

@@ -8,7 +8,18 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useFacilitatorFindings, useFacilitatorFindingsWithUserDetails, useTraces, useAllTraces, useRubric, useFacilitatorAnnotations, useFacilitatorAnnotationsWithUserDetails, useWorkshop } from '@/hooks/useWorkshopApi';
-import { Settings, Users, FileText, CheckCircle, Clock, AlertCircle, BarChart, ChevronRight, Play, Eye, Plus } from 'lucide-react';
+import { Settings, Users, FileText, CheckCircle, Clock, AlertCircle, BarChart, ChevronRight, Play, Eye, Plus, RotateCcw } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useQueryClient } from '@tanstack/react-query';
@@ -273,6 +284,7 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
   const [annotationTracesCount, setAnnotationTracesCount] = React.useState<string>('');
   const [isAddingTraces, setIsAddingTraces] = React.useState(false);
   const [isReorderingTraces, setIsReorderingTraces] = React.useState(false);
+  const [isResettingDiscovery, setIsResettingDiscovery] = React.useState(false);
   
   // Judge name state - used for MLflow feedback entries
   const [judgeName, setJudgeName] = React.useState<string>(workshop?.judge_name || 'workshop_judge');
@@ -409,6 +421,38 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
     }
   };
 
+  const handleResetDiscovery = async () => {
+    if (!workshopId) return;
+    
+    setIsResettingDiscovery(true);
+    try {
+      const response = await fetch(`/workshops/${workshopId}/reset-discovery`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to reset discovery');
+      }
+
+      // Invalidate caches
+      queryClient.invalidateQueries({ queryKey: ['workshop', workshopId] });
+      queryClient.invalidateQueries({ queryKey: ['traces', workshopId] });
+      
+      toast.success('Discovery reset! Select your trace configuration.');
+      
+      // Force page reload to reflect phase change
+      window.location.reload();
+    } catch (error: any) {
+      toast.error(`Failed to reset discovery: ${error.message}`);
+    } finally {
+      setIsResettingDiscovery(false);
+    }
+  };
+
   return (
     <div className="p-6">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -490,25 +534,6 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
               </div>
             </CardContent>
           </Card>
-          )}
-
-          {/* Ready for Rubric Creation Banner - Show when discovery is complete */}
-          {discoveryProgress === 100 && !rubric && focusPhase === 'discovery' && (
-            <Card className="border-green-200 bg-gradient-to-r from-green-50 to-emerald-50">
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                    <CheckCircle className="w-5 h-5 text-green-600" />
-                  </div>
-                  <div className="flex-1">
-                    <h4 className="font-semibold text-green-900">Ready for Rubric Creation</h4>
-                    <p className="text-sm text-green-700">
-                      Discovery phase complete! Use the sidebar workflow to create the evaluation rubric.
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
           )}
 
           {/* Rubric Status - Hide during discovery AND annotation focus */}
@@ -886,6 +911,60 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                     <div className="flex justify-center">
                       <PhaseControlButton phase="discovery" />
                     </div>
+                  </div>
+
+                  {/* Reset Discovery */}
+                  <div className="border border-amber-200 rounded-lg p-4 bg-amber-50">
+                    <div className="flex items-center gap-2 mb-3">
+                      <RotateCcw className="w-5 h-5 text-amber-600" />
+                      <div className="text-left">
+                        <div className="font-medium text-amber-800">Reset Discovery</div>
+                        <div className="text-xs text-amber-600">Go back to reconfigure trace selection</div>
+                      </div>
+                    </div>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={isResettingDiscovery}
+                          className="w-full border-amber-300 text-amber-700 hover:bg-amber-100"
+                        >
+                          {isResettingDiscovery ? (
+                            <>
+                              <div className="w-3 h-3 border border-amber-300 border-t-amber-600 rounded-full animate-spin mr-2" />
+                              Resetting...
+                            </>
+                          ) : (
+                            <>
+                              <RotateCcw className="w-3 h-3 mr-2" />
+                              Reset & Reconfigure
+                            </>
+                          )}
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Reset Discovery Phase?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will reset the discovery phase so you can reconfigure the number of traces 
+                            (e.g., switch from Standard 10 to Custom 3). 
+                            <br /><br />
+                            <strong>Your traces will be kept</strong>, but you'll need to restart the discovery phase 
+                            with your new configuration. Any discovery findings will be preserved.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction 
+                            onClick={handleResetDiscovery}
+                            className="bg-amber-600 hover:bg-amber-700"
+                          >
+                            Reset Discovery
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </div>
                 </>
               )}
