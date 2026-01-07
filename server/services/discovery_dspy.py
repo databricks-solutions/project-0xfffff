@@ -11,45 +11,115 @@ from __future__ import annotations
 
 import logging
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Question generation coverage categories
+# ---------------------------------------------------------------------------
+QUESTION_CATEGORIES: list[str] = [
+    "themes",
+    "edge_cases",
+    "boundary_conditions",
+    "failure_modes",
+    "missing_info",
+    "disagreements",
+]
+
+QuestionCategory = Literal[
+    "themes",
+    "edge_cases",
+    "boundary_conditions",
+    "failure_modes",
+    "missing_info",
+    "disagreements",
+]
+
 
 class DiscoveryQuestionCandidate(BaseModel):
+    """Output model for a generated discovery question."""
+
     prompt: str
     placeholder: str | None = None
+    category: str | None = Field(
+        default=None,
+        description="Coverage category: themes, edge_cases, boundary_conditions, failure_modes, missing_info, disagreements",
+    )
 
 
+# ---------------------------------------------------------------------------
+# Summary Pydantic models (enriched for rubric bridging)
+# ---------------------------------------------------------------------------
 class DiscoveryOverallSummary(BaseModel):
-    themes: list[str]
-    patterns: list[str]
-    tendencies: list[str]
-    risks_or_failure_modes: list[str]
-    strengths: list[str]
+    themes: list[str] = Field(default_factory=list)
+    patterns: list[str] = Field(default_factory=list)
+    tendencies: list[str] = Field(default_factory=list)
+    risks_or_failure_modes: list[str] = Field(default_factory=list)
+    strengths: list[str] = Field(default_factory=list)
 
 
 class DiscoveryUserSummary(BaseModel):
     user_id: str
     user_name: str
-    themes: list[str]
-    tendencies: list[str]
-    notable_insights: list[str]
+    themes: list[str] = Field(default_factory=list)
+    tendencies: list[str] = Field(default_factory=list)
+    notable_insights: list[str] = Field(default_factory=list)
 
 
 class DiscoveryTraceSummary(BaseModel):
     trace_id: str
-    themes: list[str]
-    tendencies: list[str]
-    notable_behaviors: list[str]
+    themes: list[str] = Field(default_factory=list)
+    tendencies: list[str] = Field(default_factory=list)
+    notable_behaviors: list[str] = Field(default_factory=list)
+
+
+class KeyDisagreement(BaseModel):
+    """A disagreement between participants on a theme or trace."""
+
+    theme: str
+    trace_ids: list[str] = Field(default_factory=list)
+    viewpoints: list[str] = Field(default_factory=list, description="Paraphrased conflicting viewpoints")
+
+
+class DiscussionPrompt(BaseModel):
+    """A facilitator discussion prompt for a theme or disagreement."""
+
+    theme: str
+    prompt: str
+
+
+class ConvergenceMetrics(BaseModel):
+    """Cross-participant agreement metrics."""
+
+    theme_agreement: dict[str, float] = Field(
+        default_factory=dict, description="Map from theme to fraction of users who mention it"
+    )
+    overall_alignment_score: float = Field(default=0.0, description="0-1 score of cross-user agreement")
 
 
 class DiscoverySummariesPayload(BaseModel):
-    overall: DiscoveryOverallSummary
-    by_user: list[DiscoveryUserSummary]
-    by_trace: list[DiscoveryTraceSummary]
+    """Enriched discovery summaries payload for facilitators."""
+
+    overall: DiscoveryOverallSummary = Field(default_factory=DiscoveryOverallSummary)
+    by_user: list[DiscoveryUserSummary] = Field(default_factory=list)
+    by_trace: list[DiscoveryTraceSummary] = Field(default_factory=list)
+    # New fields for rubric bridging
+    candidate_rubric_questions: list[str] = Field(
+        default_factory=list, description="Concrete quality dimensions that could become rubric questions"
+    )
+    key_disagreements: list[KeyDisagreement] = Field(
+        default_factory=list, description="Conflicting viewpoints among participants"
+    )
+    discussion_prompts: list[DiscussionPrompt] = Field(
+        default_factory=list, description="Facilitator discussion prompts per theme/disagreement"
+    )
+    convergence: ConvergenceMetrics = Field(default_factory=ConvergenceMetrics)
+    ready_for_rubric: bool = Field(
+        default=False, description="True when discovery has sufficient coverage to proceed to rubric"
+    )
 
 
 def _import_dspy():
@@ -134,6 +204,8 @@ def _define_signatures():
 
         Constraints:
         - Single concise prompt (1-2 sentences)
+        - Pick a category from the missing_categories list
+        - If has_disagreement is True and 'disagreements' is in missing_categories, prioritize that category
         - Encourage comparison, edge cases, failure modes, missing info, root causes
         - Avoid repeating previous questions
         - Do not quote other users verbatim; paraphrase/abstract themes
@@ -153,10 +225,22 @@ def _define_signatures():
         )
         other_users_findings: list[str] = dspy.InputField(desc="Other users' findings for this trace (may be empty)")
 
-        question: DiscoveryQuestionCandidate = dspy.OutputField(desc="The next question to ask the user")
+        # Coverage tracking inputs
+        covered_categories: list[str] = dspy.InputField(
+            desc="Categories already covered: themes, edge_cases, boundary_conditions, failure_modes, missing_info, disagreements"
+        )
+        missing_categories: list[str] = dspy.InputField(desc="Categories NOT yet covered (pick from these)")
+        has_disagreement: bool = dspy.InputField(
+            desc="True if other_users_findings conflict with user_prior_finding; prioritize 'disagreements' category if True"
+        )
 
+        question: DiscoveryQuestionCandidate = dspy.OutputField(
+            desc="The next question to ask; must include category from missing_categories"
+        )
+
+    # Legacy one-shot signature (kept for backwards compatibility, but prefer iterative pipeline)
     class GenerateDiscoverySummaries(dspy.Signature):
-        """Summarize discovery findings for facilitators.
+        """Summarize discovery findings for facilitators (legacy one-shot).
 
         Rules:
         - Focus on MODEL behavior (not participant performance)
@@ -169,14 +253,102 @@ def _define_signatures():
         findings: list[str] = dspy.InputField(desc="Each line is one finding submission (pre-formatted)")
         payload: DiscoverySummariesPayload = dspy.OutputField(desc="Structured summaries")
 
-    return GenerateDiscoveryQuestion, GenerateDiscoverySummaries
+    # ---------------------------------------------------------------------------
+    # Iterative summary signatures
+    # ---------------------------------------------------------------------------
+    class RefineOverallSummary(dspy.Signature):
+        """Iteratively refine an overall summary given a chunk of findings.
+
+        Take the current state and incorporate new findings to update themes, patterns,
+        tendencies, risks_or_failure_modes, and strengths. Avoid duplicates.
+        """
+
+        current_state: DiscoveryOverallSummary = dspy.InputField(desc="Current summary state (may be empty)")
+        findings_chunk: list[str] = dspy.InputField(desc="New batch of finding lines to incorporate")
+        updated_state: DiscoveryOverallSummary = dspy.OutputField(desc="Updated summary incorporating new findings")
+
+    class ExtractRubricCandidates(dspy.Signature):
+        """Extract candidate rubric questions from an overall summary.
+
+        Convert themes and patterns into concrete, actionable quality dimensions
+        that could become rubric questions for human annotation.
+        Examples: "Does the response cite sources?", "Is the tone appropriate?"
+        """
+
+        overall_summary: DiscoveryOverallSummary = dspy.InputField(desc="Overall summary with themes/patterns")
+        candidates: list[str] = dspy.OutputField(desc="List of candidate rubric question strings")
+
+    class IdentifyDisagreements(dspy.Signature):
+        """Identify key disagreements among participant findings.
+
+        Scan findings for conflicting viewpoints on the same trace or theme.
+        Paraphrase viewpoints without quoting participants directly.
+        """
+
+        findings: list[str] = dspy.InputField(desc="All finding lines (pre-formatted with trace/user info)")
+        disagreements: list[KeyDisagreement] = dspy.OutputField(desc="List of key disagreements")
+
+    class GenerateDiscussionPrompts(dspy.Signature):
+        """Generate facilitator discussion prompts for themes and disagreements.
+
+        Create short, actionable prompts to guide group discussion.
+        Example: "Ask participants: What would make this response clearly 'good' vs. 'acceptable'?"
+        """
+
+        themes: list[str] = dspy.InputField(desc="Major themes from the overall summary")
+        disagreements: list[KeyDisagreement] = dspy.InputField(desc="Key disagreements to discuss")
+        prompts: list[DiscussionPrompt] = dspy.OutputField(desc="Discussion prompts for facilitators")
+
+    class SummarizeTraces(dspy.Signature):
+        """Summarize findings grouped by trace.
+
+        For each trace, extract themes, tendencies, and notable behaviors.
+        """
+
+        trace_findings_blocks: list[str] = dspy.InputField(
+            desc="Blocks of findings grouped by trace (each block starts with TRACE <id>)"
+        )
+        summaries: list[DiscoveryTraceSummary] = dspy.OutputField(desc="Per-trace summaries")
+
+    class SummarizeUsers(dspy.Signature):
+        """Summarize findings grouped by user.
+
+        For each user, extract themes, tendencies, and notable insights.
+        """
+
+        user_findings_blocks: list[str] = dspy.InputField(
+            desc="Blocks of findings grouped by user (each block starts with USER <name>)"
+        )
+        summaries: list[DiscoveryUserSummary] = dspy.OutputField(desc="Per-user summaries")
+
+    return {
+        "GenerateDiscoveryQuestion": GenerateDiscoveryQuestion,
+        "GenerateDiscoverySummaries": GenerateDiscoverySummaries,
+        "RefineOverallSummary": RefineOverallSummary,
+        "ExtractRubricCandidates": ExtractRubricCandidates,
+        "IdentifyDisagreements": IdentifyDisagreements,
+        "GenerateDiscussionPrompts": GenerateDiscussionPrompts,
+        "SummarizeTraces": SummarizeTraces,
+        "SummarizeUsers": SummarizeUsers,
+    }
 
 
-_SIGS: tuple[type, type] | None = None
+_SIGS: dict[str, type] | None = None
 
 
-def get_signatures() -> tuple[type, type]:
+def get_signatures() -> dict[str, type]:
+    """Get all DSPy signature classes as a dict."""
     global _SIGS
     if _SIGS is None:
         _SIGS = _define_signatures()
     return _SIGS
+
+
+def get_question_signature():
+    """Get the question generation signature."""
+    return get_signatures()["GenerateDiscoveryQuestion"]
+
+
+def get_legacy_summaries_signature():
+    """Get the legacy one-shot summaries signature."""
+    return get_signatures()["GenerateDiscoverySummaries"]

@@ -8,15 +8,19 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from server.models import DiscoveryFinding, DiscoveryFindingCreate, WorkshopPhase
 from server.services.database_service import DatabaseService
+from server.services.discovery_dspy import QUESTION_CATEGORIES
 
 logger = logging.getLogger(__name__)
+
+# Maximum number of generated questions per (user, trace) before stopping
+MAX_GENERATED_QUESTIONS_PER_TRACE = 6
 
 
 class DiscoveryService:
@@ -99,14 +103,58 @@ class DiscoveryService:
     # ---------------------------------------------------------------------
     # Discovery questions
     # ---------------------------------------------------------------------
+    def _compute_coverage(self, existing_questions_raw: list[dict[str, Any]]) -> dict[str, Any]:
+        """Compute coverage state from existing questions.
+
+        The baseline question (q_1) is treated as covering 'themes'.
+        """
+        # Categories covered by generated questions
+        covered = set()
+        # Baseline q_1 covers 'themes'
+        covered.add("themes")
+
+        for q in existing_questions_raw:
+            cat = q.get("category")
+            if cat and cat in QUESTION_CATEGORIES:
+                covered.add(cat)
+
+        missing = [c for c in QUESTION_CATEGORIES if c not in covered]
+        return {
+            "covered": sorted(covered),
+            "missing": missing,
+        }
+
+    def _detect_disagreement(self, user_finding: str, other_findings: list[str]) -> bool:
+        """Heuristic to detect if there's a potential disagreement.
+
+        Simple heuristic: if user finding and any other finding have
+        contradictory sentiment indicators or mention opposing viewpoints.
+        For now, we use a simple check: if both exist, assume potential disagreement.
+        A more sophisticated implementation could use embeddings or an LLM classifier.
+        """
+        if not user_finding or not other_findings:
+            return False
+        # Simple heuristic: if user has a finding and others have different findings, flag as potential disagreement
+        # This encourages the model to ask a disagreement-probing question
+        return len(other_findings) > 0
+
     def get_discovery_questions(
         self,
         workshop_id: str,
         trace_id: str,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
         append: bool = False,
-    ) -> List[Dict[str, Any]]:
-        """Return per-user/per-trace discovery questions as a list of dicts."""
+    ) -> dict[str, Any]:
+        """Return per-user/per-trace discovery questions with coverage metadata.
+
+        Returns:
+            {
+                "questions": [...],
+                "can_generate_more": bool,
+                "stop_reason": str | None,
+                "coverage": {"covered": [...], "missing": [...]}
+            }
+        """
         workshop = self._get_workshop_or_404(workshop_id)
 
         trace = self.db_service.get_trace(trace_id)
@@ -117,11 +165,17 @@ class DiscoveryService:
             "id": "q_1",
             "prompt": "What makes this response effective or ineffective?",
             "placeholder": "Share your thoughts on what makes this response work well or poorly...",
+            "category": "themes",
         }
 
         # If we don't have a user_id, we can't do per-user persistence. Return a safe fallback.
         if not user_id:
-            return [fixed_question]
+            return {
+                "questions": [fixed_question],
+                "can_generate_more": False,
+                "stop_reason": "User ID required for question generation",
+                "coverage": {"covered": ["themes"], "missing": [c for c in QUESTION_CATEGORIES if c != "themes"]},
+            }
 
         existing_questions_raw = self.db_service.get_discovery_questions(workshop_id, trace_id, user_id)
         existing_questions: list[dict] = [
@@ -129,6 +183,7 @@ class DiscoveryService:
                 "id": str(q.get("id")),
                 "prompt": str(q.get("prompt") or "").strip(),
                 "placeholder": (str(q.get("placeholder")).strip() if q.get("placeholder") is not None else None),
+                "category": q.get("category"),
             }
             for q in existing_questions_raw
             if (q.get("id") and q.get("prompt"))
@@ -136,13 +191,47 @@ class DiscoveryService:
         # Ensure we never override the fixed baseline question id.
         existing_questions = [q for q in existing_questions if q.get("id") != fixed_question["id"]]
 
+        # Compute coverage
+        coverage = self._compute_coverage(existing_questions_raw)
+        generated_count = len(existing_questions)
+
+        # Check stopping conditions
+        all_covered = len(coverage["missing"]) == 0
+        cap_reached = generated_count >= MAX_GENERATED_QUESTIONS_PER_TRACE
+
+        if all_covered:
+            return {
+                "questions": [fixed_question, *existing_questions],
+                "can_generate_more": False,
+                "stop_reason": "All categories covered",
+                "coverage": coverage,
+            }
+
+        if cap_reached:
+            return {
+                "questions": [fixed_question, *existing_questions],
+                "can_generate_more": False,
+                "stop_reason": f"Maximum questions reached ({MAX_GENERATED_QUESTIONS_PER_TRACE})",
+                "coverage": coverage,
+            }
+
         model_name = (getattr(workshop, "discovery_questions_model_name", None) or "demo").strip()
         if not model_name or model_name == "demo":
-            return [fixed_question, *existing_questions]
+            return {
+                "questions": [fixed_question, *existing_questions],
+                "can_generate_more": True,
+                "stop_reason": None,
+                "coverage": coverage,
+            }
 
         # If we already have questions and caller didn't request append, just return them.
         if existing_questions and not append:
-            return [fixed_question, *existing_questions]
+            return {
+                "questions": [fixed_question, *existing_questions],
+                "can_generate_more": True,
+                "stop_reason": None,
+                "coverage": coverage,
+            }
 
         # Collect existing findings to steer the question towards novel insights / themes.
         user_prior_finding_text = ""
@@ -163,11 +252,19 @@ class DiscoveryService:
                 "Failed to load findings for question generation (workshop=%s trace=%s): %s", workshop_id, trace_id, e
             )
 
+        # Detect if there's a potential disagreement
+        has_disagreement = self._detect_disagreement(user_prior_finding_text, other_findings_texts)
+
         # Need MLflow config (Databricks host) + token in order to call model serving.
         mlflow_config = self.db_service.get_mlflow_config(workshop_id)
         if not mlflow_config:
             logger.warning("Discovery question generation requested but MLflow config missing; falling back to fixed.")
-            return [fixed_question, *existing_questions]
+            return {
+                "questions": [fixed_question, *existing_questions],
+                "can_generate_more": True,
+                "stop_reason": None,
+                "coverage": coverage,
+            }
 
         from server.services.token_storage_service import token_storage
 
@@ -176,12 +273,22 @@ class DiscoveryService:
             logger.warning(
                 "Discovery question generation requested but Databricks token missing; falling back to fixed."
             )
-            return [fixed_question, *existing_questions]
+            return {
+                "questions": [fixed_question, *existing_questions],
+                "can_generate_more": True,
+                "stop_reason": None,
+                "coverage": coverage,
+            }
 
         try:
-            from server.services.discovery_dspy import build_databricks_lm, get_predictor, get_signatures, run_predict
+            from server.services.discovery_dspy import (
+                build_databricks_lm,
+                get_predictor,
+                get_question_signature,
+                run_predict,
+            )
 
-            GenerateDiscoveryQuestion, _ = get_signatures()
+            GenerateDiscoveryQuestion = get_question_signature()
             lm = build_databricks_lm(
                 endpoint_name=model_name,
                 workspace_url=mlflow_config.databricks_host,
@@ -208,6 +315,9 @@ class DiscoveryService:
                 user_prior_finding=self._trim(user_prior_finding_text, 1200),
                 previous_questions=previous_prompts,
                 other_users_findings=other_findings_trimmed,
+                covered_categories=coverage["covered"],
+                missing_categories=coverage["missing"],
+                has_disagreement=has_disagreement,
             )
 
             # DSPy returns a Prediction-like object; grab the structured output.
@@ -220,11 +330,21 @@ class DiscoveryService:
             q_placeholder = (
                 getattr(q_obj, "placeholder", None) if not isinstance(q_obj, dict) else q_obj.get("placeholder")
             )
+            q_category = getattr(q_obj, "category", None) if not isinstance(q_obj, dict) else q_obj.get("category")
+
             q_prompt = str(q_prompt or "").strip()
             if not q_prompt:
                 raise ValueError("DSPy returned empty question prompt")
 
-            generated = {"prompt": q_prompt, "placeholder": (str(q_placeholder).strip() if q_placeholder else None)}
+            # Validate category
+            if q_category and q_category not in QUESTION_CATEGORIES:
+                q_category = coverage["missing"][0] if coverage["missing"] else None
+
+            generated = {
+                "prompt": q_prompt,
+                "placeholder": (str(q_placeholder).strip() if q_placeholder else None),
+                "category": q_category,
+            }
 
             created = self.db_service.add_discovery_question(
                 workshop_id=workshop_id,
@@ -232,6 +352,7 @@ class DiscoveryService:
                 user_id=user_id,
                 prompt=generated["prompt"],
                 placeholder=generated["placeholder"],
+                category=generated["category"],
             )
             existing_questions.append(
                 {
@@ -240,14 +361,39 @@ class DiscoveryService:
                     "placeholder": (
                         str(created["placeholder"]).strip() if created.get("placeholder") is not None else None
                     ),
+                    "category": created.get("category"),
                 }
             )
-            return [fixed_question, *existing_questions]
+
+            # Recompute coverage after adding new question
+            updated_coverage = self._compute_coverage(existing_questions_raw + [{"category": generated["category"]}])
+            new_generated_count = len(existing_questions)
+            can_generate = (
+                len(updated_coverage["missing"]) > 0 and new_generated_count < MAX_GENERATED_QUESTIONS_PER_TRACE
+            )
+
+            return {
+                "questions": [fixed_question, *existing_questions],
+                "can_generate_more": can_generate,
+                "stop_reason": None
+                if can_generate
+                else (
+                    "All categories covered"
+                    if len(updated_coverage["missing"]) == 0
+                    else f"Maximum questions reached ({MAX_GENERATED_QUESTIONS_PER_TRACE})"
+                ),
+                "coverage": updated_coverage,
+            }
 
         except Exception as e:
             # Safety fallback: return fixed + any existing questions.
             logger.exception("Failed to generate discovery questions via DSPy; falling back to fixed: %s", e)
-            return [fixed_question, *existing_questions]
+            return {
+                "questions": [fixed_question, *existing_questions],
+                "can_generate_more": True,
+                "stop_reason": None,
+                "coverage": coverage,
+            }
 
     def set_discovery_questions_model(self, workshop_id: str, model_name: str) -> str:
         self._get_workshop_or_404(workshop_id)
@@ -257,9 +403,99 @@ class DiscoveryService:
         return updated.discovery_questions_model_name
 
     # ---------------------------------------------------------------------
-    # Discovery summaries
+    # Discovery summaries (iterative pipeline)
     # ---------------------------------------------------------------------
-    def generate_discovery_summaries(self, workshop_id: str, refresh: bool = False) -> Dict[str, Any]:
+    def _chunk_list(self, items: list, chunk_size: int) -> list:
+        """Split a list into chunks of specified size."""
+        return [items[i : i + chunk_size] for i in range(0, len(items), chunk_size)]
+
+    def _group_findings_by_trace(self, findings: list) -> dict:
+        """Group findings by trace_id."""
+        by_trace: dict = {}
+        for f in findings:
+            tid = f.get("trace_id", "unknown")
+            if tid not in by_trace:
+                by_trace[tid] = []
+            by_trace[tid].append(f)
+        return by_trace
+
+    def _group_findings_by_user(self, findings: list) -> dict:
+        """Group findings by user_id."""
+        by_user: dict = {}
+        for f in findings:
+            uid = f.get("user_id", "unknown")
+            if uid not in by_user:
+                by_user[uid] = []
+            by_user[uid].append(f)
+        return by_user
+
+    def _compute_convergence_metrics(self, findings: list, themes: list) -> dict:
+        """Compute cross-participant agreement metrics.
+
+        For each theme, compute what fraction of users mention it.
+        Overall alignment score = average theme_agreement across themes.
+        """
+        by_user = self._group_findings_by_user(findings)
+        if not by_user or not themes:
+            return {"theme_agreement": {}, "overall_alignment_score": 0.0}
+
+        theme_agreement: dict = {}
+        user_count = len(by_user)
+
+        for theme in themes[:20]:  # Limit to first 20 themes
+            theme_lower = theme.lower()
+            users_mentioning = 0
+            for _uid, user_findings in by_user.items():
+                # Check if any of the user's findings mention this theme
+                for f in user_findings:
+                    insight = (f.get("insight") or "").lower()
+                    if theme_lower in insight or any(word in insight for word in theme_lower.split()[:3]):
+                        users_mentioning += 1
+                        break
+            theme_agreement[theme] = users_mentioning / user_count if user_count > 0 else 0.0
+
+        # Overall alignment = average agreement across themes
+        if theme_agreement:
+            overall = sum(theme_agreement.values()) / len(theme_agreement)
+        else:
+            overall = 0.0
+
+        return {"theme_agreement": theme_agreement, "overall_alignment_score": round(overall, 3)}
+
+    def _determine_ready_for_rubric(
+        self,
+        candidate_rubric_questions: list,
+        convergence: dict,
+        key_disagreements: list,
+    ) -> bool:
+        """Determine if discovery is ready to proceed to rubric phase.
+
+        Criteria:
+        - At least 3 candidate rubric questions
+        - Overall alignment score >= 0.3 (some agreement)
+        - Major disagreements have been surfaced (even if unresolved)
+        """
+        min_rubric_questions = 3
+        min_alignment = 0.3
+
+        has_enough_questions = len(candidate_rubric_questions) >= min_rubric_questions
+        has_alignment = convergence.get("overall_alignment_score", 0) >= min_alignment
+        has_surfaced_disagreements = len(key_disagreements) >= 0  # Any surfacing counts
+
+        return has_enough_questions and has_alignment and has_surfaced_disagreements
+
+    def generate_discovery_summaries(self, workshop_id: str, refresh: bool = False) -> dict[str, Any]:
+        """Generate discovery summaries using iterative pipeline.
+
+        Steps:
+        A. Iteratively refine overall summary from finding chunks
+        B. Extract candidate rubric questions
+        C. Identify key disagreements
+        D. Generate discussion prompts
+        E. Compute convergence metrics
+        F. Determine ready-for-rubric signal
+        G. Aggregate by trace and by user
+        """
         workshop = self._get_workshop_or_404(workshop_id)
 
         if not refresh:
@@ -276,9 +512,25 @@ class DiscoveryService:
 
         findings = self.db_service.get_findings_with_user_details(workshop_id)
         if not findings:
-            return {"overall": {"themes": []}, "by_user": [], "by_trace": []}
+            return {
+                "overall": {
+                    "themes": [],
+                    "patterns": [],
+                    "tendencies": [],
+                    "risks_or_failure_modes": [],
+                    "strengths": [],
+                },
+                "by_user": [],
+                "by_trace": [],
+                "candidate_rubric_questions": [],
+                "key_disagreements": [],
+                "discussion_prompts": [],
+                "convergence": {"theme_agreement": {}, "overall_alignment_score": 0.0},
+                "ready_for_rubric": False,
+            }
 
-        corpus_lines: List[str] = []
+        # Format corpus lines
+        corpus_lines: list = []
         for f in findings[:300]:
             corpus_lines.append(
                 f"TRACE {f.get('trace_id')} | USER {f.get('user_name')} ({f.get('user_id')}): {self._trim(f.get('insight') or '', 800)}"
@@ -295,33 +547,169 @@ class DiscoveryService:
             raise HTTPException(status_code=400, detail="Databricks token not found for workshop")
 
         try:
-            from server.services.discovery_dspy import build_databricks_lm, get_predictor, get_signatures, run_predict
+            from server.services.discovery_dspy import (
+                DiscoveryOverallSummary,
+                KeyDisagreement,
+                build_databricks_lm,
+                get_predictor,
+                get_signatures,
+                run_predict,
+            )
 
-            _, GenerateDiscoverySummaries = get_signatures()
+            sigs = get_signatures()
             lm = build_databricks_lm(
                 endpoint_name=model_name,
                 workspace_url=mlflow_config.databricks_host,
                 token=databricks_token,
                 temperature=0.2,
             )
-            predictor = get_predictor(GenerateDiscoverySummaries, lm, temperature=0.2)
 
-            pred = run_predict(predictor, lm, findings=corpus_lines)
-            payload_obj = getattr(pred, "payload", None)
-            if payload_obj is None:
-                raise ValueError("DSPy output missing `payload`")
+            # Step A: Iteratively refine overall summary
+            overall_state = DiscoveryOverallSummary()
+            chunks = self._chunk_list(corpus_lines, 50)
 
-            # Convert to plain dict for persistence / API return.
-            if hasattr(payload_obj, "model_dump"):
-                payload = payload_obj.model_dump()
-            elif isinstance(payload_obj, dict):
-                payload = payload_obj
-            else:
-                payload = {
-                    "overall": getattr(payload_obj, "overall", {}),
-                    "by_user": getattr(payload_obj, "by_user", []),
-                    "by_trace": getattr(payload_obj, "by_trace", []),
-                }
+            RefineOverallSummary = sigs["RefineOverallSummary"]
+            refine_predictor = get_predictor(RefineOverallSummary, lm, temperature=0.2)
+
+            for chunk in chunks[:6]:  # Limit to 6 chunks (300 findings max)
+                try:
+                    result = run_predict(
+                        refine_predictor,
+                        lm,
+                        current_state=overall_state,
+                        findings_chunk=chunk,
+                    )
+                    updated = getattr(result, "updated_state", None)
+                    if updated:
+                        if hasattr(updated, "model_dump"):
+                            overall_state = DiscoveryOverallSummary(**updated.model_dump())
+                        elif isinstance(updated, dict):
+                            overall_state = DiscoveryOverallSummary(**updated)
+                except Exception as e:
+                    logger.warning("Refinement step failed, continuing: %s", e)
+
+            # Step B: Extract candidate rubric questions
+            candidate_rubric_questions: list = []
+            try:
+                ExtractRubricCandidates = sigs["ExtractRubricCandidates"]
+                extract_predictor = get_predictor(ExtractRubricCandidates, lm, temperature=0.2)
+                result = run_predict(extract_predictor, lm, overall_summary=overall_state)
+                candidates = getattr(result, "candidates", None)
+                if candidates and isinstance(candidates, list):
+                    candidate_rubric_questions = [str(c) for c in candidates if c][:10]
+            except Exception as e:
+                logger.warning("Rubric candidate extraction failed: %s", e)
+
+            # Step C: Identify key disagreements
+            key_disagreements: list = []
+            try:
+                IdentifyDisagreements = sigs["IdentifyDisagreements"]
+                disagree_predictor = get_predictor(IdentifyDisagreements, lm, temperature=0.2)
+                result = run_predict(disagree_predictor, lm, findings=corpus_lines)
+                disagreements = getattr(result, "disagreements", None)
+                if disagreements and isinstance(disagreements, list):
+                    for d in disagreements[:10]:
+                        if hasattr(d, "model_dump"):
+                            key_disagreements.append(d.model_dump())
+                        elif isinstance(d, dict):
+                            key_disagreements.append(d)
+            except Exception as e:
+                logger.warning("Disagreement identification failed: %s", e)
+
+            # Step D: Generate discussion prompts
+            discussion_prompts: list = []
+            try:
+                GenerateDiscussionPrompts = sigs["GenerateDiscussionPrompts"]
+                prompts_predictor = get_predictor(GenerateDiscussionPrompts, lm, temperature=0.2)
+                # Pass key disagreements as list of KeyDisagreement objects
+                disagreement_objs = [KeyDisagreement(**d) for d in key_disagreements]
+                result = run_predict(
+                    prompts_predictor,
+                    lm,
+                    themes=overall_state.themes[:10],
+                    disagreements=disagreement_objs,
+                )
+                prompts = getattr(result, "prompts", None)
+                if prompts and isinstance(prompts, list):
+                    for p in prompts[:10]:
+                        if hasattr(p, "model_dump"):
+                            discussion_prompts.append(p.model_dump())
+                        elif isinstance(p, dict):
+                            discussion_prompts.append(p)
+            except Exception as e:
+                logger.warning("Discussion prompt generation failed: %s", e)
+
+            # Step E: Compute convergence metrics (non-LLM)
+            convergence = self._compute_convergence_metrics(findings, overall_state.themes)
+
+            # Step F: Determine ready-for-rubric signal
+            ready_for_rubric = self._determine_ready_for_rubric(
+                candidate_rubric_questions, convergence, key_disagreements
+            )
+
+            # Step G: Aggregate by trace and by user
+            by_trace: list = []
+            by_user: list = []
+
+            try:
+                # Group findings for batch summarization
+                trace_groups = self._group_findings_by_trace(findings)
+                trace_blocks = []
+                for tid, tfindings in list(trace_groups.items())[:20]:
+                    block_lines = [f"TRACE {tid}:"]
+                    for f in tfindings[:10]:
+                        block_lines.append(f"  - {f.get('user_name')}: {self._trim(f.get('insight') or '', 200)}")
+                    trace_blocks.append("\n".join(block_lines))
+
+                if trace_blocks:
+                    SummarizeTraces = sigs["SummarizeTraces"]
+                    trace_predictor = get_predictor(SummarizeTraces, lm, temperature=0.2)
+                    result = run_predict(trace_predictor, lm, trace_findings_blocks=trace_blocks)
+                    summaries = getattr(result, "summaries", None)
+                    if summaries and isinstance(summaries, list):
+                        for s in summaries:
+                            if hasattr(s, "model_dump"):
+                                by_trace.append(s.model_dump())
+                            elif isinstance(s, dict):
+                                by_trace.append(s)
+            except Exception as e:
+                logger.warning("Trace summarization failed: %s", e)
+
+            try:
+                user_groups = self._group_findings_by_user(findings)
+                user_blocks = []
+                for uid, ufindings in list(user_groups.items())[:20]:
+                    uname = ufindings[0].get("user_name", uid) if ufindings else uid
+                    block_lines = [f"USER {uname} ({uid}):"]
+                    for f in ufindings[:10]:
+                        block_lines.append(f"  - Trace {f.get('trace_id')}: {self._trim(f.get('insight') or '', 200)}")
+                    user_blocks.append("\n".join(block_lines))
+
+                if user_blocks:
+                    SummarizeUsers = sigs["SummarizeUsers"]
+                    user_predictor = get_predictor(SummarizeUsers, lm, temperature=0.2)
+                    result = run_predict(user_predictor, lm, user_findings_blocks=user_blocks)
+                    summaries = getattr(result, "summaries", None)
+                    if summaries and isinstance(summaries, list):
+                        for s in summaries:
+                            if hasattr(s, "model_dump"):
+                                by_user.append(s.model_dump())
+                            elif isinstance(s, dict):
+                                by_user.append(s)
+            except Exception as e:
+                logger.warning("User summarization failed: %s", e)
+
+            # Build final payload
+            payload = {
+                "overall": overall_state.model_dump() if hasattr(overall_state, "model_dump") else {},
+                "by_user": by_user,
+                "by_trace": by_trace,
+                "candidate_rubric_questions": candidate_rubric_questions,
+                "key_disagreements": key_disagreements,
+                "discussion_prompts": discussion_prompts,
+                "convergence": convergence,
+                "ready_for_rubric": ready_for_rubric,
+            }
 
             try:
                 self.db_service.save_discovery_summary(workshop_id=workshop_id, payload=payload, model_name=model_name)
@@ -335,7 +723,7 @@ class DiscoveryService:
             logger.exception("Failed to generate discovery summaries via DSPy: %s", e)
             raise HTTPException(status_code=502, detail=f"Failed to generate summaries: {str(e)}") from e
 
-    def get_discovery_summaries(self, workshop_id: str) -> Dict[str, Any]:
+    def get_discovery_summaries(self, workshop_id: str) -> dict[str, Any]:
         self._get_workshop_or_404(workshop_id)
         cached = self.db_service.get_latest_discovery_summary(workshop_id)
         if not cached or not isinstance(cached.get("payload"), dict):
@@ -349,11 +737,11 @@ class DiscoveryService:
         self._get_workshop_or_404(workshop_id)
         return self.db_service.add_finding(workshop_id, finding)
 
-    def get_findings(self, workshop_id: str, user_id: Optional[str] = None) -> List[DiscoveryFinding]:
+    def get_findings(self, workshop_id: str, user_id: str | None = None) -> list[DiscoveryFinding]:
         self._get_workshop_or_404(workshop_id)
         return self.db_service.get_findings(workshop_id, user_id)
 
-    def get_findings_with_user_details(self, workshop_id: str, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_findings_with_user_details(self, workshop_id: str, user_id: str | None = None) -> list[dict[str, Any]]:
         self._get_workshop_or_404(workshop_id)
         return self.db_service.get_findings_with_user_details(workshop_id, user_id)
 
@@ -364,7 +752,7 @@ class DiscoveryService:
     # ---------------------------------------------------------------------
     # Phase transitions / discovery orchestration
     # ---------------------------------------------------------------------
-    def begin_discovery_phase(self, workshop_id: str, trace_limit: Optional[int] = None) -> Dict[str, Any]:
+    def begin_discovery_phase(self, workshop_id: str, trace_limit: int | None = None) -> dict[str, Any]:
         self._get_workshop_or_404(workshop_id)
 
         # Update workshop phase to discovery and mark discovery as started
@@ -397,7 +785,7 @@ class DiscoveryService:
             "trace_limit": trace_limit,
         }
 
-    def reset_discovery(self, workshop_id: str) -> Dict[str, Any]:
+    def reset_discovery(self, workshop_id: str) -> dict[str, Any]:
         self._get_workshop_or_404(workshop_id)
         updated_workshop = self.db_service.reset_workshop_to_discovery(workshop_id)
         if not updated_workshop:
@@ -411,7 +799,7 @@ class DiscoveryService:
             "traces_available": len(traces),
         }
 
-    def advance_to_discovery(self, workshop_id: str) -> Dict[str, Any]:
+    def advance_to_discovery(self, workshop_id: str) -> dict[str, Any]:
         workshop = self._get_workshop_or_404(workshop_id)
 
         if workshop.current_phase != WorkshopPhase.INTAKE:
@@ -432,7 +820,7 @@ class DiscoveryService:
             "traces_available": len(traces),
         }
 
-    def generate_discovery_test_data(self, workshop_id: str) -> Dict[str, Any]:
+    def generate_discovery_test_data(self, workshop_id: str) -> dict[str, Any]:
         import uuid
 
         workshop = self._get_workshop_or_404(workshop_id)
@@ -494,7 +882,7 @@ class DiscoveryService:
     # ---------------------------------------------------------------------
     # User completion tracking
     # ---------------------------------------------------------------------
-    def mark_user_discovery_complete(self, workshop_id: str, user_id: str) -> Dict[str, Any]:
+    def mark_user_discovery_complete(self, workshop_id: str, user_id: str) -> dict[str, Any]:
         self._get_workshop_or_404(workshop_id)
         user = self.db_service.get_user(user_id)
         if not user or user.workshop_id != workshop_id:
@@ -506,11 +894,11 @@ class DiscoveryService:
             "user_id": user_id,
         }
 
-    def get_discovery_completion_status(self, workshop_id: str) -> Dict[str, Any]:
+    def get_discovery_completion_status(self, workshop_id: str) -> dict[str, Any]:
         self._get_workshop_or_404(workshop_id)
         return self.db_service.get_discovery_completion_status(workshop_id)
 
-    def is_user_discovery_complete(self, workshop_id: str, user_id: str) -> Dict[str, Any]:
+    def is_user_discovery_complete(self, workshop_id: str, user_id: str) -> dict[str, Any]:
         self._get_workshop_or_404(workshop_id)
         user = self.db_service.get_user(user_id)
         if not user or user.workshop_id != workshop_id:

@@ -25,12 +25,23 @@ class DiscoveryQuestion(BaseModel):
     id: str
     prompt: str
     placeholder: Optional[str] = None
+    category: Optional[str] = None
+
+
+class DiscoveryCoverage(BaseModel):
+    """Coverage state for discovery questions."""
+
+    covered: List[str]
+    missing: List[str]
 
 
 class DiscoveryQuestionsResponse(BaseModel):
-    """Response model for discovery questions."""
+    """Response model for discovery questions with coverage metadata."""
 
     questions: List[DiscoveryQuestion]
+    can_generate_more: bool = True
+    stop_reason: Optional[str] = None
+    coverage: DiscoveryCoverage
 
 
 class DiscoveryQuestionsModelConfig(BaseModel):
@@ -39,12 +50,39 @@ class DiscoveryQuestionsModelConfig(BaseModel):
     model_name: str
 
 
+class KeyDisagreementResponse(BaseModel):
+    """A disagreement between participants."""
+
+    theme: str
+    trace_ids: List[str] = []
+    viewpoints: List[str] = []
+
+
+class DiscussionPromptResponse(BaseModel):
+    """A facilitator discussion prompt."""
+
+    theme: str
+    prompt: str
+
+
+class ConvergenceMetricsResponse(BaseModel):
+    """Cross-participant agreement metrics."""
+
+    theme_agreement: Dict[str, float] = {}
+    overall_alignment_score: float = 0.0
+
+
 class DiscoverySummariesResponse(BaseModel):
     """LLM-generated summaries of discovery findings for facilitators."""
 
     overall: Dict[str, Any]
     by_user: List[Dict[str, Any]]
     by_trace: List[Dict[str, Any]]
+    candidate_rubric_questions: List[str] = []
+    key_disagreements: List[KeyDisagreementResponse] = []
+    discussion_prompts: List[DiscussionPromptResponse] = []
+    convergence: ConvergenceMetricsResponse = ConvergenceMetricsResponse()
+    ready_for_rubric: bool = False
 
 
 @router.get(
@@ -59,8 +97,13 @@ async def get_discovery_questions(
     db: Session = Depends(get_db),
 ) -> DiscoveryQuestionsResponse:
     svc = DiscoveryService(db)
-    questions = svc.get_discovery_questions(workshop_id=workshop_id, trace_id=trace_id, user_id=user_id, append=append)
-    return DiscoveryQuestionsResponse(questions=[DiscoveryQuestion(**q) for q in questions])
+    result = svc.get_discovery_questions(workshop_id=workshop_id, trace_id=trace_id, user_id=user_id, append=append)
+    return DiscoveryQuestionsResponse(
+        questions=[DiscoveryQuestion(**q) for q in result["questions"]],
+        can_generate_more=result.get("can_generate_more", True),
+        stop_reason=result.get("stop_reason"),
+        coverage=DiscoveryCoverage(**result.get("coverage", {"covered": [], "missing": []})),
+    )
 
 
 @router.put("/{workshop_id}/discovery-questions-model")
@@ -74,28 +117,53 @@ async def update_discovery_questions_model(
     return {"message": "Discovery questions model updated", "model_name": model_name}
 
 
+def _build_summaries_response(payload: Dict[str, Any]) -> DiscoverySummariesResponse:
+    """Build a DiscoverySummariesResponse from a payload dict."""
+    # Parse key_disagreements
+    key_disagreements = []
+    for d in payload.get("key_disagreements") or []:
+        if isinstance(d, dict):
+            key_disagreements.append(KeyDisagreementResponse(**d))
+
+    # Parse discussion_prompts
+    discussion_prompts = []
+    for p in payload.get("discussion_prompts") or []:
+        if isinstance(p, dict):
+            discussion_prompts.append(DiscussionPromptResponse(**p))
+
+    # Parse convergence
+    convergence_data = payload.get("convergence") or {}
+    if isinstance(convergence_data, dict):
+        convergence = ConvergenceMetricsResponse(**convergence_data)
+    else:
+        convergence = ConvergenceMetricsResponse()
+
+    return DiscoverySummariesResponse(
+        overall=payload.get("overall") or {},
+        by_user=payload.get("by_user") or [],
+        by_trace=payload.get("by_trace") or [],
+        candidate_rubric_questions=payload.get("candidate_rubric_questions") or [],
+        key_disagreements=key_disagreements,
+        discussion_prompts=discussion_prompts,
+        convergence=convergence,
+        ready_for_rubric=payload.get("ready_for_rubric", False),
+    )
+
+
 @router.post("/{workshop_id}/discovery-summaries", response_model=DiscoverySummariesResponse)
 async def generate_discovery_summaries(
     workshop_id: str, refresh: bool = False, db: Session = Depends(get_db)
 ) -> DiscoverySummariesResponse:
     svc = DiscoveryService(db)
     payload = svc.generate_discovery_summaries(workshop_id=workshop_id, refresh=refresh)
-    return DiscoverySummariesResponse(
-        overall=payload.get("overall") or {},
-        by_user=payload.get("by_user") or [],
-        by_trace=payload.get("by_trace") or [],
-    )
+    return _build_summaries_response(payload)
 
 
 @router.get("/{workshop_id}/discovery-summaries", response_model=DiscoverySummariesResponse)
 async def get_discovery_summaries(workshop_id: str, db: Session = Depends(get_db)) -> DiscoverySummariesResponse:
     svc = DiscoveryService(db)
     payload = svc.get_discovery_summaries(workshop_id=workshop_id)
-    return DiscoverySummariesResponse(
-        overall=payload.get("overall") or {},
-        by_user=payload.get("by_user") or [],
-        by_trace=payload.get("by_trace") or [],
-    )
+    return _build_summaries_response(payload)
 
 
 @router.post("/{workshop_id}/findings", response_model=DiscoveryFinding)

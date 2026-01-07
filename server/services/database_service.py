@@ -621,6 +621,7 @@ class DatabaseService:
                 "id": r.question_id,
                 "prompt": r.prompt,
                 "placeholder": r.placeholder,
+                "category": getattr(r, "category", None),
                 "created_at": r.created_at,
             }
             for r in rows
@@ -633,6 +634,7 @@ class DatabaseService:
         user_id: str,
         prompt: str,
         placeholder: Optional[str] = None,
+        category: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Append a new generated discovery question for a specific (workshop, trace, user)."""
         # Compute next stable question_id, reserving q_1 for the fixed baseline question.
@@ -664,6 +666,7 @@ class DatabaseService:
             question_id=question_id,
             prompt=prompt,
             placeholder=placeholder,
+            category=category,
         )
         self.db.add(row)
         self.db.commit()
@@ -673,6 +676,7 @@ class DatabaseService:
             "id": row.question_id,
             "prompt": row.prompt,
             "placeholder": row.placeholder,
+            "category": row.category,
             "created_at": row.created_at,
         }
 

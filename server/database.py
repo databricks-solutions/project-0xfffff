@@ -234,6 +234,7 @@ class DiscoveryQuestionDB(Base):
     question_id = Column(String, nullable=False)  # Stable ID per (user, trace), e.g. "q_1"
     prompt = Column(Text, nullable=False)
     placeholder = Column(Text, nullable=True)
+    category = Column(String, nullable=True)  # Coverage category: themes, edge_cases, boundary_conditions, failure_modes, missing_info, disagreements
     created_at = Column(DateTime, default=func.now())
 
 
