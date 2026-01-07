@@ -158,6 +158,7 @@ class Workshop(BaseModel):
   discovery_randomize_traces: bool = False  # Whether to randomize trace order in discovery
   annotation_randomize_traces: bool = False  # Whether to randomize trace order in annotation
   judge_name: str = 'workshop_judge'  # Name used for MLflow feedback entries
+  discovery_questions_model_name: str = 'demo'  # LLM model/endpoint for discovery question generation
   created_at: datetime = Field(default_factory=datetime.now)
 
 

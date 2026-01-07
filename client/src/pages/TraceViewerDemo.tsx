@@ -35,6 +35,62 @@ const convertTraceToTraceData = (trace: Trace): TraceData => ({
   mlflow_experiment_id: trace.mlflow_experiment_id || undefined
 });
 
+type DiscoveryQuestion = {
+  id: string;
+  prompt: string;
+  placeholder?: string | null;
+};
+
+type DiscoveryQuestionsResponse = {
+  questions: DiscoveryQuestion[];
+};
+
+const QA_DELIMITER = '\n\n---\n\n';
+
+function parseInsightToResponses(insight: string): Record<string, string> {
+  const text = (insight || '').trim();
+  if (!text) return {};
+
+  // New format: repeated blocks
+  // QID: q_1
+  // Q: ...
+  // A: ...
+  if (text.includes('QID:') && text.includes('\nA:')) {
+    const blocks = text.split(QA_DELIMITER);
+    const out: Record<string, string> = {};
+    for (const block of blocks) {
+      const qidMatch = block.match(/^QID:\s*(.+)$/m);
+      const qid = (qidMatch?.[1] || '').trim();
+      if (!qid) continue;
+      const answerIdx = block.indexOf('\nA:');
+      if (answerIdx === -1) continue;
+      const answer = block.slice(answerIdx + 4).trim(); // after "\nA:"
+      out[qid] = answer;
+    }
+    return out;
+  }
+
+  // Legacy format: Quality/Improvement
+  const parts = text.split('\n\nImprovement Analysis: ');
+  if (parts.length === 2) {
+    const qualityPart = parts[0].replace('Quality Assessment: ', '');
+    const improvementPart = parts[1];
+    return { q_1: qualityPart, q_2: improvementPart };
+  }
+
+  // Fallback: treat as a single answer
+  return { q_1: text };
+}
+
+function serializeResponsesToInsight(questions: DiscoveryQuestion[], responses: Record<string, string>): string {
+  if (!questions.length) return '';
+  const blocks = questions.map((q) => {
+    const answer = (responses[q.id] || '').trim();
+    return `QID: ${q.id}\nQ: ${q.prompt}\nA: ${answer}`;
+  });
+  return blocks.join(QA_DELIMITER);
+}
+
 export function TraceViewerDemo() {
   const { workshopId } = useWorkshopContext();
   const { currentPhase } = useWorkflowContext();
@@ -78,13 +134,15 @@ export function TraceViewerDemo() {
     );
   }
   const [currentTraceIndex, setCurrentTraceIndex] = useState(0);
-  const [question1Response, setQuestion1Response] = useState('');
-  const [question2Response, setQuestion2Response] = useState('');
+  const [responsesByQuestionId, setResponsesByQuestionId] = useState<Record<string, string>>({});
   const [submittedFindings, setSubmittedFindings] = useState<Set<string>>(new Set());
   const [isCompletingDiscovery, setIsCompletingDiscovery] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isNavigating, setIsNavigating] = useState(false);
   const [showTableView, setShowTableView] = useState(false);
+  const [discoveryQuestions, setDiscoveryQuestions] = useState<DiscoveryQuestion[]>([]);
+  const [discoveryQuestionsLoading, setDiscoveryQuestionsLoading] = useState(false);
+  const [discoveryQuestionsError, setDiscoveryQuestionsError] = useState<string | null>(null);
   const previousTraceId = useRef<string | null>(null);
   const hasAutoNavigated = useRef(false);
   const previousTraceCount = useRef<number>(0);
@@ -105,6 +163,61 @@ export function TraceViewerDemo() {
   }, [traces]);
   const currentTrace = traceData[currentTraceIndex];
   
+  // Fetch discovery questions for this specific user + trace
+  useEffect(() => {
+    if (!workshopId || !user?.id || !currentTrace?.id) return;
+
+    const controller = new AbortController();
+    setDiscoveryQuestionsLoading(true);
+    setDiscoveryQuestionsError(null);
+
+    const url = `/workshops/${workshopId}/traces/${currentTrace.id}/discovery-questions?user_id=${encodeURIComponent(user.id)}`;
+
+    fetch(url, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({ detail: 'Failed to fetch discovery questions' }));
+          throw new Error(error.detail || 'Failed to fetch discovery questions');
+        }
+        return response.json() as Promise<DiscoveryQuestionsResponse>;
+      })
+      .then((data) => {
+        setDiscoveryQuestions(Array.isArray(data?.questions) ? data.questions : []);
+      })
+      .catch((err: any) => {
+        if (err?.name === 'AbortError') return;
+        console.error('Failed to fetch discovery questions:', err);
+        setDiscoveryQuestions([]);
+        setDiscoveryQuestionsError(err?.message || 'Failed to fetch discovery questions');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setDiscoveryQuestionsLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [workshopId, user?.id, currentTrace?.id]);
+
+  const appendDiscoveryQuestion = async () => {
+    if (!workshopId || !user?.id || !currentTrace?.id) return;
+    setDiscoveryQuestionsLoading(true);
+    setDiscoveryQuestionsError(null);
+    try {
+      const url = `/workshops/${workshopId}/traces/${currentTrace.id}/discovery-questions?user_id=${encodeURIComponent(user.id)}&append=true`;
+      const response = await fetch(url);
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to generate another question' }));
+        throw new Error(error.detail || 'Failed to generate another question');
+      }
+      const data = (await response.json()) as DiscoveryQuestionsResponse;
+      setDiscoveryQuestions(Array.isArray(data?.questions) ? data.questions : []);
+    } catch (err: any) {
+      console.error('Failed to append discovery question:', err);
+      setDiscoveryQuestionsError(err?.message || 'Failed to generate another question');
+    } finally {
+      setDiscoveryQuestionsLoading(false);
+    }
+  };
+
   // Check if discovery phase is complete
   const allTracesHaveFindings = traceData.length > 0 && traceData.every(trace => submittedFindings.has(trace.id));
   const isDiscoveryComplete = allTracesHaveFindings && submittedFindings.size === traceData.length;
@@ -114,15 +227,7 @@ export function TraceViewerDemo() {
     if (existingFindings && existingFindings.length > 0) {
       existingFindings.forEach(finding => {
         const insight = finding.insight || '';
-        const parts = insight.split('\n\nImprovement Analysis: ');
-        if (parts.length === 2) {
-          const qualityPart = parts[0].replace('Quality Assessment: ', '');
-          const improvementPart = parts[1];
-          savedStateRef.current.set(finding.trace_id, { q1: qualityPart, q2: improvementPart });
-        } else {
-          // Couldn't parse, treat as raw text
-          savedStateRef.current.set(finding.trace_id, { q1: insight, q2: '' });
-        }
+        savedStateRef.current.set(finding.trace_id, insight);
       });
     }
   }, [existingFindings?.length]); // Only run when findings count changes
@@ -134,34 +239,33 @@ export function TraceViewerDemo() {
       const existingFinding = existingFindings?.find(finding => finding.trace_id === currentTrace.id);
       
       if (existingFinding) {
-        // Parse and populate the existing finding text
         const insight = existingFinding.insight || '';
-        const parts = insight.split('\n\nImprovement Analysis: ');
-        if (parts.length === 2) {
-          const qualityPart = parts[0].replace('Quality Assessment: ', '');
-          const improvementPart = parts[1];
-          setQuestion1Response(qualityPart);
-          setQuestion2Response(improvementPart);
-        } else {
-          // Couldn't parse, treat as raw text
-          setQuestion1Response(insight);
-          setQuestion2Response('');
-        }
+        setResponsesByQuestionId(parseInsightToResponses(insight));
       } else {
-        // Clear responses for new trace
-        setQuestion1Response('');
-        setQuestion2Response('');
+        setResponsesByQuestionId({});
       }
       
       previousTraceId.current = currentTrace.id;
     }
   }, [currentTrace?.id, existingFindings]);
 
+  // Ensure we have response keys for all questions
+  useEffect(() => {
+    if (!discoveryQuestions.length) return;
+    setResponsesByQuestionId(prev => {
+      const next = { ...prev };
+      for (const q of discoveryQuestions) {
+        if (next[q.id] === undefined) next[q.id] = '';
+      }
+      return next;
+    });
+  }, [discoveryQuestions]);
+
   // Navigate to first incomplete trace (only on initial load) and handle trace additions
   useEffect(() => {
     if (existingFindings && traceData.length > 0) {
       const validTraceIds = new Set(traceData.map(t => t.id));
-      const completedTraceIds = new Set(existingFindings
+      const completedTraceIds = new Set<string>(existingFindings
         .filter(f => validTraceIds.has(f.trace_id))  // Only count findings for current traces
         .map(f => f.trace_id)
       );
@@ -202,7 +306,7 @@ export function TraceViewerDemo() {
   useEffect(() => {
     if (existingFindings && traceData.length > 0) {
       const validTraceIds = new Set(traceData.map(t => t.id));
-      const completedTraceIds = new Set(existingFindings
+      const completedTraceIds = new Set<string>(existingFindings
         .filter(f => validTraceIds.has(f.trace_id))  // Only count findings for current traces
         .map(f => f.trace_id)
       );
@@ -222,7 +326,7 @@ export function TraceViewerDemo() {
 
   
   // Track saved state per trace (better than global refs)
-  const savedStateRef = useRef<Map<string, { q1: string; q2: string }>>(new Map());
+  const savedStateRef = useRef<Map<string, string>>(new Map());
   const savingTracesRef = useRef<Set<string>>(new Set()); // Track which traces are currently saving
   const isSavingRef = useRef(false); // Track if any user-initiated save is in progress
   const saveStatusRef = useRef<Map<string, 'saved' | 'saving' | 'failed'>>(new Map()); // Track save status per trace
@@ -250,15 +354,14 @@ export function TraceViewerDemo() {
   };
   
   // Save finding function - optimized to track state per trace
-  const saveFinding = useCallback(async (q1: string, q2: string, traceId: string, isBackground: boolean = false): Promise<boolean> => {
-    // Allow saving if at least one field has content (both fields are not required)
-    if ((!q1.trim() && !q2.trim()) || !traceId) {
+  const saveFinding = useCallback(async (responses: Record<string, string>, traceId: string, isBackground: boolean = false): Promise<boolean> => {
+    const hasAnyContent = Object.values(responses || {}).some((v) => !!v && v.trim().length > 0);
+    if (!hasAnyContent || !traceId) {
       // No content to save, but this is not an error - return true to allow navigation
       return true;
     }
-    
-    const q1Trimmed = q1.trim();
-    const q2Trimmed = q2.trim();
+    const content = serializeResponsesToInsight(discoveryQuestions, responses);
+    const contentTrimmed = content.trim();
     
     // Check if this trace is already being saved (prevent duplicate saves)
     if (savingTracesRef.current.has(traceId)) {
@@ -275,14 +378,10 @@ export function TraceViewerDemo() {
       }
       
       // Check if content has actually changed from last saved for this trace
-      const savedState = savedStateRef.current.get(traceId);
-      if (savedState) {
-        const hasChanged = q1Trimmed !== savedState.q1 || q2Trimmed !== savedState.q2;
-        if (!hasChanged) {
+      const savedContent = savedStateRef.current.get(traceId);
+      if (savedContent !== undefined) {
+        if ((savedContent || '').trim() === contentTrimmed) {
           console.log(`No changes detected for trace ${traceId}, skipping save`);
-          // Even though we skip the save, ensure the trace is marked as submitted
-          // This fixes the issue where "Complete" doesn't record the last trace
-          setSubmittedFindings(prev => new Set([...prev, traceId]));
           return true; // No change needed, return success
         }
       }
@@ -299,29 +398,27 @@ export function TraceViewerDemo() {
     }
     
     try {
-      const content = `Quality Assessment: ${q1Trimmed}\n\nImprovement Analysis: ${q2Trimmed}`;
-      
-      console.log('Saving finding:', { traceId, q1Length: q1Trimmed.length, q2Length: q2Trimmed.length, isBackground });
+      console.log('Saving finding:', { traceId, length: contentTrimmed.length, isBackground });
       
       // Use retry logic for background saves, direct call for user-initiated saves
       if (isBackground) {
         await retryWithBackoff(() => submitFinding.mutateAsync({
           trace_id: traceId,
           user_id: user?.id || 'demo_user',
-          insight: content
+          insight: contentTrimmed
         }), 3, 1000); // 3 retries with exponential backoff
       } else {
         await submitFinding.mutateAsync({
           trace_id: traceId,
           user_id: user?.id || 'demo_user',
-          insight: content
+          insight: contentTrimmed
         });
       }
       
       setSubmittedFindings(prev => new Set([...prev, traceId]));
       
       // Update saved state for this trace AFTER successful save
-      savedStateRef.current.set(traceId, { q1: q1Trimmed, q2: q2Trimmed });
+      savedStateRef.current.set(traceId, contentTrimmed);
       if (isBackground) {
         saveStatusRef.current.set(traceId, 'saved');
       }
@@ -335,8 +432,7 @@ export function TraceViewerDemo() {
         response: error?.response?.data,
         status: error?.response?.status,
         traceId,
-        q1Length: q1Trimmed.length,
-        q2Length: q2Trimmed.length,
+        contentLength: contentTrimmed.length,
         isBackground
       });
       
@@ -359,23 +455,21 @@ export function TraceViewerDemo() {
     }
   }, [submitFinding, user?.id]);
   
-  // NOTE: Removed blur auto-save as it conflicts with button clicks
-  // The Next/Previous buttons already handle saving before navigation
+  // Handle blur on textareas - save immediately when user clicks away
+  const handleTextareaBlur = async () => {
+    if (!currentTrace) return;
+    await saveFinding(responsesByQuestionId, currentTrace.id);
+  };
   
-  // Track navigation using ref (more reliable than state for preventing double-clicks)
-  const isNavigatingRef = useRef(false);
-  
-  // Navigate to next trace - save first, then navigate
-  const nextTrace = async () => {
+  // Navigate to next trace - optimistic navigation with async background save
+  const nextTrace = () => {
     if (!currentTrace) {
       console.warn('nextTrace: No current trace');
       return;
     }
-    
-    // Use ref to prevent concurrent navigation (more reliable than React state)
-    if (isNavigatingRef.current) {
-      console.warn('nextTrace: Already navigating (ref check)');
-      return;
+    if (isNavigating) {
+      console.warn('nextTrace: Already navigating', { isNavigating });
+      return; // Prevent concurrent navigation
     }
     
     // Check if we can navigate
@@ -384,37 +478,47 @@ export function TraceViewerDemo() {
       return; // Already at last trace
     }
     
-    // Set navigating flag immediately using ref
-    isNavigatingRef.current = true;
+    console.log('nextTrace: Starting optimistic navigation', { currentTraceIndex, nextIndex: currentTraceIndex + 1 });
     setIsNavigating(true);
     
-    try {
-      // Store current trace data for save
-      const currentTraceId = currentTrace.id;
-      const q1ToSave = question1Response.trim();
-      const q2ToSave = question2Response.trim();
-      const hasContent = q1ToSave || q2ToSave;
-      
-      console.log('nextTrace: Starting navigation', { currentTraceIndex, nextIndex: currentTraceIndex + 1, hasContent });
-      
-      // Save FIRST if there's content (await to ensure it completes)
-      if (hasContent) {
-        console.log('nextTrace: Saving content before navigation', { traceId: currentTraceId });
-        await saveFinding(q1ToSave, q2ToSave, currentTraceId, true);
-        console.log('nextTrace: Save completed for trace:', currentTraceId);
-      }
-      
-      // Then navigate
-      const nextIndex = currentTraceIndex + 1;
-      setQuestion1Response('');
-      setQuestion2Response('');
-      setCurrentTraceIndex(nextIndex);
-      console.log('nextTrace: Navigated to index', nextIndex);
-      
-    } finally {
-      // Clear navigating flags
-      isNavigatingRef.current = false;
-      setIsNavigating(false);
+    // Store current trace data for background save
+    const currentTraceId = currentTrace.id;
+    const responsesToSave = responsesByQuestionId;
+    const hasContent = Object.values(responsesToSave || {}).some((v) => !!v && v.trim().length > 0);
+    
+    // Navigate immediately (optimistic)
+    const nextIndex = currentTraceIndex + 1;
+    console.log('nextTrace: Navigating to index', nextIndex);
+    
+    // Clear the responses for the new trace first
+    setResponsesByQuestionId({});
+    // Navigate synchronously
+    setCurrentTraceIndex(nextIndex);
+    
+    // Clear navigating flag immediately after state update
+    setIsNavigating(false);
+    
+    // Save in background (async, non-blocking) with automatic retry
+    if (hasContent) {
+      console.log('nextTrace: Saving content in background', { traceId: currentTraceId });
+      saveFinding(responsesToSave, currentTraceId, true) // isBackground=true (includes retry logic)
+        .then((success) => {
+          if (success) {
+            console.log('nextTrace: Background save successful for trace:', currentTraceId);
+          } else {
+            // Save failed after retries - log but don't show intrusive toast
+            // The save status is tracked in saveStatusRef, user can see it if they navigate back
+            console.warn('nextTrace: Background save failed after retries for trace:', currentTraceId);
+            // Only show a subtle notification if it's a persistent failure
+            // The retry logic should handle most transient failures
+          }
+        })
+        .catch((error) => {
+          // This shouldn't happen as saveFinding catches errors, but log just in case
+          console.error('nextTrace: Unexpected background save error:', error);
+        });
+    } else {
+      console.log('nextTrace: No content to save');
     }
   };
 
@@ -449,17 +553,15 @@ export function TraceViewerDemo() {
     }
   };
 
-  // Navigate to previous trace - save first, then navigate
-  const prevTrace = async () => {
+  // Navigate to previous trace - optimistic navigation with async background save
+  const prevTrace = () => {
     if (!currentTrace) {
       console.warn('prevTrace: No current trace');
       return;
     }
-    
-    // Use ref to prevent concurrent navigation (more reliable than React state)
-    if (isNavigatingRef.current) {
-      console.warn('prevTrace: Already navigating (ref check)');
-      return;
+    if (isNavigating) {
+      console.warn('prevTrace: Already navigating', { isNavigating });
+      return; // Prevent concurrent navigation
     }
     
     // Check if we can navigate
@@ -468,45 +570,53 @@ export function TraceViewerDemo() {
       return; // Already at first trace
     }
     
-    // Set navigating flag immediately using ref
-    isNavigatingRef.current = true;
+    console.log('prevTrace: Starting optimistic navigation', { currentTraceIndex, prevIndex: currentTraceIndex - 1 });
     setIsNavigating(true);
     
-    try {
-      // Store current trace data for save
-      const currentTraceId = currentTrace.id;
-      const q1ToSave = question1Response.trim();
-      const q2ToSave = question2Response.trim();
-      const hasContent = q1ToSave || q2ToSave;
-      
-      console.log('prevTrace: Starting navigation', { currentTraceIndex, prevIndex: currentTraceIndex - 1, hasContent });
-      
-      // Save FIRST if there's content (await to ensure it completes)
-      if (hasContent) {
-        console.log('prevTrace: Saving content before navigation', { traceId: currentTraceId });
-        await saveFinding(q1ToSave, q2ToSave, currentTraceId, true);
-        console.log('prevTrace: Save completed for trace:', currentTraceId);
-      }
-      
-      // Then navigate
-      const prevIndex = currentTraceIndex - 1;
-      setQuestion1Response('');
-      setQuestion2Response('');
-      setCurrentTraceIndex(prevIndex);
-      console.log('prevTrace: Navigated to index', prevIndex);
-      
-    } finally {
-      // Clear navigating flags
-      isNavigatingRef.current = false;
-      setIsNavigating(false);
+    // Store current trace data for background save
+    const currentTraceId = currentTrace.id;
+    const responsesToSave = responsesByQuestionId;
+    const hasContent = Object.values(responsesToSave || {}).some((v) => !!v && v.trim().length > 0);
+    
+    // Navigate immediately (optimistic)
+    const prevIndex = currentTraceIndex - 1;
+    console.log('prevTrace: Navigating to index', prevIndex);
+    
+    // Clear the responses for the new trace first
+    setResponsesByQuestionId({});
+    // Navigate synchronously
+    setCurrentTraceIndex(prevIndex);
+    
+    // Clear navigating flag immediately after state update
+    setIsNavigating(false);
+    
+    // Save in background (async, non-blocking) with automatic retry
+    if (hasContent) {
+      console.log('prevTrace: Saving content in background', { traceId: currentTraceId });
+      saveFinding(responsesToSave, currentTraceId, true) // isBackground=true (includes retry logic)
+        .then((success) => {
+          if (success) {
+            console.log('prevTrace: Background save successful for trace:', currentTraceId);
+          } else {
+            // Save failed after retries - log but don't show intrusive toast
+            console.warn('prevTrace: Background save failed after retries for trace:', currentTraceId);
+          }
+        })
+        .catch((error) => {
+          // This shouldn't happen as saveFinding catches errors, but log just in case
+          console.error('prevTrace: Unexpected background save error:', error);
+        });
+    } else {
+      console.log('prevTrace: No content to save');
     }
   };
 
   const handleSubmitFinding = async () => {
-    if (!currentTrace || !question1Response.trim() || !question2Response.trim() || isSaving) return;
+    const hasAnyResponse = Object.values(responsesByQuestionId || {}).some((v) => !!v && v.trim().length > 0);
+    if (!currentTrace || !hasAnyResponse || isSaving) return;
 
     // Use the saveFinding function to ensure consistent behavior and prevent concurrent saves
-    await saveFinding(question1Response, question2Response, currentTrace.id);
+    await saveFinding(responsesByQuestionId, currentTrace.id);
   };
 
   // SECURITY: Block access if no valid user (prevent undefined user access)
@@ -727,35 +837,56 @@ export function TraceViewerDemo() {
                 You don't have permission to submit findings. You can view the traces but cannot contribute insights.
               </p>
             )}
+            {discoveryQuestionsLoading && (
+              <p className="text-sm text-gray-500 mt-2">Loading questions…</p>
+            )}
+            {discoveryQuestionsError && (
+              <p className="text-sm text-amber-700 mt-2">
+                <AlertCircle className="h-4 w-4 inline mr-1" />
+                {discoveryQuestionsError}
+              </p>
+            )}
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="space-y-3">
-              <Label htmlFor="question1" className="text-sm font-medium">
-                What makes this response effective or ineffective?
-              </Label>
-              <Textarea
-                id="question1"
-                placeholder={canCreateFindings ? "Share your thoughts on what makes this response work well or poorly..." : "You don't have permission to submit findings"}
-                value={question1Response}
-                onChange={(e) => setQuestion1Response(e.target.value)}
-                className="min-h-[100px]"
-                disabled={!canCreateFindings || isSaving}
-              />
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm text-gray-500">
+                Answer each question below. New questions will be appended for this trace.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={appendDiscoveryQuestion}
+                disabled={!canCreateFindings || discoveryQuestionsLoading}
+              >
+                Generate another question
+              </Button>
             </div>
 
-            <div className="space-y-3">
-              <Label htmlFor="question2" className="text-sm font-medium">
-                If this response was good, what would have made it bad? If bad, what would have made it good?
-              </Label>
-              <Textarea
-                id="question2"
-                placeholder={canCreateFindings ? "Consider alternative scenarios - what changes would flip the quality of this response?" : "You don't have permission to submit findings"}
-                value={question2Response}
-                onChange={(e) => setQuestion2Response(e.target.value)}
-                className="min-h-[100px]"
-                disabled={!canCreateFindings || isSaving}
-              />
-            </div>
+            {(discoveryQuestions.length ? discoveryQuestions : [{ id: 'q_1', prompt: 'What makes this response effective or ineffective?', placeholder: "Share your thoughts on what makes this response work well or poorly..." }]).map((q, idx) => (
+              <div key={q.id || idx} className="space-y-3">
+                <Label htmlFor={`dq-${q.id}`} className="text-sm font-medium">
+                  {q.prompt}
+                </Label>
+                <Textarea
+                  id={`dq-${q.id}`}
+                  placeholder={
+                    canCreateFindings
+                      ? (q.placeholder ?? 'Share your thoughts…')
+                      : "You don't have permission to submit findings"
+                  }
+                  value={responsesByQuestionId[q.id] ?? ''}
+                  onChange={(e) =>
+                    setResponsesByQuestionId((prev) => ({
+                      ...prev,
+                      [q.id]: e.target.value,
+                    }))
+                  }
+                  onBlur={handleTextareaBlur}
+                  className="min-h-[100px]"
+                  disabled={!canCreateFindings || isSaving}
+                />
+              </div>
+            ))}
 
           </CardContent>
         </Card>
@@ -785,36 +916,19 @@ export function TraceViewerDemo() {
               
               
               <Button
-                onClick={async () => {
-                  // On last trace, save current content then show completion state
-                  if (currentTraceIndex === traceData.length - 1 && currentTrace) {
-                    const q1 = question1Response.trim();
-                    const q2 = question2Response.trim();
-                    if (q1 || q2) {
-                      setIsSaving(true);
-                      const success = await saveFinding(q1, q2, currentTrace.id, false);
-                      setIsSaving(false);
-                      if (success) {
-                        toast.success('Response saved!');
-                      }
-                    }
-                  } else {
-                    nextTrace();
-                  }
-                }}
+                onClick={nextTrace}
                 disabled={
                   isNavigating ||
-                  isSaving ||
                   !canCreateFindings
                   // Navigation is now optimistic - happens immediately
                   // Save happens in background (async, non-blocking)
                 }
                 className="flex items-center gap-2"
               >
-                {isNavigating || isSaving ? (
+                {isNavigating ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    {isSaving ? 'Saving...' : 'Navigating...'}
+                    Navigating...
                   </>
                 ) : currentTraceIndex === traceData.length - 1 ? (
                   <>

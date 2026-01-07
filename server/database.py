@@ -152,6 +152,9 @@ class WorkshopDB(Base):
     discovery_randomize_traces = Column(Boolean, default=False)  # Whether to randomize trace order in discovery
     annotation_randomize_traces = Column(Boolean, default=False)  # Whether to randomize trace order in annotation
     judge_name = Column(String, default="workshop_judge")  # Name used for feedback entries
+    discovery_questions_model_name = Column(
+        String, default="demo"
+    )  # LLM model/endpoint for discovery question generation
     created_at = Column(DateTime, default=func.now())
 
     # Relationships
@@ -173,6 +176,7 @@ class WorkshopDB(Base):
     user_discovery_completions = relationship(
         "UserDiscoveryCompletionDB", back_populates="workshop", cascade="all, delete-orphan"
     )
+    discovery_summaries = relationship("DiscoverySummaryDB", back_populates="workshop", cascade="all, delete-orphan")
 
 
 class TraceDB(Base):
@@ -216,6 +220,36 @@ class DiscoveryFindingDB(Base):
     # Relationships
     workshop = relationship("WorkshopDB", back_populates="findings")
     trace = relationship("TraceDB", back_populates="findings")
+
+
+class DiscoveryQuestionDB(Base):
+    """Database model for per-user/per-trace generated discovery questions."""
+
+    __tablename__ = "discovery_questions"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    trace_id = Column(String, ForeignKey("traces.id"), nullable=False)
+    user_id = Column(String, nullable=False)
+    question_id = Column(String, nullable=False)  # Stable ID per (user, trace), e.g. "q_1"
+    prompt = Column(Text, nullable=False)
+    placeholder = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=func.now())
+
+
+class DiscoverySummaryDB(Base):
+    """Database model for persisted discovery summaries (facilitator-oriented)."""
+
+    __tablename__ = "discovery_summaries"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    model_name = Column(String, nullable=True)
+    payload = Column(JSON, nullable=False)  # {overall, by_user, by_trace}
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    workshop = relationship("WorkshopDB", back_populates="discovery_summaries")
 
 
 class UserDiscoveryCompletionDB(Base):

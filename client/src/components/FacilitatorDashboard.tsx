@@ -7,7 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useFacilitatorFindings, useFacilitatorFindingsWithUserDetails, useTraces, useAllTraces, useRubric, useFacilitatorAnnotations, useFacilitatorAnnotationsWithUserDetails, useWorkshop } from '@/hooks/useWorkshopApi';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useFacilitatorFindings, useFacilitatorFindingsWithUserDetails, useTraces, useAllTraces, useRubric, useFacilitatorAnnotations, useFacilitatorAnnotationsWithUserDetails, useWorkshop, useMLflowConfig } from '@/hooks/useWorkshopApi';
 import { Settings, Users, FileText, CheckCircle, Clock, AlertCircle, BarChart, ChevronRight, Play, Eye, Plus, RotateCcw } from 'lucide-react';
 import {
   AlertDialog,
@@ -26,6 +27,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { PhaseControlButton } from './PhaseControlButton';
 import { toast } from 'sonner';
 import { parseRubricQuestions } from '@/utils/rubricUtils';
+import { getBackendModelName, getFrontendModelName, getModelOptions } from '@/utils/modelMapping';
 
 interface FacilitatorDashboardProps {
   onNavigate: (phase: string) => void;
@@ -41,6 +43,7 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
 
   // Get all workshop data
   const { data: workshop } = useWorkshop(workshopId!);
+  const { data: mlflowConfig } = useMLflowConfig(workshopId!);
   const { data: allFindings } = useFacilitatorFindings(workshopId!);
   const { data: allFindingsWithUserDetails } = useFacilitatorFindingsWithUserDetails(workshopId!);
   // Facilitators viewing all traces - don't need personalized ordering
@@ -93,7 +96,7 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
     if (focusPhase === 'annotation') {
       // Use annotations with user details
       return annotationsWithUserDetails ? 
-        Object.entries(
+        (Object.entries(
           annotationsWithUserDetails.reduce((acc, annotation) => {
             const userId = annotation.user_id;
             if (!acc[userId]) {
@@ -102,12 +105,12 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
             acc[userId].count += 1;
             return acc;
           }, {} as Record<string, { count: number; userName: string }>)
-        ).map(([userId, data]) => ({ userId, userName: data.userName, count: data.count }))
+        ) as Array<[string, { count: number; userName: string }]>).map(([userId, data]) => ({ userId, userName: data.userName, count: data.count }))
         : [];
     } else {
       // Use discovery findings with user details (default)
       return allFindingsWithUserDetails ? 
-        Object.entries(
+        (Object.entries(
           allFindingsWithUserDetails.reduce((acc, finding) => {
             const userId = finding.user_id;
             if (!acc[userId]) {
@@ -116,7 +119,7 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
             acc[userId].count += 1;
             return acc;
           }, {} as Record<string, { count: number; userName: string }>)
-        ).map(([userId, data]) => ({ userId, userName: data.userName, count: data.count }))
+        ) as Array<[string, { count: number; userName: string }]>).map(([userId, data]) => ({ userId, userName: data.userName, count: data.count }))
         : [];
     }
   }, [focusPhase, allFindingsWithUserDetails, annotationsWithUserDetails]);
@@ -290,6 +293,13 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
   // Judge name state - used for MLflow feedback entries
   const [judgeName, setJudgeName] = React.useState<string>(workshop?.judge_name || 'workshop_judge');
   const [isSavingJudgeName, setIsSavingJudgeName] = React.useState(false);
+
+  // Discovery question model selection (workshop-level)
+  const [discoveryQuestionsModel, setDiscoveryQuestionsModel] = React.useState<string>('demo');
+  const [isSavingDiscoveryQuestionsModel, setIsSavingDiscoveryQuestionsModel] = React.useState(false);
+  const [summariesLoading, setSummariesLoading] = React.useState(false);
+  const [summariesError, setSummariesError] = React.useState<string | null>(null);
+  const [summaries, setSummaries] = React.useState<any>(null);
   
   // Derive judge name from rubric question title
   const deriveJudgeNameFromRubric = (questionTitle: string): string => {
@@ -312,6 +322,20 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
       }
     }
   }, [workshop?.judge_name, rubric]);
+
+  // Sync discovery question model from workshop data
+  React.useEffect(() => {
+    const savedBackend = (workshop as any)?.discovery_questions_model_name as string | undefined;
+    if (!savedBackend) {
+      setDiscoveryQuestionsModel('demo');
+      return;
+    }
+    if (savedBackend === 'demo') {
+      setDiscoveryQuestionsModel('demo');
+      return;
+    }
+    setDiscoveryQuestionsModel(getFrontendModelName(savedBackend));
+  }, [workshop]);
   
   const handleSaveJudgeName = async () => {
     if (!judgeName.trim()) {
@@ -337,6 +361,52 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
       toast.error(`Failed to save judge name: ${error.message}`);
     } finally {
       setIsSavingJudgeName(false);
+    }
+  };
+
+  const handleSaveDiscoveryQuestionsModel = async () => {
+    if (!workshopId) return;
+    setIsSavingDiscoveryQuestionsModel(true);
+    try {
+      const backendModel = discoveryQuestionsModel === 'demo' ? 'demo' : getBackendModelName(discoveryQuestionsModel);
+      const response = await fetch(`/workshops/${workshopId}/discovery-questions-model`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model_name: backendModel }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to save discovery question model' }));
+        throw new Error(error.detail || 'Failed to save discovery question model');
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['workshop', workshopId] });
+      toast.success('Discovery question model saved');
+    } catch (error: any) {
+      toast.error(`Failed to save discovery question model: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setIsSavingDiscoveryQuestionsModel(false);
+    }
+  };
+
+  const handleGenerateDiscoverySummaries = async () => {
+    if (!workshopId) return;
+    setSummariesLoading(true);
+    setSummariesError(null);
+    try {
+      const response = await fetch(`/workshops/${workshopId}/discovery-summaries`, { method: 'POST' });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to generate summaries' }));
+        throw new Error(error.detail || 'Failed to generate summaries');
+      }
+      const data: any = await response.json();
+      setSummaries(data);
+      toast.success('Discovery summaries generated');
+    } catch (err: any) {
+      setSummariesError(err?.message || 'Failed to generate summaries');
+      toast.error(err?.message || 'Failed to generate summaries');
+    } finally {
+      setSummariesLoading(false);
     }
   };
 
@@ -888,24 +958,159 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
               focusPhase === 'annotation' ? 'md:grid-cols-2 lg:grid-cols-3' : 
               'md:grid-cols-3'
             }`}>
-              {/* View All Findings - Hide during discovery and annotation focus */}
-              {focusPhase !== 'discovery' && focusPhase !== 'annotation' && (
-              <Button
-                variant="outline"
-                className="flex items-center gap-2 justify-start p-4 h-auto"
-                onClick={() => onNavigate('view-all-findings')}
-              >
-                <FileText className="w-5 h-5" />
-                <div className="text-left">
-                  <div className="font-medium">View All Findings</div>
-                  <div className="text-xs text-muted-foreground">Review participant insights</div>
-                </div>
-              </Button>
-              )}
+              {/* NOTE: Findings review page has been removed; use the Discovery monitor + summaries instead. */}
 
               {/* Discovery-specific actions */}
               {focusPhase === 'discovery' && (
                 <>
+                  {/* Discovery Question LLM */}
+                  <div className="border rounded-lg p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Settings className="w-5 h-5 text-green-600" />
+                      <div className="text-left">
+                        <div className="font-medium">Discovery Question LLM</div>
+                        <div className="text-xs text-muted-foreground">
+                          Controls which model generates discovery questions for participants
+                        </div>
+                      </div>
+                    </div>
+
+                    {!mlflowConfig && (
+                      <p className="text-xs text-amber-700 mb-2">
+                        <AlertCircle className="w-3 h-3 inline mr-1" />
+                        MLflow/Databricks config is not set; only “Static (no LLM)” is available.
+                      </p>
+                    )}
+
+                    <div className="flex gap-2 items-center">
+                      <Select
+                        value={discoveryQuestionsModel}
+                        onValueChange={setDiscoveryQuestionsModel}
+                        disabled={isSavingDiscoveryQuestionsModel}
+                      >
+                        <SelectTrigger className="flex-1 h-8 text-xs bg-white">
+                          <SelectValue placeholder="Select model" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="demo">Static (no LLM)</SelectItem>
+                          {getModelOptions(!!mlflowConfig).map((option) => (
+                            <SelectItem key={option.value} value={option.value} disabled={option.disabled}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        onClick={handleSaveDiscoveryQuestionsModel}
+                        disabled={isSavingDiscoveryQuestionsModel || (!mlflowConfig && discoveryQuestionsModel !== 'demo')}
+                        size="sm"
+                        className="h-8 px-3 bg-green-600 hover:bg-green-700 text-white"
+                      >
+                        {isSavingDiscoveryQuestionsModel ? '...' : 'Save'}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* LLM Summaries (Discovery) */}
+                  <div className="border rounded-lg p-4 lg:col-span-3">
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <div className="text-left">
+                        <div className="font-medium">LLM Summaries</div>
+                        <div className="text-xs text-muted-foreground">
+                          Themes, patterns, and tendencies of the model’s behaviors (overall, by user, by trace)
+                        </div>
+                      </div>
+                      <Button
+                        onClick={handleGenerateDiscoverySummaries}
+                        disabled={summariesLoading}
+                        size="sm"
+                        className="h-8 px-3"
+                      >
+                        {summariesLoading ? 'Generating…' : 'Generate'}
+                      </Button>
+                    </div>
+
+                    {summariesError && (
+                      <p className="text-xs text-red-600 mb-2">{summariesError}</p>
+                    )}
+
+                    {!summaries && (
+                      <p className="text-xs text-slate-600">
+                        Generate summaries once participants have started submitting findings.
+                      </p>
+                    )}
+
+                    {summaries && (
+                      <div className="space-y-4">
+                        <div>
+                          <div className="text-xs font-semibold text-slate-800 mb-2">Overall</div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {['themes', 'patterns', 'tendencies', 'risks_or_failure_modes', 'strengths'].map((k) => (
+                              <div key={k} className="bg-slate-50 rounded p-3">
+                                <div className="text-[11px] font-medium text-slate-700 mb-2">{k.replace(/_/g, ' ')}</div>
+                                <ul className="list-disc pl-5 text-xs text-slate-700 space-y-1">
+                                  {(summaries?.overall?.[k] || []).map((item: string, idx: number) => (
+                                    <li key={idx}>{item}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="text-xs font-semibold text-slate-800 mb-2">By User</div>
+                          <div className="space-y-2">
+                            {(summaries?.by_user || []).map((u: any, idx: number) => (
+                              <div key={u.user_id || idx} className="bg-white border rounded p-3">
+                                <div className="text-xs font-medium text-slate-900 mb-2">
+                                  {u.user_name || 'User'} <span className="text-[11px] text-slate-500">({u.user_id})</span>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                                  {['themes', 'tendencies', 'notable_insights'].map((k) => (
+                                    <div key={k} className="bg-slate-50 rounded p-2">
+                                      <div className="text-[11px] font-medium text-slate-700 mb-1">{k.replace(/_/g, ' ')}</div>
+                                      <ul className="list-disc pl-5 text-xs text-slate-700 space-y-1">
+                                        {(u?.[k] || []).map((item: string, j: number) => (
+                                          <li key={j}>{item}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="text-xs font-semibold text-slate-800 mb-2">By Trace</div>
+                          <div className="space-y-2">
+                            {(summaries?.by_trace || []).map((t: any, idx: number) => (
+                              <div key={t.trace_id || idx} className="bg-white border rounded p-3">
+                                <div className="text-xs font-medium text-slate-900 mb-2">
+                                  Trace <span className="font-mono text-[11px] text-slate-600">{t.trace_id}</span>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                                  {['themes', 'tendencies', 'notable_behaviors'].map((k) => (
+                                    <div key={k} className="bg-slate-50 rounded p-2">
+                                      <div className="text-[11px] font-medium text-slate-700 mb-1">{k.replace(/_/g, ' ')}</div>
+                                      <ul className="list-disc pl-5 text-xs text-slate-700 space-y-1">
+                                        {(t?.[k] || []).map((item: string, j: number) => (
+                                          <li key={j}>{item}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   {/* Add Additional Traces */}
                   <div className="border rounded-lg p-4">
                     <div className="flex items-center gap-2 mb-3">

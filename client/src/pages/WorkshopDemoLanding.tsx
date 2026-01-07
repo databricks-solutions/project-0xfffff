@@ -20,7 +20,6 @@ import { IRRResultsDemo } from './IRRResultsDemo';
 import { JudgeTuningPage } from './JudgeTuningPage';
 import { DBSQLExportPage } from './DBSQLExportPage';
 import { UnityVolumePage } from './UnityVolumePage';
-import { FindingsReviewPage } from './FindingsReviewPage';
 import { IntakePage } from './IntakePage';
 import { AppSidebar } from '@/components/AppSidebar';
 import { AnnotationAssignmentManager } from '@/components/AnnotationAssignmentManager';
@@ -524,8 +523,6 @@ export function WorkshopDemoLanding() {
         return <DBSQLExportPage />;
       case 'unity-volume':
         return <UnityVolumePage />;
-      case 'findings-review':
-        return <FindingsReviewPage onBack={() => setCurrentView('discovery-monitor')} />;
       case 'assign-annotations':
         return <AnnotationAssignmentManager />;
       case 'user-management':
