@@ -356,22 +356,23 @@ export function TraceViewerDemo() {
     }
   }, [submitFinding, user?.id]);
   
-  // Handle blur on textareas - save immediately when user clicks away
-  const handleTextareaBlur = async () => {
-    if (currentTrace && question1Response.trim() && question2Response.trim()) {
-      await saveFinding(question1Response, question2Response, currentTrace.id);
-    }
-  };
+  // NOTE: Removed blur auto-save as it conflicts with button clicks
+  // The Next/Previous buttons already handle saving before navigation
   
-  // Navigate to next trace - optimistic navigation with async background save
-  const nextTrace = () => {
+  // Track navigation using ref (more reliable than state for preventing double-clicks)
+  const isNavigatingRef = useRef(false);
+  
+  // Navigate to next trace - save first, then navigate
+  const nextTrace = async () => {
     if (!currentTrace) {
       console.warn('nextTrace: No current trace');
       return;
     }
-    if (isNavigating) {
-      console.warn('nextTrace: Already navigating', { isNavigating });
-      return; // Prevent concurrent navigation
+    
+    // Use ref to prevent concurrent navigation (more reliable than React state)
+    if (isNavigatingRef.current) {
+      console.warn('nextTrace: Already navigating (ref check)');
+      return;
     }
     
     // Check if we can navigate
@@ -380,49 +381,37 @@ export function TraceViewerDemo() {
       return; // Already at last trace
     }
     
-    console.log('nextTrace: Starting optimistic navigation', { currentTraceIndex, nextIndex: currentTraceIndex + 1 });
+    // Set navigating flag immediately using ref
+    isNavigatingRef.current = true;
     setIsNavigating(true);
     
-    // Store current trace data for background save
-    const currentTraceId = currentTrace.id;
-    const q1ToSave = question1Response.trim();
-    const q2ToSave = question2Response.trim();
-    const hasContent = q1ToSave || q2ToSave;
-    
-    // Navigate immediately (optimistic)
-    const nextIndex = currentTraceIndex + 1;
-    console.log('nextTrace: Navigating to index', nextIndex);
-    
-    // Clear the responses for the new trace first
-    setQuestion1Response('');
-    setQuestion2Response('');
-    // Navigate synchronously
-    setCurrentTraceIndex(nextIndex);
-    
-    // Clear navigating flag immediately after state update
-    setIsNavigating(false);
-    
-    // Save in background (async, non-blocking) with automatic retry
-    if (hasContent) {
-      console.log('nextTrace: Saving content in background', { traceId: currentTraceId, q1: q1ToSave.substring(0, 50), q2: q2ToSave.substring(0, 50) });
-      saveFinding(q1ToSave, q2ToSave, currentTraceId, true) // isBackground=true (includes retry logic)
-        .then((success) => {
-          if (success) {
-            console.log('nextTrace: Background save successful for trace:', currentTraceId);
-          } else {
-            // Save failed after retries - log but don't show intrusive toast
-            // The save status is tracked in saveStatusRef, user can see it if they navigate back
-            console.warn('nextTrace: Background save failed after retries for trace:', currentTraceId);
-            // Only show a subtle notification if it's a persistent failure
-            // The retry logic should handle most transient failures
-          }
-        })
-        .catch((error) => {
-          // This shouldn't happen as saveFinding catches errors, but log just in case
-          console.error('nextTrace: Unexpected background save error:', error);
-        });
-    } else {
-      console.log('nextTrace: No content to save');
+    try {
+      // Store current trace data for save
+      const currentTraceId = currentTrace.id;
+      const q1ToSave = question1Response.trim();
+      const q2ToSave = question2Response.trim();
+      const hasContent = q1ToSave || q2ToSave;
+      
+      console.log('nextTrace: Starting navigation', { currentTraceIndex, nextIndex: currentTraceIndex + 1, hasContent });
+      
+      // Save FIRST if there's content (await to ensure it completes)
+      if (hasContent) {
+        console.log('nextTrace: Saving content before navigation', { traceId: currentTraceId });
+        await saveFinding(q1ToSave, q2ToSave, currentTraceId, true);
+        console.log('nextTrace: Save completed for trace:', currentTraceId);
+      }
+      
+      // Then navigate
+      const nextIndex = currentTraceIndex + 1;
+      setQuestion1Response('');
+      setQuestion2Response('');
+      setCurrentTraceIndex(nextIndex);
+      console.log('nextTrace: Navigated to index', nextIndex);
+      
+    } finally {
+      // Clear navigating flags
+      isNavigatingRef.current = false;
+      setIsNavigating(false);
     }
   };
 
@@ -457,15 +446,17 @@ export function TraceViewerDemo() {
     }
   };
 
-  // Navigate to previous trace - optimistic navigation with async background save
-  const prevTrace = () => {
+  // Navigate to previous trace - save first, then navigate
+  const prevTrace = async () => {
     if (!currentTrace) {
       console.warn('prevTrace: No current trace');
       return;
     }
-    if (isNavigating) {
-      console.warn('prevTrace: Already navigating', { isNavigating });
-      return; // Prevent concurrent navigation
+    
+    // Use ref to prevent concurrent navigation (more reliable than React state)
+    if (isNavigatingRef.current) {
+      console.warn('prevTrace: Already navigating (ref check)');
+      return;
     }
     
     // Check if we can navigate
@@ -474,46 +465,37 @@ export function TraceViewerDemo() {
       return; // Already at first trace
     }
     
-    console.log('prevTrace: Starting optimistic navigation', { currentTraceIndex, prevIndex: currentTraceIndex - 1 });
+    // Set navigating flag immediately using ref
+    isNavigatingRef.current = true;
     setIsNavigating(true);
     
-    // Store current trace data for background save
-    const currentTraceId = currentTrace.id;
-    const q1ToSave = question1Response.trim();
-    const q2ToSave = question2Response.trim();
-    const hasContent = q1ToSave || q2ToSave;
-    
-    // Navigate immediately (optimistic)
-    const prevIndex = currentTraceIndex - 1;
-    console.log('prevTrace: Navigating to index', prevIndex);
-    
-    // Clear the responses for the new trace first
-    setQuestion1Response('');
-    setQuestion2Response('');
-    // Navigate synchronously
-    setCurrentTraceIndex(prevIndex);
-    
-    // Clear navigating flag immediately after state update
-    setIsNavigating(false);
-    
-    // Save in background (async, non-blocking) with automatic retry
-    if (hasContent) {
-      console.log('prevTrace: Saving content in background', { traceId: currentTraceId, q1: q1ToSave.substring(0, 50), q2: q2ToSave.substring(0, 50) });
-      saveFinding(q1ToSave, q2ToSave, currentTraceId, true) // isBackground=true (includes retry logic)
-        .then((success) => {
-          if (success) {
-            console.log('prevTrace: Background save successful for trace:', currentTraceId);
-          } else {
-            // Save failed after retries - log but don't show intrusive toast
-            console.warn('prevTrace: Background save failed after retries for trace:', currentTraceId);
-          }
-        })
-        .catch((error) => {
-          // This shouldn't happen as saveFinding catches errors, but log just in case
-          console.error('prevTrace: Unexpected background save error:', error);
-        });
-    } else {
-      console.log('prevTrace: No content to save');
+    try {
+      // Store current trace data for save
+      const currentTraceId = currentTrace.id;
+      const q1ToSave = question1Response.trim();
+      const q2ToSave = question2Response.trim();
+      const hasContent = q1ToSave || q2ToSave;
+      
+      console.log('prevTrace: Starting navigation', { currentTraceIndex, prevIndex: currentTraceIndex - 1, hasContent });
+      
+      // Save FIRST if there's content (await to ensure it completes)
+      if (hasContent) {
+        console.log('prevTrace: Saving content before navigation', { traceId: currentTraceId });
+        await saveFinding(q1ToSave, q2ToSave, currentTraceId, true);
+        console.log('prevTrace: Save completed for trace:', currentTraceId);
+      }
+      
+      // Then navigate
+      const prevIndex = currentTraceIndex - 1;
+      setQuestion1Response('');
+      setQuestion2Response('');
+      setCurrentTraceIndex(prevIndex);
+      console.log('prevTrace: Navigated to index', prevIndex);
+      
+    } finally {
+      // Clear navigating flags
+      isNavigatingRef.current = false;
+      setIsNavigating(false);
     }
   };
 
@@ -753,7 +735,6 @@ export function TraceViewerDemo() {
                 placeholder={canCreateFindings ? "Share your thoughts on what makes this response work well or poorly..." : "You don't have permission to submit findings"}
                 value={question1Response}
                 onChange={(e) => setQuestion1Response(e.target.value)}
-                onBlur={handleTextareaBlur}
                 className="min-h-[100px]"
                 disabled={!canCreateFindings || isSaving}
               />
@@ -768,7 +749,6 @@ export function TraceViewerDemo() {
                 placeholder={canCreateFindings ? "Consider alternative scenarios - what changes would flip the quality of this response?" : "You don't have permission to submit findings"}
                 value={question2Response}
                 onChange={(e) => setQuestion2Response(e.target.value)}
-                onBlur={handleTextareaBlur}
                 className="min-h-[100px]"
                 disabled={!canCreateFindings || isSaving}
               />
