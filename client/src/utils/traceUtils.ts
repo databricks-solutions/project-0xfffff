@@ -1,4 +1,4 @@
-import { TraceData } from '@/components/TraceViewer';
+import type { TraceData } from '@/components/TraceViewer';
 
 /**
  * Convert API trace to TraceData format for use with TraceViewer component

@@ -33,6 +33,10 @@ uv venv --python 3.11
 echo "📦 Installing Python dependencies..."
 uv pip install -r requirements.txt
 
+# Install dev tooling needed for local workflows (includes Alembic migrations)
+echo "🧰 Installing dev tooling (includes alembic for migrations)..."
+uv pip install -e ".[dev]"
+
 # Install frontend dependencies  
 echo "📦 Installing frontend dependencies..."
 cd client

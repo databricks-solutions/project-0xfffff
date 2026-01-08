@@ -61,6 +61,7 @@ export const ProductionLogin: React.FC = () => {
               <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
+                data-testid="email"
                 type="email"
                 placeholder="Enter your email"
                 value={loginData.email}

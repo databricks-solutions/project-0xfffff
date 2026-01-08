@@ -10,6 +10,7 @@ For detailed documentation, see the [/doc](doc/) folder:
 - **[Build Guide](doc/BUILD_GUIDE.md)** - Client build instructions
 - **[Authentication Fix](doc/AUTHENTICATION_FIX.md)** - Authentication improvements
 - **[Annotation Editing](doc/ANNOTATION_EDITING_FIX.md)** - Annotation editing features
+- **[Database Migrations](doc/DB_MIGRATIONS.md)** - SQLite schema migrations (Alembic)
 - **[All Documentation](doc/README.md)** - Complete documentation index
 
 ## 🚀 Quick Start (Recommended)
@@ -28,9 +29,13 @@ cd project-0xfffff
 ## 📋 Prerequisites
 
 - **Python 3.11+**
-- **Node.js 18+** and npm
+- **Node.js 22.16+**
 - **Databricks workspace** with:
   - MLflow experiments
+  - Databricks Apps
+- **Strongly recommended: just**
+   - [Installation](https://just.systems/man/en/packages.html)
+   - It's possible to use without this, but the majority of useful scripts use just.
 
 ### Setup (Development)
 For the latest development version (may contain unreleased features):
@@ -137,6 +142,26 @@ This will:
 4. **Build for production:**
    ```bash
    npm run build
+   ```
+
+## 🧪 End-to-End (E2E) Tests
+
+E2E tests are run with **Playwright** against a real local stack (FastAPI + Vite) using an **isolated SQLite database**.
+
+```bash
+# Run E2E tests headless (default)
+just e2e
+
+# Run E2E tests headed (useful for debugging)
+just e2e headed
+
+# Run E2E tests in Playwright UI mode
+just e2e ui
+
+# Debugging helpers
+just e2e-servers   # start API+UI against .e2e-workshop.db
+just e2e-test      # run tests (assumes servers are already running)
+```
 
 ## 🚢 Deploying to Databricks Apps Manually
 

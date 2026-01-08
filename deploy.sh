@@ -65,23 +65,27 @@ fi
 
 echo "📂 Source code path: $DATABRICKS_SOURCE_CODE_PATH"
 
-# Build frontend
-echo "🏗️ Building frontend..."
-cd client
-echo "Building frontend at $(date)" >> ../tmp-deploy-logs.txt
+# Build frontend (can be skipped if already built by `just deploy`)
+if [ "${SKIP_UI_BUILD:-}" = "1" ]; then
+    echo "⏭️  Skipping frontend build (SKIP_UI_BUILD=1)"
+else
+    echo "🏗️ Building frontend..."
+    cd client
+    echo "Building frontend at $(date)" >> ../tmp-deploy-logs.txt
 
-# Clean and reinstall dependencies if build fails
-if ! npm run build >> ../tmp-deploy-logs.txt 2>&1; then
-    echo "Cleaning node_modules and reinstalling dependencies at $(date)" >> ../tmp-deploy-logs.txt
-    rm -rf node_modules package-lock.json
-    npm install >> ../tmp-deploy-logs.txt 2>&1
+    # Clean and reinstall dependencies if build fails
     if ! npm run build >> ../tmp-deploy-logs.txt 2>&1; then
-        cd ..
-        exit 1
+        echo "Cleaning node_modules and reinstalling dependencies at $(date)" >> ../tmp-deploy-logs.txt
+        rm -rf node_modules package-lock.json
+        npm install >> ../tmp-deploy-logs.txt 2>&1
+        if ! npm run build >> ../tmp-deploy-logs.txt 2>&1; then
+            cd ..
+            exit 1
+        fi
     fi
-fi
 
-cd ..
+    cd ..
+fi
 
 
 # Create workspace directory and sync source

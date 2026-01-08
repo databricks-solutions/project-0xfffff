@@ -41,8 +41,15 @@ dependencies = [
     "dspy>=3.0.4",
 ]
 
+[tool.alembic]
+script_location = "migrations"
+
+# Default DB URL (can be overridden by env var DATABASE_URL inside migrations/env.py)
+sqlalchemy.url = "sqlite:///./workshop.db"
+
 [project.optional-dependencies]
 dev = [
+    "alembic>=1.16.0",
     "pytest>=7.4.0",
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.1.0",

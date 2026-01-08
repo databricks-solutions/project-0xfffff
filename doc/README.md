@@ -9,6 +9,7 @@ This folder contains all the documentation for the project.
 ## 🔧 Build & Setup
 
 - **[BUILD_GUIDE.md](BUILD_GUIDE.md)** - Client build instructions and development setup
+- **E2E tests**: See `just e2e` / `just e2e headed` / `just e2e ui` in the [Main README](../README.md)
 
 ## 🎨 UI/UX Documentation
 

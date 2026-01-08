@@ -650,7 +650,7 @@ export function TraceViewerDemo() {
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Progress Header */}
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Discovery Phase</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2" data-testid="discovery-phase-title">Discovery Phase</h2>
           <p className="text-gray-600 mb-4">Review LLM responses and share your insights</p>
           
           {/* Progress Bar */}
@@ -677,7 +677,7 @@ export function TraceViewerDemo() {
           {/* Current Trace Info */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <Badge variant="outline">
+              <Badge variant="outline" data-testid="trace-number">
                 Trace {currentTraceIndex + 1} of {traceData.length}
               </Badge>
             </div>
@@ -853,7 +853,7 @@ export function TraceViewerDemo() {
                     </>
                   ) : (
                     <>
-                      <CheckCircle className="h-4 w-4 mr-2" />
+                      <CheckCircle className="h-4 w-4 mr-2" data-testid="complete-discovery-phase-button" />
                       Complete Discovery Phase
                     </>
                   )}

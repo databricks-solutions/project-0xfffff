@@ -229,6 +229,7 @@ export const FacilitatorInvitationManager: React.FC = () => {
                 <Label htmlFor="invite-email">Email Address *</Label>
                 <Input
                   id="invite-email"
+                  data-testid="invite-email"
                   type="email"
                   value={newInvitation.email}
                   onChange={(e) => setNewInvitation({ ...newInvitation, email: e.target.value })}
