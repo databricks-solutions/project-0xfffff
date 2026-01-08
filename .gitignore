@@ -13,7 +13,9 @@ client/build/*
 env.local
 .venv/
 .venv
-workshop.db
+*.db
+*.db-shm
+*.db-wal
 *.csv
 .claude/
 .databricks/

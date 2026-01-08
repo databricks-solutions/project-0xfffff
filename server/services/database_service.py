@@ -516,42 +516,98 @@ class DatabaseService:
 
   # Discovery finding operations
   def add_finding(self, workshop_id: str, finding_data: DiscoveryFindingCreate) -> DiscoveryFinding:
-    """Add or update a discovery finding (upsert)."""
-    # Check if finding already exists for this trace and user
-    existing_finding = self.db.query(DiscoveryFindingDB).filter(
-      DiscoveryFindingDB.workshop_id == workshop_id,
-      DiscoveryFindingDB.trace_id == finding_data.trace_id,
-      DiscoveryFindingDB.user_id == finding_data.user_id
-    ).first()
+    """Add or update a discovery finding (upsert) with proper concurrency handling."""
+    from sqlalchemy.exc import IntegrityError
+    import time
     
-    if existing_finding:
-      # Update existing finding
-      existing_finding.insight = finding_data.insight
-      self.db.commit()
-      self.db.refresh(existing_finding)
-      db_finding = existing_finding
-    else:
-      # Create new finding
-      finding_id = str(uuid.uuid4())
-      db_finding = DiscoveryFindingDB(
-        id=finding_id,
-        workshop_id=workshop_id,
-        trace_id=finding_data.trace_id,
-        user_id=finding_data.user_id,
-        insight=finding_data.insight,
-      )
-      self.db.add(db_finding)
-      self.db.commit()
-      self.db.refresh(db_finding)
+    finding_id = str(uuid.uuid4())
+    max_retries = 3
+    
+    logger.info(f"📝 add_finding called: workshop_id={workshop_id}, trace_id={finding_data.trace_id}, user_id={finding_data.user_id}")
+    
+    for attempt in range(max_retries):
+      try:
+        # First, try to find existing record to preserve its ID
+        # Use with_for_update() to lock the row and prevent race conditions
+        existing_finding = self.db.query(DiscoveryFindingDB).filter(
+          DiscoveryFindingDB.workshop_id == workshop_id,
+          DiscoveryFindingDB.trace_id == finding_data.trace_id,
+          DiscoveryFindingDB.user_id == finding_data.user_id
+        ).with_for_update().first()
+        
+        if existing_finding:
+          # Update existing finding
+          logger.info(f"🔄 Updating existing finding: id={existing_finding.id}")
+          existing_finding.insight = finding_data.insight
+          self.db.commit()
+          self.db.refresh(existing_finding)
+          db_finding = existing_finding
+          logger.info(f"✅ Finding updated successfully: id={db_finding.id}")
+        else:
+          # Create new finding
+          logger.info(f"🆕 Creating new finding (attempt {attempt + 1})")
+          db_finding = DiscoveryFindingDB(
+            id=finding_id,
+            workshop_id=workshop_id,
+            trace_id=finding_data.trace_id,
+            user_id=finding_data.user_id,
+            insight=finding_data.insight,
+          )
+          self.db.add(db_finding)
+          self.db.commit()
+          self.db.refresh(db_finding)
+          logger.info(f"✅ Finding created successfully: id={db_finding.id}")
 
-    return DiscoveryFinding(
-      id=db_finding.id,
-      workshop_id=db_finding.workshop_id,
-      trace_id=db_finding.trace_id,
-      user_id=db_finding.user_id,
-      insight=db_finding.insight,
-      created_at=db_finding.created_at,
-    )
+        return DiscoveryFinding(
+          id=db_finding.id,
+          workshop_id=db_finding.workshop_id,
+          trace_id=db_finding.trace_id,
+          user_id=db_finding.user_id,
+          insight=db_finding.insight,
+          created_at=db_finding.created_at,
+        )
+        
+      except IntegrityError as e:
+        # Handle race condition - another request inserted the same record
+        logger.warning(f"⚠️ IntegrityError on finding save (attempt {attempt + 1}): {e}")
+        self.db.rollback()
+        if attempt < max_retries - 1:
+          time.sleep(0.1 * (attempt + 1))  # Exponential backoff
+          continue
+        else:
+          # On final attempt, try to fetch and update the existing record
+          logger.info("🔄 Final attempt: fetching existing finding to update")
+          existing = self.db.query(DiscoveryFindingDB).filter(
+            DiscoveryFindingDB.workshop_id == workshop_id,
+            DiscoveryFindingDB.trace_id == finding_data.trace_id,
+            DiscoveryFindingDB.user_id == finding_data.user_id
+          ).first()
+          if existing:
+            existing.insight = finding_data.insight
+            self.db.commit()
+            self.db.refresh(existing)
+            logger.info(f"✅ Finding updated after conflict: id={existing.id}")
+            return DiscoveryFinding(
+              id=existing.id,
+              workshop_id=existing.workshop_id,
+              trace_id=existing.trace_id,
+              user_id=existing.user_id,
+              insight=existing.insight,
+              created_at=existing.created_at,
+            )
+          logger.error(f"❌ Failed to save finding after all retries: {e}")
+          raise e
+      except Exception as e:
+        logger.error(f"❌ Error saving finding (attempt {attempt + 1}): {e}")
+        self.db.rollback()
+        if attempt < max_retries - 1:
+          time.sleep(0.1 * (attempt + 1))
+          continue
+        raise e
+    
+    # This shouldn't be reached, but just in case
+    logger.error("❌ Failed to save finding after all retries (loop exhausted)")
+    raise Exception("Failed to save finding after all retries")
 
   def get_findings(self, workshop_id: str, user_id: Optional[str] = None) -> List[DiscoveryFinding]:
     """Get discovery findings for a workshop, optionally filtered by user."""
@@ -928,81 +984,140 @@ class DatabaseService:
       logger.info(f"📊 Final validated_ratings: {validated_ratings}")
     
     # Check if annotation already exists for this user and trace
-    existing_annotation = (
-      self.db.query(AnnotationDB).filter(AnnotationDB.user_id == annotation_data.user_id, AnnotationDB.trace_id == annotation_data.trace_id).first()
-    )
+    # Use retry logic to handle concurrent write conflicts
+    from sqlalchemy.exc import IntegrityError
+    import time
+    
+    max_retries = 3
+    annotation_id = str(uuid.uuid4())
+    
+    for attempt in range(max_retries):
+      try:
+        existing_annotation = (
+          self.db.query(AnnotationDB)
+          .filter(AnnotationDB.user_id == annotation_data.user_id, AnnotationDB.trace_id == annotation_data.trace_id)
+          .with_for_update()  # Lock the row if it exists
+          .first()
+        )
 
-    if existing_annotation:
-      logger.info(f"🔄 Updating existing annotation: id={existing_annotation.id}, current ratings={existing_annotation.ratings}")
-      # Update existing annotation - only update fields that are provided
-      if validated_rating is not None:
-        existing_annotation.rating = validated_rating
-        logger.info(f"  → Updated rating: {validated_rating}")
-      # Always update ratings if provided and validated
-      # validated_ratings will be None if ratings was not provided, or a dict if it was
-      if annotation_data.ratings is not None and validated_ratings is not None:
-        # Only update if we have validated ratings
-        # Note: validated_ratings can be {} if all validations failed, but we still update to clear
-        # However, if we received ratings but got empty dict, log a warning
-        if len(validated_ratings) == 0 and len(annotation_data.ratings) > 0:
-          logger.warning(f"⚠️ All ratings failed validation! Received: {annotation_data.ratings}, but validated_ratings is empty")
-          logger.warning(f"⚠️ Not updating ratings to avoid clearing existing data")
+        if existing_annotation:
+          logger.info(f"🔄 Updating existing annotation: id={existing_annotation.id}, current ratings={existing_annotation.ratings}")
+          # Update existing annotation - only update fields that are provided
+          if validated_rating is not None:
+            existing_annotation.rating = validated_rating
+            logger.info(f"  → Updated rating: {validated_rating}")
+          # Always update ratings if provided and validated
+          # validated_ratings will be None if ratings was not provided, or a dict if it was
+          if annotation_data.ratings is not None and validated_ratings is not None:
+            # Only update if we have validated ratings
+            # Note: validated_ratings can be {} if all validations failed, but we still update to clear
+            # However, if we received ratings but got empty dict, log a warning
+            if len(validated_ratings) == 0 and len(annotation_data.ratings) > 0:
+              logger.warning(f"⚠️ All ratings failed validation! Received: {annotation_data.ratings}, but validated_ratings is empty")
+              logger.warning(f"⚠️ Not updating ratings to avoid clearing existing data")
+            else:
+              existing_annotation.ratings = validated_ratings
+              logger.info(f"  → Updated ratings: {existing_annotation.ratings}")
+          elif annotation_data.ratings is not None:
+            # Ratings were provided but validation failed completely - log error
+            logger.error(f"❌ Ratings provided but validation failed completely: {annotation_data.ratings}")
+          if annotation_data.comment is not None:
+            existing_annotation.comment = annotation_data.comment
+            logger.info("  → Updated comment")
+          self.db.commit()
+          self.db.refresh(existing_annotation)
+          logger.info(f"✅ Annotation updated in DB: id={existing_annotation.id}, ratings={existing_annotation.ratings}")
+          self._sync_annotation_with_mlflow(workshop_id, existing_annotation)
+
+          return Annotation(
+            id=existing_annotation.id,
+            workshop_id=existing_annotation.workshop_id,
+            trace_id=existing_annotation.trace_id,
+            user_id=existing_annotation.user_id,
+            rating=existing_annotation.rating,
+            ratings=existing_annotation.ratings,
+            comment=existing_annotation.comment,
+            mlflow_trace_id=existing_annotation.trace.mlflow_trace_id,
+            created_at=existing_annotation.created_at,
+          )
         else:
-          existing_annotation.ratings = validated_ratings
-          logger.info(f"  → Updated ratings: {existing_annotation.ratings}")
-      elif annotation_data.ratings is not None:
-        # Ratings were provided but validation failed completely - log error
-        logger.error(f"❌ Ratings provided but validation failed completely: {annotation_data.ratings}")
-      if annotation_data.comment is not None:
-        existing_annotation.comment = annotation_data.comment
-        logger.info("  → Updated comment")
-      self.db.commit()
-      self.db.refresh(existing_annotation)
-      logger.info(f"✅ Annotation updated in DB: id={existing_annotation.id}, ratings={existing_annotation.ratings}")
-      self._sync_annotation_with_mlflow(workshop_id, existing_annotation)
+          # Create new annotation
+          logger.info(f"🆕 Creating new annotation (attempt {attempt + 1})")
+          db_annotation = AnnotationDB(
+            id=annotation_id,
+            workshop_id=workshop_id,
+            trace_id=annotation_data.trace_id,
+            user_id=annotation_data.user_id,
+            rating=validated_rating,
+            ratings=validated_ratings,
+            comment=annotation_data.comment,
+          )
+          logger.info(f"📝 New annotation object: rating={validated_rating}, ratings={validated_ratings}")
+          self.db.add(db_annotation)
+          self.db.commit()
+          self.db.refresh(db_annotation)
+          logger.info(f"✅ Annotation created in DB: id={db_annotation.id}, ratings={db_annotation.ratings}")
+          self._sync_annotation_with_mlflow(workshop_id, db_annotation)
 
-      return Annotation(
-        id=existing_annotation.id,
-        workshop_id=existing_annotation.workshop_id,
-        trace_id=existing_annotation.trace_id,
-        user_id=existing_annotation.user_id,
-        rating=existing_annotation.rating,
-        ratings=existing_annotation.ratings,
-        comment=existing_annotation.comment,
-        mlflow_trace_id=existing_annotation.trace.mlflow_trace_id,
-        created_at=existing_annotation.created_at,
-      )
-    else:
-      # Create new annotation
-      logger.info(f"🆕 Creating new annotation")
-      annotation_id = str(uuid.uuid4())
-      db_annotation = AnnotationDB(
-        id=annotation_id,
-        workshop_id=workshop_id,
-        trace_id=annotation_data.trace_id,
-        user_id=annotation_data.user_id,
-        rating=validated_rating,
-        ratings=validated_ratings,
-        comment=annotation_data.comment,
-      )
-      logger.info(f"📝 New annotation object: rating={validated_rating}, ratings={validated_ratings}")
-      self.db.add(db_annotation)
-      self.db.commit()
-      self.db.refresh(db_annotation)
-      logger.info(f"✅ Annotation created in DB: id={db_annotation.id}, ratings={db_annotation.ratings}")
-      self._sync_annotation_with_mlflow(workshop_id, db_annotation)
-
-      return Annotation(
-        id=db_annotation.id,
-        workshop_id=db_annotation.workshop_id,
-        trace_id=db_annotation.trace_id,
-        user_id=db_annotation.user_id,
-        rating=db_annotation.rating,
-        ratings=db_annotation.ratings,
-        comment=db_annotation.comment,
-        mlflow_trace_id=db_annotation.trace.mlflow_trace_id,
-        created_at=db_annotation.created_at,
-      )
+          return Annotation(
+            id=db_annotation.id,
+            workshop_id=db_annotation.workshop_id,
+            trace_id=db_annotation.trace_id,
+            user_id=db_annotation.user_id,
+            rating=db_annotation.rating,
+            ratings=db_annotation.ratings,
+            comment=db_annotation.comment,
+            mlflow_trace_id=db_annotation.trace.mlflow_trace_id if db_annotation.trace else None,
+            created_at=db_annotation.created_at,
+          )
+            
+      except IntegrityError as e:
+        # Handle race condition - another request inserted the same record
+        logger.warning(f"⚠️ IntegrityError on annotation save (attempt {attempt + 1}): {e}")
+        self.db.rollback()
+        if attempt < max_retries - 1:
+          time.sleep(0.1 * (attempt + 1))  # Exponential backoff
+          continue
+        else:
+          # On final attempt, try to fetch and update the existing record
+          logger.info("🔄 Final attempt: fetching existing annotation to update")
+          existing = self.db.query(AnnotationDB).filter(
+            AnnotationDB.user_id == annotation_data.user_id,
+            AnnotationDB.trace_id == annotation_data.trace_id
+          ).first()
+          if existing:
+            if validated_rating is not None:
+              existing.rating = validated_rating
+            if validated_ratings is not None:
+              existing.ratings = validated_ratings
+            if annotation_data.comment is not None:
+              existing.comment = annotation_data.comment
+            self.db.commit()
+            self.db.refresh(existing)
+            logger.info(f"✅ Annotation updated after conflict: id={existing.id}")
+            self._sync_annotation_with_mlflow(workshop_id, existing)
+            return Annotation(
+              id=existing.id,
+              workshop_id=existing.workshop_id,
+              trace_id=existing.trace_id,
+              user_id=existing.user_id,
+              rating=existing.rating,
+              ratings=existing.ratings,
+              comment=existing.comment,
+              mlflow_trace_id=existing.trace.mlflow_trace_id if existing.trace else None,
+              created_at=existing.created_at,
+            )
+          raise e
+      except Exception as e:
+        logger.error(f"❌ Error saving annotation (attempt {attempt + 1}): {e}")
+        self.db.rollback()
+        if attempt < max_retries - 1:
+          time.sleep(0.1 * (attempt + 1))
+          continue
+        raise e
+    
+    # This shouldn't be reached, but just in case
+    raise Exception("Failed to save annotation after all retries")
 
   def _validate_and_normalize_rating(self, rating: any, judge_type: str) -> Optional[int]:
     """Validate and normalize a rating based on judge type.

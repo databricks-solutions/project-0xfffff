@@ -310,6 +310,12 @@ export function useSubmitFinding(workshopId: string) {
       // Invalidate related queries
       queryClient.invalidateQueries({ queryKey: ['discovery-completion-status', workshopId] });
       queryClient.invalidateQueries({ queryKey: ['user-discovery-complete', workshopId, finding.user_id] });
+      
+      // Invalidate facilitator findings queries so they see new findings in Discovery Responses
+      queryClient.invalidateQueries({ queryKey: ['findings', workshopId, 'all_findings'] });
+      queryClient.invalidateQueries({ queryKey: ['findings', workshopId, 'all_findings', 'with_user_details'] });
+      // Also invalidate the direct endpoint query used in FindingsReviewPage
+      queryClient.invalidateQueries({ queryKey: ['facilitator-findings-with-users', workshopId] });
     },
   });
 }

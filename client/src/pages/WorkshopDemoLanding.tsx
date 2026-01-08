@@ -228,10 +228,16 @@ export function WorkshopDemoLanding() {
       previousUserIdRef.current = user.id;
       previousUserRoleRef.current = user.role;
       
-      // Skip auto-update if facilitator has manually navigated and this isn't a phase/user/role change or initial load
-      if (user.role === 'facilitator' && !isInitialLoad && !isPhaseChange && !isUserChange && !isRoleChange) {
+      // Skip auto-update if user has manually navigated and this isn't a phase/user/role change or initial load
+      // This applies to ALL roles, not just facilitators
+      if (isManualNavigation && !isInitialLoad && !isPhaseChange && !isUserChange && !isRoleChange) {
         previousPhaseRef.current = currentPhase;
         return;
+      }
+      
+      // Reset manual navigation flag on phase change (backend phase changed, need to re-sync)
+      if (isPhaseChange) {
+        setIsManualNavigation(false);
       }
       
       previousPhaseRef.current = currentPhase;
@@ -430,6 +436,7 @@ export function WorkshopDemoLanding() {
   // Simple navigation handler
   const handleNavigation = (requestedPhase: string) => {
     const view = getViewForPhase(user?.role, requestedPhase);
+    setIsManualNavigation(true);  // Mark that user manually navigated
     setCurrentView(view);
   };
   

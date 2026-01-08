@@ -31,8 +31,8 @@ DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///./workshop.db')
 sqlite_connect_args = (
   {
     'check_same_thread': False,
-    'timeout': 30,  # 30 second timeout for database operations
-    'isolation_level': None,  # Use autocommit mode for better concurrency
+    'timeout': 60,  # 60 second timeout for database operations (increased for concurrent writes)
+    'isolation_level': 'DEFERRED',  # Use DEFERRED for better concurrency with proper transaction support
   }
   if 'sqlite' in DATABASE_URL
   else {}
@@ -395,6 +395,17 @@ def create_tables():
       print(f'❌ Error creating database tables: {e}')
       raise e
 
+  # Enable WAL mode for better SQLite concurrency (allows concurrent reads during writes)
+  try:
+    from sqlalchemy import text
+    with engine.connect() as conn:
+      conn.execute(text('PRAGMA journal_mode=WAL'))
+      conn.execute(text('PRAGMA busy_timeout=60000'))  # 60 second busy timeout
+      conn.commit()
+      print('✅ SQLite WAL mode enabled for better concurrency')
+  except Exception as e:
+    print(f'ℹ️ Could not enable WAL mode (non-critical): {e}')
+
   # Update schema for existing databases
   try:
     from sqlalchemy import text
@@ -433,6 +444,30 @@ def create_tables():
         print('✅ Database schema updated for traces (added sme_feedback column)')
       except Exception as e:
         print(f'ℹ️ traces schema update skipped (sme_feedback column may already exist): {e}')
+      
+      try:
+        # Add unique constraint to discovery_findings to prevent duplicate entries
+        conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS idx_discovery_findings_unique ON discovery_findings (workshop_id, trace_id, user_id)'))
+        conn.commit()
+        print('✅ Database schema updated: added unique constraint to discovery_findings')
+      except Exception as e:
+        print(f'ℹ️ discovery_findings unique constraint skipped (may already exist): {e}')
+      
+      try:
+        # Add unique constraint to annotations to prevent duplicate entries (user_id + trace_id)
+        conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS idx_annotations_unique ON annotations (user_id, trace_id)'))
+        conn.commit()
+        print('✅ Database schema updated: added unique constraint to annotations')
+      except Exception as e:
+        print(f'ℹ️ annotations unique constraint skipped (may already exist): {e}')
+      
+      try:
+        # Add unique constraint to judge_evaluations to prevent duplicate entries (prompt_id + trace_id)
+        conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS idx_judge_evaluations_unique ON judge_evaluations (prompt_id, trace_id)'))
+        conn.commit()
+        print('✅ Database schema updated: added unique constraint to judge_evaluations')
+      except Exception as e:
+        print(f'ℹ️ judge_evaluations unique constraint skipped (may already exist): {e}')
     
   except Exception as e:
     # Schema updates are optional, don't fail if they error

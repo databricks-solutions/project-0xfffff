@@ -190,9 +190,9 @@ export function RubricCreationDemo() {
   // Fetch data
   const { data: rubric, isLoading: rubricLoading, error: rubricError } = useRubric(workshopId!);
   // Use all traces for rubric creation page
-  const { data: traces } = useAllTraces(workshopId!);
+  const { data: traces, refetch: refetchTraces } = useAllTraces(workshopId!);
   // Facilitators see all findings to create better rubric, others see their own
-  const { data: findings } = isFacilitator 
+  const { data: findings, refetch: refetchFindings, isRefetching: isRefetchingFindings } = isFacilitator 
     ? useFacilitatorFindingsWithUserDetails(workshopId!) 
     : useUserFindings(workshopId!, user);
   const createRubric = useCreateRubric(workshopId!);
@@ -469,9 +469,27 @@ export function RubricCreationDemo() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
-                  <span>Discovery Responses</span>
+                  <span className="flex items-center gap-2">
+                    Discovery Responses
+                    {findings && findings.length > 0 && (
+                      <Badge variant="secondary">{findings.length} responses</Badge>
+                    )}
+                  </span>
                   {/* View Mode Toggle */}
                   <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        refetchFindings();
+                        refetchTraces();
+                      }}
+                      disabled={isRefetchingFindings}
+                      className="flex items-center gap-2"
+                    >
+                      <RefreshCw className={`h-4 w-4 ${isRefetchingFindings ? 'animate-spin' : ''}`} />
+                      Refresh
+                    </Button>
                     <Button
                       variant={viewMode === 'grid' ? 'default' : 'outline'}
                       size="sm"

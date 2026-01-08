@@ -802,19 +802,36 @@ export function TraceViewerDemo() {
               
               
               <Button
-                onClick={nextTrace}
+                onClick={async () => {
+                  // On last trace, save current content then show completion state
+                  if (currentTraceIndex === traceData.length - 1 && currentTrace) {
+                    const q1 = question1Response.trim();
+                    const q2 = question2Response.trim();
+                    if (q1 || q2) {
+                      setIsSaving(true);
+                      const success = await saveFinding(q1, q2, currentTrace.id, false);
+                      setIsSaving(false);
+                      if (success) {
+                        toast.success('Response saved!');
+                      }
+                    }
+                  } else {
+                    nextTrace();
+                  }
+                }}
                 disabled={
                   isNavigating ||
+                  isSaving ||
                   !canCreateFindings
                   // Navigation is now optimistic - happens immediately
                   // Save happens in background (async, non-blocking)
                 }
                 className="flex items-center gap-2"
               >
-                {isNavigating ? (
+                {isNavigating || isSaving ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Navigating...
+                    {isSaving ? 'Saving...' : 'Navigating...'}
                   </>
                 ) : currentTraceIndex === traceData.length - 1 ? (
                   <>
