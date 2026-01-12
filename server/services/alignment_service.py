@@ -810,23 +810,46 @@ class AlignmentService:
                 prompt_lower = mlflow_prompt_template.lower()
                 has_numeric_instructions = any(phrase in prompt_lower for phrase in [
                     '0 or 1', '0/1', 'integer rating (0 or 1)', 'single integer rating (0 or 1)',
-                    'rating (0 or 1)', 'must start with a single integer rating'
+                    'rating (0 or 1)', 'must start with a single integer rating', 'critical output format'
                 ])
                 
                 if not has_numeric_instructions:
-                    # Append 0/1 numeric instructions to ensure clear binary response
-                    mlflow_prompt_template += "\n\nIMPORTANT: Your response MUST start with a single integer rating (0 or 1) on its own line, followed by your reasoning. Return 1 if the response meets the criteria, 0 if it does not."
-                    yield f"Enhanced prompt with 0/1 numeric instructions for binary rubric"
+                    # PREPEND strong binary instructions - models pay more attention to the start
+                    binary_prefix = """## CRITICAL OUTPUT FORMAT REQUIREMENT
+You are a BINARY judge. You MUST output EXACTLY one of these two values:
+- Output "0" if the response FAILS to meet the criteria
+- Output "1" if the response PASSES and meets the criteria
+
+YOUR FIRST LINE MUST BE EXACTLY "0" OR "1" - NO OTHER VALUES ARE VALID.
+Do NOT use any other numbers like 2, 3, 4, or 5. This is a PASS/FAIL evaluation, not a rating scale.
+
+After the rating, provide your reasoning on subsequent lines.
+
+Example valid outputs:
+---
+0
+The response does not address the user's question.
+---
+1
+The response correctly and helpfully answers the question.
+---
+
+Now evaluate the following:
+
+"""
+                    mlflow_prompt_template = binary_prefix + mlflow_prompt_template
+                    yield f"Enhanced prompt with STRONG binary 0/1 instructions (prepended)"
             
             # Set feedback_value_type based on judge type
-            # - Binary judges: use float for 0/1 numeric ratings
+            # - Binary judges: use float for 0/1 numeric ratings (NOT bool - bool is unreliable)
             # - Likert judges: use float for 1-5 scale
+            # NOTE: feedback_value_type only affects parsing, not model output. Strong prompt instructions are critical.
             if judge_type == 'binary':
-                feedback_type = bool
+                feedback_type = float  # Use float, not bool - more reliable for 0/1 parsing
                 yield f"Detected binary rubric - creating judge with feedback_value_type=float (expecting 0 or 1)"
             else:
                 feedback_type = float
-                yield f"Detected Likert rubric - creating judge with feedback_value_type=float"
+                yield f"Detected Likert rubric - creating judge with feedback_value_type=float (expecting 1-5)"
             
             # Create judge with the judge name - this name is critical for alignment
             # The judge can be used as a scorer in evaluate()
@@ -1110,13 +1133,22 @@ class AlignmentService:
                                                         predicted_rating = 0.0
                                                         yield f"⚠️ MLflow returned {numeric_value} but parsed negative from text response for trace {trace_id[:8]}... - using 0.0"
                                                     else:
-                                                        # Still invalid - reject it (we already tried parsing from text above)
-                                                        predicted_rating = None
-                                                        yield f"ERROR: Invalid binary rating {numeric_value} (type: {type(predicted_value).__name__}) for trace {trace_id[:8]}... - must be 0 or 1, rejecting evaluation. MLflow incorrectly parsed as: {str(predicted_value)[:100]}, Raw text response: {str(raw_text_response)[:300]}. MLflow's feedback_value_type=bool is not working correctly - it's returning float instead of bool."
+                                                        # Fallback: convert Likert-style response to binary using threshold
+                                                        # If model returns 1-5 scale, treat >= 3 as PASS (1), < 3 as FAIL (0)
+                                                        if 1 <= numeric_value <= 5:
+                                                            predicted_rating = 1.0 if numeric_value >= 3 else 0.0
+                                                            yield f"⚠️ FALLBACK: Model returned Likert-style {numeric_value} for binary judge on trace {trace_id[:8]}... - converting to {predicted_rating} using threshold (>=3 = PASS)"
+                                                        else:
+                                                            predicted_rating = None
+                                                            yield f"ERROR: Invalid binary rating {numeric_value} for trace {trace_id[:8]}... - must be 0, 1, or 1-5 scale, rejecting."
                                                 else:
-                                                    # No raw text available - reject it
-                                                    predicted_rating = None
-                                                    yield f"ERROR: Invalid binary rating {numeric_value} (type: {type(predicted_value).__name__}) for trace {trace_id[:8]}... - must be 0 or 1, rejecting evaluation. MLflow incorrectly parsed as: {str(predicted_value)[:100]}. No raw text response available to parse. MLflow's feedback_value_type=bool is not working correctly - it's returning float instead of bool."
+                                                    # No raw text available - try threshold conversion as last resort
+                                                    if 1 <= numeric_value <= 5:
+                                                        predicted_rating = 1.0 if numeric_value >= 3 else 0.0
+                                                        yield f"⚠️ FALLBACK: Model returned Likert-style {numeric_value} for binary judge on trace {trace_id[:8]}... - converting to {predicted_rating} using threshold (>=3 = PASS)"
+                                                    else:
+                                                        predicted_rating = None
+                                                        yield f"ERROR: Invalid binary rating {numeric_value} for trace {trace_id[:8]}... - must be 0, 1, or 1-5 scale, rejecting."
                                         else:
                                             # Likert scale: allow 1-5, clamp if out of range
                                             # But double-check: if we see 0, might be misclassified binary
