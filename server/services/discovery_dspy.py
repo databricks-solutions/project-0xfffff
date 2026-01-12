@@ -10,12 +10,86 @@ Reference: `https://dspy.ai/learn/programming/signatures/`
 from __future__ import annotations
 
 import logging
+import os
+import threading
 from contextlib import contextmanager
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Optional MLflow DSPy autologging (dev-only)
+# ---------------------------------------------------------------------------
+# If set, this env var contains the MLflow experiment id to send DSPy traces to.
+# This is intended for development and is independent of the workshop's configured
+# MLflow intake experiment.
+DSPY_DEV_MLFLOW_EXPERIMENT_ID_ENV = "MLFLOW_DSPY_DEV_EXPERIMENT_ID"
+_MLFLOW_DSPY_AUTOLOG_LOCK = threading.Lock()
+_MLFLOW_DSPY_AUTOLOG_ENABLED: bool | None = None
+
+
+def _maybe_enable_mlflow_dspy_autolog() -> None:
+    """Enable MLflow DSPy autologging when configured via env var.
+
+    This function is safe to call repeatedly; it will only try to initialize once.
+    """
+    global _MLFLOW_DSPY_AUTOLOG_ENABLED
+
+    if _MLFLOW_DSPY_AUTOLOG_ENABLED is not None:
+        return
+
+    exp_id = (os.getenv(DSPY_DEV_MLFLOW_EXPERIMENT_ID_ENV) or "").strip()
+    if not exp_id:
+        _MLFLOW_DSPY_AUTOLOG_ENABLED = False
+        return
+
+    with _MLFLOW_DSPY_AUTOLOG_LOCK:
+        if _MLFLOW_DSPY_AUTOLOG_ENABLED is not None:
+            return
+
+        try:
+            import mlflow
+
+            # If the user didn't explicitly set a tracking URI, default to Databricks for
+            # this dev-only experiment-id based tracing. This avoids accidentally creating
+            # a local SQLite-backed MLflow store (which would never write to a Databricks
+            # experiment id).
+            if not (os.getenv("MLFLOW_TRACKING_URI") or "").strip():
+                try:
+                    mlflow.set_tracking_uri("databricks")
+                except Exception as exc:
+                    logger.debug("Failed to set MLflow tracking URI to databricks: %s", exc)
+
+            # Pin to the requested experiment id for these dev traces.
+            # (If the tracking URI/credentials aren't configured, this will throw;
+            # we swallow errors so discovery still works in non-MLflow environments.)
+            mlflow.set_experiment(experiment_id=exp_id)
+
+            # Enable DSPy autologging to capture spans/traces for predictor calls.
+            # Leave defaults (log_traces=True) and keep it quiet unless debugging.
+            import mlflow.dspy  # noqa: F401
+
+            mlflow.dspy.autolog(log_traces=True, silent=True)
+
+            _MLFLOW_DSPY_AUTOLOG_ENABLED = True
+            logger.info(
+                "Enabled MLflow DSPy autologging for discovery via %s=%s",
+                DSPY_DEV_MLFLOW_EXPERIMENT_ID_ENV,
+                exp_id,
+            )
+        except Exception as exc:
+            _MLFLOW_DSPY_AUTOLOG_ENABLED = False
+            logger.warning(
+                "MLflow DSPy autologging NOT enabled (env %s=%s). "
+                "Common causes: missing Databricks auth (DATABRICKS_HOST/DATABRICKS_TOKEN or CLI profile), "
+                "or MLFLOW_TRACKING_URI not pointing at Databricks. Error: %s",
+                DSPY_DEV_MLFLOW_EXPERIMENT_ID_ENV,
+                exp_id,
+                exc,
+            )
+
 
 # ---------------------------------------------------------------------------
 # Question generation coverage categories
@@ -191,6 +265,7 @@ def get_predictor(signature_cls: type, lm: Any, *, temperature: float = 0.2, max
 
 def run_predict(predictor: Any, lm: Any, **kwargs):
     """Execute a DSPy predictor call within the LM context."""
+    _maybe_enable_mlflow_dspy_autolog()
     with _dspy_with_lm(lm):
         return predictor(**kwargs)
 

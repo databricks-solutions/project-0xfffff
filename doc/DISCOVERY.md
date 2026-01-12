@@ -23,6 +23,16 @@ The process can be more art than science. It's often messy, and can suffer from 
 
 Assisted facilitation helps participants go deeper on each example and helps facilitators guide discussion without needing to be a domain expert.
 
+## Development: DSPy tracing (optional)
+
+If you want to capture **DSPy/Discovery LLM call traces** in MLflow during development, set:
+
+- **`MLFLOW_DSPY_DEV_EXPERIMENT_ID`**: MLflow experiment id to log DSPy traces to (dev-only, separate from the workshop’s MLflow intake experiment).
+
+Notes:
+- This only affects discovery’s DSPy calls (question generation + summaries) and is a **no-op** when unset.
+- Your MLflow tracking/auth still needs to be configured (e.g., Databricks `DATABRICKS_HOST` / `DATABRICKS_TOKEN` in environments that use `mlflow.set_tracking_uri("databricks")`).
+
 ### During participant review (per example)
 
 - **Start simple, then go deeper**: each example begins with a baseline prompt (“what makes this effective or ineffective?”). As a participant responds, the application can propose a small number of follow-up questions that encourage deeper thinking (edge cases, missing info, boundary conditions, failure modes).

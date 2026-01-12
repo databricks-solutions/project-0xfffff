@@ -39,10 +39,19 @@ type DiscoveryQuestion = {
   id: string;
   prompt: string;
   placeholder?: string | null;
+  category?: string | null;
+};
+
+type DiscoveryCoverage = {
+  covered: string[];
+  missing: string[];
 };
 
 type DiscoveryQuestionsResponse = {
   questions: DiscoveryQuestion[];
+  can_generate_more: boolean;
+  stop_reason?: string | null;
+  coverage: DiscoveryCoverage;
 };
 
 const QA_DELIMITER = '\n\n---\n\n';
@@ -143,6 +152,8 @@ export function TraceViewerDemo() {
   const [discoveryQuestions, setDiscoveryQuestions] = useState<DiscoveryQuestion[]>([]);
   const [discoveryQuestionsLoading, setDiscoveryQuestionsLoading] = useState(false);
   const [discoveryQuestionsError, setDiscoveryQuestionsError] = useState<string | null>(null);
+  const [canGenerateMore, setCanGenerateMore] = useState<boolean>(true);
+  const [stopReason, setStopReason] = useState<string | null>(null);
   const previousTraceId = useRef<string | null>(null);
   const hasAutoNavigated = useRef(false);
   const previousTraceCount = useRef<number>(0);
@@ -183,11 +194,15 @@ export function TraceViewerDemo() {
       })
       .then((data) => {
         setDiscoveryQuestions(Array.isArray(data?.questions) ? data.questions : []);
+        setCanGenerateMore(data?.can_generate_more ?? true);
+        setStopReason(data?.stop_reason ?? null);
       })
       .catch((err: any) => {
         if (err?.name === 'AbortError') return;
         console.error('Failed to fetch discovery questions:', err);
         setDiscoveryQuestions([]);
+        setCanGenerateMore(true);
+        setStopReason(null);
         setDiscoveryQuestionsError(err?.message || 'Failed to fetch discovery questions');
       })
       .finally(() => {
@@ -210,6 +225,8 @@ export function TraceViewerDemo() {
       }
       const data = (await response.json()) as DiscoveryQuestionsResponse;
       setDiscoveryQuestions(Array.isArray(data?.questions) ? data.questions : []);
+      setCanGenerateMore(data?.can_generate_more ?? true);
+      setStopReason(data?.stop_reason ?? null);
     } catch (err: any) {
       console.error('Failed to append discovery question:', err);
       setDiscoveryQuestionsError(err?.message || 'Failed to generate another question');
@@ -849,16 +866,24 @@ export function TraceViewerDemo() {
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-sm text-gray-500">
-                Answer each question below. New questions will be appended for this trace.
-              </p>
+              <div className="flex-1">
+                <p className="text-sm text-gray-500">
+                  Answer each question below. New questions will be appended for this trace.
+                </p>
+                {stopReason && !canGenerateMore && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    {stopReason}
+                  </p>
+                )}
+              </div>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={appendDiscoveryQuestion}
-                disabled={!canCreateFindings || discoveryQuestionsLoading}
+                disabled={!canCreateFindings || discoveryQuestionsLoading || !canGenerateMore}
+                title={!canGenerateMore ? stopReason || 'Cannot generate more questions' : undefined}
               >
-                Generate another question
+                {discoveryQuestionsLoading ? 'Generating…' : 'Generate another question'}
               </Button>
             </div>
 

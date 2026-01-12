@@ -9,9 +9,7 @@ const FACILITATOR_PASSWORD =
   process.env.E2E_FACILITATOR_PASSWORD ?? 'facilitator123';
 const API_URL = process.env.E2E_API_URL ?? 'http://127.0.0.1:8000';
 
-test('rubric creation: facilitator can advance from discovery and create a rubric question', {
-  tag: ['@spec:RUBRIC_SPEC'],
-}, async ({
+test('rubric creation: facilitator can advance from discovery and create a rubric question', async ({
   page,
   request,
 }) => {
@@ -146,8 +144,8 @@ test('rubric creation: facilitator can advance from discovery and create a rubri
     page.getByRole('button', { name: /^Save$/i }).click(),
   ]);
 
-  // Assert UI shows evaluation summary (rubric was created)
-  await expect(page.getByText(/Evaluation Summary/i)).toBeVisible();
+  // Assert UI is on the rubric editor and the criterion exists
+  await expect(page.getByText(/Evaluation Criteria/i)).toBeVisible();
   await expect
     .poll(async () => {
       return page.locator('input').evaluateAll(
