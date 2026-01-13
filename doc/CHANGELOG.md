@@ -3,6 +3,22 @@
 ## v1.3.0 (January 13, 2026)
 
 ### New Features
+- **Database Migrations with Alembic**: Added Alembic for proper database schema migrations (contributed by Forrest Murray)
+  - `0001_baseline.py` - Initial schema baseline
+  - `0002_legacy_schema_fixes.py` - Legacy schema compatibility
+  - `0003_judge_schema_updates.py` - Judge table schema updates
+- **Comprehensive Test Coverage** (contributed by Forrest Murray)
+  - Server unit tests for routers (`databricks`, `dbsql_export`, `users`, `workshops`)
+  - Server unit tests for services (`alignment`, `cohens_kappa`, `irr`, `krippendorff_alpha`, `token_storage`)
+  - Client-side unit tests
+  - E2E tests with Playwright (`rubric-creation`, `workshop-flow`)
+- **Justfile Commands**: New database management commands (contributed by Forrest Murray)
+  - `just db-upgrade` - Run Alembic migrations
+  - `just db-stamp` - Stamp current migration
+  - `just db-revision` - Create new migration
+  - `just db-bootstrap` - Bootstrap database
+  - `just e2e` - Run end-to-end tests
+- **DB Bootstrap on FastAPI Lifecycle**: Database bootstrap now runs automatically on app startup
 - **MLflow GenAI Skills**: Added Claude skills documentation for MLflow GenAI evaluation, tracing, and troubleshooting (`.cursor/skills/`)
 
 ### Bug Fixes
@@ -16,6 +32,10 @@
 - Binary judge prompts now include explicit examples showing valid 0/1 output format
 - Better error messages with fallback conversion logging for debugging
 - Log messages now accurately reflect the `feedback_value_type` being used
+
+### Contributors
+- Forrest Murray - Database migrations, Alembic setup, test coverage
+- Wenwen Xie - Binary judge fixes, MLflow GenAI skills
 
 ---
 
