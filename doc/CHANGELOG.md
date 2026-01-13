@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.3.0 (January 13, 2026)
+
+### New Features
+- **MLflow GenAI Skills**: Added Claude skills documentation for MLflow GenAI evaluation, tracing, and troubleshooting (`.cursor/skills/`)
+
+### Bug Fixes
+- **Binary Judge Fix**: Fixed critical issue where MLflow was returning Likert-style values (e.g., 3.0) instead of binary 0/1 for binary judges
+  - Prepended strong binary format instructions to judge prompts (models pay more attention to prompt start)
+  - Changed `feedback_value_type` from `bool` to `float` for more reliable 0/1 parsing
+  - Added fallback threshold conversion: Likert values >=3 convert to PASS (1), <3 to FAIL (0)
+- **Database Indentation Fix**: Fixed IndentationError in `server/database.py` that prevented server startup
+
+### Improvements
+- Binary judge prompts now include explicit examples showing valid 0/1 output format
+- Better error messages with fallback conversion logging for debugging
+- Log messages now accurately reflect the `feedback_value_type` being used
+
+---
+
 ## v1.2.0 (January 5, 2026)
 
 ### New Features
