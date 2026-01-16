@@ -19,14 +19,4 @@ workshop.db
 *.db-shm
 *.db-wal
 *.csv
-.claude/
 .databricks/
-
-
-# Coding agent guide files
-instructions.md
-ANNOTATION_EDITING_FIX.md
-AUTHENTICATION_FIX.md
-COMMENT_NEWLINE_HANDLING.md
-RUBRIC_FORMAT_UPDATE.md
-TRACE_RANDOMIZATION.md
