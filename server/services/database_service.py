@@ -566,15 +566,26 @@ class DatabaseService:
 
   # Discovery finding operations
   def add_finding(self, workshop_id: str, finding_data: DiscoveryFindingCreate) -> DiscoveryFinding:
-    """Add or update a discovery finding (upsert) with proper concurrency handling."""
-    from sqlalchemy.exc import IntegrityError
+    """Add or update a discovery finding (upsert) with automatic retry on failure.
+    
+    Retries are handled transparently in the backend - the frontend only sees
+    success or failure after all retries are exhausted.
+    
+    Handles:
+    - IntegrityError: Race conditions when multiple users save simultaneously
+    - OperationalError: Database locked/busy (SQLite concurrent access)
+    - General exceptions: Network issues, timeouts, etc.
+    """
+    from sqlalchemy.exc import IntegrityError, OperationalError
     import time
     
     finding_id = str(uuid.uuid4())
-    max_retries = 3
+    max_retries = 5  # Increased for better resilience
+    base_delay = 0.2  # Base delay in seconds
     
     logger.info(f"📝 add_finding called: workshop_id={workshop_id}, trace_id={finding_data.trace_id}, user_id={finding_data.user_id}")
     
+    last_error = None
     for attempt in range(max_retries):
       try:
         # First, try to find existing record to preserve its ID
@@ -595,7 +606,7 @@ class DatabaseService:
           logger.info(f"✅ Finding updated successfully: id={db_finding.id}")
         else:
           # Create new finding
-          logger.info(f"🆕 Creating new finding (attempt {attempt + 1})")
+          logger.info(f"🆕 Creating new finding (attempt {attempt + 1}/{max_retries})")
           db_finding = DiscoveryFindingDB(
             id=finding_id,
             workshop_id=workshop_id,
@@ -619,45 +630,71 @@ class DatabaseService:
         
       except IntegrityError as e:
         # Handle race condition - another request inserted the same record
-        logger.warning(f"⚠️ IntegrityError on finding save (attempt {attempt + 1}): {e}")
+        last_error = e
+        logger.warning(f"⚠️ IntegrityError on finding save (attempt {attempt + 1}/{max_retries}): {e}")
         self.db.rollback()
         if attempt < max_retries - 1:
-          time.sleep(0.1 * (attempt + 1))  # Exponential backoff
+          delay = base_delay * (2 ** attempt)  # Exponential backoff: 0.2, 0.4, 0.8, 1.6, 3.2s
+          logger.info(f"🔄 Retrying in {delay:.1f}s...")
+          time.sleep(delay)
           continue
         else:
           # On final attempt, try to fetch and update the existing record
           logger.info("🔄 Final attempt: fetching existing finding to update")
-          existing = self.db.query(DiscoveryFindingDB).filter(
-            DiscoveryFindingDB.workshop_id == workshop_id,
-            DiscoveryFindingDB.trace_id == finding_data.trace_id,
-            DiscoveryFindingDB.user_id == finding_data.user_id
-          ).first()
-          if existing:
-            existing.insight = finding_data.insight
-            self.db.commit()
-            self.db.refresh(existing)
-            logger.info(f"✅ Finding updated after conflict: id={existing.id}")
-            return DiscoveryFinding(
-              id=existing.id,
-              workshop_id=existing.workshop_id,
-              trace_id=existing.trace_id,
-              user_id=existing.user_id,
-              insight=existing.insight,
-              created_at=existing.created_at,
-            )
+          try:
+            existing = self.db.query(DiscoveryFindingDB).filter(
+              DiscoveryFindingDB.workshop_id == workshop_id,
+              DiscoveryFindingDB.trace_id == finding_data.trace_id,
+              DiscoveryFindingDB.user_id == finding_data.user_id
+            ).first()
+            if existing:
+              existing.insight = finding_data.insight
+              self.db.commit()
+              self.db.refresh(existing)
+              logger.info(f"✅ Finding updated after conflict: id={existing.id}")
+              return DiscoveryFinding(
+                id=existing.id,
+                workshop_id=existing.workshop_id,
+                trace_id=existing.trace_id,
+                user_id=existing.user_id,
+                insight=existing.insight,
+                created_at=existing.created_at,
+              )
+          except Exception as final_error:
+            logger.error(f"❌ Final recovery attempt also failed: {final_error}")
           logger.error(f"❌ Failed to save finding after all retries: {e}")
           raise e
-      except Exception as e:
-        logger.error(f"❌ Error saving finding (attempt {attempt + 1}): {e}")
+          
+      except OperationalError as e:
+        # Handle database locked/busy errors (common with SQLite concurrent access)
+        last_error = e
+        error_msg = str(e).lower()
+        if 'locked' in error_msg or 'busy' in error_msg:
+          logger.warning(f"⚠️ Database locked/busy on finding save (attempt {attempt + 1}/{max_retries}): {e}")
+        else:
+          logger.warning(f"⚠️ OperationalError on finding save (attempt {attempt + 1}/{max_retries}): {e}")
         self.db.rollback()
         if attempt < max_retries - 1:
-          time.sleep(0.1 * (attempt + 1))
+          delay = base_delay * (2 ** attempt) + 0.5  # Extra delay for database contention
+          logger.info(f"🔄 Retrying in {delay:.1f}s...")
+          time.sleep(delay)
+          continue
+        raise e
+        
+      except Exception as e:
+        last_error = e
+        logger.error(f"❌ Error saving finding (attempt {attempt + 1}/{max_retries}): {e}")
+        self.db.rollback()
+        if attempt < max_retries - 1:
+          delay = base_delay * (2 ** attempt)
+          logger.info(f"🔄 Retrying in {delay:.1f}s...")
+          time.sleep(delay)
           continue
         raise e
     
     # This shouldn't be reached, but just in case
-    logger.error("❌ Failed to save finding after all retries (loop exhausted)")
-    raise Exception("Failed to save finding after all retries")
+    logger.error(f"❌ Failed to save finding after all {max_retries} retries (loop exhausted)")
+    raise last_error or Exception("Failed to save finding after all retries")
 
   def get_findings(self, workshop_id: str, user_id: Optional[str] = None) -> List[DiscoveryFinding]:
     """Get discovery findings for a workshop, optionally filtered by user."""
@@ -1034,13 +1071,16 @@ class DatabaseService:
       logger.info(f"📊 Final validated_ratings: {validated_ratings}")
     
     # Check if annotation already exists for this user and trace
-    # Use retry logic to handle concurrent write conflicts
-    from sqlalchemy.exc import IntegrityError
+    # Use retry logic to handle concurrent write conflicts transparently
+    # Retries are automatic and invisible to the frontend
+    from sqlalchemy.exc import IntegrityError, OperationalError
     import time
     
-    max_retries = 3
+    max_retries = 5  # Increased for better resilience
+    base_delay = 0.2  # Base delay in seconds
     annotation_id = str(uuid.uuid4())
     
+    last_error = None
     for attempt in range(max_retries):
       try:
         existing_annotation = (
@@ -1092,7 +1132,7 @@ class DatabaseService:
           )
         else:
           # Create new annotation
-          logger.info(f"🆕 Creating new annotation (attempt {attempt + 1})")
+          logger.info(f"🆕 Creating new annotation (attempt {attempt + 1}/{max_retries})")
           db_annotation = AnnotationDB(
             id=annotation_id,
             workshop_id=workshop_id,
@@ -1123,51 +1163,78 @@ class DatabaseService:
             
       except IntegrityError as e:
         # Handle race condition - another request inserted the same record
-        logger.warning(f"⚠️ IntegrityError on annotation save (attempt {attempt + 1}): {e}")
+        last_error = e
+        logger.warning(f"⚠️ IntegrityError on annotation save (attempt {attempt + 1}/{max_retries}): {e}")
         self.db.rollback()
         if attempt < max_retries - 1:
-          time.sleep(0.1 * (attempt + 1))  # Exponential backoff
+          delay = base_delay * (2 ** attempt)  # Exponential backoff: 0.2, 0.4, 0.8, 1.6, 3.2s
+          logger.info(f"🔄 Retrying in {delay:.1f}s...")
+          time.sleep(delay)
           continue
         else:
           # On final attempt, try to fetch and update the existing record
           logger.info("🔄 Final attempt: fetching existing annotation to update")
-          existing = self.db.query(AnnotationDB).filter(
-            AnnotationDB.user_id == annotation_data.user_id,
-            AnnotationDB.trace_id == annotation_data.trace_id
-          ).first()
-          if existing:
-            if validated_rating is not None:
-              existing.rating = validated_rating
-            if validated_ratings is not None:
-              existing.ratings = validated_ratings
-            if annotation_data.comment is not None:
-              existing.comment = annotation_data.comment
-            self.db.commit()
-            self.db.refresh(existing)
-            logger.info(f"✅ Annotation updated after conflict: id={existing.id}")
-            self._sync_annotation_with_mlflow(workshop_id, existing)
-            return Annotation(
-              id=existing.id,
-              workshop_id=existing.workshop_id,
-              trace_id=existing.trace_id,
-              user_id=existing.user_id,
-              rating=existing.rating,
-              ratings=existing.ratings,
-              comment=existing.comment,
-              mlflow_trace_id=existing.trace.mlflow_trace_id if existing.trace else None,
-              created_at=existing.created_at,
-            )
+          try:
+            existing = self.db.query(AnnotationDB).filter(
+              AnnotationDB.user_id == annotation_data.user_id,
+              AnnotationDB.trace_id == annotation_data.trace_id
+            ).first()
+            if existing:
+              if validated_rating is not None:
+                existing.rating = validated_rating
+              if validated_ratings is not None:
+                existing.ratings = validated_ratings
+              if annotation_data.comment is not None:
+                existing.comment = annotation_data.comment
+              self.db.commit()
+              self.db.refresh(existing)
+              logger.info(f"✅ Annotation updated after conflict: id={existing.id}")
+              self._sync_annotation_with_mlflow(workshop_id, existing)
+              return Annotation(
+                id=existing.id,
+                workshop_id=existing.workshop_id,
+                trace_id=existing.trace_id,
+                user_id=existing.user_id,
+                rating=existing.rating,
+                ratings=existing.ratings,
+                comment=existing.comment,
+                mlflow_trace_id=existing.trace.mlflow_trace_id if existing.trace else None,
+                created_at=existing.created_at,
+              )
+          except Exception as final_error:
+            logger.error(f"❌ Final recovery attempt also failed: {final_error}")
           raise e
-      except Exception as e:
-        logger.error(f"❌ Error saving annotation (attempt {attempt + 1}): {e}")
+          
+      except OperationalError as e:
+        # Handle database locked/busy errors (common with SQLite concurrent access)
+        last_error = e
+        error_msg = str(e).lower()
+        if 'locked' in error_msg or 'busy' in error_msg:
+          logger.warning(f"⚠️ Database locked/busy on annotation save (attempt {attempt + 1}/{max_retries}): {e}")
+        else:
+          logger.warning(f"⚠️ OperationalError on annotation save (attempt {attempt + 1}/{max_retries}): {e}")
         self.db.rollback()
         if attempt < max_retries - 1:
-          time.sleep(0.1 * (attempt + 1))
+          delay = base_delay * (2 ** attempt) + 0.5  # Extra delay for database contention
+          logger.info(f"🔄 Retrying in {delay:.1f}s...")
+          time.sleep(delay)
+          continue
+        raise e
+        
+      except Exception as e:
+        last_error = e
+        logger.error(f"❌ Error saving annotation (attempt {attempt + 1}/{max_retries}): {e}")
+        self.db.rollback()
+        if attempt < max_retries - 1:
+          delay = base_delay * (2 ** attempt)
+          logger.info(f"🔄 Retrying in {delay:.1f}s...")
+          time.sleep(delay)
           continue
         raise e
     
     # This shouldn't be reached, but just in case
-    raise Exception("Failed to save annotation after all retries")
+    logger.error(f"❌ Failed to save annotation after all {max_retries} retries (loop exhausted)")
+    raise last_error or Exception("Failed to save annotation after all retries")
 
   def _validate_and_normalize_rating(self, rating: any, judge_type: str) -> Optional[int]:
     """Validate and normalize a rating based on judge type.
