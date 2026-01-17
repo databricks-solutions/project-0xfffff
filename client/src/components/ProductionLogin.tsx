@@ -33,6 +33,10 @@ export const ProductionLogin: React.FC = () => {
           if (data.length === 1 && !workshopId) {
             setSelectedWorkshopId(data[0].id);
           }
+          // If no workshops exist, auto-select "Create New" for facilitators
+          if (data.length === 0) {
+            setCreateNewWorkshop(true);
+          }
         }
       } catch (err) {
         console.error('Failed to fetch workshops:', err);
@@ -173,16 +177,17 @@ export const ProductionLogin: React.FC = () => {
                 <div className="flex gap-2">
                   <Button
                     type="button"
-                    variant={!createNewWorkshop ? "default" : "outline"}
+                    variant={!createNewWorkshop && workshops.length > 0 ? "default" : "outline"}
                     size="sm"
                     className="flex-1"
                     onClick={() => setCreateNewWorkshop(false)}
+                    disabled={isLoadingWorkshops || workshops.length === 0}
                   >
                     Join Existing
                   </Button>
                   <Button
                     type="button"
-                    variant={createNewWorkshop ? "default" : "outline"}
+                    variant={createNewWorkshop || workshops.length === 0 ? "default" : "outline"}
                     size="sm"
                     className="flex-1"
                     onClick={() => setCreateNewWorkshop(true)}
@@ -192,16 +197,12 @@ export const ProductionLogin: React.FC = () => {
                   </Button>
                 </div>
 
-                {!createNewWorkshop ? (
+                {!createNewWorkshop && workshops.length > 0 ? (
                   // Existing workshop selection
                   isLoadingWorkshops ? (
                     <div className="flex items-center justify-center py-2">
                       <Loader2 className="h-4 w-4 animate-spin mr-2" />
                       <span className="text-sm text-gray-500">Loading workshops...</span>
-                    </div>
-                  ) : workshops.length === 0 ? (
-                    <div className="text-sm text-blue-600 bg-blue-50 p-3 rounded-lg">
-                      No existing workshops. Click "Create New" to start a new workshop.
                     </div>
                   ) : (
                     <Select 
