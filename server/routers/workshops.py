@@ -183,6 +183,32 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+@router.get("/")
+async def list_workshops(
+    facilitator_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    db: Session = Depends(get_db)
+) -> List[Workshop]:
+    """List all workshops, optionally filtered by facilitator or user.
+    
+    Args:
+        facilitator_id: If provided, only return workshops created by this facilitator
+        user_id: If provided, return all workshops the user has access to (as facilitator or participant)
+        db: Database session
+        
+    Returns:
+        List of workshops sorted by creation date (newest first)
+    """
+    db_service = DatabaseService(db)
+    
+    if user_id:
+        # Return all workshops the user has access to
+        return db_service.get_workshops_for_user(user_id)
+    else:
+        # Return all workshops (optionally filtered by facilitator)
+        return db_service.list_workshops(facilitator_id)
+
+
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_workshop(workshop_data: WorkshopCreate, db: Session = Depends(get_db)) -> Workshop:
     """Create a new workshop."""

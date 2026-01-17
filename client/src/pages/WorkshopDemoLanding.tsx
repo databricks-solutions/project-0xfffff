@@ -364,6 +364,13 @@ export function WorkshopDemoLanding() {
           </div>
         );
       } else if (isFacilitator && !isAutoRecovering) {
+        const handleCreateNewWorkshop = () => {
+          // Clear invalid workshop data
+          localStorage.removeItem('workshop_id');
+          setWorkshopId(null);
+          window.history.replaceState({}, '', '/');
+        };
+        
         return (
           <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
             <Card className="max-w-md">
@@ -373,24 +380,36 @@ export function WorkshopDemoLanding() {
                   Workshop Not Found
                 </CardTitle>
                 <CardDescription>
-                  Clearing invalid workshop data...
+                  The workshop ID doesn't exist or has been deleted
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-gray-600 mb-4">
-                  The workshop ID doesn't exist. Redirecting to workshop creation...
+                  The workshop you're trying to access no longer exists. You can create a new workshop or select an existing one.
                 </p>
                 <div className="text-xs text-gray-500 font-mono bg-gray-100 p-2 rounded mb-4">
                   Invalid Workshop ID: {workshopId}
                 </div>
-                <div className="flex items-center justify-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
-                </div>
+                <Button 
+                  onClick={handleCreateNewWorkshop}
+                  className="w-full"
+                >
+                  Go to Workshop Selection
+                </Button>
               </CardContent>
             </Card>
           </div>
         );
       } else {
+        const handleGoToLogin = () => {
+          // Clear invalid workshop data and redirect to login
+          localStorage.removeItem('workshop_id');
+          localStorage.removeItem('workshop_user');
+          setWorkshopId(null);
+          window.history.replaceState({}, '', '/');
+          window.location.reload();
+        };
+        
         return (
           <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
             <Card className="max-w-md">
@@ -408,9 +427,16 @@ export function WorkshopDemoLanding() {
                   The workshop you're trying to access doesn't exist or has been deleted.
                   Please contact your workshop facilitator for a valid workshop link.
                 </p>
-                <div className="text-xs text-gray-500 font-mono bg-gray-100 p-2 rounded">
+                <div className="text-xs text-gray-500 font-mono bg-gray-100 p-2 rounded mb-4">
                   Workshop ID: {workshopId}
                 </div>
+                <Button 
+                  onClick={handleGoToLogin}
+                  className="w-full"
+                  variant="outline"
+                >
+                  Go to Login
+                </Button>
               </CardContent>
             </Card>
           </div>

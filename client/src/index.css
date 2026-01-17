@@ -173,7 +173,7 @@
     @apply border-border;
   }
   html, body, #root {
-    @apply h-screen overflow-hidden;
+    @apply h-screen overflow-auto;
   }
   body {
     @apply bg-background text-foreground;

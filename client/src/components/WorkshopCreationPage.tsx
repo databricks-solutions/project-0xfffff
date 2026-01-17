@@ -5,16 +5,22 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, Sparkles, Users, Target } from 'lucide-react';
+import { Loader2, Sparkles, Users, Target, FolderOpen, Calendar, Clock, ChevronRight } from 'lucide-react';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useUser } from '@/context/UserContext';
-import { useCreateWorkshop } from '@/hooks/useWorkshopApi';
+import { useCreateWorkshop, useListWorkshops } from '@/hooks/useWorkshopApi';
+import type { Workshop } from '@/client';
 
 export function WorkshopCreationPage() {
   const { setWorkshopId } = useWorkshopContext();
   const { user } = useUser();
   const createWorkshop = useCreateWorkshop();
+  const { data: workshops, isLoading: isLoadingWorkshops } = useListWorkshops({ 
+    userId: user?.id,
+    enabled: !!user?.id 
+  });
   
+  const [showExisting, setShowExisting] = useState(true);
   const [formData, setFormData] = useState({
     name: 'LLM Judge Calibration Workshop',
     description: 'A collaborative workshop to calibrate LLM judges through structured evaluation and consensus building.'
@@ -66,9 +72,40 @@ export function WorkshopCreationPage() {
     }
   };
 
+  const handleSelectWorkshop = (workshop: Workshop) => {
+    setWorkshopId(workshop.id);
+    window.history.pushState({}, '', `?workshop=${workshop.id}`);
+  };
+
+  const formatDate = (dateString: string | null | undefined) => {
+    if (!dateString) return 'Unknown';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const getPhaseLabel = (phase: string | null | undefined) => {
+    if (!phase) return 'Not Started';
+    const phases: Record<string, string> = {
+      'intake': 'Intake',
+      'discovery': 'Discovery',
+      'rubric': 'Rubric Creation',
+      'annotation': 'Annotation',
+      'results': 'Results Review',
+      'judge_tuning': 'Judge Tuning',
+      'unity_volume': 'Unity Volume'
+    };
+    return phases[phase] || phase;
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-6">
-      <div className="w-full max-w-2xl">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 overflow-auto py-8 px-6">
+      <div className="w-full max-w-2xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
           <div className="flex justify-center items-center gap-3 mb-4">
@@ -78,9 +115,72 @@ export function WorkshopCreationPage() {
             </h1>
           </div>
           <p className="text-xl text-gray-600 max-w-xl mx-auto">
-            Create your LLM Judge Calibration workshop to get started
+            {workshops && workshops.length > 0 
+              ? 'Continue an existing workshop or create a new one'
+              : 'Create your LLM Judge Calibration workshop to get started'
+            }
           </p>
         </div>
+
+        {/* Existing Workshops */}
+        {workshops && workshops.length > 0 && (
+          <Card className="mb-6 border-green-200 bg-green-50/50">
+            <CardHeader className="cursor-pointer" onClick={() => setShowExisting(!showExisting)}>
+              <CardTitle className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <FolderOpen className="h-5 w-5 text-green-600" />
+                  Your Workshops ({workshops.length})
+                </div>
+                <ChevronRight className={`h-5 w-5 text-gray-400 transition-transform ${showExisting ? 'rotate-90' : ''}`} />
+              </CardTitle>
+              <CardDescription>
+                Click to {showExisting ? 'hide' : 'show'} your existing workshops
+              </CardDescription>
+            </CardHeader>
+            {showExisting && (
+              <CardContent className="space-y-3">
+                {isLoadingWorkshops ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-6 w-6 animate-spin text-green-600" />
+                    <span className="ml-2 text-gray-600">Loading workshops...</span>
+                  </div>
+                ) : (
+                  workshops.map((workshop) => (
+                    <div 
+                      key={workshop.id}
+                      className="p-4 bg-white rounded-lg border border-gray-200 hover:border-green-400 hover:shadow-md transition-all cursor-pointer group"
+                      onClick={() => handleSelectWorkshop(workshop)}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-gray-900 group-hover:text-green-700 transition-colors">
+                            {workshop.name}
+                          </h3>
+                          {workshop.description && (
+                            <p className="text-sm text-gray-500 mt-1 line-clamp-2">
+                              {workshop.description}
+                            </p>
+                          )}
+                          <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
+                            <span className="flex items-center gap-1">
+                              <Calendar className="h-3 w-3" />
+                              {formatDate(workshop.created_at)}
+                            </span>
+                            <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                              <Clock className="h-3 w-3" />
+                              {getPhaseLabel(workshop.current_phase)}
+                            </span>
+                          </div>
+                        </div>
+                        <ChevronRight className="h-5 w-5 text-gray-300 group-hover:text-green-500 group-hover:translate-x-1 transition-all" />
+                      </div>
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            )}
+          </Card>
+        )}
 
         {/* Quick Start Option */}
         <Card className="mb-6 border-blue-200 bg-blue-50/50">
@@ -108,7 +208,7 @@ export function WorkshopCreationPage() {
               ) : (
                 <>
                   <Sparkles className="h-4 w-4 mr-2" />
-                  Start Workshop Now
+                  Create New Workshop
                 </>
               )}
             </Button>

@@ -156,6 +156,65 @@ class DatabaseService:
     self._set_cache(cache_key, workshop)
     return workshop
 
+  def list_workshops(self, facilitator_id: Optional[str] = None) -> List[Workshop]:
+    """List all workshops, optionally filtered by facilitator.
+    
+    Args:
+        facilitator_id: If provided, only return workshops created by this facilitator
+        
+    Returns:
+        List of Workshop objects sorted by creation date (newest first)
+    """
+    query = self.db.query(WorkshopDB)
+    
+    if facilitator_id:
+      query = query.filter(WorkshopDB.facilitator_id == facilitator_id)
+    
+    # Order by creation date, newest first
+    query = query.order_by(WorkshopDB.created_at.desc())
+    
+    db_workshops = query.all()
+    return [self._workshop_from_db(w) for w in db_workshops]
+
+  def get_workshops_for_user(self, user_id: str) -> List[Workshop]:
+    """Get all workshops that a user is part of (either as facilitator or participant).
+    
+    Args:
+        user_id: The user ID to find workshops for
+        
+    Returns:
+        List of Workshop objects the user has access to
+    """
+    from server.database import UserDB, WorkshopDB
+    
+    # Get workshops where user is the facilitator
+    facilitator_workshops = self.db.query(WorkshopDB).filter(
+      WorkshopDB.facilitator_id == user_id
+    ).all()
+    
+    # Get workshops where user has been added as a participant
+    participant_workshop_ids = self.db.query(UserDB.workshop_id).filter(
+      UserDB.id == user_id,
+      UserDB.workshop_id.isnot(None)
+    ).distinct().all()
+    
+    participant_workshop_ids = [w[0] for w in participant_workshop_ids if w[0]]
+    
+    participant_workshops = self.db.query(WorkshopDB).filter(
+      WorkshopDB.id.in_(participant_workshop_ids)
+    ).all() if participant_workshop_ids else []
+    
+    # Combine and deduplicate
+    all_workshops = {w.id: w for w in facilitator_workshops}
+    for w in participant_workshops:
+      if w.id not in all_workshops:
+        all_workshops[w.id] = w
+    
+    # Sort by creation date, newest first
+    sorted_workshops = sorted(all_workshops.values(), key=lambda w: w.created_at or '', reverse=True)
+    
+    return [self._workshop_from_db(w) for w in sorted_workshops]
+
   def update_workshop_judge_name(self, workshop_id: str, judge_name: str) -> Optional[Workshop]:
     """Update the judge name for a workshop."""
     db_workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()

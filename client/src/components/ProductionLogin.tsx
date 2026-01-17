@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useUser } from '@/context/UserContext';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { UsersService } from '@/client';
@@ -7,12 +7,41 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Loader2, Plus } from 'lucide-react';
+import type { Workshop } from '@/client';
 
 export const ProductionLogin: React.FC = () => {
   const { setUser } = useUser();
-  const { workshopId } = useWorkshopContext();
+  const { workshopId, setWorkshopId } = useWorkshopContext();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [workshops, setWorkshops] = useState<Workshop[]>([]);
+  const [isLoadingWorkshops, setIsLoadingWorkshops] = useState(true);
+  const [selectedWorkshopId, setSelectedWorkshopId] = useState<string>(workshopId || '');
+  const [createNewWorkshop, setCreateNewWorkshop] = useState(false);
+
+  // Fetch available workshops on mount
+  useEffect(() => {
+    const fetchWorkshops = async () => {
+      try {
+        const response = await fetch('/workshops/');
+        if (response.ok) {
+          const data = await response.json();
+          setWorkshops(data);
+          // If there's only one workshop, auto-select it
+          if (data.length === 1 && !workshopId) {
+            setSelectedWorkshopId(data[0].id);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch workshops:', err);
+      } finally {
+        setIsLoadingWorkshops(false);
+      }
+    };
+    fetchWorkshops();
+  }, [workshopId]);
 
   // Login form state
   const [loginData, setLoginData] = useState({
@@ -25,11 +54,32 @@ export const ProductionLogin: React.FC = () => {
     setIsLoading(true);
     setError(null);
 
+    // Validate workshop selection for non-facilitators
+    if (!selectedWorkshopId && !loginData.password) {
+      setError('Please select a workshop to join.');
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const response = await UsersService.loginUsersAuthLoginPost({
         email: loginData.email,
         password: loginData.password
       });
+
+      // Handle facilitator creating new workshop
+      if (loginData.password && createNewWorkshop) {
+        // Clear workshop ID to go to workshop creation page
+        setWorkshopId(null);
+        localStorage.removeItem('workshop_id');
+        window.history.replaceState({}, '', '/');
+      }
+      // Set workshop ID if selected (for existing workshops)
+      else if (selectedWorkshopId && !response.user.workshop_id) {
+        // Update the workshop context
+        setWorkshopId(selectedWorkshopId);
+        window.history.pushState({}, '', `?workshop=${selectedWorkshopId}`);
+      }
 
       // Set the user in context
       await setUser(response.user);
@@ -81,14 +131,116 @@ export const ProductionLogin: React.FC = () => {
               />
             </div>
 
+            {/* Workshop Selection for Participants/SMEs */}
+            {!loginData.password && (
+              <div className="space-y-2">
+                <Label htmlFor="workshop">Select Workshop</Label>
+                {isLoadingWorkshops ? (
+                  <div className="flex items-center justify-center py-2">
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    <span className="text-sm text-gray-500">Loading workshops...</span>
+                  </div>
+                ) : workshops.length === 0 ? (
+                  <div className="text-sm text-amber-600 bg-amber-50 p-3 rounded-lg">
+                    No workshops available. Please wait for a facilitator to create one.
+                  </div>
+                ) : (
+                  <Select 
+                    value={selectedWorkshopId} 
+                    onValueChange={setSelectedWorkshopId}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a workshop to join" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {workshops.map((workshop) => (
+                        <SelectItem key={workshop.id} value={workshop.id}>
+                          {workshop.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            )}
+
+            {/* Workshop Selection for Facilitators */}
+            {loginData.password && (
+              <div className="space-y-3">
+                <Label>Workshop</Label>
+                
+                {/* Toggle between existing and new */}
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant={!createNewWorkshop ? "default" : "outline"}
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => setCreateNewWorkshop(false)}
+                  >
+                    Join Existing
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={createNewWorkshop ? "default" : "outline"}
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => setCreateNewWorkshop(true)}
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    Create New
+                  </Button>
+                </div>
+
+                {!createNewWorkshop ? (
+                  // Existing workshop selection
+                  isLoadingWorkshops ? (
+                    <div className="flex items-center justify-center py-2">
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      <span className="text-sm text-gray-500">Loading workshops...</span>
+                    </div>
+                  ) : workshops.length === 0 ? (
+                    <div className="text-sm text-blue-600 bg-blue-50 p-3 rounded-lg">
+                      No existing workshops. Click "Create New" to start a new workshop.
+                    </div>
+                  ) : (
+                    <Select 
+                      value={selectedWorkshopId} 
+                      onValueChange={setSelectedWorkshopId}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a workshop" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {workshops.map((workshop) => (
+                          <SelectItem key={workshop.id} value={workshop.id}>
+                            {workshop.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )
+                ) : (
+                  // New workshop indicator
+                  <div className="text-sm text-green-600 bg-green-50 p-3 rounded-lg">
+                    A new workshop will be created after you sign in.
+                  </div>
+                )}
+              </div>
+            )}
+
             {error && (
               <Alert variant="destructive">
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
 
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? 'Signing in...' : 'Sign In'}
+            <Button 
+              type="submit" 
+              className="w-full" 
+              disabled={isLoading || (!loginData.password && !selectedWorkshopId) || (loginData.password && !createNewWorkshop && !selectedWorkshopId && workshops.length > 0)}
+            >
+              {isLoading ? 'Signing in...' : createNewWorkshop ? 'Sign In & Create Workshop' : 'Sign In'}
             </Button>
           </form>
 

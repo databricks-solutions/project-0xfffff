@@ -22,6 +22,8 @@ import type {
 
 // Query keys
 const QUERY_KEYS = {
+  workshops: () => ['workshops'],
+  workshopsForUser: (userId: string) => ['workshops', 'user', userId],
   workshop: (id: string) => ['workshop', id],
   traces: (workshopId: string) => ['traces', workshopId],
   findings: (workshopId: string, userId?: string) => ['findings', workshopId, userId],
@@ -66,6 +68,38 @@ export function refetchAllWorkshopQueries(queryClient: any, workshopId: string) 
 }
 
 // Workshop hooks
+
+// Custom API call for listing workshops (not in generated client)
+async function listWorkshopsApi(userId?: string, facilitatorId?: string): Promise<Workshop[]> {
+  const params = new URLSearchParams();
+  if (userId) params.append('user_id', userId);
+  if (facilitatorId) params.append('facilitator_id', facilitatorId);
+  
+  const queryString = params.toString();
+  const url = `/workshops/${queryString ? `?${queryString}` : ''}`;
+  
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to list workshops: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+export function useListWorkshops(options?: { userId?: string; facilitatorId?: string; enabled?: boolean }) {
+  const { userId, facilitatorId, enabled = true } = options || {};
+  
+  return useQuery({
+    queryKey: userId 
+      ? QUERY_KEYS.workshopsForUser(userId)
+      : QUERY_KEYS.workshops(),
+    queryFn: () => listWorkshopsApi(userId, facilitatorId),
+    enabled,
+    staleTime: 30000, // Consider data stale after 30 seconds
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+  });
+}
+
 export function useWorkshop(workshopId: string) {
   return useQuery({
     queryKey: QUERY_KEYS.workshop(workshopId),
