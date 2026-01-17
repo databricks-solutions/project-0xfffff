@@ -47,6 +47,19 @@ async def login(login_data: UserLogin, db_service=Depends(get_database_service))
   if not user:
     raise HTTPException(status_code=401, detail='Invalid email or password')
 
+  # For participants/SMEs (no password), validate workshop access
+  # They can only access workshops they've been invited to
+  if user.role in ['sme', 'participant'] and login_data.workshop_id:
+    # Check if user is invited to the selected workshop
+    if user.workshop_id != login_data.workshop_id:
+      # Also check workshop_participants table for multi-workshop support
+      participant = db_service.get_workshop_participant(login_data.workshop_id, user.id)
+      if not participant:
+        raise HTTPException(
+          status_code=403, 
+          detail=f'You are not invited to this workshop. Please contact the facilitator to be added.'
+        )
+
   # Activate user if they were pending
   db_service.activate_user_on_login(user.id)
 

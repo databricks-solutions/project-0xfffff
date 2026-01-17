@@ -18,34 +18,53 @@ export const ProductionLogin: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [workshops, setWorkshops] = useState<Workshop[]>([]);
   const [isLoadingWorkshops, setIsLoadingWorkshops] = useState(true);
-  const [selectedWorkshopId, setSelectedWorkshopId] = useState<string>(workshopId || '');
+  const [selectedWorkshopId, setSelectedWorkshopId] = useState<string>('');
   const [createNewWorkshop, setCreateNewWorkshop] = useState(false);
 
-  // Fetch available workshops on mount
+  // Clear URL parameter on login page - users will select their workshop
+  useEffect(() => {
+    if (window.location.search.includes('workshop=')) {
+      window.history.replaceState({}, '', '/');
+      setWorkshopId(null);
+      localStorage.removeItem('workshop_id');
+    }
+  }, [setWorkshopId]);
+
+  // Fetch available workshops on mount (only once)
   useEffect(() => {
     const fetchWorkshops = async () => {
       try {
-        const response = await fetch('/workshops/');
+        // Add cache-busting to ensure fresh data
+        const response = await fetch(`/workshops/?_t=${Date.now()}`, {
+          headers: {
+            'Cache-Control': 'no-cache',
+          }
+        });
         if (response.ok) {
           const data = await response.json();
+          console.log('[ProductionLogin] Fetched workshops:', data.length, data);
           setWorkshops(data);
+          
           // If there's only one workshop, auto-select it
-          if (data.length === 1 && !workshopId) {
+          if (data.length === 1) {
             setSelectedWorkshopId(data[0].id);
           }
           // If no workshops exist, auto-select "Create New" for facilitators
           if (data.length === 0) {
             setCreateNewWorkshop(true);
           }
+        } else {
+          console.error('[ProductionLogin] Failed to fetch workshops:', response.status, response.statusText);
         }
       } catch (err) {
-        console.error('Failed to fetch workshops:', err);
+        console.error('[ProductionLogin] Error fetching workshops:', err);
       } finally {
         setIsLoadingWorkshops(false);
       }
     };
     fetchWorkshops();
-  }, [workshopId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
 
   // Login form state
   const [loginData, setLoginData] = useState({
@@ -66,9 +85,11 @@ export const ProductionLogin: React.FC = () => {
     }
 
     try {
+      // For participants/SMEs (no password), include workshop_id for access validation
       const response = await UsersService.loginUsersAuthLoginPost({
         email: loginData.email,
-        password: loginData.password
+        password: loginData.password,
+        workshop_id: !loginData.password ? selectedWorkshopId : undefined
       });
 
       // Handle facilitator creating new workshop
@@ -88,8 +109,8 @@ export const ProductionLogin: React.FC = () => {
       // Set the user in context
       await setUser(response.user);
     } catch (error: any) {
-      
-      setError(error.response?.data?.detail || 'Login failed. Please check your credentials.');
+      const errorDetail = error.body?.detail || error.response?.data?.detail || 'Login failed. Please check your credentials.';
+      setError(errorDetail);
     } finally {
       setIsLoading(false);
     }
@@ -149,21 +170,29 @@ export const ProductionLogin: React.FC = () => {
                     No workshops available. Please wait for a facilitator to create one.
                   </div>
                 ) : (
-                  <Select 
-                    value={selectedWorkshopId} 
-                    onValueChange={setSelectedWorkshopId}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a workshop to join" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {workshops.map((workshop) => (
-                        <SelectItem key={workshop.id} value={workshop.id}>
-                          {workshop.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <>
+                    <Select 
+                      value={selectedWorkshopId} 
+                      onValueChange={(value) => {
+                        console.log('[ProductionLogin] Workshop selected:', value);
+                        setSelectedWorkshopId(value);
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a workshop to join" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {workshops.map((workshop, index) => (
+                          <SelectItem key={workshop.id} value={workshop.id}>
+                            {workshop.name} {workshops.length > 1 && `(#${index + 1})`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <div className="text-xs text-gray-500">
+                      {workshops.length} workshop{workshops.length !== 1 ? 's' : ''} available
+                    </div>
+                  </>
                 )}
               </div>
             )}
@@ -207,15 +236,18 @@ export const ProductionLogin: React.FC = () => {
                   ) : (
                     <Select 
                       value={selectedWorkshopId} 
-                      onValueChange={setSelectedWorkshopId}
+                      onValueChange={(value) => {
+                        console.log('[ProductionLogin] Facilitator workshop selected:', value);
+                        setSelectedWorkshopId(value);
+                      }}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Select a workshop" />
                       </SelectTrigger>
                       <SelectContent>
-                        {workshops.map((workshop) => (
+                        {workshops.map((workshop, index) => (
                           <SelectItem key={workshop.id} value={workshop.id}>
-                            {workshop.name}
+                            {workshop.name} {workshops.length > 1 && `(#${index + 1})`}
                           </SelectItem>
                         ))}
                       </SelectContent>

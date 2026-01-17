@@ -56,6 +56,7 @@ class UserCreate(BaseModel):
 class UserLogin(BaseModel):
   email: str
   password: str
+  workshop_id: Optional[str] = None  # Required for participants/SMEs to validate access
 
 
 class User(BaseModel):
