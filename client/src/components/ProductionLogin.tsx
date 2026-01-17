@@ -21,7 +21,7 @@ export const ProductionLogin: React.FC = () => {
   const [selectedWorkshopId, setSelectedWorkshopId] = useState<string>(workshopId || '');
   const [createNewWorkshop, setCreateNewWorkshop] = useState(false);
 
-  // Fetch available workshops on mount
+  // Fetch available workshops on mount (only once)
   useEffect(() => {
     const fetchWorkshops = async () => {
       try {
@@ -35,8 +35,22 @@ export const ProductionLogin: React.FC = () => {
           const data = await response.json();
           console.log('[ProductionLogin] Fetched workshops:', data.length, data);
           setWorkshops(data);
-          // If there's only one workshop, auto-select it
-          if (data.length === 1 && !workshopId) {
+          
+          // Check if current workshopId from URL is valid
+          const validWorkshopIds = data.map((w: Workshop) => w.id);
+          if (workshopId && validWorkshopIds.includes(workshopId)) {
+            // URL has a valid workshop ID, pre-select it
+            setSelectedWorkshopId(workshopId);
+          } else if (workshopId && !validWorkshopIds.includes(workshopId)) {
+            // URL has an INVALID workshop ID - clear it
+            console.log('[ProductionLogin] Invalid workshop ID in URL, clearing:', workshopId);
+            setWorkshopId(null);
+            localStorage.removeItem('workshop_id');
+            window.history.replaceState({}, '', '/');
+          }
+          
+          // If there's only one workshop and nothing selected, auto-select it
+          if (data.length === 1 && !selectedWorkshopId) {
             setSelectedWorkshopId(data[0].id);
           }
           // If no workshops exist, auto-select "Create New" for facilitators
@@ -53,7 +67,8 @@ export const ProductionLogin: React.FC = () => {
       }
     };
     fetchWorkshops();
-  }, [workshopId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
 
   // Login form state
   const [loginData, setLoginData] = useState({
