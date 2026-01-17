@@ -5,5 +5,6 @@
 export type UserLogin = {
     email: string;
     password: string;
+    workshop_id?: string;  // Required for participants/SMEs to validate access
 };
 

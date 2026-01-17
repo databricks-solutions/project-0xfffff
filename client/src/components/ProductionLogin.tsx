@@ -66,9 +66,11 @@ export const ProductionLogin: React.FC = () => {
     }
 
     try {
+      // For participants/SMEs (no password), include workshop_id for access validation
       const response = await UsersService.loginUsersAuthLoginPost({
         email: loginData.email,
-        password: loginData.password
+        password: loginData.password,
+        workshop_id: !loginData.password ? selectedWorkshopId : undefined
       });
 
       // Handle facilitator creating new workshop
@@ -88,8 +90,8 @@ export const ProductionLogin: React.FC = () => {
       // Set the user in context
       await setUser(response.user);
     } catch (error: any) {
-      
-      setError(error.response?.data?.detail || 'Login failed. Please check your credentials.');
+      const errorDetail = error.body?.detail || error.response?.data?.detail || 'Login failed. Please check your credentials.';
+      setError(errorDetail);
     } finally {
       setIsLoading(false);
     }
