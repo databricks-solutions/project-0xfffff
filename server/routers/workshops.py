@@ -9,7 +9,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -1925,6 +1925,23 @@ async def upload_csv_traces(
             if not row.get("request_preview") or not row.get("response_preview"):
                 continue
 
+            # Get and clean request/response text
+            def clean_csv_text(text):
+                if not text:
+                    return ""
+                text = text.strip()
+                # Remove surrounding quotes
+                while text.startswith('"') and text.endswith('"') and len(text) > 1:
+                    text = text[1:-1].strip()
+                text = text.strip('"').strip("'")
+                text = text.replace('""', '"')
+                if '\\n' in text:
+                    text = text.replace('\\n', '\n')
+                return text
+            
+            request_text = clean_csv_text(row["request_preview"])
+            response_text = clean_csv_text(row["response_preview"])
+
             # Build rich context from MLflow metadata
             context = {"source": "mlflow_csv_upload", "filename": file.filename, "csv_row_number": row_number}
 
@@ -1994,6 +2011,164 @@ async def upload_csv_traces(
         raise
     except Exception as e:
         logger.error(f"Failed to process CSV file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to process CSV file: {str(e)}")
+
+
+@router.post("/{workshop_id}/csv-upload-to-mlflow")
+async def upload_csv_and_log_to_mlflow(
+    workshop_id: str,
+    file: UploadFile = File(...),
+    databricks_host: str = Form(None),
+    databricks_token: str = Form(None),
+    experiment_id: str = Form(None),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """Upload CSV with request/response data and log each row as an MLflow trace.
+    
+    This enables customers who don't have existing MLflow traces to participate
+    in the Judge Builder workshop by uploading conversational data as CSV.
+    
+    Expected CSV format:
+    - Required columns: request_preview, response_preview
+    - Optional columns: any additional metadata
+    
+    The endpoint will:
+    1. Parse the CSV file
+    2. For each row, create an MLflow trace with the request/response
+    3. Store the traces locally with their MLflow trace IDs
+    
+    Environment variables used if parameters not provided:
+    - DATABRICKS_HOST
+    - DATABRICKS_TOKEN  
+    - MLFLOW_EXPERIMENT_ID
+    """
+    import csv
+    import io
+    import os
+    
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    # Validate file type
+    if not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="File must be a CSV file")
+
+    # Get MLflow configuration from parameters or environment variables
+    host = databricks_host or os.environ.get("DATABRICKS_HOST")
+    token = databricks_token or os.environ.get("DATABRICKS_TOKEN")
+    exp_id = experiment_id or os.environ.get("MLFLOW_EXPERIMENT_ID")
+    
+    if not host or not token or not exp_id:
+        raise HTTPException(
+            status_code=400, 
+            detail="MLflow configuration required. Provide databricks_host, databricks_token, and experiment_id as parameters or set DATABRICKS_HOST, DATABRICKS_TOKEN, and MLFLOW_EXPERIMENT_ID environment variables."
+        )
+    
+    # Ensure host has proper format
+    if not host.startswith("https://"):
+        host = f"https://{host}"
+    host = host.rstrip("/")
+
+    try:
+        import mlflow
+        
+        # Configure MLflow
+        os.environ["DATABRICKS_HOST"] = host
+        os.environ["DATABRICKS_TOKEN"] = token
+        mlflow.set_tracking_uri("databricks")
+        mlflow.set_experiment(experiment_id=exp_id)
+        
+        # Read file content
+        content = await file.read()
+        decoded_content = content.decode("utf-8")
+
+        # Parse CSV
+        csv_reader = csv.DictReader(io.StringIO(decoded_content))
+
+        # Validate required columns
+        if (
+            not csv_reader.fieldnames
+            or "request_preview" not in csv_reader.fieldnames
+            or "response_preview" not in csv_reader.fieldnames
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail='CSV must contain "request_preview" and "response_preview" columns. Found columns: '
+                + ", ".join(csv_reader.fieldnames or []),
+            )
+
+        # Process each row and create MLflow traces
+        row_number = 0
+        created_traces = 0
+        errors = []
+        
+        # Helper to clean CSV text
+        def clean_text(text):
+            if not text:
+                return ""
+            text = text.strip()
+            while text.startswith('"') and text.endswith('"') and len(text) > 1:
+                text = text[1:-1].strip()
+            text = text.strip('"').strip("'")
+            text = text.replace('""', '"')
+            if '\\n' in text:
+                text = text.replace('\\n', '\n')
+            return text
+        
+        for row in csv_reader:
+            row_number += 1
+
+            # Skip empty rows
+            request_text = clean_text(row.get("request_preview", ""))
+            response_text = clean_text(row.get("response_preview", ""))
+            
+            if not request_text or not response_text:
+                continue
+
+            try:
+                # Create MLflow trace using start_span context manager
+                with mlflow.start_span(name=f"csv_import_row_{row_number}") as span:
+                    span.set_inputs(request_text)
+                    span.set_outputs(response_text)
+                
+                created_traces += 1
+                logger.info(f"Created MLflow trace for row {row_number}")
+                
+            except Exception as trace_error:
+                errors.append(f"Row {row_number}: {str(trace_error)}")
+                logger.warning(f"Failed to create MLflow trace for row {row_number}: {str(trace_error)}")
+                continue
+
+        if created_traces == 0:
+            error_msg = "No valid MLflow traces could be created from CSV file"
+            if errors:
+                error_msg += f". Errors: {'; '.join(errors[:5])}"
+            raise HTTPException(status_code=400, detail=error_msg)
+
+        # NOTE: This endpoint ONLY creates MLflow traces - it does NOT import into Discovery.
+        # To import the MLflow traces into Discovery, use the "Import from MLflow" feature
+        # or choose "Import directly into Discovery" when uploading CSV.
+
+        result = {
+            "message": f"Successfully created {created_traces} MLflow traces",
+            "mlflow_traces_created": created_traces,
+            "workshop_id": workshop_id,
+            "filename": file.filename,
+            "experiment_id": exp_id,
+            "mlflow_host": host,
+        }
+        
+        if errors:
+            result["warnings"] = errors[:10]  # Include first 10 errors as warnings
+            
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to process CSV and create MLflow traces: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to process CSV file: {str(e)}")
 
 

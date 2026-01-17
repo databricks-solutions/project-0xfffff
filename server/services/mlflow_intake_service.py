@@ -187,6 +187,25 @@ class MLflowIntakeService:
     return text[:max_length] + '...'
 
 
+  def _clean_extracted_text(self, text: str) -> str:
+    """Clean extracted text by removing surrounding quotes and handling escapes."""
+    if not text:
+      return ""
+    # Strip whitespace
+    text = text.strip()
+    # Remove surrounding double quotes repeatedly
+    while text.startswith('"') and text.endswith('"') and len(text) > 1:
+      text = text[1:-1].strip()
+    # Remove surrounding single quotes
+    while text.startswith("'") and text.endswith("'") and len(text) > 1:
+      text = text[1:-1].strip()
+    # Handle escaped quotes
+    text = text.replace('\\"', '"')
+    text = text.replace("\\'", "'")
+    # Handle escaped newlines
+    text = text.replace('\\n', '\n')
+    return text
+
   def _extract_content_from_json(self, json_text: str) -> str:
     """Extract content from JSON input/output format."""
     try:
@@ -305,12 +324,15 @@ class MLflowIntakeService:
                 if texts:
                   return '\n'.join(texts)
 
-      # If no specific format found, return the original text
-      return json_text
+      # If no specific format found, try to clean the original text
+      # It might be a plain string with quotes from JSON serialization
+      if isinstance(data, str):
+        return self._clean_extracted_text(data)
+      return self._clean_extracted_text(json_text)
 
     except (json.JSONDecodeError, KeyError, IndexError):
-      # If JSON parsing fails, return the original text
-      return json_text
+      # If JSON parsing fails, try to clean and return the original text
+      return self._clean_extracted_text(json_text)
 
   def _extract_content_from_json_2(self, data: str, side: Literal['input', 'output'] = 'output') -> str:
     """Extracts display friendly content from MLflow trace JSON."""

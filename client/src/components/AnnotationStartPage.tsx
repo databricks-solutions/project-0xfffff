@@ -243,7 +243,7 @@ export const AnnotationStartPage: React.FC<AnnotationStartPageProps> = ({ onStar
               </div>
             )}
           </div>
-
+          
           <div className="mt-4 p-3 bg-purple-100 rounded-lg">
             <p className="text-sm text-purple-800">
               <strong>Selected:</strong> {

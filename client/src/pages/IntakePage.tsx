@@ -47,13 +47,33 @@ export function IntakePage() {
   const { setCurrentPhase } = useWorkflowContext();
   const queryClient = useQueryClient();
   
-  const [config, setConfig] = useState<MLflowConfig>({
-    databricks_host: '',
-    databricks_token: '',
-    experiment_id: '',
-    max_traces: 100,
-    filter_string: ''
-  });
+  // Load MLflow config from localStorage on initial mount
+  const getInitialConfig = (): MLflowConfig => {
+    try {
+      const saved = localStorage.getItem('mlflow_config');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          databricks_host: parsed.databricks_host || '',
+          databricks_token: parsed.databricks_token || '',
+          experiment_id: parsed.experiment_id || '',
+          max_traces: parsed.max_traces || 100,
+          filter_string: parsed.filter_string || ''
+        };
+      }
+    } catch (e) {
+      // Ignore localStorage errors
+    }
+    return {
+      databricks_host: '',
+      databricks_token: '',
+      experiment_id: '',
+      max_traces: 100,
+      filter_string: ''
+    };
+  };
+
+  const [config, setConfig] = useState<MLflowConfig>(getInitialConfig);
   
   const [status, setStatus] = useState<MLflowStatus | null>(null);
   const [isIngesting, setIsIngesting] = useState(false);
@@ -61,6 +81,18 @@ export function IntakePage() {
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [isUploadingCsv, setIsUploadingCsv] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [csvImportDestination, setCsvImportDestination] = useState<'discovery' | 'mlflow' | null>(null);
+
+  // Save config to localStorage whenever it changes
+  useEffect(() => {
+    if (config.databricks_host || config.databricks_token || config.experiment_id) {
+      try {
+        localStorage.setItem('mlflow_config', JSON.stringify(config));
+      } catch (e) {
+        // Ignore localStorage errors
+      }
+    }
+  }, [config]);
 
   // Load existing configuration and status
   useEffect(() => {
@@ -79,9 +111,16 @@ export function IntakePage() {
         const statusData = await response.json();
         setStatus(statusData);
         
-        // Load existing config if available
+        // Merge backend config with existing config (prefer backend values if present)
         if (statusData.config) {
-          setConfig(statusData.config);
+          setConfig(prev => ({
+            ...prev,
+            databricks_host: statusData.config.databricks_host || prev.databricks_host,
+            databricks_token: statusData.config.databricks_token || prev.databricks_token,
+            experiment_id: statusData.config.experiment_id || prev.experiment_id,
+            max_traces: statusData.config.max_traces || prev.max_traces,
+            filter_string: statusData.config.filter_string || prev.filter_string
+          }));
         }
       }
     } catch (err) {
@@ -209,6 +248,58 @@ export function IntakePage() {
       } else {
         const errorData = await response.json().catch(() => ({}));
         setError(errorData.detail || `Failed to upload CSV (HTTP ${response.status})`);
+      }
+    } catch (err) {
+      setError('Network error: Unable to connect to the server. Please check your connection and try again.');
+    } finally {
+      setIsUploadingCsv(false);
+    }
+  };
+
+  const uploadCsvToMlflow = async () => {
+    if (!workshopId) {
+      setError('No workshop available. Please create a workshop first.');
+      return;
+    }
+
+    if (!csvFile) {
+      setError('Please select a CSV file to upload.');
+      return;
+    }
+
+    if (!config.databricks_host || !config.databricks_token || !config.experiment_id) {
+      setError('Please configure MLflow settings (Databricks Host, Token, and Experiment ID) before uploading.');
+      return;
+    }
+
+    setIsUploadingCsv(true);
+    setError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', csvFile);
+      formData.append('databricks_host', config.databricks_host);
+      formData.append('databricks_token', config.databricks_token);
+      formData.append('experiment_id', config.experiment_id);
+
+      const response = await fetch(`/workshops/${workshopId}/csv-upload-to-mlflow`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+
+        toast.success(`Successfully created ${result.mlflow_traces_created} MLflow traces! Use "Import from MLflow" to bring them into Discovery.`);
+        setCsvFile(null);
+        
+        if (result.warnings && result.warnings.length > 0) {
+          toast.warning(`${result.warnings.length} rows had issues. Check console for details.`);
+          console.warn('CSV upload warnings:', result.warnings);
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        setError(errorData.detail || `Failed to upload CSV to MLflow (HTTP ${response.status})`);
       }
     } catch (err) {
       setError('Network error: Unable to connect to the server. Please check your connection and try again.');
@@ -437,8 +528,8 @@ export function IntakePage() {
             Upload Traces from CSV
           </CardTitle>
           <CardDescription>
-            Upload traces from an MLflow trace export CSV for customers without direct MLflow access.
-            CSV must have "request_preview" and "response_preview" columns.
+            Upload conversational data from a CSV file. CSV must have "request_preview" and "response_preview" columns.
+            Optionally log the data to MLflow as traces.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -472,24 +563,87 @@ export function IntakePage() {
               </p>
             )}
             <p className="text-xs text-gray-500">
-              Expected format: MLflow trace export CSV with "request_preview" and "response_preview" columns
+              Expected format: CSV with "request_preview" and "response_preview" columns
             </p>
           </div>
 
+          {/* Import destination options */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium text-gray-700">Import destination:</Label>
+            <div className="space-y-2">
+              <div 
+                className={`flex items-center space-x-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
+                  csvImportDestination === 'discovery' 
+                    ? 'border-blue-500 bg-blue-50' 
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+                onClick={() => setCsvImportDestination('discovery')}
+              >
+                <input
+                  type="radio"
+                  id="import-discovery"
+                  name="csv-import-destination"
+                  checked={csvImportDestination === 'discovery'}
+                  onChange={() => setCsvImportDestination('discovery')}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                />
+                <div className="flex-1">
+                  <label htmlFor="import-discovery" className="text-sm font-medium text-gray-700 cursor-pointer">
+                    Import directly into Discovery
+                  </label>
+                  <p className="text-xs text-gray-500">Add traces to workshop for immediate use</p>
+                </div>
+              </div>
+              
+              <div 
+                className={`flex items-center space-x-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
+                  csvImportDestination === 'mlflow' 
+                    ? 'border-purple-500 bg-purple-50' 
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+                onClick={() => setCsvImportDestination('mlflow')}
+              >
+                <input
+                  type="radio"
+                  id="import-mlflow"
+                  name="csv-import-destination"
+                  checked={csvImportDestination === 'mlflow'}
+                  onChange={() => setCsvImportDestination('mlflow')}
+                  className="h-4 w-4 text-purple-600 focus:ring-purple-500"
+                />
+                <div className="flex-1">
+                  <label htmlFor="import-mlflow" className="text-sm font-medium text-gray-700 cursor-pointer">
+                    Log to MLflow as traces
+                  </label>
+                  <p className="text-xs text-gray-500">Create MLflow traces only (use "Import from MLflow" to add to Discovery later)</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {csvImportDestination === 'mlflow' && (!config.databricks_host || !config.databricks_token || !config.experiment_id) && (
+            <Alert className="bg-amber-50 border-amber-200">
+              <AlertCircle className="h-4 w-4 text-amber-600" />
+              <AlertDescription className="text-amber-700">
+                Please configure MLflow settings above to log traces to MLflow.
+              </AlertDescription>
+            </Alert>
+          )}
+
           <Button
-            onClick={uploadCsvFile}
-            disabled={isUploadingCsv || !csvFile}
+            onClick={csvImportDestination === 'mlflow' ? uploadCsvToMlflow : uploadCsvFile}
+            disabled={isUploadingCsv || !csvFile || !csvImportDestination || (csvImportDestination === 'mlflow' && (!config.databricks_host || !config.databricks_token || !config.experiment_id))}
             className="w-full"
           >
             {isUploadingCsv ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Uploading CSV...
+                {csvImportDestination === 'mlflow' ? 'Creating MLflow Traces...' : 'Uploading to Discovery...'}
               </>
             ) : (
               <>
                 <Upload className="mr-2 h-4 w-4" />
-                Upload CSV Traces
+                {csvImportDestination === 'mlflow' ? 'Upload & Log to MLflow' : csvImportDestination === 'discovery' ? 'Upload to Discovery' : 'Select destination above'}
               </>
             )}
           </Button>

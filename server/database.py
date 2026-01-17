@@ -32,13 +32,13 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./workshop.db")
 
 # Enhanced connection arguments for SQLite to handle concurrency better
 sqlite_connect_args = (
-  {
-    'check_same_thread': False,
-    'timeout': 60,  # 60 second timeout for database operations (increased for concurrent writes)
-    'isolation_level': 'DEFERRED',  # Use DEFERRED for better concurrency with proper transaction support
-  }
-  if 'sqlite' in DATABASE_URL
-  else {}
+    {
+        'check_same_thread': False,
+        'timeout': 60,  # 60 second timeout for database operations (increased for concurrent writes)
+        'isolation_level': 'DEFERRED',  # Use DEFERRED for better concurrency with proper transaction support
+    }
+    if 'sqlite' in DATABASE_URL
+    else {}
 )
 
 # Create engine with connection pooling and better concurrency settings
@@ -395,101 +395,101 @@ def get_db():
 
 
 def create_tables():
-  """Legacy helper to create tables directly (not used in normal operation).
+    """Legacy helper to create tables directly (not used in normal operation).
 
-  Schema changes should be applied via Alembic migrations, not at runtime.
-  """
-  try:
-    print('🔧 Creating database tables...')
-    # Use checkfirst=True to avoid errors if tables already exist
-    Base.metadata.create_all(bind=engine, checkfirst=True)
-    print('✅ Database tables created successfully')
-  except Exception as e:
-    # Handle case where tables already exist (common in production)
-    error_msg = str(e).lower()
-    if 'already exists' in error_msg or 'table' in error_msg and 'exists' in error_msg:
-      print('ℹ️ Some tables already exist, continuing with schema updates...')
-    else:
-      print(f'❌ Error creating database tables: {e}')
-      raise e
+    Schema changes should be applied via Alembic migrations, not at runtime.
+    """
+    try:
+        print('🔧 Creating database tables...')
+        # Use checkfirst=True to avoid errors if tables already exist
+        Base.metadata.create_all(bind=engine, checkfirst=True)
+        print('✅ Database tables created successfully')
+    except Exception as e:
+        # Handle case where tables already exist (common in production)
+        error_msg = str(e).lower()
+        if 'already exists' in error_msg or 'table' in error_msg and 'exists' in error_msg:
+            print('ℹ️ Some tables already exist, continuing with schema updates...')
+        else:
+            print(f'❌ Error creating database tables: {e}')
+            raise e
 
-  # Enable WAL mode for better SQLite concurrency (allows concurrent reads during writes)
-  try:
-    from sqlalchemy import text
-    with engine.connect() as conn:
-      conn.execute(text('PRAGMA journal_mode=WAL'))
-      conn.execute(text('PRAGMA busy_timeout=60000'))  # 60 second busy timeout
-      conn.commit()
-      print('✅ SQLite WAL mode enabled for better concurrency')
-  except Exception as e:
-    print(f'ℹ️ Could not enable WAL mode (non-critical): {e}')
+    # Enable WAL mode for better SQLite concurrency (allows concurrent reads during writes)
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text('PRAGMA journal_mode=WAL'))
+            conn.execute(text('PRAGMA busy_timeout=60000'))  # 60 second busy timeout
+            conn.commit()
+            print('✅ SQLite WAL mode enabled for better concurrency')
+    except Exception as e:
+        print(f'ℹ️ Could not enable WAL mode (non-critical): {e}')
 
-  # Update schema for existing databases
-  try:
-    from sqlalchemy import text
+    # Update schema for existing databases
+    try:
+        from sqlalchemy import text
 
-    with engine.connect() as conn:
-      try:
-        # Add new columns to judge_prompts table if they don't exist
-        conn.execute(text("ALTER TABLE judge_prompts ADD COLUMN model_name VARCHAR DEFAULT 'demo'"))
-        conn.execute(text('ALTER TABLE judge_prompts ADD COLUMN model_parameters JSON'))
-        print('✅ Database schema updated for judge_prompts')
-      except Exception as e:
-        # Columns already exist or table doesn't exist yet
-        print(f'ℹ️ judge_prompts schema update skipped (columns may already exist): {e}')
+        with engine.connect() as conn:
+            try:
+                # Add new columns to judge_prompts table if they don't exist
+                conn.execute(text("ALTER TABLE judge_prompts ADD COLUMN model_name VARCHAR DEFAULT 'demo'"))
+                conn.execute(text('ALTER TABLE judge_prompts ADD COLUMN model_parameters JSON'))
+                print('✅ Database schema updated for judge_prompts')
+            except Exception as e:
+                # Columns already exist or table doesn't exist yet
+                print(f'ℹ️ judge_prompts schema update skipped (columns may already exist): {e}')
 
-      try:
-        # Add ratings column to annotations table for multiple question support
-        conn.execute(text('ALTER TABLE annotations ADD COLUMN ratings JSON'))
-        conn.commit()
-        print('✅ Database schema updated for annotations (added ratings column)')
-      except Exception as e:
-        # Column already exists or table doesn't exist yet
-        print(f'ℹ️ annotations schema update skipped (ratings column may already exist): {e}')
+            try:
+                # Add ratings column to annotations table for multiple question support
+                conn.execute(text('ALTER TABLE annotations ADD COLUMN ratings JSON'))
+                conn.commit()
+                print('✅ Database schema updated for annotations (added ratings column)')
+            except Exception as e:
+                # Column already exists or table doesn't exist yet
+                print(f'ℹ️ annotations schema update skipped (ratings column may already exist): {e}')
 
-      try:
-        # Add include_in_alignment column to traces table for alignment filtering
-        conn.execute(text('ALTER TABLE traces ADD COLUMN include_in_alignment BOOLEAN DEFAULT 1'))
-        conn.commit()
-        print('✅ Database schema updated for traces (added include_in_alignment column)')
-      except Exception as e:
-        print(f'ℹ️ traces schema update skipped (include_in_alignment column may already exist): {e}')
+            try:
+                # Add include_in_alignment column to traces table for alignment filtering
+                conn.execute(text('ALTER TABLE traces ADD COLUMN include_in_alignment BOOLEAN DEFAULT 1'))
+                conn.commit()
+                print('✅ Database schema updated for traces (added include_in_alignment column)')
+            except Exception as e:
+                print(f'ℹ️ traces schema update skipped (include_in_alignment column may already exist): {e}')
 
-      try:
-        # Add sme_feedback column to traces table for concatenated SME feedback
-        conn.execute(text('ALTER TABLE traces ADD COLUMN sme_feedback TEXT'))
-        conn.commit()
-        print('✅ Database schema updated for traces (added sme_feedback column)')
-      except Exception as e:
-        print(f'ℹ️ traces schema update skipped (sme_feedback column may already exist): {e}')
-      
-      try:
-        # Add unique constraint to discovery_findings to prevent duplicate entries
-        conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS idx_discovery_findings_unique ON discovery_findings (workshop_id, trace_id, user_id)'))
-        conn.commit()
-        print('✅ Database schema updated: added unique constraint to discovery_findings')
-      except Exception as e:
-        print(f'ℹ️ discovery_findings unique constraint skipped (may already exist): {e}')
-      
-      try:
-        # Add unique constraint to annotations to prevent duplicate entries (user_id + trace_id)
-        conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS idx_annotations_unique ON annotations (user_id, trace_id)'))
-        conn.commit()
-        print('✅ Database schema updated: added unique constraint to annotations')
-      except Exception as e:
-        print(f'ℹ️ annotations unique constraint skipped (may already exist): {e}')
-      
-      try:
-        # Add unique constraint to judge_evaluations to prevent duplicate entries (prompt_id + trace_id)
-        conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS idx_judge_evaluations_unique ON judge_evaluations (prompt_id, trace_id)'))
-        conn.commit()
-        print('✅ Database schema updated: added unique constraint to judge_evaluations')
-      except Exception as e:
-        print(f'ℹ️ judge_evaluations unique constraint skipped (may already exist): {e}')
-    
-  except Exception as e:
-    # Schema updates are optional, don't fail if they error
-    print(f'ℹ️ Schema update error (non-critical): {e}')
+            try:
+                # Add sme_feedback column to traces table for concatenated SME feedback
+                conn.execute(text('ALTER TABLE traces ADD COLUMN sme_feedback TEXT'))
+                conn.commit()
+                print('✅ Database schema updated for traces (added sme_feedback column)')
+            except Exception as e:
+                print(f'ℹ️ traces schema update skipped (sme_feedback column may already exist): {e}')
+
+            try:
+                # Add unique constraint to discovery_findings to prevent duplicate entries
+                conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS idx_discovery_findings_unique ON discovery_findings (workshop_id, trace_id, user_id)'))
+                conn.commit()
+                print('✅ Database schema updated: added unique constraint to discovery_findings')
+            except Exception as e:
+                print(f'ℹ️ discovery_findings unique constraint skipped (may already exist): {e}')
+
+            try:
+                # Add unique constraint to annotations to prevent duplicate entries (user_id + trace_id)
+                conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS idx_annotations_unique ON annotations (user_id, trace_id)'))
+                conn.commit()
+                print('✅ Database schema updated: added unique constraint to annotations')
+            except Exception as e:
+                print(f'ℹ️ annotations unique constraint skipped (may already exist): {e}')
+
+            try:
+                # Add unique constraint to judge_evaluations to prevent duplicate entries (prompt_id + trace_id)
+                conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS idx_judge_evaluations_unique ON judge_evaluations (prompt_id, trace_id)'))
+                conn.commit()
+                print('✅ Database schema updated: added unique constraint to judge_evaluations')
+            except Exception as e:
+                print(f'ℹ️ judge_evaluations unique constraint skipped (may already exist): {e}')
+
+    except Exception as e:
+        # Schema updates are optional, don't fail if they error
+        print(f'ℹ️ Schema update error (non-critical): {e}')
 
 
 def drop_tables():
