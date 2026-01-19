@@ -144,8 +144,8 @@ test('rubric creation: facilitator can advance from discovery and create a rubri
     page.getByRole('button', { name: /^Save$/i }).click(),
   ]);
 
-  // Assert UI shows rubric summary
-  await expect(page.getByText(/Rubric Summary/i)).toBeVisible();
+  // Assert UI shows evaluation summary (rubric was created)
+  await expect(page.getByText(/Evaluation Summary/i)).toBeVisible();
   await expect
     .poll(async () => {
       return page.locator('input').evaluateAll(

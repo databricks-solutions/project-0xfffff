@@ -5,7 +5,7 @@
  */
 
 import { expect, type Page } from '@playwright/test';
-import type { WorkshopPhase } from '../types';
+import type { Workshop, WorkshopPhase } from '../types';
 
 /**
  * Navigate to a specific phase view in the UI

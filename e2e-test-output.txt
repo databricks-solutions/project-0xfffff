@@ -1,0 +1,37 @@
+uv run python -m server.db_bootstrap bootstrap
+Running tests in headless mode
+
+> databricks-app-template-client@0.1.0 test
+> npx playwright test tests/e2e --workers=1
+
+📦 Creating new database via migrations: /Users/forrest.murray/Documents/ralph-refactor/.e2e-workshop.db
+✅ Database created successfully!
+🚀 Starting E2E servers
+  DB : .e2e-workshop.db
+  API: http://localhost:8000
+  UI : http://localhost:3000
+
+> databricks-app-template-client@0.1.0 dev
+> npx vite --host 127.0.0.1 --port 3000 --strictPort
+
+error when starting dev server:
+Error: Port 3000 is already in use
+    at Server.onError (file:///Users/forrest.murray/Documents/ralph-refactor/client/node_modules/vite/dist/node/chunks/dep-C6uTJdX2.js:45596:18)
+    at Server.emit (node:events:519:28)
+    at emitErrorNT (node:net:1940:8)
+    at process.processTicksAndRejections (node:internal/process/task_queues:82:21)
+
+Running 16 tests using 1 worker
+
+INFO:     Started server process [40192]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+ERROR:    [Errno 48] error while attempting to bind on address ('127.0.0.1', 8000): address already in use
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+🚀 Application startup - lifespan function called!
+✅ Application startup complete!
+🔄 Application shutting down...
+  ✘  1 [chromium] › tests/e2e/annotation-last-trace.spec.ts:16:3 › Annotation - Last Trace Bug › all 10 annotations should be saved when annotating via API (682ms)
+  ✘  2 [chromium] › tests/e2e/annotation-last-trace.spec.ts:74:3 › Annotation - Last Trace Bug › last trace annotation should be saved via UI flow (10.6s)
+  ✘  3 [chromium] › tests/e2e/annotation-last-trace.spec.ts:134:3 › Annotation - Last Trace Bug › 10th trace save should not be blocked by hasAnnotationChanged check (141ms)

@@ -49,10 +49,17 @@ export const parseRubricQuestions = (questionText: string): RubricQuestion[] => 
       
       // Split only at the first colon to separate title from description
       const colonIndex = content.indexOf(':');
-      if (colonIndex === -1) return null;
-      
-      const title = content.substring(0, colonIndex).trim();
-      const description = content.substring(colonIndex + 1).trim();
+      let title: string;
+      let description: string;
+
+      if (colonIndex === -1) {
+        // No colon found - treat entire text as title with empty description
+        title = content.trim();
+        description = '';
+      } else {
+        title = content.substring(0, colonIndex).trim();
+        description = content.substring(colonIndex + 1).trim();
+      }
       
       return {
         id: `q_${index + 1}`,
