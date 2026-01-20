@@ -1,15 +1,14 @@
 import { test, expect } from '@playwright/test';
+import { loginAs, loginAsFacilitator } from '../lib/actions/auth';
 
 // This repo doesn't include Node typings in the client TS config; keep `process.env` without adding deps.
 declare const process: { env: Record<string, string | undefined> };
 
-const FACILITATOR_EMAIL =
-  process.env.E2E_FACILITATOR_EMAIL ?? 'facilitator123@email.com';
-const FACILITATOR_PASSWORD =
-  process.env.E2E_FACILITATOR_PASSWORD ?? 'facilitator123';
 const API_URL = process.env.E2E_API_URL ?? 'http://127.0.0.1:8000';
 
-test('discovery blocks until multiple participants complete; facilitator-driven phase with trace-based discovery', async ({
+test('discovery blocks until multiple participants complete; facilitator-driven phase with trace-based discovery', {
+  tag: ['@spec:DISCOVERY_TRACE_ASSIGNMENT_SPEC'],
+}, async ({
   page,
   browser,
   request,
@@ -21,13 +20,7 @@ test('discovery blocks until multiple participants complete; facilitator-driven 
   const participantBName = `E2E Participant B ${runId}`;
 
   // Facilitator login + workshop creation
-  await page.goto('/');
-  await expect(page.getByText('Workshop Portal')).toBeVisible();
-  await page.locator('#email').fill(FACILITATOR_EMAIL);
-  await page.locator('#password').fill(FACILITATOR_PASSWORD);
-  await page.locator('button[type="submit"]').click();
-
-  await expect(page.getByText(/Welcome, Facilitator!/i)).toBeVisible();
+  await loginAsFacilitator(page);
 
   await Promise.all([
     page.waitForResponse(
@@ -36,7 +29,7 @@ test('discovery blocks until multiple participants complete; facilitator-driven 
         resp.url().includes('/workshops') &&
         resp.status() === 201,
     ),
-    page.getByRole('button', { name: /Start Workshop Now/i }).click(),
+    page.getByRole('button', { name: /Create New Workshop/i }).click(),
   ]);
 
   await expect(page).toHaveURL(/\?workshop=[a-f0-9-]{36}/i);
@@ -103,9 +96,14 @@ test('discovery blocks until multiple participants complete; facilitator-driven 
     const p = await ctx.newPage();
 
     await p.goto(`/?workshop=${workshopId}`);
-    await expect(p.getByText('Workshop Portal')).toBeVisible();
-    await p.locator('#email').fill(email);
-    await p.locator('button[type="submit"]').click();
+    // Login as participant using the shared helper
+    await loginAs(p, {
+      id: '', // ID not needed for login
+      email,
+      name: email.split('@')[0],
+      role: 'participant',
+      workshop_id: workshopId!,
+    });
 
     await expect(p.getByTestId('discovery-phase-title')).toBeVisible();
 

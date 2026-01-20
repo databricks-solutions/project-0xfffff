@@ -1,3 +1,5 @@
+import pytest
+
 from server.models import Annotation
 from server.services.krippendorff_alpha import (
     calculate_krippendorff_alpha,
@@ -18,6 +20,7 @@ def _ann(*, trace_id: str, user_id: str, rating: int, ratings=None) -> Annotatio
     )
 
 
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
 def test_get_unique_question_ids_sorted():
     annotations = [
         _ann(trace_id="t1", user_id="u1", rating=3, ratings={"q2": 2, "q1": 1}),
@@ -26,6 +29,7 @@ def test_get_unique_question_ids_sorted():
     assert get_unique_question_ids(annotations) == ["q1", "q2", "q3"]
 
 
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
 def test_per_metric_returns_empty_when_no_ratings_dict_present():
     # Legacy-only annotations (ratings=None) => should return {} for per-metric computation
     annotations = [
@@ -35,11 +39,13 @@ def test_per_metric_returns_empty_when_no_ratings_dict_present():
     assert calculate_krippendorff_alpha_per_metric(annotations) == {}
 
 
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
 def test_calculate_krippendorff_alpha_returns_zero_when_insufficient():
     assert calculate_krippendorff_alpha([]) == 0.0
     assert calculate_krippendorff_alpha([_ann(trace_id="t1", user_id="u1", rating=3)]) == 0.0
 
 
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
 def test_calculate_krippendorff_alpha_trivial_agreement_is_one():
     annotations = [
         _ann(trace_id="t1", user_id="u1", rating=3),
@@ -50,6 +56,7 @@ def test_calculate_krippendorff_alpha_trivial_agreement_is_one():
     assert calculate_krippendorff_alpha(annotations) == 1.0
 
 
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
 def test_calculate_krippendorff_alpha_handles_missing_data():
     # t2 only rated by u1; still should produce a bounded score (not crash)
     annotations = [
@@ -61,6 +68,7 @@ def test_calculate_krippendorff_alpha_handles_missing_data():
     assert -1.0 <= alpha <= 1.0
 
 
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
 def test_calculate_krippendorff_alpha_specific_question_id_uses_ratings_dict():
     annotations = [
         _ann(trace_id="t1", user_id="u1", rating=1, ratings={"q1": 5}),

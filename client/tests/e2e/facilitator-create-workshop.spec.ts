@@ -4,22 +4,33 @@ const FACILITATOR_EMAIL = process.env.E2E_FACILITATOR_EMAIL ?? 'facilitator123@e
 const FACILITATOR_PASSWORD = process.env.E2E_FACILITATOR_PASSWORD ?? 'facilitator123';
 const API_URL = process.env.E2E_API_URL ?? 'http://127.0.0.1:8000';
 
-test('facilitator can log in and create a workshop', async ({ page, request }) => {
+test('facilitator can log in and create a workshop', {
+  tag: ['@spec:AUTHENTICATION_SPEC', '@spec:DISCOVERY_TRACE_ASSIGNMENT_SPEC'],
+}, async ({ page, request }) => {
   await page.goto('/');
 
   // Login (real backend auth via YAML facilitator in config/auth.yaml)
   await expect(page.getByText('Workshop Portal')).toBeVisible();
   await page.locator('#email').fill(FACILITATOR_EMAIL);
   await page.locator('#password').fill(FACILITATOR_PASSWORD);
+
+  // Wait for workshop options to load, then click "Create New" to create a new workshop
+  await page.waitForTimeout(500);
+  const createNewButton = page.getByRole('button', { name: /Create New/i });
+  if (await createNewButton.isVisible().catch(() => false)) {
+    await createNewButton.click();
+  }
+
   await page.locator('button[type="submit"]').click();
 
   // Facilitator should land on workshop creation when no workshop is selected
   await expect(page.getByText(/Welcome, Facilitator!/i)).toBeVisible();
 
   // Create workshop (real POST /workshops through Vite proxy)
+  // The Quick Start button is "Create New Workshop"
   await Promise.all([
     page.waitForResponse((resp) => resp.request().method() === 'POST' && resp.url().includes('/workshops') && resp.status() === 201),
-    page.getByRole('button', { name: /Start Workshop Now/i }).click(),
+    page.getByRole('button', { name: /Create New Workshop/i }).click(),
   ]);
 
   await expect(page).toHaveURL(/\?workshop=[a-f0-9-]{36}/i);

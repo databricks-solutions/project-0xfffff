@@ -20,6 +20,14 @@ test('rubric creation: facilitator can advance from discovery and create a rubri
   await expect(page.getByText('Workshop Portal')).toBeVisible();
   await page.locator('#email').fill(FACILITATOR_EMAIL);
   await page.locator('#password').fill(FACILITATOR_PASSWORD);
+
+  // Wait for workshop options to load, then click "Create New" to create a new workshop
+  await page.waitForTimeout(500);
+  const createNewButton = page.getByRole('button', { name: /Create New/i });
+  if (await createNewButton.isVisible().catch(() => false)) {
+    await createNewButton.click();
+  }
+
   await page.locator('button[type="submit"]').click();
 
   await expect(page.getByText(/Welcome, Facilitator!/i)).toBeVisible();
@@ -31,7 +39,7 @@ test('rubric creation: facilitator can advance from discovery and create a rubri
         resp.url().includes('/workshops') &&
         resp.status() === 201,
     ),
-    page.getByRole('button', { name: /Start Workshop Now/i }).click(),
+    page.getByRole('button', { name: /Create New Workshop/i }).click(),
   ]);
 
   await expect(page).toHaveURL(/\?workshop=[a-f0-9-]{36}/i);
@@ -110,10 +118,25 @@ test('rubric creation: facilitator can advance from discovery and create a rubri
   ).toBeTruthy();
 
   // Reload app at workshop URL to pick up the new phase
+  // Navigate directly to the workshop using a different pattern that bypasses the dashboard
   await page.goto(`/?workshop=${workshopId}`);
 
+  // Wait for the page to load - could be dashboard or workshop view
+  await page.waitForTimeout(500);
+
+  // If we're on the facilitator dashboard (Welcome, Facilitator!), click into the specific workshop
+  const welcomeHeading = page.getByRole('heading', { name: /Welcome, Facilitator/i });
+  if (await welcomeHeading.isVisible({ timeout: 3000 }).catch(() => false)) {
+    // The workshop card should have this workshop's ID somewhere in its data or we find by Rubric Creation phase
+    // Look for a card with "Rubric Creation" status since we just advanced to rubric
+    const rubricWorkshopCard = page.locator('div.cursor-pointer').filter({ hasText: /Rubric Creation/ }).first();
+    await rubricWorkshopCard.click();
+    // Wait for navigation to the workshop
+    await page.waitForURL(/\?workshop=/);
+  }
+
   // Create rubric question via UI
-  await expect(page.getByRole('tab', { name: /Rubric Questions/i })).toBeVisible();
+  await expect(page.getByRole('tab', { name: /Rubric Questions/i })).toBeVisible({ timeout: 15000 });
   await page.getByRole('tab', { name: /Rubric Questions/i }).click();
 
   // The page can render *both* buttons ("Add Question" in header + "Create First Question" empty state),

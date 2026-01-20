@@ -1,0 +1,33 @@
+{
+  "$schema": "https://raw.githubusercontent.com/anthropics/claude-code/main/config-schema.json",
+  "permissions": {
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(git push --force:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(alembic revision:*)",
+      "Bash(alembic downgrade:*)",
+      "Edit(specs/*)",
+      "Write(specs/*)"
+    ],
+    "ask": [
+      "Bash(git push:*)",
+      "Bash(alembic upgrade:*)",
+      "Edit(server/models/*)",
+      "Edit(alembic/*)",
+      "Edit(.github/*)",
+      "Write(alembic/*)"
+    ],
+    "allow": [
+      "Bash(just:*)",
+      "Bash(uv run:*)",
+      "Bash(npm:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Read(*)"
+    ]
+  }
+}

@@ -75,6 +75,7 @@ def create_test_rubric() -> Rubric:
     )
 
 
+@pytest.mark.spec("ANNOTATION_SPEC")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_all_10_annotations_can_be_saved(async_client, override_get_db, monkeypatch):
@@ -140,6 +141,7 @@ async def test_all_10_annotations_can_be_saved(async_client, override_get_db, mo
     assert saved_trace_ids == set(trace_ids), "Not all traces have annotations"
 
 
+@pytest.mark.spec("ANNOTATION_SPEC")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_10th_annotation_specifically(async_client, override_get_db, monkeypatch):
@@ -226,6 +228,7 @@ async def test_10th_annotation_specifically(async_client, override_get_db, monke
     assert tenth_annotation.rating == 4
 
 
+@pytest.mark.spec("ANNOTATION_SPEC")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_multiple_annotators_can_save_10th_annotation(async_client, override_get_db, monkeypatch):
@@ -302,6 +305,7 @@ async def test_multiple_annotators_can_save_10th_annotation(async_client, overri
     assert traces_with_annotations == set(trace_ids), "Not all traces have annotations"
 
 
+@pytest.mark.spec("ANNOTATION_SPEC")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_facilitator_sees_10_completed(async_client, override_get_db, monkeypatch):

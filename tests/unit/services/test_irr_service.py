@@ -1,3 +1,5 @@
+import pytest
+
 from server.models import Annotation
 from server.services.irr_service import calculate_irr_for_workshop
 
@@ -14,6 +16,7 @@ def _ann(*, trace_id: str, user_id: str, rating: int, ratings=None) -> Annotatio
     )
 
 
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
 def test_calculate_irr_for_workshop_returns_error_details_when_invalid():
     result = calculate_irr_for_workshop("w1", annotations=[], db=None)
     assert result.workshop_id == "w1"
@@ -24,6 +27,7 @@ def test_calculate_irr_for_workshop_returns_error_details_when_invalid():
     assert "Need at least 2 annotations" in result.details["error"]
 
 
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
 def test_calculate_irr_for_workshop_uses_cohens_kappa_when_two_raters_complete():
     annotations = [
         _ann(trace_id="t1", user_id="u1", rating=3, ratings={"q1": 3}),
@@ -38,6 +42,7 @@ def test_calculate_irr_for_workshop_uses_cohens_kappa_when_two_raters_complete()
     assert "per_metric_scores" in result.details
 
 
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
 def test_calculate_irr_for_workshop_uses_krippendorff_when_missing_data():
     annotations = [
         _ann(trace_id="t1", user_id="u1", rating=1, ratings={"q1": 1}),

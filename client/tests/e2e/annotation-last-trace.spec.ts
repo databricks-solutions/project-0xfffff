@@ -13,7 +13,9 @@ import { submitAnnotationViaApi, getAnnotations } from '../lib/actions/annotatio
 
 const API_URL = 'http://127.0.0.1:8000';
 
-test.describe('Annotation - Last Trace Bug', () => {
+test.describe('Annotation - Last Trace Bug', {
+  tag: ['@spec:ANNOTATION_SPEC'],
+}, () => {
   test('all 10 annotations should be saved when annotating via API', async ({
     page,
   }) => {

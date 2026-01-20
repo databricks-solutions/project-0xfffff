@@ -1,6 +1,7 @@
 import pytest
 
 
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_databricks_test_connection_success(async_client, monkeypatch):
@@ -33,6 +34,7 @@ async def test_databricks_test_connection_success(async_client, monkeypatch):
     assert body["endpoints_count"] == 2
 
 
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_databricks_call_endpoint_success(async_client, monkeypatch):
@@ -65,6 +67,7 @@ async def test_databricks_call_endpoint_success(async_client, monkeypatch):
     assert body["data"] == {"choices": [{"text": "ok"}]}
 
 
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_databricks_chat_endpoint_success(async_client, monkeypatch):
@@ -99,6 +102,7 @@ async def test_databricks_chat_endpoint_success(async_client, monkeypatch):
     assert body["endpoint_name"] == "ep"
 
 
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_databricks_judge_evaluate_without_workshop_id_uses_request_config(async_client, monkeypatch):

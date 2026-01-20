@@ -267,6 +267,13 @@ ui-lint:
 ui-format:
   npm -C {{client-dir}} run format
 
+[group('dev')]
+spec-coverage:
+  @echo "📊 Analyzing spec test coverage..."
+  uv run spec-coverage-analyzer
+  @echo ""
+  @echo "📋 Coverage report: SPEC_COVERAGE_MAP.md"
+
 [group('db')]
 db-upgrade:
   uv run alembic upgrade head
@@ -384,10 +391,10 @@ e2e-servers db_path=".e2e-workshop.db" api_port="8000" ui_port="3000":
   #!/usr/bin/env bash
   set -euo pipefail
 
-  DB_PATH="{{db_path}}"
-  DB_PATH="${DB_PATH#db_path=}"
-  API_PORT="{{api_port}}"
-  UI_PORT="{{ui_port}}"
+  # Support both keyword and positional arguments
+  DB_PATH="${1:-{{db_path}}}"
+  API_PORT="${2:-{{api_port}}}"
+  UI_PORT="${3:-{{ui_port}}}"
 
   # Ensure schema exists before starting the API (migrations are part of the workflow, not app startup)
   ENVIRONMENT=development DATABASE_URL="sqlite:///./${DB_PATH}" just db-bootstrap
@@ -423,7 +430,7 @@ e2e-servers db_path=".e2e-workshop.db" api_port="8000" ui_port="3000":
 
 
 [group('e2e')]
-e2e-test mode="headless" *args="":
+e2e-test mode="headless" workers="1" *args="":
   #!/usr/bin/env bash
   set -euo pipefail
 
@@ -439,17 +446,17 @@ e2e-test mode="headless" *args="":
     TEST_PATH="{{args}}"
   fi
 
-  echo "Running tests in {{mode}} mode: $TEST_PATH"
+  echo "Running tests in {{mode}} mode with {{workers}} workers: $TEST_PATH"
 
   case "{{mode}}" in
     ui)
-      npm -C {{client-dir}} run test -- $TEST_PATH --ui --workers=1 $EXTRA_ARGS
+      npm -C {{client-dir}} run test -- $TEST_PATH --ui --workers={{workers}} $EXTRA_ARGS
       ;;
     headed)
-      npm -C {{client-dir}} run test -- $TEST_PATH --headed --workers=1 $EXTRA_ARGS
+      npm -C {{client-dir}} run test -- $TEST_PATH --headed --workers={{workers}} $EXTRA_ARGS
       ;;
     headless)
-      npm -C {{client-dir}} run test -- $TEST_PATH --workers=1 $EXTRA_ARGS
+      npm -C {{client-dir}} run test -- $TEST_PATH --workers={{workers}} $EXTRA_ARGS
       ;;
     *)
       echo "Unknown mode: {{mode}} (expected: headless|headed|ui)" >&2
@@ -458,18 +465,47 @@ e2e-test mode="headless" *args="":
   esac
 
 
+# Check if a port is available
+[script]
+_port-available port:
+  import socket
+  port = int("{{port}}")
+  with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    result = s.connect_ex(('127.0.0.1', port))
+    # connect_ex returns 0 if connection succeeded (port in use)
+    exit(0 if result != 0 else 1)
+
+# Find an available port starting from the given port
+[script]
+_find-port start_port:
+  import socket
+  port = int("{{start_port}}")
+  for p in range(port, port + 100):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+      if s.connect_ex(('127.0.0.1', p)) != 0:
+        print(p)
+        exit(0)
+  exit(1)
+
 [group('e2e')]
-e2e mode="headless" *args:
+e2e mode="headless" workers="1" *args:
   #!/usr/bin/env bash
   set -euo pipefail
 
   DB_PATH=".e2e-workshop.db"
 
+  # Find available ports (try defaults first, then increment)
+  API_PORT=$(just _find-port 8000)
+  UI_PORT=$(just _find-port 3000)
+
+  echo "Using ports: API=$API_PORT, UI=$UI_PORT"
+
   # Always start from a clean DB for isolation
   rm -f "$DB_PATH"
 
-  # Start servers in the background
-  (just e2e-servers db_path="$DB_PATH") &
+  # Create a wrapper recipe call that properly interpolates the ports
+  # We use eval to dynamically call just with the correct keyword arguments
+  just e2e-servers "$DB_PATH" "$API_PORT" "$UI_PORT" &
   servers_pid=$!
 
   cleanup() {
@@ -479,9 +515,9 @@ e2e mode="headless" *args:
   trap cleanup INT TERM EXIT
 
   # Wait for API + UI to be ready
-  just e2e-wait-ready
+  just e2e-wait-ready "$API_PORT" "$UI_PORT"
 
-  # Run tests (pass through any extra args for test filtering)
-  just e2e-test "{{mode}}" {{args}}
+  # Run tests with the correct base URL
+  PLAYWRIGHT_BASE_URL="http://127.0.0.1:$UI_PORT" just e2e-test "{{mode}}" "{{workers}}" {{args}}
 
   cleanup
