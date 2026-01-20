@@ -587,3 +587,96 @@ export function useAggregateAllFeedback(workshopId: string) {
     },
   });
 }
+
+// ---------------------------------------------------------------------------
+// Assisted Facilitation v2 Hooks
+// ---------------------------------------------------------------------------
+
+export function useTraceDiscoveryState(workshopId: string, traceId: string) {
+  return useQuery({
+    queryKey: ['trace-discovery-state', workshopId, traceId],
+    queryFn: async () => {
+      const response = await fetch(
+        `/workshops/${workshopId}/traces/${traceId}/discovery-state`
+      );
+      if (!response.ok) {
+        throw new Error('Failed to fetch trace discovery state');
+      }
+      return response.json();
+    },
+    enabled: !!workshopId && !!traceId,
+  });
+}
+
+export function useDiscoveryProgress(workshopId: string) {
+  return useQuery({
+    queryKey: ['discovery-progress', workshopId],
+    queryFn: async () => {
+      const response = await fetch(`/workshops/${workshopId}/discovery-progress`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch discovery progress');
+      }
+      return response.json();
+    },
+    enabled: !!workshopId,
+    refetchInterval: 5000, // Refresh every 5 seconds
+  });
+}
+
+export function useGenerateDiscoveryQuestion(workshopId: string, traceId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      const response = await fetch(
+        `/workshops/${workshopId}/traces/${traceId}/generate-question`,
+        { method: 'POST' }
+      );
+      if (!response.ok) {
+        throw new Error('Failed to generate question');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['trace-discovery-state', workshopId, traceId] });
+    },
+  });
+}
+
+export function usePromoteFinding(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ findingId, promoterId }: { findingId: string; promoterId: string }) => {
+      const response = await fetch(
+        `/workshops/${workshopId}/findings/${findingId}/promote`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ finding_id: findingId, promoter_id: promoterId }),
+        }
+      );
+      if (!response.ok) {
+        throw new Error('Failed to promote finding');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['draft-rubric', workshopId] });
+    },
+  });
+}
+
+export function useDraftRubric(workshopId: string) {
+  return useQuery({
+    queryKey: ['draft-rubric', workshopId],
+    queryFn: async () => {
+      const response = await fetch(`/workshops/${workshopId}/draft-rubric`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch draft rubric');
+      }
+      return response.json();
+    },
+    enabled: !!workshopId,
+  });
+}

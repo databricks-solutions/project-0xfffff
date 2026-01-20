@@ -241,3 +241,108 @@ async def is_user_discovery_complete(workshop_id: str, user_id: str, db: Session
     return svc.is_user_discovery_complete(workshop_id, user_id)
 
 
+# ---------------------------------------------------------------------------
+# Assisted Facilitation v2 Endpoints
+# ---------------------------------------------------------------------------
+
+
+class SubmitFindingV2Request(BaseModel):
+    """Request to submit a finding with classification."""
+
+    trace_id: str
+    user_id: str
+    text: str
+
+
+@router.post("/{workshop_id}/findings-v2", response_model=Dict[str, Any])
+async def submit_finding_v2(
+    workshop_id: str,
+    request: SubmitFindingV2Request,
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Submit finding with real-time classification (v2 assisted facilitation)."""
+    svc = DiscoveryService(db)
+    return svc.submit_finding_v2(
+        workshop_id=workshop_id,
+        trace_id=request.trace_id,
+        user_id=request.user_id,
+        finding_text=request.text,
+    )
+
+
+@router.get("/{workshop_id}/traces/{trace_id}/discovery-state", response_model=Dict[str, Any])
+async def get_trace_discovery_state(
+    workshop_id: str,
+    trace_id: str,
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Get full structured state for facilitator."""
+    svc = DiscoveryService(db)
+    return svc.get_trace_discovery_state(workshop_id=workshop_id, trace_id=trace_id)
+
+
+@router.get("/{workshop_id}/discovery-progress", response_model=Dict[str, Any])
+async def get_discovery_progress(
+    workshop_id: str,
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Get fuzzy global progress for participants."""
+    svc = DiscoveryService(db)
+    return svc.get_fuzzy_progress(workshop_id=workshop_id)
+
+
+class PromoteFindingRequest(BaseModel):
+    """Request to promote a finding."""
+
+    finding_id: str
+    promoter_id: str
+
+
+@router.post("/{workshop_id}/findings/{finding_id}/promote", response_model=Dict[str, Any])
+async def promote_finding(
+    workshop_id: str,
+    finding_id: str,
+    request: PromoteFindingRequest,
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Promote finding to draft rubric."""
+    svc = DiscoveryService(db)
+    return svc.promote_finding(
+        workshop_id=workshop_id,
+        finding_id=finding_id,
+        promoter_id=request.promoter_id,
+    )
+
+
+class UpdateThresholdsRequest(BaseModel):
+    """Request to update trace thresholds."""
+
+    thresholds: Dict[str, int]
+
+
+@router.put("/{workshop_id}/traces/{trace_id}/thresholds", response_model=Dict[str, Any])
+async def update_trace_thresholds(
+    workshop_id: str,
+    trace_id: str,
+    request: UpdateThresholdsRequest,
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Update thresholds for trace."""
+    svc = DiscoveryService(db)
+    return svc.update_trace_thresholds(
+        workshop_id=workshop_id,
+        trace_id=trace_id,
+        thresholds=request.thresholds,
+    )
+
+
+@router.get("/{workshop_id}/draft-rubric", response_model=List[Dict[str, Any]])
+async def get_draft_rubric(
+    workshop_id: str,
+    db: Session = Depends(get_db),
+) -> List[Dict[str, Any]]:
+    """Get all promoted findings."""
+    # Placeholder - will query DraftRubricItemDB in Phase 3
+    return []
+
+

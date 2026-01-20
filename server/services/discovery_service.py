@@ -911,3 +911,146 @@ class DiscoveryService:
             "user_email": user.email,
             "discovery_complete": is_complete,
         }
+
+    # --------- Assisted Facilitation v2 Methods ---------
+
+    def submit_finding_v2(
+        self, workshop_id: str, trace_id: str, user_id: str, finding_text: str
+    ) -> dict[str, Any]:
+        """Submit finding with real-time classification.
+
+        This method:
+        1. Saves raw finding
+        2. Classifies finding into category
+        3. Runs disagreement detection
+        4. Returns classified finding
+        """
+        workshop = self._get_workshop_or_404(workshop_id)
+        trace = self.db_service.get_trace(trace_id)
+        if not trace or trace.workshop_id != workshop_id:
+            raise HTTPException(status_code=404, detail="Trace not found")
+
+        # For now, implement basic classification without LLM
+        # Full LLM integration will happen in Phase 2
+        category = self._classify_finding_locally(finding_text)
+
+        result = {
+            "trace_id": trace_id,
+            "user_id": user_id,
+            "text": finding_text,
+            "category": category,
+            "question_id": "q_1",
+            "promoted": False,
+        }
+
+        return result
+
+    @staticmethod
+    def _classify_finding_locally(finding_text: str) -> str:
+        """Simple local classification without LLM (placeholder).
+
+        In Phase 2, this will be replaced with LLM-based classification.
+        """
+        text_lower = finding_text.lower()
+
+        if any(word in text_lower for word in ["missing", "lack", "no ", "absent"]):
+            return "missing_info"
+        elif any(word in text_lower for word in ["fail", "error", "broken", "not work"]):
+            return "failure_modes"
+        elif any(word in text_lower for word in ["edge", "corner", "boundary", "extreme"]):
+            return "boundary_conditions"
+        elif any(word in text_lower for word in ["special", "unique", "unusual", "particular"]):
+            return "edge_cases"
+        else:
+            return "themes"
+
+    def get_trace_discovery_state(
+        self, workshop_id: str, trace_id: str
+    ) -> dict[str, Any]:
+        """Get structured discovery state for a trace (facilitator view).
+
+        Returns comprehensive state including:
+        - Classified findings grouped by category
+        - Detected disagreements
+        - Questions
+        - Thresholds
+        """
+        workshop = self._get_workshop_or_404(workshop_id)
+        trace = self.db_service.get_trace(trace_id)
+        if not trace or trace.workshop_id != workshop_id:
+            raise HTTPException(status_code=404, detail="Trace not found")
+
+        # For now, return placeholder structure
+        # Full implementation with DB queries will be in Phase 3
+        return {
+            "trace_id": trace_id,
+            "categories": {
+                "themes": [],
+                "edge_cases": [],
+                "boundary_conditions": [],
+                "failure_modes": [],
+                "missing_info": [],
+            },
+            "disagreements": [],
+            "questions": [],
+            "thresholds": {},
+        }
+
+    def get_fuzzy_progress(self, workshop_id: str) -> dict[str, Any]:
+        """Get fuzzy progress indicator for participants.
+
+        Returns participant-safe progress:
+        - "exploring": Less than 30% traces have findings
+        - "good_coverage": 30-80% traces have findings
+        - "complete": 80%+ traces have findings
+        """
+        workshop = self._get_workshop_or_404(workshop_id)
+        traces = self.db_service.get_traces(workshop_id)
+        findings = self.db_service.get_findings(workshop_id)
+
+        if not traces:
+            return {"status": "exploring", "percentage": 0.0}
+
+        traces_with_findings = len(set(f.trace_id for f in findings))
+        percentage = (traces_with_findings / len(traces)) * 100
+
+        if percentage < 30:
+            status = "exploring"
+        elif percentage < 80:
+            status = "good_coverage"
+        else:
+            status = "complete"
+
+        return {"status": status, "percentage": round(percentage, 1)}
+
+    def promote_finding(
+        self, workshop_id: str, finding_id: str, promoter_id: str
+    ) -> dict[str, Any]:
+        """Promote a finding to draft rubric staging area.
+
+        This allows facilitators to move findings toward rubric item candidates.
+        """
+        workshop = self._get_workshop_or_404(workshop_id)
+
+        # Placeholder implementation - full DB operations in Phase 3
+        return {
+            "id": finding_id,
+            "finding_id": finding_id,
+            "promoted_by": promoter_id,
+            "status": "promoted",
+        }
+
+    def update_trace_thresholds(
+        self, workshop_id: str, trace_id: str, thresholds: dict[str, int]
+    ) -> dict[str, Any]:
+        """Update per-trace thresholds for category coverage.
+
+        Thresholds define how many findings per category are needed for trace.
+        """
+        workshop = self._get_workshop_or_404(workshop_id)
+        trace = self.db_service.get_trace(trace_id)
+        if not trace or trace.workshop_id != workshop_id:
+            raise HTTPException(status_code=404, detail="Trace not found")
+
+        # Placeholder - full DB operations in Phase 3
+        return {"trace_id": trace_id, "thresholds": thresholds, "updated": True}

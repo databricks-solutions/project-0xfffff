@@ -177,6 +177,11 @@ class WorkshopDB(Base):
         "UserDiscoveryCompletionDB", back_populates="workshop", cascade="all, delete-orphan"
     )
     discovery_summaries = relationship("DiscoverySummaryDB", back_populates="workshop", cascade="all, delete-orphan")
+    classified_findings = relationship("ClassifiedFindingDB", back_populates="workshop", cascade="all, delete-orphan")
+    disagreements = relationship("DisagreementDB", back_populates="workshop", cascade="all, delete-orphan")
+    trace_discovery_questions = relationship("TraceDiscoveryQuestionDB", back_populates="workshop", cascade="all, delete-orphan")
+    trace_discovery_thresholds = relationship("TraceDiscoveryThresholdDB", back_populates="workshop", cascade="all, delete-orphan")
+    draft_rubric_items = relationship("DraftRubricItemDB", back_populates="workshop", cascade="all, delete-orphan")
 
 
 class TraceDB(Base):
@@ -203,6 +208,10 @@ class TraceDB(Base):
     findings = relationship("DiscoveryFindingDB", back_populates="trace")
     annotations = relationship("AnnotationDB", back_populates="trace")
     judge_evaluations = relationship("JudgeEvaluationDB", back_populates="trace")
+    classified_findings = relationship("ClassifiedFindingDB", back_populates="trace", cascade="all, delete-orphan")
+    disagreements = relationship("DisagreementDB", back_populates="trace", cascade="all, delete-orphan")
+    trace_discovery_questions = relationship("TraceDiscoveryQuestionDB", back_populates="trace", cascade="all, delete-orphan")
+    trace_discovery_thresholds = relationship("TraceDiscoveryThresholdDB", back_populates="trace", cascade="all, delete-orphan")
 
 
 class DiscoveryFindingDB(Base):
@@ -408,6 +417,102 @@ class UserTraceOrderDB(Base):
 
     # Relationships
     workshop = relationship("WorkshopDB", back_populates="user_trace_orders")
+
+
+# ---------------------------------------------------------------------------
+# Assisted Facilitation v2 Tables
+# ---------------------------------------------------------------------------
+
+
+class ClassifiedFindingDB(Base):
+    """Finding with LLM-assigned category for assisted facilitation v2."""
+
+    __tablename__ = "classified_findings"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    trace_id = Column(String, ForeignKey("traces.id"), nullable=False)
+    user_id = Column(String, nullable=False)
+    text = Column(Text, nullable=False)
+    category = Column(String, nullable=False)  # themes|edge_cases|boundary_conditions|failure_modes|missing_info
+    question_id = Column(String, nullable=False)  # q_1, q_2, etc.
+    promoted = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=func.now())
+
+    # Relationships
+    workshop = relationship("WorkshopDB", back_populates="classified_findings")
+    trace = relationship("TraceDB", back_populates="classified_findings")
+
+
+class DisagreementDB(Base):
+    """Auto-detected disagreement between participants."""
+
+    __tablename__ = "disagreements"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    trace_id = Column(String, ForeignKey("traces.id"), nullable=False)
+    user_ids = Column(JSON, nullable=False)  # List of user IDs
+    finding_ids = Column(JSON, nullable=False)  # List of finding IDs
+    summary = Column(Text, nullable=False)  # LLM-generated
+    created_at = Column(DateTime, default=func.now())
+
+    # Relationships
+    workshop = relationship("WorkshopDB", back_populates="disagreements")
+    trace = relationship("TraceDB", back_populates="disagreements")
+
+
+class TraceDiscoveryQuestionDB(Base):
+    """Trace-level discovery question (broadcast to all participants)."""
+
+    __tablename__ = "trace_discovery_questions"
+
+    id = Column(String, primary_key=True)  # q_1, q_2, etc.
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    trace_id = Column(String, ForeignKey("traces.id"), nullable=False)
+    prompt = Column(Text, nullable=False)
+    placeholder = Column(Text, nullable=True)
+    target_category = Column(String, nullable=True)
+    is_fixed = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=func.now())
+
+    # Relationships
+    workshop = relationship("WorkshopDB", back_populates="trace_discovery_questions")
+    trace = relationship("TraceDB", back_populates="trace_discovery_questions")
+
+
+class TraceDiscoveryThresholdDB(Base):
+    """Per-trace thresholds for category coverage."""
+
+    __tablename__ = "trace_discovery_thresholds"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    trace_id = Column(String, ForeignKey("traces.id"), nullable=False)
+    thresholds = Column(JSON, nullable=False)  # {category: count}
+    created_at = Column(DateTime, default=func.now())
+
+    # Relationships
+    workshop = relationship("WorkshopDB", back_populates="trace_discovery_thresholds")
+    trace = relationship("TraceDB", back_populates="trace_discovery_thresholds")
+
+
+class DraftRubricItemDB(Base):
+    """Promoted finding in draft rubric staging area."""
+
+    __tablename__ = "draft_rubric_items"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    source_finding_id = Column(String, ForeignKey("classified_findings.id"), nullable=False)
+    source_trace_id = Column(String, nullable=False)
+    text = Column(Text, nullable=False)
+    promoted_by = Column(String, nullable=False)  # Facilitator user_id
+    promoted_at = Column(DateTime, default=func.now())
+
+    # Relationships
+    workshop = relationship("WorkshopDB", back_populates="draft_rubric_items")
+    source_finding = relationship("ClassifiedFindingDB")
 
 
 def get_db():

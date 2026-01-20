@@ -553,3 +553,136 @@ class DatabricksConnectionTest(BaseModel):
   endpoints_count: Optional[int] = Field(default=None, description='Number of available endpoints')
   error: Optional[str] = Field(default=None, description='Error message if connection failed')
   message: str = Field(..., description='Human-readable status message')
+
+
+# ---------------------------------------------------------------------------
+# Assisted Facilitation v2 Models
+# ---------------------------------------------------------------------------
+
+
+class ClassifiedFinding(BaseModel):
+  """A finding with LLM-assigned category."""
+
+  id: str
+  workshop_id: str
+  trace_id: str
+  user_id: str
+  text: str
+  category: str  # themes|edge_cases|boundary_conditions|failure_modes|missing_info
+  question_id: str
+  promoted: bool = False
+  created_at: Optional[datetime] = None
+
+  class Config:
+    from_attributes = True
+
+
+class ClassifiedFindingCreate(BaseModel):
+  """Create a classified finding."""
+
+  trace_id: str
+  user_id: str
+  text: str
+  category: str
+  question_id: str
+
+
+class Disagreement(BaseModel):
+  """Auto-detected disagreement between participants."""
+
+  id: str
+  workshop_id: str
+  trace_id: str
+  user_ids: List[str]
+  finding_ids: List[str]
+  summary: str
+  created_at: Optional[datetime] = None
+
+  class Config:
+    from_attributes = True
+
+
+class TraceDiscoveryQuestion(BaseModel):
+  """Trace-level discovery question (broadcast to all participants)."""
+
+  id: str
+  workshop_id: str
+  trace_id: str
+  prompt: str
+  placeholder: Optional[str] = None
+  target_category: Optional[str] = None
+  is_fixed: bool = False
+  created_at: Optional[datetime] = None
+
+  class Config:
+    from_attributes = True
+
+
+class TraceDiscoveryQuestionCreate(BaseModel):
+  """Create a trace discovery question."""
+
+  trace_id: str
+  prompt: str
+  placeholder: Optional[str] = None
+  target_category: Optional[str] = None
+  is_fixed: bool = False
+
+
+class TraceDiscoveryThreshold(BaseModel):
+  """Per-trace thresholds for category coverage."""
+
+  id: str
+  workshop_id: str
+  trace_id: str
+  thresholds: Dict[str, int]  # {category: count}
+  created_at: Optional[datetime] = None
+
+  class Config:
+    from_attributes = True
+
+
+class TraceDiscoveryThresholdCreate(BaseModel):
+  """Create trace discovery thresholds."""
+
+  trace_id: str
+  thresholds: Dict[str, int]
+
+
+class DraftRubricItem(BaseModel):
+  """Promoted finding in draft rubric staging area."""
+
+  id: str
+  workshop_id: str
+  source_finding_id: str
+  source_trace_id: str
+  text: str
+  promoted_by: str
+  promoted_at: Optional[datetime] = None
+
+  class Config:
+    from_attributes = True
+
+
+class DraftRubricItemCreate(BaseModel):
+  """Create a draft rubric item."""
+
+  source_finding_id: str
+  source_trace_id: str
+  text: str
+
+
+class TraceDiscoveryState(BaseModel):
+  """Structured discovery state for a trace (facilitator view)."""
+
+  trace_id: str
+  categories: Dict[str, List[ClassifiedFinding]] = {}
+  disagreements: List[Disagreement] = []
+  questions: List[TraceDiscoveryQuestion] = []
+  thresholds: Dict[str, int] = {}
+
+
+class FuzzyProgress(BaseModel):
+  """Fuzzy progress indicator for participants."""
+
+  status: str  # "exploring" | "good_coverage" | "complete"
+  percentage: float  # 0-100

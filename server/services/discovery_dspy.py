@@ -427,3 +427,40 @@ def get_question_signature():
 def get_legacy_summaries_signature():
     """Get the legacy one-shot summaries signature."""
     return get_signatures()["GenerateDiscoverySummaries"]
+
+
+# ---------------------------------------------------------------------------
+# Classification Signatures for Assisted Facilitation v2
+# ---------------------------------------------------------------------------
+
+
+class CategoryOutput(BaseModel):
+    """Output model for classification."""
+
+    category: str = Field(
+        description="One of: themes, edge_cases, boundary_conditions, failure_modes, missing_info"
+    )
+
+
+class DisagreementOutput(BaseModel):
+    """Output model for disagreement detection."""
+
+    summary: str = Field(description="Summary of the disagreement between participants")
+
+
+class ClassifyFinding(BaseModel):
+    """Classify a discovery finding into exactly one category."""
+
+    finding_text: str = Field(description="The finding text to classify")
+    trace_input: str = Field(description="The LLM input for context")
+    trace_output: str = Field(description="The LLM output for context")
+    category: str = Field(
+        description="One of: themes, edge_cases, boundary_conditions, failure_modes, missing_info"
+    )
+
+
+class DetectDisagreements(BaseModel):
+    """Detect disagreements between participant findings."""
+
+    findings: list[str] = Field(description="Findings with user attribution")
+    disagreements: list[DisagreementOutput] = Field(description="Detected disagreements")
