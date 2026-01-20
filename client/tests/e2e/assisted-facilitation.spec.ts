@@ -100,7 +100,9 @@ const syntheticTraces = [
   };
 }>;
 
-test.describe('Assisted Facilitation Flow', () => {
+test.describe('Assisted Facilitation Flow', {
+  tag: ['@spec:ASSISTED_FACILITATION_SPEC'],
+}, () => {
   test('discovery questions API returns coverage metadata and stops appropriately', async ({
     page,
     request,

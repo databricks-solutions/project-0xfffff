@@ -8,7 +8,9 @@
 import { test, expect } from '@playwright/test';
 import { TestScenario } from '../lib/scenario-builder';
 
-test.describe('Assisted Facilitation v2 - Classification & Disagreements', () => {
+test.describe('Assisted Facilitation v2 - Classification & Disagreements', {
+  tag: ['@spec:ASSISTED_FACILITATION_SPEC'],
+}, () => {
   test('findings are classified into correct categories', async ({
     browser,
   }) => {
@@ -19,6 +21,7 @@ test.describe('Assisted Facilitation v2 - Classification & Disagreements', () =>
       .withParticipants(1)
       .withTraces(5)
       .inPhase('discovery')
+      .withRealApi()
       .build();
 
     const participant = scenario.users.participant[0];
@@ -104,6 +107,7 @@ test.describe('Assisted Facilitation v2 - Classification & Disagreements', () =>
         .withParticipants(2)
         .withTraces(3)
         .inPhase('discovery')
+        .withRealApi()
         .build();
 
       const participant1 = scenario.users.participant[0];
@@ -161,6 +165,7 @@ test.describe('Assisted Facilitation v2 - Classification & Disagreements', () =>
       .withParticipants(2)
       .withTraces(3)
       .inPhase('discovery')
+      .withRealApi()
       .build();
 
     const p1 = scenario.users.participant[0];
@@ -223,6 +228,7 @@ test.describe('Assisted Facilitation v2 - Classification & Disagreements', () =>
       .withParticipants(1)
       .withTraces(2)
       .inPhase('discovery')
+      .withRealApi()
       .build();
 
     const participant = scenario.users.participant[0];
@@ -273,6 +279,7 @@ test.describe('Assisted Facilitation v2 - Classification & Disagreements', () =>
       .withParticipants(1)
       .withTraces(2)
       .inPhase('discovery')
+      .withRealApi()
       .build();
 
     const participant = scenario.users.participant[0];
@@ -332,6 +339,7 @@ test.describe('Assisted Facilitation v2 - Classification & Disagreements', () =>
         traceIndex: 0,
       })
       .inPhase('discovery')
+      .withRealApi()
       .build();
 
     // Facilitator logs in

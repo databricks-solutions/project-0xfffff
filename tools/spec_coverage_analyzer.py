@@ -26,6 +26,7 @@ from datetime import datetime
 # All known specs (without .md extension)
 KNOWN_SPECS = [
     "ANNOTATION_SPEC",
+    "ASSISTED_FACILITATION_SPEC",
     "AUTHENTICATION_SPEC",
     "BUILD_AND_DEPLOY_SPEC",
     "DATASETS_SPEC",

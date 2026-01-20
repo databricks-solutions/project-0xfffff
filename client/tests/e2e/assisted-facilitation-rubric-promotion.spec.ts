@@ -8,7 +8,9 @@
 import { test, expect } from '@playwright/test';
 import { TestScenario } from '../lib/scenario-builder';
 
-test.describe('Assisted Facilitation v2 - Draft Rubric Promotion', () => {
+test.describe('Assisted Facilitation v2 - Draft Rubric Promotion', {
+  tag: ['@spec:ASSISTED_FACILITATION_SPEC'],
+}, () => {
   test('facilitator can promote individual findings to draft rubric', async ({
     browser,
   }) => {
@@ -31,6 +33,7 @@ test.describe('Assisted Facilitation v2 - Draft Rubric Promotion', () => {
         traceIndex: 1,
       })
       .inPhase('discovery')
+      .withRealApi()
       .build();
 
     // Facilitator logs in
@@ -77,6 +80,7 @@ test.describe('Assisted Facilitation v2 - Draft Rubric Promotion', () => {
         traceIndex: 1,
       })
       .inPhase('discovery')
+      .withRealApi()
       .build();
 
     // Facilitator logs in
@@ -124,6 +128,7 @@ test.describe('Assisted Facilitation v2 - Draft Rubric Promotion', () => {
         traceIndex: 1,
       })
       .inPhase('discovery')
+      .withRealApi()
       .build();
 
     // Facilitator logs in
@@ -186,6 +191,7 @@ test.describe('Assisted Facilitation v2 - Draft Rubric Promotion', () => {
         traceIndex: 0,
       })
       .inPhase('discovery')
+      .withRealApi()
       .build();
 
     // Facilitator logs in
@@ -253,6 +259,7 @@ test.describe('Assisted Facilitation v2 - Draft Rubric Promotion', () => {
         traceIndex: 2,
       })
       .inPhase('discovery')
+      .withRealApi()
       .build();
 
     // First facilitator logs in
@@ -326,6 +333,7 @@ test.describe('Assisted Facilitation v2 - Draft Rubric Promotion', () => {
       })
       .withDiscoveryComplete()
       .inPhase('rubric')
+      .withRealApi()
       .build();
 
     // Facilitator logs in
@@ -380,6 +388,7 @@ test.describe('Assisted Facilitation v2 - Draft Rubric Promotion', () => {
         traceIndex: 1,
       })
       .inPhase('discovery')
+      .withRealApi()
       .build();
 
     // Facilitator logs in

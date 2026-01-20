@@ -517,7 +517,7 @@ e2e mode="headless" workers="1" *args:
   # Wait for API + UI to be ready
   just e2e-wait-ready "$API_PORT" "$UI_PORT"
 
-  # Run tests with the correct base URL
-  PLAYWRIGHT_BASE_URL="http://127.0.0.1:$UI_PORT" just e2e-test "{{mode}}" "{{workers}}" {{args}}
+  # Run tests with the correct URLs
+  E2E_API_URL="http://127.0.0.1:$API_PORT" PLAYWRIGHT_BASE_URL="http://127.0.0.1:$UI_PORT" just e2e-test "{{mode}}" "{{workers}}" {{args}}
 
   cleanup

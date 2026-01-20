@@ -9,7 +9,9 @@ import { test, expect, Page } from '@playwright/test';
 import { TestScenario } from '../lib/scenario-builder';
 import * as discoveryActions from '../lib/actions/discovery';
 
-test.describe('Assisted Facilitation v2 - Discovery Phase', () => {
+test.describe('Assisted Facilitation v2 - Discovery Phase', {
+  tag: ['@spec:ASSISTED_FACILITATION_SPEC'],
+}, () => {
   test('participant can submit findings with real-time classification', async ({
     page,
     browser,
@@ -21,6 +23,7 @@ test.describe('Assisted Facilitation v2 - Discovery Phase', () => {
       .withParticipants(1)
       .withTraces(3)
       .inPhase('discovery')
+      .withRealApi()
       .build();
 
     const participant = scenario.users.participant[0];
@@ -69,6 +72,7 @@ test.describe('Assisted Facilitation v2 - Discovery Phase', () => {
       .withParticipants(2)
       .withTraces(10)
       .inPhase('discovery')
+      .withRealApi()
       .build();
 
     const participant1 = scenario.users.participant[0];
@@ -126,6 +130,7 @@ test.describe('Assisted Facilitation v2 - Discovery Phase', () => {
       .withParticipants(3)
       .withTraces(5)
       .inPhase('discovery')
+      .withRealApi()
       .build();
 
     // Facilitator starts discovery
@@ -170,6 +175,7 @@ test.describe('Assisted Facilitation v2 - Discovery Phase', () => {
       .withParticipants(1)
       .withTraces(3)
       .inPhase('discovery')
+      .withRealApi()
       .build();
 
     const participant = scenario.users.participant[0];
@@ -216,6 +222,7 @@ test.describe('Assisted Facilitation v2 - Discovery Phase', () => {
       .withParticipants(1)
       .withTraces(3)
       .inPhase('discovery')
+      .withRealApi()
       .build();
 
     const participant = scenario.users.participant[0];
@@ -265,6 +272,7 @@ test.describe('Assisted Facilitation v2 - Discovery Phase', () => {
       .withParticipants(1)
       .withTraces(2)
       .inPhase('discovery')
+      .withRealApi()
       .build();
 
     const participant = scenario.users.participant[0];

@@ -1,6 +1,6 @@
 # Spec Test Coverage Map
 
-**Generated**: 2026-01-20 12:07:35
+**Generated**: 2026-01-20 17:52:18
 
 This report shows which tests cover each specification.
 Tests are tagged using framework-specific conventions:
@@ -16,16 +16,17 @@ Tests are tagged using framework-specific conventions:
 | Spec | pytest | Playwright | Vitest | Total | Status |
 |------|--------|------------|--------|-------|--------|
 | [ANNOTATION_SPEC](#annotation-spec) | 4 | 1 | 0 | 5 | ✅ Covered |
+| [ASSISTED_FACILITATION_SPEC](#assisted-facilitation-spec) | 0 | 5 | 0 | 5 | ✅ Covered |
 | [AUTHENTICATION_SPEC](#authentication-spec) | 8 | 1 | 0 | 9 | ✅ Covered |
 | [BUILD_AND_DEPLOY_SPEC](#build-and-deploy-spec) | 1 | 0 | 0 | 1 | 🟡 Partial |
 | [DATASETS_SPEC](#datasets-spec) | 2 | 0 | 1 | 3 | ✅ Covered |
 | [DESIGN_SYSTEM_SPEC](#design-system-spec) | 0 | 0 | 1 | 1 | 🟡 Partial |
 | [DISCOVERY_TRACE_ASSIGNMENT_SPEC](#discovery-trace-assignment-spec) | 3 | 1 | 1 | 5 | ✅ Covered |
 | [JUDGE_EVALUATION_SPEC](#judge-evaluation-spec) | 28 | 0 | 1 | 29 | ✅ Covered |
-| [RUBRIC_SPEC](#rubric-spec) | 0 | 1 | 1 | 2 | 🟡 Partial |
+| [RUBRIC_SPEC](#rubric-spec) | 0 | 0 | 1 | 1 | 🟡 Partial |
 | [UI_COMPONENTS_SPEC](#ui-components-spec) | 0 | 0 | 0 | 0 | ❌ Uncovered |
 
-**Coverage**: 8/9 specs (88%)
+**Coverage**: 9/10 specs (90%)
 
 ---
 
@@ -41,6 +42,16 @@ Tests are tagged using framework-specific conventions:
 ### Playwright (E2E)
 
 - `client/tests/e2e/annotation-last-trace.spec.ts`
+
+## ASSISTED_FACILITATION_SPEC
+
+### Playwright (E2E)
+
+- `client/tests/e2e/assisted-facilitation.spec.ts`
+- `client/tests/e2e/assisted-facilitation-rubric-promotion.spec.ts`
+- `client/tests/e2e/assisted-facilitation-classification.spec.ts`
+- `client/tests/e2e/assisted-facilitation-discovery.spec.ts`
+- `client/tests/e2e/assisted-facilitation-dashboard.spec.ts`
 
 ## AUTHENTICATION_SPEC
 
@@ -136,10 +147,6 @@ Tests are tagged using framework-specific conventions:
 - `client/src/utils/modelMapping.test.ts`
 
 ## RUBRIC_SPEC
-
-### Playwright (E2E)
-
-- `client/tests/e2e/rubric-creation.spec.ts`
 
 ### Vitest (Unit)
 

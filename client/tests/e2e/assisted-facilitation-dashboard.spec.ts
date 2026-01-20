@@ -8,7 +8,9 @@
 import { test, expect } from '@playwright/test';
 import { TestScenario } from '../lib/scenario-builder';
 
-test.describe('Assisted Facilitation v2 - Facilitator Dashboard', () => {
+test.describe('Assisted Facilitation v2 - Facilitator Dashboard', {
+  tag: ['@spec:ASSISTED_FACILITATION_SPEC'],
+}, () => {
   test('facilitator can view trace discovery state with category coverage', async ({
     browser,
   }) => {
@@ -31,6 +33,7 @@ test.describe('Assisted Facilitation v2 - Facilitator Dashboard', () => {
         traceIndex: 1,
       })
       .inPhase('discovery')
+      .withRealApi()
       .build();
 
     // Facilitator logs in and navigates to first trace
@@ -61,6 +64,7 @@ test.describe('Assisted Facilitation v2 - Facilitator Dashboard', () => {
       .withParticipants(1)
       .withTraces(3)
       .inPhase('discovery')
+      .withRealApi()
       .build();
 
     // Facilitator logs in
@@ -109,6 +113,7 @@ test.describe('Assisted Facilitation v2 - Facilitator Dashboard', () => {
         traceIndex: 0,
       })
       .inPhase('discovery')
+      .withRealApi()
       .build();
 
     // Facilitator logs in
@@ -144,6 +149,7 @@ test.describe('Assisted Facilitation v2 - Facilitator Dashboard', () => {
       .withParticipants(3)
       .withTraces(5)
       .inPhase('discovery')
+      .withRealApi()
       .build();
 
     const participants = scenario.users.participant;
@@ -200,6 +206,7 @@ test.describe('Assisted Facilitation v2 - Facilitator Dashboard', () => {
         traceIndex: 0,
       })
       .inPhase('discovery')
+      .withRealApi()
       .build();
 
     // Facilitator logs in
@@ -237,6 +244,7 @@ test.describe('Assisted Facilitation v2 - Facilitator Dashboard', () => {
       .withParticipants(1)
       .withTraces(2)
       .inPhase('discovery')
+      .withRealApi()
       .build();
 
     // Facilitator logs in
@@ -269,6 +277,7 @@ test.describe('Assisted Facilitation v2 - Facilitator Dashboard', () => {
       .withParticipants(2)
       .withTraces(10)
       .inPhase('discovery')
+      .withRealApi()
       .build();
 
     // Facilitator logs in
@@ -311,6 +320,7 @@ test.describe('Assisted Facilitation v2 - Facilitator Dashboard', () => {
       .withParticipants(1)
       .withTraces(3)
       .inPhase('discovery')
+      .withRealApi()
       .build();
 
     // Facilitator tries to access participant discovery page
