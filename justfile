@@ -248,6 +248,10 @@ ui-build:
   npm -C {{client-dir}} run build
 
 [group('dev')]
+test-server:
+  uv run pytest -q
+
+[group('dev')]
 ui-test:
   npm -C {{client-dir}} run test
 
@@ -419,24 +423,33 @@ e2e-servers db_path=".e2e-workshop.db" api_port="8000" ui_port="3000":
 
 
 [group('e2e')]
-e2e-test mode="headless":
+e2e-test mode="headless" *args="":
   #!/usr/bin/env bash
   set -euo pipefail
 
   # If Playwright is configured with webServer, avoid double-starting when we already started servers via `just e2e`.
   export PW_NO_WEBSERVER=1
 
-  echo "Running tests in {{mode}} mode"
+  # Default test path, can be overridden with args
+  TEST_PATH="tests/e2e"
+  EXTRA_ARGS=""
+
+  # If args provided, use them as test path/filter
+  if [ -n "{{args}}" ]; then
+    TEST_PATH="{{args}}"
+  fi
+
+  echo "Running tests in {{mode}} mode: $TEST_PATH"
 
   case "{{mode}}" in
     ui)
-      npm -C {{client-dir}} run test -- tests/e2e --ui --workers=1
+      npm -C {{client-dir}} run test -- $TEST_PATH --ui --workers=1 $EXTRA_ARGS
       ;;
     headed)
-      npm -C {{client-dir}} run test -- tests/e2e --headed --workers=1
+      npm -C {{client-dir}} run test -- $TEST_PATH --headed --workers=1 $EXTRA_ARGS
       ;;
     headless)
-      npm -C {{client-dir}} run test -- tests/e2e --workers=1
+      npm -C {{client-dir}} run test -- $TEST_PATH --workers=1 $EXTRA_ARGS
       ;;
     *)
       echo "Unknown mode: {{mode}} (expected: headless|headed|ui)" >&2
@@ -446,12 +459,11 @@ e2e-test mode="headless":
 
 
 [group('e2e')]
-e2e mode="headless" db_path=".e2e-workshop.db":
+e2e mode="headless" *args:
   #!/usr/bin/env bash
   set -euo pipefail
 
-  DB_PATH="{{db_path}}"
-  DB_PATH="${DB_PATH#db_path=}"
+  DB_PATH=".e2e-workshop.db"
 
   # Always start from a clean DB for isolation
   rm -f "$DB_PATH"
@@ -469,7 +481,7 @@ e2e mode="headless" db_path=".e2e-workshop.db":
   # Wait for API + UI to be ready
   just e2e-wait-ready
 
-  # Run tests
-  just e2e-test "{{mode}}"
+  # Run tests (pass through any extra args for test filtering)
+  just e2e-test "{{mode}}" {{args}}
 
   cleanup

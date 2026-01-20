@@ -1104,6 +1104,7 @@ export function AnnotationDemo() {
                 onClick={nextTrace}
                 disabled={isNextDisabled}
                 className="flex items-center gap-2"
+                data-testid={currentTraceIndex === traceData.length - 1 ? "complete-annotation-button" : "next-trace-button"}
               >
                 {isNavigating ? (
                   <>

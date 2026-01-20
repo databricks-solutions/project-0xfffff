@@ -28,8 +28,9 @@ export function generateId(): string {
   idCounter++;
   const timestamp = Date.now().toString(16).padStart(12, '0');
   const counter = idCounter.toString(16).padStart(4, '0');
-  const random = Math.random().toString(16).slice(2, 10);
-  return `${timestamp.slice(0, 8)}-${timestamp.slice(8, 12)}-4${counter.slice(1, 4)}-${random.slice(0, 4)}-${random.slice(4, 12)}`;
+  const random1 = Math.random().toString(16).slice(2, 10).padEnd(8, '0');
+  const random2 = Math.random().toString(16).slice(2, 10).padEnd(8, '0');
+  return `${timestamp.slice(0, 8)}-${timestamp.slice(8, 12)}-4${counter.slice(1, 4)}-${random1.slice(0, 4)}-${random1.slice(4, 8)}${random2.slice(0, 4)}`;
 }
 
 /**

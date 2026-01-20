@@ -10,11 +10,17 @@ import type {
   User,
   UserRole,
   Workshop,
+  WorkshopCreate,
   WorkshopPhase,
   Trace,
+  TraceUpload,
   Rubric,
+  RubricCreate,
   Annotation,
+  AnnotationCreate,
   DiscoveryFinding,
+  DiscoveryFindingCreate,
+  UserCreate,
   WorkshopConfig,
   UserConfig,
   TraceConfig,
@@ -276,12 +282,514 @@ export class TestScenario {
       }
 
       await mocker.install();
+    } else {
+      // When using real API, persist mock data to the real database
+      await this.persistMockDataToRealApi(page, store);
     }
 
     // Build the scenario result
     const scenario = this.buildScenarioResult(page, store);
 
     return scenario;
+  }
+
+  /**
+   * Persist mock data to the real API database
+   *
+   * Creates data in dependency order:
+   * 1. Login facilitator
+   * 2. Create workshop
+   * 3. Create non-facilitator users
+   * 4. Upload traces and fetch real IDs
+   * 5. Begin discovery (if target phase requires)
+   * 6. Create discovery findings
+   * 7. Mark discovery complete (if configured)
+   * 8. Create rubric
+   * 9. Advance to target phase
+   * 10. Create annotations
+   */
+  private async persistMockDataToRealApi(page: Page, store: MockDataStore): Promise<void> {
+    const apiUrl = DEFAULT_API_URL;
+
+    if (!store.workshop || store.users.length === 0) {
+      return;
+    }
+
+    const facilitator = store.users.find((u) => u.role === 'facilitator');
+    if (!facilitator) {
+      return;
+    }
+
+    // Step 1: Login facilitator
+    await this.loginFacilitatorViaApi(page, store, apiUrl);
+
+    // Step 2: Create workshop
+    await this.createWorkshopViaApi(page, store, apiUrl);
+
+    // Step 3: Create all non-facilitator users
+    await this.createUsersViaApi(page, store, apiUrl);
+
+    // Step 4: Upload traces and fetch real IDs
+    await this.uploadTracesViaApi(page, store, apiUrl);
+
+    // Step 5: Begin discovery if target phase requires it
+    if (this.shouldBeginDiscovery()) {
+      await this.beginDiscoveryViaApi(page, store, apiUrl);
+    }
+
+    // Step 6: Create discovery findings
+    await this.createFindingsViaApi(page, store, apiUrl);
+
+    // Step 7: Mark discovery complete if configured
+    if (this.state.discoveryComplete) {
+      await this.markAllDiscoveryCompleteViaApi(page, store, apiUrl);
+    }
+
+    // Step 8: Create rubric if configured
+    await this.createRubricViaApi(page, store, apiUrl);
+
+    // Step 9: Advance to target phase
+    await this.advanceToTargetPhaseViaApi(page, store, apiUrl);
+
+    // Step 9b: Begin annotation if target phase is annotation or later
+    if (this.shouldBeginAnnotation()) {
+      await this.beginAnnotationViaApi(page, store, apiUrl);
+    }
+
+    // Step 10: Create annotations
+    await this.createAnnotationsViaApi(page, store, apiUrl);
+  }
+
+  /**
+   * Step 1: Login facilitator and update store with real ID
+   */
+  private async loginFacilitatorViaApi(
+    page: Page,
+    store: MockDataStore,
+    apiUrl: string
+  ): Promise<void> {
+    const facilitator = store.users.find((u) => u.role === 'facilitator');
+    if (!facilitator) {
+      throw new Error('No facilitator found in store');
+    }
+
+    const loginResponse = await page.request.post(`${apiUrl}/users/auth/login`, {
+      data: {
+        email: facilitator.email,
+        password: DEFAULT_FACILITATOR.password,
+      },
+    });
+
+    if (!loginResponse.ok()) {
+      throw new Error(
+        `Failed to login facilitator: ${loginResponse.status()} ${await loginResponse.text()}`
+      );
+    }
+
+    // Update facilitator with real data from login response
+    const loginData = await loginResponse.json();
+    if (loginData.user?.id) {
+      const index = store.users.findIndex((u) => u.role === 'facilitator');
+      if (index !== -1) {
+        store.users[index] = { ...store.users[index], id: loginData.user.id };
+      }
+    }
+  }
+
+  /**
+   * Step 2: Create workshop and get real ID
+   */
+  private async createWorkshopViaApi(
+    page: Page,
+    store: MockDataStore,
+    apiUrl: string
+  ): Promise<void> {
+    if (!store.workshop) {
+      throw new Error('No workshop in store');
+    }
+
+    const facilitator = store.users.find((u) => u.role === 'facilitator');
+    if (!facilitator) {
+      throw new Error('No facilitator found in store for workshop creation');
+    }
+
+    const workshopData: WorkshopCreate = {
+      name: store.workshop.name,
+      description: store.workshop.description || '',
+      facilitator_id: facilitator.id,
+    };
+
+    const workshopResponse = await page.request.post(`${apiUrl}/workshops/`, {
+      data: workshopData,
+    });
+
+    if (!workshopResponse.ok()) {
+      throw new Error(
+        `Failed to create workshop: ${workshopResponse.status()} ${await workshopResponse.text()}`
+      );
+    }
+
+    const createdWorkshop = (await workshopResponse.json()) as Workshop;
+    store.workshop.id = createdWorkshop.id;
+  }
+
+  /**
+   * Step 3: Create all non-facilitator users
+   */
+  private async createUsersViaApi(
+    page: Page,
+    store: MockDataStore,
+    apiUrl: string
+  ): Promise<void> {
+    for (let i = 0; i < store.users.length; i++) {
+      const user = store.users[i];
+      if (user.role === 'facilitator') {
+        continue;
+      }
+
+      const userData: UserCreate = {
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        workshop_id: store.workshop!.id,
+      };
+
+      const userResponse = await page.request.post(`${apiUrl}/users/`, {
+        data: userData,
+      });
+
+      if (!userResponse.ok()) {
+        throw new Error(
+          `Failed to create user ${user.email}: ${userResponse.status()} ${await userResponse.text()}`
+        );
+      }
+
+      const createdUser = (await userResponse.json()) as User;
+      store.users[i] = createdUser;
+    }
+  }
+
+  /**
+   * Step 4: Upload traces and fetch real IDs
+   */
+  private async uploadTracesViaApi(
+    page: Page,
+    store: MockDataStore,
+    apiUrl: string
+  ): Promise<void> {
+    if (store.traces.length === 0) {
+      return;
+    }
+
+    const tracesToUpload: TraceUpload[] = store.traces.map((t) => ({
+      input: t.input,
+      output: t.output,
+      context: t.context,
+    }));
+
+    const tracesUploadResponse = await page.request.post(
+      `${apiUrl}/workshops/${store.workshop!.id}/traces`,
+      {
+        data: tracesToUpload,
+      }
+    );
+
+    if (!tracesUploadResponse.ok()) {
+      throw new Error(
+        `Failed to upload traces: ${tracesUploadResponse.status()} ${await tracesUploadResponse.text()}`
+      );
+    }
+
+    // Fetch the created traces to get their real IDs
+    const tracesResponse = await page.request.get(
+      `${apiUrl}/workshops/${store.workshop!.id}/all-traces`
+    );
+
+    if (!tracesResponse.ok()) {
+      throw new Error(
+        `Failed to fetch traces: ${tracesResponse.status()} ${await tracesResponse.text()}`
+      );
+    }
+
+    const createdTraces = (await tracesResponse.json()) as Trace[];
+    store.traces = createdTraces;
+  }
+
+  /**
+   * Determine if discovery phase setup is needed
+   */
+  private shouldBeginDiscovery(): boolean {
+    const phase = this.state.targetPhase;
+    return (
+      phase === 'discovery' ||
+      phase === 'rubric' ||
+      phase === 'annotation' ||
+      phase === 'results'
+    );
+  }
+
+  /**
+   * Determine if annotation phase setup is needed
+   */
+  private shouldBeginAnnotation(): boolean {
+    const phase = this.state.targetPhase;
+    return (
+      phase === 'annotation' ||
+      phase === 'results'
+    );
+  }
+
+  /**
+   * Step 5: Begin discovery phase
+   */
+  private async beginDiscoveryViaApi(
+    page: Page,
+    store: MockDataStore,
+    apiUrl: string
+  ): Promise<void> {
+    await actions.beginDiscovery(page, store.workshop!.id, undefined, apiUrl);
+  }
+
+  /**
+   * Step 9b: Begin annotation phase
+   */
+  private async beginAnnotationViaApi(
+    page: Page,
+    store: MockDataStore,
+    apiUrl: string
+  ): Promise<void> {
+    await actions.beginAnnotation(page, store.workshop!.id, apiUrl);
+  }
+
+  /**
+   * Step 6: Create all configured discovery findings
+   */
+  private async createFindingsViaApi(
+    page: Page,
+    store: MockDataStore,
+    apiUrl: string
+  ): Promise<void> {
+    if (this.state.findingConfigs.length === 0) {
+      return;
+    }
+
+    // Find first available participant or SME for default user assignment
+    const defaultUser = store.users.find(
+      (u) => u.role === 'participant' || u.role === 'sme'
+    );
+
+    for (let i = 0; i < this.state.findingConfigs.length; i++) {
+      const config = this.state.findingConfigs[i];
+      const trace = store.traces[config.traceIndex || 0];
+      const user = defaultUser;
+
+      if (!trace || !user) {
+        console.warn(`Skipping finding ${i}: missing trace or user`);
+        continue;
+      }
+
+      const insight =
+        config.insight || SAMPLE_INSIGHTS[i % SAMPLE_INSIGHTS.length];
+
+      const createdFinding = await actions.submitFindingViaApi(
+        page,
+        store.workshop!.id,
+        {
+          trace_id: trace.id,
+          user_id: user.id,
+          insight,
+        },
+        apiUrl
+      );
+
+      // Update store with real finding data
+      if (store.findings[i]) {
+        store.findings[i] = createdFinding;
+      } else {
+        store.findings.push(createdFinding);
+      }
+    }
+  }
+
+  /**
+   * Step 7: Mark all participants/SMEs as discovery complete
+   */
+  private async markAllDiscoveryCompleteViaApi(
+    page: Page,
+    store: MockDataStore,
+    apiUrl: string
+  ): Promise<void> {
+    const participantsAndSmes = store.users.filter(
+      (u) => u.role === 'participant' || u.role === 'sme'
+    );
+
+    for (const user of participantsAndSmes) {
+      await actions.markDiscoveryCompleteViaApi(
+        page,
+        store.workshop!.id,
+        user.id,
+        apiUrl
+      );
+      store.discoveryComplete.set(user.id, true);
+    }
+  }
+
+  /**
+   * Step 8: Create rubric if configured
+   */
+  private async createRubricViaApi(
+    page: Page,
+    store: MockDataStore,
+    apiUrl: string
+  ): Promise<void> {
+    if (!store.rubric) {
+      return;
+    }
+
+    const facilitator = store.users.find((u) => u.role === 'facilitator');
+    if (!facilitator) {
+      throw new Error('No facilitator found in store for rubric creation');
+    }
+
+    const rubricData: RubricCreate = {
+      question: store.rubric.question,
+      created_by: facilitator.id,
+      judge_type: store.rubric.judge_type,
+      rating_scale: store.rubric.rating_scale,
+    };
+
+    const response = await page.request.post(
+      `${apiUrl}/workshops/${store.workshop!.id}/rubric`,
+      {
+        data: rubricData,
+      }
+    );
+
+    if (!response.ok()) {
+      throw new Error(
+        `Failed to create rubric: ${response.status()} ${await response.text()}`
+      );
+    }
+
+    const createdRubric = (await response.json()) as Rubric;
+    store.rubric = createdRubric;
+  }
+
+  /**
+   * Step 9: Advance workshop to target phase via API
+   *
+   * Note: If target phase is rubric or later and no findings exist,
+   * this will auto-create a minimal finding to satisfy API requirements.
+   */
+  private async advanceToTargetPhaseViaApi(
+    page: Page,
+    store: MockDataStore,
+    apiUrl: string
+  ): Promise<void> {
+    const targetPhase = this.state.targetPhase;
+    if (!targetPhase || targetPhase === 'intake' || targetPhase === 'discovery') {
+      // No advancement needed - intake is default, discovery was handled by beginDiscovery
+      return;
+    }
+
+    // If advancing to rubric or later phases and no findings exist,
+    // auto-create a minimal finding to satisfy API requirements
+    if (store.findings.length === 0 && store.traces.length > 0) {
+      const participant = store.users.find(
+        (u) => u.role === 'participant' || u.role === 'sme'
+      );
+      if (participant) {
+        const finding = await actions.submitFindingViaApi(
+          page,
+          store.workshop!.id,
+          {
+            trace_id: store.traces[0].id,
+            user_id: participant.id,
+            insight: 'Auto-generated finding for phase advancement',
+          },
+          apiUrl
+        );
+        store.findings.push(finding);
+      }
+    }
+
+    // Define phase sequence for advancement
+    const phaseSequence: Array<'rubric' | 'annotation' | 'results'> = [
+      'rubric',
+      'annotation',
+      'results',
+    ];
+
+    // Advance through phases until we reach target
+    for (const phase of phaseSequence) {
+      await actions.advanceToPhase(page, store.workshop!.id, phase, apiUrl);
+
+      if (phase === targetPhase) {
+        break;
+      }
+    }
+  }
+
+  /**
+   * Step 10: Create all configured annotations
+   */
+  private async createAnnotationsViaApi(
+    page: Page,
+    store: MockDataStore,
+    apiUrl: string
+  ): Promise<void> {
+    if (this.state.annotationConfigs.length === 0) {
+      return;
+    }
+
+    // Find first available participant or SME for default user assignment
+    const defaultUser = store.users.find(
+      (u) => u.role === 'participant' || u.role === 'sme'
+    );
+
+    for (let i = 0; i < this.state.annotationConfigs.length; i++) {
+      const config = this.state.annotationConfigs[i];
+      const trace = store.traces[config.traceIndex || 0];
+      const user = defaultUser;
+
+      if (!trace || !user) {
+        console.warn(`Skipping annotation ${i}: missing trace or user`);
+        continue;
+      }
+
+      const annotationData: {
+        trace_id: string;
+        user_id: string;
+        rating: number;
+        ratings?: Record<string, number>;
+        comment?: string;
+      } = {
+        trace_id: trace.id,
+        user_id: user.id,
+        rating: config.rating || 4,
+      };
+
+      if (config.ratings) {
+        annotationData.ratings = config.ratings;
+      }
+      if (config.comment) {
+        annotationData.comment = config.comment;
+      }
+
+      const createdAnnotation = await actions.submitAnnotationViaApi(
+        page,
+        store.workshop!.id,
+        annotationData,
+        apiUrl
+      );
+
+      // Update store with real annotation data
+      if (store.annotations[i]) {
+        store.annotations[i] = createdAnnotation;
+      } else {
+        store.annotations.push(createdAnnotation);
+      }
+    }
   }
 
   /**
@@ -470,6 +978,10 @@ export class TestScenario {
     const buildPageActions = (targetPage: Page): PageActions => ({
       loginAs: (user: User) => actions.loginAs(targetPage, user),
       logout: () => actions.logout(targetPage),
+      beginDiscovery: (traceLimit?: number) =>
+        actions.beginDiscovery(targetPage, store.workshop!.id, traceLimit, apiUrl),
+      beginAnnotation: () =>
+        actions.beginAnnotation(targetPage, store.workshop!.id, apiUrl),
       goToPhase: (phase: WorkshopPhase) => actions.goToPhase(targetPage, phase),
       goToTab: (tabName: string) => actions.goToTab(targetPage, tabName),
       createRubricQuestion: async (config: RubricConfig) => {
@@ -553,6 +1065,10 @@ export class TestScenario {
       logout: () => actions.logout(page),
       advanceToPhase: (phase: WorkshopPhase) =>
         actions.advanceToPhase(page, store.workshop!.id, phase, apiUrl),
+      beginDiscovery: (traceLimit?: number) =>
+        actions.beginDiscovery(page, store.workshop!.id, traceLimit, apiUrl),
+      beginAnnotation: () =>
+        actions.beginAnnotation(page, store.workshop!.id, apiUrl),
       goToPhase: (phase: WorkshopPhase) => actions.goToPhase(page, phase),
       goToTab: (tabName: string) => actions.goToTab(page, tabName),
       createRubricQuestion: async (config: RubricConfig) => {

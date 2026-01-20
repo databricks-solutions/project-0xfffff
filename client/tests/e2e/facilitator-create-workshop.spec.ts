@@ -4,7 +4,9 @@ const FACILITATOR_EMAIL = process.env.E2E_FACILITATOR_EMAIL ?? 'facilitator123@e
 const FACILITATOR_PASSWORD = process.env.E2E_FACILITATOR_PASSWORD ?? 'facilitator123';
 const API_URL = process.env.E2E_API_URL ?? 'http://127.0.0.1:8000';
 
-test('facilitator can log in and create a workshop', async ({ page, request }) => {
+test('facilitator can log in and create a workshop', {
+  tag: ['@spec:AUTHENTICATION_SPEC', '@spec:DISCOVERY_TRACE_ASSIGNMENT_SPEC'],
+}, async ({ page, request }) => {
   await page.goto('/');
 
   // Login (real backend auth via YAML facilitator in config/auth.yaml)

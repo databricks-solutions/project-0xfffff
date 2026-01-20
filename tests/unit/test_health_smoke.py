@@ -1,6 +1,7 @@
 import pytest
 
 
+@pytest.mark.spec("BUILD_AND_DEPLOY_SPEC")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_health_endpoint(async_client):

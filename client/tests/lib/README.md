@@ -124,6 +124,113 @@ Available phases: `intake`, `discovery`, `rubric`, `annotation`, `results`, `jud
 .withRealApi()
 ```
 
+## Real API Mode (`.withRealApi()`)
+
+When using `.withRealApi()`, the scenario builder creates all configured data in the real backend database. The builder chain defines the data creation order - each `.with*()` call represents data that will be persisted to the real API.
+
+### Spec: Data Creation Order
+
+When `.withRealApi()` is called, `.build()` persists data in dependency order:
+
+| Step | Builder Method | API Operation | Dependencies |
+|------|----------------|---------------|--------------|
+| 1 | `.withFacilitator()` | Login via `/users/auth/login` | Must exist in `auth.yaml` |
+| 2 | `.withWorkshop()` | `POST /workshops/` | Facilitator logged in |
+| 3 | `.withParticipants()`, `.withSMEs()`, `.withUser()` | `POST /users/` for each | Workshop exists |
+| 4 | `.withTraces()` | `POST /workshops/{id}/traces` then `GET /workshops/{id}/all-traces` | Workshop exists |
+| 5 | `.inPhase('discovery')` or later | `POST /workshops/{id}/begin-discovery` | Traces uploaded |
+| 6 | `.withDiscoveryFinding()` | `POST /workshops/{id}/findings` for each | Traces + users exist |
+| 7 | `.withDiscoveryComplete()` | `POST /workshops/{id}/users/{userId}/complete-discovery` for each participant/SME | Users exist |
+| 8 | `.withRubric()` | `POST /workshops/{id}/rubric` | Workshop exists |
+| 9 | `.inPhase(target)` | Phase advancement endpoints in sequence | Previous phases complete |
+| 10 | `.withAnnotation()` | `POST /workshops/{id}/annotations` for each | Traces + users + rubric exist |
+
+### Spec: Phase Advancement
+
+When `.inPhase(target)` is specified with `.withRealApi()`, the builder calls phase advancement endpoints in sequence to reach the target:
+
+| Target Phase | API Calls Made |
+|--------------|----------------|
+| `discovery` | `begin-discovery` |
+| `rubric` | `begin-discovery` → `advance-to-rubric` |
+| `annotation` | `begin-discovery` → `advance-to-rubric` → `advance-to-annotation` |
+| `results` | `begin-discovery` → `advance-to-rubric` → `advance-to-annotation` → `advance-to-results` |
+
+### Spec: ID Resolution
+
+After `.build()` completes with `.withRealApi()`:
+
+- `scenario.workshop.id` - Real UUID from database
+- `scenario.traces[n].id` - Real UUIDs fetched after upload
+- `scenario.users.participant[n].id` - Real UUIDs from user creation
+- `scenario.facilitator.id` - Real UUID from login response
+- `scenario.findings[n].id` - Real UUIDs from finding creation
+- `scenario.annotations[n].id` - Real UUIDs from annotation creation
+
+### Spec: Trace References in Configs
+
+`FindingConfig` and `AnnotationConfig` use `traceIndex` to reference traces:
+
+```typescript
+.withDiscoveryFinding({
+  traceIndex: 0,           // → uses scenario.traces[0].id after traces are created
+  insight: 'Good response'
+})
+
+.withAnnotation({
+  traceIndex: 2,           // → uses scenario.traces[2].id after traces are created
+  rating: 4
+})
+```
+
+### Spec: User Assignment for Findings/Annotations
+
+When `FindingConfig` or `AnnotationConfig` doesn't specify a user:
+- The builder assigns to the first available participant or SME
+- User must have been added via `.withParticipants()`, `.withSMEs()`, or `.withUser()`
+
+### Spec: No Prerequisite Validation
+
+The builder does **not** validate that prerequisites exist. If the API rejects a request due to missing prerequisites, the test fails with the API error. This is intentional:
+- Allows testing error scenarios
+- Lets the real API enforce business rules
+- Keeps the builder simple
+
+### Example: Full Annotation Phase Setup
+
+```typescript
+const scenario = await TestScenario.create(page)
+  .withWorkshop({ name: 'Annotation Test' })
+  .withFacilitator()
+  .withSMEs(2)
+  .withTraces(10)
+  .withDiscoveryFinding({ traceIndex: 0, insight: 'Response was helpful' })
+  .withDiscoveryFinding({ traceIndex: 1, insight: 'Could be more concise' })
+  .withDiscoveryComplete()
+  .withRubric({ question: 'How helpful is this response?' })
+  .inPhase('annotation')
+  .withRealApi()
+  .build();
+
+// Verifiable via scenario.api:
+expect((await scenario.api.getWorkshop()).current_phase).toBe('annotation');
+expect((await scenario.api.getTraces()).length).toBe(10);
+expect((await scenario.api.getFindings()).length).toBe(2);
+expect(await scenario.api.getRubric()).not.toBeNull();
+expect((await scenario.api.getDiscoveryCompletionStatus()).all_completed).toBe(true);
+```
+
+### Comparison: Mock vs Real API
+
+| Aspect | Mock (default) | `.withRealApi()` |
+|--------|----------------|------------------|
+| Speed | Fast (in-memory) | Slower (HTTP calls) |
+| Data persistence | None | Database |
+| ID generation | Mock UUIDs | Real UUIDs |
+| Phase advancement | Instant (state change) | Via API endpoints |
+| Dependencies | Not enforced | Enforced by API |
+| Use case | Unit/integration tests | Full e2e, bug repro |
+
 ## Accessing Scenario Data
 
 After calling `.build()`, the scenario provides access to all created entities:
@@ -430,4 +537,428 @@ just e2e headed
 
 # Run with UI mode
 just e2e ui
+```
+
+---
+
+## Implementation Plan: `.withRealApi()` Data Dependencies
+
+### Current State
+
+The current `persistMockDataToRealApi()` method in `scenario-builder.ts:293-411` creates data in a flat manner:
+
+```
+1. Login facilitator
+2. Create workshop
+3. Upload traces
+4. Add users to workshop
+5. Create rubric (if configured)
+```
+
+**What's missing:**
+- Discovery findings creation
+- Discovery completion marking
+- Phase advancement via API endpoints
+- Annotations creation
+- Proper ID resolution after each step
+
+### Target State
+
+Refactor `persistMockDataToRealApi()` to create data in dependency order, matching the spec above.
+
+---
+
+### Files to Modify
+
+| File | Changes |
+|------|---------|
+| `scenario-builder.ts` | Refactor `persistMockDataToRealApi()`, add helper methods |
+| `actions/index.ts` | Export additional helpers if needed |
+
+### Existing Helpers to Reuse
+
+These already exist and should be imported into `scenario-builder.ts`:
+
+```typescript
+// From actions/workshop.ts
+import { advanceToPhase, beginDiscovery } from './actions';
+
+// From actions/discovery.ts
+import { submitFindingViaApi, markDiscoveryCompleteViaApi } from './actions';
+
+// From actions/annotation.ts
+import { submitAnnotationViaApi } from './actions';
+```
+
+---
+
+### Implementation Steps
+
+#### Step 1: Refactor `persistMockDataToRealApi()` Structure
+
+Replace the current flat implementation with an ordered pipeline:
+
+```typescript
+private async persistMockDataToRealApi(page: Page, store: MockDataStore): Promise<void> {
+  const apiUrl = DEFAULT_API_URL;
+
+  // Step 1: Login facilitator (must exist in auth.yaml)
+  await this.loginFacilitatorViaApi(page, store, apiUrl);
+
+  // Step 2: Create workshop
+  await this.createWorkshopViaApi(page, store, apiUrl);
+
+  // Step 3: Create all non-facilitator users
+  await this.createUsersViaApi(page, store, apiUrl);
+
+  // Step 4: Upload traces and fetch real IDs
+  await this.uploadTracesViaApi(page, store, apiUrl);
+
+  // Step 5: Begin discovery if target phase requires it
+  if (this.shouldBeginDiscovery()) {
+    await this.beginDiscoveryViaApi(page, store, apiUrl);
+  }
+
+  // Step 6: Create discovery findings
+  await this.createFindingsViaApi(page, store, apiUrl);
+
+  // Step 7: Mark discovery complete if configured
+  if (this.state.discoveryComplete) {
+    await this.markAllDiscoveryCompleteViaApi(page, store, apiUrl);
+  }
+
+  // Step 8: Create rubric if configured
+  await this.createRubricViaApi(page, store, apiUrl);
+
+  // Step 9: Advance to target phase
+  await this.advanceToTargetPhaseViaApi(page, store, apiUrl);
+
+  // Step 10: Create annotations
+  await this.createAnnotationsViaApi(page, store, apiUrl);
+}
+```
+
+#### Step 2: Implement Helper Methods
+
+**`loginFacilitatorViaApi()`** - Existing logic, extract to method:
+```typescript
+private async loginFacilitatorViaApi(page: Page, store: MockDataStore, apiUrl: string): Promise<void> {
+  const facilitator = store.users.find((u) => u.role === 'facilitator');
+  if (!facilitator) return;
+
+  const response = await page.request.post(`${apiUrl}/users/auth/login`, {
+    data: { email: facilitator.email, password: 'password' },
+  });
+
+  if (!response.ok()) {
+    throw new Error(`Failed to login facilitator: ${response.status()}`);
+  }
+
+  // Update facilitator with real ID from response
+  const authResponse = await response.json();
+  if (authResponse.user) {
+    const index = store.users.findIndex((u) => u.role === 'facilitator');
+    store.users[index] = { ...store.users[index], ...authResponse.user };
+  }
+}
+```
+
+**`createWorkshopViaApi()`** - Existing logic, extract to method:
+```typescript
+private async createWorkshopViaApi(page: Page, store: MockDataStore, apiUrl: string): Promise<void> {
+  if (!store.workshop) return;
+
+  const response = await page.request.post(`${apiUrl}/workshops/`, {
+    data: {
+      name: store.workshop.name,
+      description: store.workshop.description || '',
+    },
+  });
+
+  if (!response.ok()) {
+    throw new Error(`Failed to create workshop: ${response.status()}`);
+  }
+
+  const createdWorkshop = await response.json();
+  store.workshop = { ...store.workshop, ...createdWorkshop };
+}
+```
+
+**`createUsersViaApi()`** - Existing logic, needs to update store with real IDs:
+```typescript
+private async createUsersViaApi(page: Page, store: MockDataStore, apiUrl: string): Promise<void> {
+  for (let i = 0; i < store.users.length; i++) {
+    const user = store.users[i];
+    if (user.role === 'facilitator') continue; // Already logged in
+
+    const response = await page.request.post(`${apiUrl}/users/`, {
+      data: {
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        workshop_id: store.workshop!.id,
+      },
+    });
+
+    if (response.ok()) {
+      const createdUser = await response.json();
+      store.users[i] = createdUser; // Update with real ID
+    }
+  }
+}
+```
+
+**`uploadTracesViaApi()`** - Existing logic, must fetch to get real IDs:
+```typescript
+private async uploadTracesViaApi(page: Page, store: MockDataStore, apiUrl: string): Promise<void> {
+  if (store.traces.length === 0) return;
+
+  const tracesToUpload = store.traces.map((t) => ({
+    input: t.input,
+    output: t.output,
+    context: t.context,
+  }));
+
+  const uploadResponse = await page.request.post(
+    `${apiUrl}/workshops/${store.workshop!.id}/traces`,
+    { data: tracesToUpload }
+  );
+
+  if (!uploadResponse.ok()) {
+    throw new Error(`Failed to upload traces: ${uploadResponse.status()}`);
+  }
+
+  // Fetch traces to get real IDs
+  const fetchResponse = await page.request.get(
+    `${apiUrl}/workshops/${store.workshop!.id}/all-traces`
+  );
+
+  if (fetchResponse.ok()) {
+    store.traces = await fetchResponse.json();
+  }
+}
+```
+
+**`shouldBeginDiscovery()`** - New helper:
+```typescript
+private shouldBeginDiscovery(): boolean {
+  const phasesRequiringDiscovery: WorkshopPhase[] = ['discovery', 'rubric', 'annotation', 'results'];
+  return !!(this.state.targetPhase && phasesRequiringDiscovery.includes(this.state.targetPhase));
+}
+```
+
+**`beginDiscoveryViaApi()`** - New, uses existing action:
+```typescript
+private async beginDiscoveryViaApi(page: Page, store: MockDataStore, apiUrl: string): Promise<void> {
+  await beginDiscovery(page, store.workshop!.id, undefined, apiUrl);
+}
+```
+
+**`createFindingsViaApi()`** - New method:
+```typescript
+private async createFindingsViaApi(page: Page, store: MockDataStore, apiUrl: string): Promise<void> {
+  for (let i = 0; i < this.state.findingConfigs.length; i++) {
+    const config = this.state.findingConfigs[i];
+    const trace = store.traces[config.traceIndex || 0];
+    const user = store.users.find((u) => u.role === 'participant' || u.role === 'sme');
+
+    if (!trace || !user) continue;
+
+    const finding = await submitFindingViaApi(page, store.workshop!.id, {
+      trace_id: trace.id,
+      user_id: user.id,
+      insight: config.insight || SAMPLE_INSIGHTS[i % SAMPLE_INSIGHTS.length],
+    }, apiUrl);
+
+    store.findings.push(finding);
+  }
+}
+```
+
+**`markAllDiscoveryCompleteViaApi()`** - New method:
+```typescript
+private async markAllDiscoveryCompleteViaApi(page: Page, store: MockDataStore, apiUrl: string): Promise<void> {
+  for (const user of store.users) {
+    if (user.role === 'participant' || user.role === 'sme') {
+      await markDiscoveryCompleteViaApi(page, store.workshop!.id, user.id, apiUrl);
+    }
+  }
+}
+```
+
+**`createRubricViaApi()`** - Existing logic, extract to method:
+```typescript
+private async createRubricViaApi(page: Page, store: MockDataStore, apiUrl: string): Promise<void> {
+  if (!store.rubric) return;
+
+  const response = await page.request.post(`${apiUrl}/workshops/${store.workshop!.id}/rubric`, {
+    data: {
+      question: store.rubric.question,
+      judge_type: store.rubric.judge_type,
+      rating_scale: store.rubric.rating_scale,
+    },
+  });
+
+  if (response.ok()) {
+    const createdRubric = await response.json();
+    store.rubric = createdRubric;
+  }
+}
+```
+
+**`advanceToTargetPhaseViaApi()`** - New method:
+```typescript
+private async advanceToTargetPhaseViaApi(page: Page, store: MockDataStore, apiUrl: string): Promise<void> {
+  if (!this.state.targetPhase || this.state.targetPhase === 'intake') return;
+
+  const phaseOrder: WorkshopPhase[] = ['intake', 'discovery', 'rubric', 'annotation', 'results'];
+  const targetIndex = phaseOrder.indexOf(this.state.targetPhase);
+
+  // Discovery is handled by beginDiscovery, start from rubric
+  const startIndex = phaseOrder.indexOf('rubric');
+
+  for (let i = startIndex; i <= targetIndex; i++) {
+    const phase = phaseOrder[i];
+    if (phase === 'intake' || phase === 'discovery') continue; // Already handled
+
+    await advanceToPhase(page, store.workshop!.id, phase, apiUrl);
+  }
+}
+```
+
+**`createAnnotationsViaApi()`** - New method:
+```typescript
+private async createAnnotationsViaApi(page: Page, store: MockDataStore, apiUrl: string): Promise<void> {
+  for (let i = 0; i < this.state.annotationConfigs.length; i++) {
+    const config = this.state.annotationConfigs[i];
+    const trace = store.traces[config.traceIndex || 0];
+    const user = store.users.find((u) => u.role === 'participant' || u.role === 'sme');
+
+    if (!trace || !user) continue;
+
+    const annotation = await submitAnnotationViaApi(page, store.workshop!.id, {
+      trace_id: trace.id,
+      user_id: user.id,
+      rating: config.rating || 4,
+      ratings: config.ratings,
+      comment: config.comment,
+    }, apiUrl);
+
+    store.annotations.push(annotation);
+  }
+}
+```
+
+#### Step 3: Update Imports in `scenario-builder.ts`
+
+Add these imports at the top of the file:
+
+```typescript
+import {
+  advanceToPhase,
+  beginDiscovery,
+  submitFindingViaApi,
+  markDiscoveryCompleteViaApi,
+  submitAnnotationViaApi,
+} from './actions';
+```
+
+#### Step 4: Ensure Actions are Exported
+
+Verify `actions/index.ts` exports all needed functions:
+
+```typescript
+export { submitFindingViaApi, markDiscoveryCompleteViaApi } from './discovery';
+export { submitAnnotationViaApi } from './annotation';
+export { advanceToPhase, beginDiscovery } from './workshop';
+```
+
+---
+
+### API Endpoints Summary
+
+| Step | Operation | Endpoint | Method |
+|------|-----------|----------|--------|
+| 1 | Login | `/users/auth/login` | POST |
+| 2 | Create workshop | `/workshops/` | POST |
+| 3 | Create user | `/users/` | POST |
+| 4a | Upload traces | `/workshops/{id}/traces` | POST |
+| 4b | Fetch traces | `/workshops/{id}/all-traces` | GET |
+| 5 | Begin discovery | `/workshops/{id}/begin-discovery` | POST |
+| 6 | Submit finding | `/workshops/{id}/findings` | POST |
+| 7 | Mark discovery complete | `/workshops/{id}/users/{userId}/complete-discovery` | POST |
+| 8 | Create rubric | `/workshops/{id}/rubric` | POST |
+| 9 | Advance phase | `/workshops/{id}/advance-to-{phase}` | POST |
+| 10 | Submit annotation | `/workshops/{id}/annotations` | POST |
+
+---
+
+### Testing
+
+#### Unit Test: Verify Data Creation Order
+
+```typescript
+test('withRealApi creates data in dependency order', async ({ page }) => {
+  const scenario = await TestScenario.create(page)
+    .withWorkshop({ name: 'Dependency Order Test' })
+    .withFacilitator()
+    .withParticipants(2)
+    .withTraces(5)
+    .withDiscoveryFinding({ traceIndex: 0, insight: 'Finding 1' })
+    .withDiscoveryFinding({ traceIndex: 1, insight: 'Finding 2' })
+    .withDiscoveryComplete()
+    .withRubric({ question: 'How helpful?' })
+    .inPhase('annotation')
+    .withRealApi()
+    .build();
+
+  // Verify all data exists
+  const workshop = await scenario.api.getWorkshop();
+  expect(workshop.current_phase).toBe('annotation');
+  expect(workshop.id).toMatch(/^[a-f0-9-]{36}$/); // Real UUID
+
+  const traces = await scenario.api.getTraces();
+  expect(traces.length).toBe(5);
+  expect(traces[0].id).toMatch(/^[a-f0-9-]{36}$/); // Real UUID
+
+  const findings = await scenario.api.getFindings();
+  expect(findings.length).toBe(2);
+
+  const status = await scenario.api.getDiscoveryCompletionStatus();
+  expect(status.all_completed).toBe(true);
+  expect(status.completed_participants).toBe(2);
+
+  const rubric = await scenario.api.getRubric();
+  expect(rubric).not.toBeNull();
+  expect(rubric!.question).toBe('How helpful?');
+});
+```
+
+#### Integration Test: Multi-User Annotation Flow
+
+```typescript
+test('withRealApi supports multi-user annotation workflow', async ({ browser }) => {
+  const scenario = await TestScenario.create(browser)
+    .withWorkshop({ name: 'Multi-User Test' })
+    .withFacilitator()
+    .withSMEs(2)
+    .withTraces(10)
+    .withDiscoveryComplete()
+    .withRubric({ question: 'Rate quality' })
+    .inPhase('annotation')
+    .withRealApi()
+    .build();
+
+  // SME 1 annotates
+  const sme1Page = await scenario.newPageAs(scenario.users.sme[0]);
+  // ... annotation flow
+
+  // SME 2 annotates
+  const sme2Page = await scenario.newPageAs(scenario.users.sme[1]);
+  // ... annotation flow
+
+  // Facilitator sees results
+  await scenario.loginAs(scenario.facilitator);
+  // ... verification
+});
 ```

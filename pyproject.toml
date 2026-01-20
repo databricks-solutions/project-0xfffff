@@ -70,6 +70,7 @@ test = [
 
 [project.scripts]
 human-eval-workshop = "server.app:main"
+spec-coverage-analyzer = "tools.spec_coverage_analyzer:main"
 
 [project.urls]
 Homepage = "https://github.com/databricks/human-eval-workshop"
@@ -184,6 +185,8 @@ markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
+    # Spec coverage markers - use @pytest.mark.spec("SPEC_NAME") to tag tests
+    "spec: marks test as covering a spec (use with spec name argument)",
 ]
 
 [tool.coverage.run]

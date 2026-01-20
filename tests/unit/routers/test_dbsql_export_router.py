@@ -1,6 +1,7 @@
 import pytest
 
 
+@pytest.mark.spec("DATASETS_SPEC")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_dbsql_export_success(async_client, override_get_db, monkeypatch):
@@ -37,6 +38,7 @@ async def test_dbsql_export_success(async_client, override_get_db, monkeypatch):
     assert body["total_rows"] == 1
 
 
+@pytest.mark.spec("DATASETS_SPEC")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_dbsql_export_status_happy_path(async_client, override_get_db, monkeypatch):

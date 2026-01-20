@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { invalidateAllWorkshopQueries, refetchAllWorkshopQueries } from './useWorkshopApi';
 
+// @spec DISCOVERY_TRACE_ASSIGNMENT_SPEC
 describe('workshop query helpers', () => {
   it('invalidateAllWorkshopQueries passes a predicate that matches workshop-related keys', () => {
     const queryClient = {

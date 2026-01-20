@@ -154,6 +154,8 @@ export interface BuiltScenario {
   loginAs(user: User): Promise<void>;
   logout(): Promise<void>;
   advanceToPhase(phase: WorkshopPhase): Promise<void>;
+  beginDiscovery(traceLimit?: number): Promise<void>;
+  beginAnnotation(): Promise<void>;
   goToPhase(phase: WorkshopPhase): Promise<void>;
   goToTab(tabName: string): Promise<void>;
   createRubricQuestion(config: RubricConfig): Promise<Rubric>;
@@ -178,6 +180,8 @@ export interface BuiltScenario {
 export interface PageActions {
   loginAs(user: User): Promise<void>;
   logout(): Promise<void>;
+  beginDiscovery(traceLimit?: number): Promise<void>;
+  beginAnnotation(): Promise<void>;
   goToPhase(phase: WorkshopPhase): Promise<void>;
   goToTab(tabName: string): Promise<void>;
   createRubricQuestion(config: RubricConfig): Promise<Rubric>;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { formatRubricQuestions, parseRubricQuestions, QUESTION_DELIMITER } from './rubricUtils';
 
+// @spec RUBRIC_SPEC
 describe('rubricUtils', () => {
   it('parses rubric questions using delimiter and first-colon split', () => {
     const text = [
