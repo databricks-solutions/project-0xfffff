@@ -6,6 +6,7 @@ This directory contains declarative specifications for the Human Evaluation Work
 
 | Spec | Domain | Key Concepts |
 |------|--------|--------------|
+| [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md) | Discovery & Facilitation | discovery, facilitation, findings, classification, promotion, rubric bridge |
 | [AUTHENTICATION_SPEC](./AUTHENTICATION_SPEC.md) | Auth & Sessions | login, permissions, session, Databricks auth, fallback |
 | [ANNOTATION_SPEC](./ANNOTATION_SPEC.md) | Annotation System | annotation, rating, editing, MLflow feedback, comments |
 | [DATASETS_SPEC](./DATASETS_SPEC.md) | Trace Datasets | dataset, labeling dataset, composition, randomization, per-user order |
@@ -22,6 +23,27 @@ This directory contains declarative specifications for the Human Evaluation Work
 ## Keyword Search Index
 
 Use this index to find relevant specs by keyword.
+
+### Discovery & Assisted Facilitation
+- **discovery** → [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md), [DISCOVERY_TRACE_ASSIGNMENT_SPEC](./DISCOVERY_TRACE_ASSIGNMENT_SPEC.md)
+- **assisted facilitation** → [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md)
+- **finding** → [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md)
+- **classification** → [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md)
+- **themes** → [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md)
+- **edge_cases** → [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md)
+- **boundary_conditions** → [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md)
+- **failure_modes** → [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md)
+- **disagreement** → [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md)
+- **promote** → [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md)
+- **promotion** → [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md)
+- **draft rubric** → [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md)
+- **progress bar** → [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md)
+- **fuzzy progress** → [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md)
+- **question generation** → [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md)
+- **broadcast** → [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md)
+- **DSPy** → [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md)
+- **TraceDiscoveryState** → [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md)
+- **ClassifiedFinding** → [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md)
 
 ### Authentication & Authorization
 - **login** → [AUTHENTICATION_SPEC](./AUTHENTICATION_SPEC.md)
