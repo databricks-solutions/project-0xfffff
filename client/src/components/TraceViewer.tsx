@@ -1,8 +1,11 @@
 /**
  * TraceViewer Component
- * 
+ *
  * Simple, clean view of LLM conversations for the discovery phase.
  * Shows one trace at a time with minimal formatting to help assess quality.
+ *
+ * Supports optional JSONPath extraction for cleaner display when configured
+ * by facilitators via workshop settings.
  */
 
 import React, { useState } from 'react';
@@ -10,9 +13,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { 
-  MessageCircle, 
-  User, 
+import {
+  MessageCircle,
+  User,
   Bot,
   FileText,
   History,
@@ -23,9 +26,10 @@ import {
   RefreshCw
 } from "lucide-react";
 import { toast } from 'sonner';
-import { useInvalidateTraces } from '@/hooks/useWorkshopApi';
+import { useInvalidateTraces, useWorkshop } from '@/hooks/useWorkshopApi';
 import { useMLflowConfig } from '@/hooks/useWorkshopApi';
 import { useWorkshopContext } from '@/context/WorkshopContext';
+import { useJsonPathExtraction } from '@/hooks/useJsonPathExtraction';
 
 export interface TraceData {
   id: string;
@@ -47,14 +51,31 @@ export interface TraceData {
 
 interface TraceViewerProps {
   trace: TraceData;
+  /** Optional JSONPath for extracting input display (from workshop settings) */
+  inputJsonPath?: string | null;
+  /** Optional JSONPath for extracting output display (from workshop settings) */
+  outputJsonPath?: string | null;
 }
 
-export const TraceViewer: React.FC<TraceViewerProps> = ({ trace }) => {
+export const TraceViewer: React.FC<TraceViewerProps> = ({
+  trace,
+  inputJsonPath,
+  outputJsonPath,
+}) => {
   const [showRetrievedContent, setShowRetrievedContent] = useState(false);
   const [showConversationHistory, setShowConversationHistory] = useState(false);
   const invalidateTraces = useInvalidateTraces();
   const { workshopId } = useWorkshopContext();
   const { data: mlflowConfig } = useMLflowConfig(workshopId!);
+  const { data: workshop } = useWorkshop(workshopId!);
+
+  // Get JSONPath settings from props or workshop settings
+  const effectiveInputJsonPath = inputJsonPath ?? workshop?.input_jsonpath;
+  const effectiveOutputJsonPath = outputJsonPath ?? workshop?.output_jsonpath;
+
+  // Apply JSONPath extraction to input and output
+  const displayInput = useJsonPathExtraction(trace.input, effectiveInputJsonPath);
+  const displayOutput = useJsonPathExtraction(trace.output, effectiveOutputJsonPath);
 
   const handleRefresh = () => {
     invalidateTraces();
@@ -204,7 +225,7 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({ trace }) => {
           <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg">
             <div className="text-gray-800 leading-relaxed prose prose-sm max-w-none">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {trace.input}
+                {displayInput}
               </ReactMarkdown>
             </div>
           </div>
@@ -219,7 +240,7 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({ trace }) => {
           <div className="bg-green-50 border-l-4 border-green-400 p-4 rounded-r-lg">
             <div className="text-gray-800 leading-relaxed prose prose-sm max-w-none">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {trace.output}
+                {displayOutput}
               </ReactMarkdown>
             </div>
           </div>

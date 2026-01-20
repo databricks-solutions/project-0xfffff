@@ -571,7 +571,7 @@ export function useTracesForAlignment(workshopId: string) {
 
 export function useAggregateAllFeedback(workshopId: string) {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async () => {
       const response = await fetch(`/workshops/${workshopId}/aggregate-all-feedback`, { method: 'POST' });
@@ -584,6 +584,63 @@ export function useAggregateAllFeedback(workshopId: string) {
       // Invalidate traces to reflect updated sme_feedback
       queryClient.invalidateQueries({ queryKey: ['traces', workshopId] });
       queryClient.invalidateQueries({ queryKey: ['traces-for-alignment', workshopId] });
+    },
+  });
+}
+
+// JSONPath Settings hooks
+
+interface JsonPathSettings {
+  input_jsonpath?: string | null;
+  output_jsonpath?: string | null;
+}
+
+interface JsonPathPreviewResult {
+  trace_id?: string;
+  input_result?: string;
+  input_success?: boolean;
+  output_result?: string;
+  output_success?: boolean;
+  error?: string;
+}
+
+export function useUpdateJsonPathSettings(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (settings: JsonPathSettings): Promise<Workshop> => {
+      const response = await fetch(`/workshops/${workshopId}/jsonpath-settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to update JSONPath settings' }));
+        throw new Error(error.detail || 'Failed to update JSONPath settings');
+      }
+      return response.json();
+    },
+    onSuccess: (workshop) => {
+      // Update workshop cache with new settings
+      queryClient.setQueryData(QUERY_KEYS.workshop(workshopId), workshop);
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.workshop(workshopId) });
+    },
+  });
+}
+
+export function usePreviewJsonPath(workshopId: string) {
+  return useMutation({
+    mutationFn: async (settings: JsonPathSettings): Promise<JsonPathPreviewResult> => {
+      const response = await fetch(`/workshops/${workshopId}/preview-jsonpath`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to preview JSONPath' }));
+        throw new Error(error.detail || 'Failed to preview JSONPath');
+      }
+      return response.json();
     },
   });
 }

@@ -19,5 +19,6 @@ bcrypt>=4.0.0
 PyYAML>=6.0
 dspy>=3.0.4
 alembic>=1.16.0
+jsonpath-ng>=1.5.3
 
 

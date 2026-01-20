@@ -152,6 +152,8 @@ class WorkshopDB(Base):
     discovery_randomize_traces = Column(Boolean, default=False)  # Whether to randomize trace order in discovery
     annotation_randomize_traces = Column(Boolean, default=False)  # Whether to randomize trace order in annotation
     judge_name = Column(String, default="workshop_judge")  # Name used for feedback entries
+    input_jsonpath = Column(Text, nullable=True)  # JSONPath query for extracting trace input display
+    output_jsonpath = Column(Text, nullable=True)  # JSONPath query for extracting trace output display
     created_at = Column(DateTime, default=func.now())
 
     # Relationships

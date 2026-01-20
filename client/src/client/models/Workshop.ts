@@ -16,6 +16,11 @@ export type Workshop = {
     annotation_started?: boolean;
     active_discovery_trace_ids?: Array<string>;
     active_annotation_trace_ids?: Array<string>;
+    discovery_randomize_traces?: boolean;
+    annotation_randomize_traces?: boolean;
+    judge_name?: string;
+    input_jsonpath?: (string | null);
+    output_jsonpath?: (string | null);
     created_at?: string;
 };
 

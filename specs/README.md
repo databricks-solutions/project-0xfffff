@@ -16,6 +16,7 @@ This directory contains declarative specifications for the Human Evaluation Work
 | [BUILD_AND_DEPLOY_SPEC](./BUILD_AND_DEPLOY_SPEC.md) | Build & Deploy | build, deploy, Alembic, migrations, database, bootstrap |
 | [TESTING_SPEC](./TESTING_SPEC.md) | Testing | unit test, e2e, pytest, vitest, playwright, coverage |
 | [DESIGN_SYSTEM_SPEC](./DESIGN_SYSTEM_SPEC.md) | Design System | color, theme, purple, indigo, dark mode, accessibility |
+| [TRACE_DISPLAY_SPEC](./TRACE_DISPLAY_SPEC.md) | Trace Display | JSONPath, input extraction, output extraction, preview, facilitator settings |
 
 ---
 
@@ -169,6 +170,16 @@ Use this index to find relevant specs by keyword.
 - **contrast** → [DESIGN_SYSTEM_SPEC](./DESIGN_SYSTEM_SPEC.md)
 - **badge** → [DESIGN_SYSTEM_SPEC](./DESIGN_SYSTEM_SPEC.md)
 - **button** → [DESIGN_SYSTEM_SPEC](./DESIGN_SYSTEM_SPEC.md)
+
+### Trace Display Customization
+- **JSONPath** → [TRACE_DISPLAY_SPEC](./TRACE_DISPLAY_SPEC.md)
+- **input extraction** → [TRACE_DISPLAY_SPEC](./TRACE_DISPLAY_SPEC.md)
+- **output extraction** → [TRACE_DISPLAY_SPEC](./TRACE_DISPLAY_SPEC.md)
+- **input_jsonpath** → [TRACE_DISPLAY_SPEC](./TRACE_DISPLAY_SPEC.md)
+- **output_jsonpath** → [TRACE_DISPLAY_SPEC](./TRACE_DISPLAY_SPEC.md)
+- **trace display** → [TRACE_DISPLAY_SPEC](./TRACE_DISPLAY_SPEC.md)
+- **preview** → [TRACE_DISPLAY_SPEC](./TRACE_DISPLAY_SPEC.md)
+- **facilitator settings** → [TRACE_DISPLAY_SPEC](./TRACE_DISPLAY_SPEC.md)
 
 ---
 
