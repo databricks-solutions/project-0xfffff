@@ -12,6 +12,7 @@ import { DEFAULT_FACILITATOR } from '../data';
  * Login as a specific user
  *
  * Handles both facilitator login (with password) and participant login (email only).
+ * Also handles workshop selection when multiple workshops are available.
  */
 export async function loginAs(page: Page, user: User): Promise<void> {
   // Navigate to the app if not already there
@@ -36,6 +37,52 @@ export async function loginAs(page: Page, user: User): Promise<void> {
           ? DEFAULT_FACILITATOR.password
           : 'password123';
       await passwordField.fill(password);
+    }
+
+    // For facilitators with password, workshop selection UI appears after password is entered
+    // Wait for workshops to load (loading spinner disappears or workshop buttons appear)
+    await page.waitForTimeout(300);
+
+    // Check if "Join Existing" button exists AND is enabled (workshops loaded)
+    const joinExistingButton = page.getByRole('button', { name: 'Join Existing' });
+    const joinExistingVisible = await joinExistingButton.isVisible().catch(() => false);
+    const joinExistingEnabled = joinExistingVisible && await joinExistingButton.isEnabled().catch(() => false);
+
+    if (joinExistingEnabled) {
+      // Workshops exist - click "Join Existing" and select workshop
+      await joinExistingButton.click();
+
+      // Select workshop from dropdown
+      const facilitatorWorkshopSelect = page.locator('[role="combobox"]').first();
+      if (await facilitatorWorkshopSelect.isVisible().catch(() => false)) {
+        await facilitatorWorkshopSelect.click();
+        // Wait for dropdown content to appear
+        await page.waitForTimeout(100);
+        // Click the first workshop option (user's workshop should be in the mocked list)
+        const firstOption = page.locator('[role="option"]').first();
+        if (await firstOption.isVisible().catch(() => false)) {
+          await firstOption.click();
+        }
+      }
+    }
+    // If "Join Existing" is disabled or not visible, "Create New" is likely already selected
+    // which is fine for facilitators - they'll create a new workshop after login
+  } else {
+    // For participants/SMEs, workshop selection appears when password is empty
+    // Wait for workshops to load (loading spinner disappears)
+    await page.waitForTimeout(300);
+
+    // Select workshop from dropdown
+    const workshopSelect = page.locator('[role="combobox"]');
+    if (await workshopSelect.isVisible().catch(() => false)) {
+      await workshopSelect.click();
+      // Wait for dropdown content to appear
+      await page.waitForTimeout(100);
+      // Click the first workshop option
+      const firstOption = page.locator('[role="option"]').first();
+      if (await firstOption.isVisible().catch(() => false)) {
+        await firstOption.click();
+      }
     }
   }
 

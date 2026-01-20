@@ -244,6 +244,14 @@ export class ApiMocker {
     // Workshop routes
     this.routes.push({
       pattern: /\/workshops\/$/,
+      get: async (route) => {
+        // Return array of workshops for workshop list endpoint
+        if (this.store.workshop) {
+          await route.fulfill({ json: [this.store.workshop] });
+        } else {
+          await route.fulfill({ json: [] });
+        }
+      },
       post: async (route) => {
         if (this.store.workshop) {
           await route.fulfill({ status: 201, json: this.store.workshop });
@@ -559,7 +567,12 @@ export class ApiMocker {
       await this.handleRoute(route);
     });
 
-    // Handle /workshops/** routes
+    // Handle /workshops/ base route (for listing workshops)
+    await this.page.route('**/workshops/', async (route) => {
+      await this.handleRoute(route);
+    });
+
+    // Handle /workshops/** routes (for workshop-specific endpoints)
     await this.page.route('**/workshops/**', async (route) => {
       await this.handleRoute(route);
     });

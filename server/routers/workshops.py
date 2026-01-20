@@ -9,7 +9,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -133,6 +133,8 @@ from server.database import WorkshopDB, get_db
 from server.models import (
     Annotation,
     AnnotationCreate,
+    DiscoveryFinding,
+    DiscoveryFindingCreate,
     IRRResult,
     JudgeEvaluation,
     JudgeEvaluationDirectRequest,
@@ -168,18 +170,45 @@ class AlignmentRequest(BaseModel):
     evaluation_model_name: str  # Model for evaluate() job
     alignment_model_name: Optional[str] = None  # Model for SIMBA optimizer (judge_model_uri), required for alignment
     prompt_id: Optional[str] = None  # Existing prompt ID to update (instead of creating a new one)
+    judge_type: Optional[str] = None  # Explicit judge type: 'likert', 'binary', 'freeform'
+
 
 
 class SimpleEvaluationRequest(BaseModel):
-    """Request model for simple model serving evaluation (no MLflow)."""
-
-    judge_prompt: str
-    endpoint_name: str  # Databricks model serving endpoint name
-    prompt_id: Optional[str] = None  # Existing prompt ID to update
-
+  """Request model for simple model serving evaluation (no MLflow)."""
+  judge_prompt: str
+  endpoint_name: str  # Databricks model serving endpoint name
+  prompt_id: Optional[str] = None  # Existing prompt ID to update
+  judge_type: Optional[str] = None  # Explicit judge type: 'likert', 'binary', 'freeform'
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+@router.get("/")
+async def list_workshops(
+    facilitator_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    db: Session = Depends(get_db)
+) -> List[Workshop]:
+    """List all workshops, optionally filtered by facilitator or user.
+    
+    Args:
+        facilitator_id: If provided, only return workshops created by this facilitator
+        user_id: If provided, return all workshops the user has access to (as facilitator or participant)
+        db: Database session
+        
+    Returns:
+        List of workshops sorted by creation date (newest first)
+    """
+    db_service = DatabaseService(db)
+    
+    if user_id:
+        # Return all workshops the user has access to
+        return db_service.get_workshops_for_user(user_id)
+    else:
+        # Return all workshops (optionally filtered by facilitator)
+        return db_service.list_workshops(facilitator_id)
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
@@ -300,6 +329,45 @@ async def get_original_traces(workshop_id: str, db: Session = Depends(get_db)) -
 
     # Get only the original traces from the database
     return db_service.get_traces(workshop_id)
+
+
+@router.post("/{workshop_id}/findings")
+async def submit_finding(
+    workshop_id: str, finding: DiscoveryFindingCreate, db: Session = Depends(get_db)
+) -> DiscoveryFinding:
+    """Submit a discovery finding."""
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    return db_service.add_finding(workshop_id, finding)
+
+
+@router.get("/{workshop_id}/findings")
+async def get_findings(
+    workshop_id: str, user_id: Optional[str] = None, db: Session = Depends(get_db)
+) -> List[DiscoveryFinding]:
+    """Get discovery findings for a workshop, optionally filtered by user."""
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    return db_service.get_findings(workshop_id, user_id)
+
+
+@router.get("/{workshop_id}/findings-with-users")
+async def get_findings_with_user_details(
+    workshop_id: str, user_id: Optional[str] = None, db: Session = Depends(get_db)
+) -> List[Dict[str, Any]]:
+    """Get discovery findings with user details for facilitator view."""
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    return db_service.get_findings_with_user_details(workshop_id, user_id)
 
 
 @router.post("/{workshop_id}/rubric")
@@ -442,6 +510,18 @@ async def get_irr(workshop_id: str, db: Session = Depends(get_db)) -> IRRResult:
     return calculate_irr_for_workshop(workshop_id, annotations, db)
 
 
+@router.delete("/{workshop_id}/findings")
+async def clear_findings(workshop_id: str, db: Session = Depends(get_db)):
+    """Clear all findings for a workshop (for testing)."""
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    db_service.clear_findings(workshop_id)
+    return {"message": "Findings cleared successfully"}
+
+
 @router.delete("/{workshop_id}/annotations")
 async def clear_annotations(workshop_id: str, db: Session = Depends(get_db)):
     """Clear all annotations for a workshop (for testing)."""
@@ -464,6 +544,78 @@ async def clear_rubric(workshop_id: str, db: Session = Depends(get_db)):
 
     db_service.clear_rubric(workshop_id)
     return {"message": "Rubric cleared successfully"}
+
+
+@router.post("/{workshop_id}/begin-discovery")
+async def begin_discovery_phase(
+    workshop_id: str, 
+    trace_limit: Optional[int] = None, 
+    randomize: bool = False,
+    db: Session = Depends(get_db)
+):
+    """Begin the discovery phase and distribute traces to participants.
+
+    Args:
+        workshop_id: The workshop ID
+        trace_limit: Optional limit on number of traces to use (default: all)
+        randomize: Whether to randomize trace order per user (default: False - same order for all)
+        db: Database session
+    """
+
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    # Update workshop phase to discovery and mark discovery as started
+    db_service.update_workshop_phase(workshop_id, WorkshopPhase.DISCOVERY)
+    db_service.update_phase_started(workshop_id, discovery_started=True)
+    
+    # Store the randomization setting
+    db_service.update_discovery_randomize_setting(workshop_id, randomize)
+
+    # Get all traces
+    traces = db_service.get_traces(workshop_id)
+    total_traces = len(traces)
+
+    # Validate that traces are available before starting discovery
+    if total_traces == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot start discovery: No traces available. Please complete MLflow ingestion in the Intake phase first.",
+        )
+
+    print(
+        f"🔍 DEBUG begin_discovery: workshop_id={workshop_id}, trace_limit={trace_limit}, randomize={randomize}, total_traces={total_traces}"
+    )
+    print(f"🔍 DEBUG trace_ids: {[t.id for t in traces]}")
+
+    # Apply trace limit - take first N traces in chronological order
+    if trace_limit and trace_limit > 0 and trace_limit < total_traces:
+        print(f"🎯 DEBUG: Taking first {trace_limit} traces from {total_traces}")
+        # Take the first N traces in chronological order
+        selected_traces = traces[: min(trace_limit, total_traces)]
+        trace_ids_to_use = [trace.id for trace in selected_traces]
+        traces_used = len(selected_traces)
+        print(f"🎯 DEBUG: Selected traces: {trace_ids_to_use}")
+    else:
+        print(f"🎯 DEBUG: Using all traces (limit={trace_limit}, total={total_traces})")
+        # Use all traces
+        trace_ids_to_use = [trace.id for trace in traces]
+        traces_used = total_traces
+
+    # Store the active discovery trace IDs in the workshop
+    db_service.update_active_discovery_traces(workshop_id, trace_ids_to_use)
+
+    randomize_msg = "randomized per user" if randomize else "in chronological order"
+    return {
+        "message": f"Discovery phase started with {traces_used} traces from {total_traces} total ({randomize_msg})",
+        "phase": "discovery",
+        "total_traces": total_traces,
+        "traces_used": traces_used,
+        "trace_limit": trace_limit,
+        "randomize": randomize,
+    }
 
 
 @router.post("/{workshop_id}/add-traces")
@@ -610,12 +762,21 @@ async def reorder_annotation_traces(workshop_id: str, db: Session = Depends(get_
 async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Session = Depends(get_db)):
     """Begin the annotation phase with a subset of traces.
 
-    Each user will see the same set of traces, but in a randomized order unique to them.
+    Args:
+        workshop_id: The workshop ID
+        request: JSON body with optional fields:
+            - trace_limit: Number of traces to use (default: 10, -1 for all)
+            - randomize: Whether to randomize trace order per user (default: False)
+    
+    When randomize=False (default): All SMEs see traces in the same chronological order.
+    When randomize=True: All SMEs see the same set of traces but in different random orders.
     """
     import random
 
     # Get the optional trace limit from request (default to 10)
     trace_limit = request.get("trace_limit", 10)
+    # Get the optional randomize flag (default to False - same order for all users)
+    randomize = request.get("randomize", False)
 
     db_service = DatabaseService(db)
     workshop = db_service.get_workshop(workshop_id)
@@ -639,28 +800,32 @@ async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Sessi
 
     # Determine how many traces to use
     if trace_limit == -1 or trace_limit >= total_traces:
-        # Use all traces
+        # Use all traces in chronological order
         trace_ids_to_use = [trace.id for trace in traces]
         traces_used = total_traces
     else:
-        # Sample a subset of traces
+        # Take first N traces (chronological order, not random sampling)
         traces_used = min(trace_limit, total_traces)
-        sampled_traces = random.sample(traces, traces_used)
-        trace_ids_to_use = [trace.id for trace in sampled_traces]
+        trace_ids_to_use = [trace.id for trace in traces[:traces_used]]
 
     # Store the active annotation trace IDs in the workshop
     db_service.update_active_annotation_traces(workshop_id, trace_ids_to_use)
+    
+    # Store the randomization setting
+    db_service.update_annotation_randomize_setting(workshop_id, randomize)
 
     # Update workshop phase to annotation and mark annotation as started
     db_service.update_workshop_phase(workshop_id, WorkshopPhase.ANNOTATION)
     db_service.update_phase_started(workshop_id, annotation_started=True)
 
+    randomize_msg = "randomized per SME" if randomize else "in chronological order"
     return {
-        "message": f"Annotation phase started with {traces_used} traces from {total_traces} total (each user will see traces in randomized order)",
+        "message": f"Annotation phase started with {traces_used} traces from {total_traces} total ({randomize_msg})",
         "phase": "annotation",
         "total_traces": total_traces,
         "traces_used": traces_used,
         "trace_limit": trace_limit,
+        "randomize": randomize,
     }
 
 
@@ -683,6 +848,102 @@ async def delete_all_traces(workshop_id: str, db: Session = Depends(get_db)):
         "deleted_count": deleted_count,
         "workshop_id": workshop_id,
         "current_phase": "intake",
+    }
+
+
+@router.post("/{workshop_id}/reset-discovery")
+async def reset_discovery(workshop_id: str, db: Session = Depends(get_db)):
+    """Reset a workshop back to before discovery phase started (facilitator only).
+
+    This allows changing the discovery configuration (e.g., number of traces).
+    
+    IMPORTANT: This clears ALL participant discovery progress:
+    - All discovery findings/responses submitted by participants
+    - All user trace orders (personalized trace lists)
+    - All user discovery completions
+    
+    Traces are kept, but participants will start fresh from the beginning.
+    """
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    # Reset workshop to pre-discovery state (clears all participant progress)
+    updated_workshop = db_service.reset_workshop_to_discovery(workshop_id)
+
+    if not updated_workshop:
+        raise HTTPException(status_code=500, detail="Failed to reset workshop")
+
+    traces = db_service.get_traces(workshop_id)
+
+    return {
+        "message": "Discovery reset. All participant progress cleared. You can now select a different trace configuration.",
+        "workshop_id": workshop_id,
+        "current_phase": updated_workshop.current_phase,
+        "discovery_started": updated_workshop.discovery_started,
+        "traces_available": len(traces),
+    }
+
+
+@router.post("/{workshop_id}/reset-annotation")
+async def reset_annotation(workshop_id: str, db: Session = Depends(get_db)):
+    """Reset a workshop back to before annotation phase started (facilitator only).
+
+    This allows changing the annotation configuration (e.g., trace selection, randomization).
+    
+    IMPORTANT: This clears ALL SME annotation progress:
+    - All annotations submitted by SMEs
+    
+    Traces are kept, but SMEs will start fresh from the beginning.
+    """
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    # Reset workshop to pre-annotation state (clears all SME progress)
+    updated_workshop = db_service.reset_workshop_to_annotation(workshop_id)
+
+    if not updated_workshop:
+        raise HTTPException(status_code=500, detail="Failed to reset workshop")
+
+    traces = db_service.get_traces(workshop_id)
+
+    return {
+        "message": "Annotation reset. All SME progress cleared. You can now select a different trace configuration.",
+        "workshop_id": workshop_id,
+        "current_phase": updated_workshop.current_phase,
+        "annotation_started": updated_workshop.annotation_started,
+        "traces_available": len(traces),
+    }
+
+
+@router.post("/{workshop_id}/advance-to-discovery")
+async def advance_to_discovery(workshop_id: str, db: Session = Depends(get_db)):
+    """Advance workshop from INTAKE to DISCOVERY phase (facilitator only)."""
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    # Validation: Check prerequisites
+    if workshop.current_phase != WorkshopPhase.INTAKE:
+        raise HTTPException(status_code=400, detail=f"Cannot advance to discovery from {workshop.current_phase} phase")
+
+    # Check if traces exist
+    traces = db_service.get_traces(workshop_id)
+    if len(traces) == 0:
+        raise HTTPException(status_code=400, detail="Cannot start discovery phase: No traces uploaded to workshop")
+
+    # Update workshop phase
+    db_service.update_workshop_phase(workshop_id, WorkshopPhase.DISCOVERY)
+
+    return {
+        "message": "Workshop advanced to discovery phase",
+        "phase": "discovery",
+        "workshop_id": workshop_id,
+        "traces_available": len(traces),
     }
 
 
@@ -783,9 +1044,7 @@ async def advance_workshop_phase(workshop_id: str, target_phase: WorkshopPhase, 
 
     # Route to specific validation endpoint
     if target_phase == WorkshopPhase.DISCOVERY:
-        from server.services.discovery_service import DiscoveryService
-
-        return DiscoveryService(db).advance_to_discovery(workshop_id)
+        return await advance_to_discovery(workshop_id, db)
     elif target_phase == WorkshopPhase.RUBRIC:
         return await advance_to_rubric(workshop_id, db)
     elif target_phase == WorkshopPhase.ANNOTATION:
@@ -814,6 +1073,71 @@ async def get_workshop_participants(workshop_id: str, db: Session = Depends(get_
 
     participants = db_service.get_workshop_participants(workshop_id)
     return participants
+
+
+@router.post("/{workshop_id}/generate-discovery-data")
+async def generate_discovery_test_data(workshop_id: str, db: Session = Depends(get_db)):
+    """Generate realistic discovery findings for testing."""
+    import uuid
+
+    # Temporarily allow in all environments for testing
+    # if os.getenv("ENVIRONMENT") != "development":
+    #     raise HTTPException(status_code=404, detail="Not found")
+
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    try:
+        from server.database import DiscoveryFindingDB, TraceDB
+
+        # Get all traces for this workshop
+        traces = db.query(TraceDB).filter(TraceDB.workshop_id == workshop_id).all()
+        if not traces:
+            raise HTTPException(status_code=400, detail="No traces found in workshop")
+
+        # Clear existing findings first
+        db.query(DiscoveryFindingDB).filter(DiscoveryFindingDB.workshop_id == workshop_id).delete()
+
+        # Create demo users (SMEs and participants)
+        demo_users = [
+            {"user_id": "expert_1", "name": "Expert 1"},
+            {"user_id": "expert_2", "name": "Expert 2"},
+            {"user_id": "expert_3", "name": "Expert 3"},
+            {"user_id": "participant_1", "name": "Participant 1"},
+            {"user_id": "participant_2", "name": "Participant 2"},
+        ]
+
+        findings_created = 0
+        for user in demo_users:
+            for trace in traces:
+                # Generate realistic findings based on trace content
+                finding_text = f"Quality Assessment: This response demonstrates {'good' if 'helpful' in trace.output.lower() else 'poor'} customer service quality.\n\nImprovement Analysis: {'The response is clear and helpful' if 'helpful' in trace.output.lower() else 'The response could be more specific and actionable'}."  # noqa: E501
+
+                finding = DiscoveryFindingDB(
+                    id=str(uuid.uuid4()),
+                    workshop_id=workshop_id,
+                    trace_id=trace.id,
+                    user_id=user["user_id"],
+                    insight=finding_text,
+                    created_at=workshop.created_at,
+                )
+                db.add(finding)
+                findings_created += 1
+
+        db.commit()
+
+        return {
+            "message": f"Generated {findings_created} realistic discovery findings",
+            "findings_created": findings_created,
+            "users": len(demo_users),
+            "traces_analyzed": len(traces),
+        }
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to generate discovery data: {str(e)}")
 
 
 @router.post("/{workshop_id}/generate-rubric-data")
@@ -1636,6 +1960,23 @@ async def upload_csv_traces(
             if not row.get("request_preview") or not row.get("response_preview"):
                 continue
 
+            # Get and clean request/response text
+            def clean_csv_text(text):
+                if not text:
+                    return ""
+                text = text.strip()
+                # Remove surrounding quotes
+                while text.startswith('"') and text.endswith('"') and len(text) > 1:
+                    text = text[1:-1].strip()
+                text = text.strip('"').strip("'")
+                text = text.replace('""', '"')
+                if '\\n' in text:
+                    text = text.replace('\\n', '\n')
+                return text
+            
+            request_text = clean_csv_text(row["request_preview"])
+            response_text = clean_csv_text(row["response_preview"])
+
             # Build rich context from MLflow metadata
             context = {"source": "mlflow_csv_upload", "filename": file.filename, "csv_row_number": row_number}
 
@@ -1706,6 +2047,223 @@ async def upload_csv_traces(
     except Exception as e:
         logger.error(f"Failed to process CSV file: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to process CSV file: {str(e)}")
+
+
+@router.post("/{workshop_id}/csv-upload-to-mlflow")
+async def upload_csv_and_log_to_mlflow(
+    workshop_id: str,
+    file: UploadFile = File(...),
+    databricks_host: str = Form(None),
+    databricks_token: str = Form(None),
+    experiment_id: str = Form(None),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """Upload CSV with request/response data and log each row as an MLflow trace.
+    
+    This enables customers who don't have existing MLflow traces to participate
+    in the Judge Builder workshop by uploading conversational data as CSV.
+    
+    Expected CSV format:
+    - Required columns: request_preview, response_preview
+    - Optional columns: any additional metadata
+    
+    The endpoint will:
+    1. Parse the CSV file
+    2. For each row, create an MLflow trace with the request/response
+    3. Store the traces locally with their MLflow trace IDs
+    
+    Environment variables used if parameters not provided:
+    - DATABRICKS_HOST
+    - DATABRICKS_TOKEN  
+    - MLFLOW_EXPERIMENT_ID
+    """
+    import csv
+    import io
+    import os
+    
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    # Validate file type
+    if not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="File must be a CSV file")
+
+    # Get MLflow configuration from parameters or environment variables
+    host = databricks_host or os.environ.get("DATABRICKS_HOST")
+    token = databricks_token or os.environ.get("DATABRICKS_TOKEN")
+    exp_id = experiment_id or os.environ.get("MLFLOW_EXPERIMENT_ID")
+    
+    if not host or not token or not exp_id:
+        raise HTTPException(
+            status_code=400, 
+            detail="MLflow configuration required. Provide databricks_host, databricks_token, and experiment_id as parameters or set DATABRICKS_HOST, DATABRICKS_TOKEN, and MLFLOW_EXPERIMENT_ID environment variables."
+        )
+    
+    # Ensure host has proper format
+    if not host.startswith("https://"):
+        host = f"https://{host}"
+    host = host.rstrip("/")
+
+    try:
+        import mlflow
+        
+        # Configure MLflow
+        os.environ["DATABRICKS_HOST"] = host
+        os.environ["DATABRICKS_TOKEN"] = token
+        mlflow.set_tracking_uri("databricks")
+        mlflow.set_experiment(experiment_id=exp_id)
+        
+        # Read file content
+        content = await file.read()
+        decoded_content = content.decode("utf-8")
+
+        # Parse CSV
+        csv_reader = csv.DictReader(io.StringIO(decoded_content))
+
+        # Validate required columns
+        if (
+            not csv_reader.fieldnames
+            or "request_preview" not in csv_reader.fieldnames
+            or "response_preview" not in csv_reader.fieldnames
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail='CSV must contain "request_preview" and "response_preview" columns. Found columns: '
+                + ", ".join(csv_reader.fieldnames or []),
+            )
+
+        # Process each row and create MLflow traces
+        row_number = 0
+        created_traces = 0
+        errors = []
+        
+        # Helper to clean CSV text
+        def clean_text(text):
+            if not text:
+                return ""
+            text = text.strip()
+            while text.startswith('"') and text.endswith('"') and len(text) > 1:
+                text = text[1:-1].strip()
+            text = text.strip('"').strip("'")
+            text = text.replace('""', '"')
+            if '\\n' in text:
+                text = text.replace('\\n', '\n')
+            return text
+        
+        for row in csv_reader:
+            row_number += 1
+
+            # Skip empty rows
+            request_text = clean_text(row.get("request_preview", ""))
+            response_text = clean_text(row.get("response_preview", ""))
+            
+            if not request_text or not response_text:
+                continue
+
+            try:
+                # Create MLflow trace using start_span context manager
+                with mlflow.start_span(name=f"csv_import_row_{row_number}") as span:
+                    span.set_inputs(request_text)
+                    span.set_outputs(response_text)
+                
+                created_traces += 1
+                logger.info(f"Created MLflow trace for row {row_number}")
+                
+            except Exception as trace_error:
+                errors.append(f"Row {row_number}: {str(trace_error)}")
+                logger.warning(f"Failed to create MLflow trace for row {row_number}: {str(trace_error)}")
+                continue
+
+        if created_traces == 0:
+            error_msg = "No valid MLflow traces could be created from CSV file"
+            if errors:
+                error_msg += f". Errors: {'; '.join(errors[:5])}"
+            raise HTTPException(status_code=400, detail=error_msg)
+
+        # NOTE: This endpoint ONLY creates MLflow traces - it does NOT import into Discovery.
+        # To import the MLflow traces into Discovery, use the "Import from MLflow" feature
+        # or choose "Import directly into Discovery" when uploading CSV.
+
+        result = {
+            "message": f"Successfully created {created_traces} MLflow traces",
+            "mlflow_traces_created": created_traces,
+            "workshop_id": workshop_id,
+            "filename": file.filename,
+            "experiment_id": exp_id,
+            "mlflow_host": host,
+        }
+        
+        if errors:
+            result["warnings"] = errors[:10]  # Include first 10 errors as warnings
+            
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to process CSV and create MLflow traces: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to process CSV file: {str(e)}")
+
+
+# User Discovery Completion endpoints
+@router.post("/{workshop_id}/users/{user_id}/complete-discovery")
+async def mark_user_discovery_complete(workshop_id: str, user_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """Mark a user as having completed discovery for a workshop."""
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    # Check if user exists in workshop
+    user = db_service.get_user(user_id)
+    if not user or user.workshop_id != workshop_id:
+        raise HTTPException(status_code=404, detail="User not found in workshop")
+
+    # Mark user as complete
+    db_service.mark_user_discovery_complete(workshop_id, user_id)
+
+    return {
+        "message": f"User {user_id} marked as discovery complete",
+        "workshop_id": workshop_id,
+        "user_id": user_id,
+    }
+
+
+@router.get("/{workshop_id}/discovery-completion-status")
+async def get_discovery_completion_status(workshop_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """Get discovery completion status for all users in a workshop."""
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    return db_service.get_discovery_completion_status(workshop_id)
+
+
+@router.get("/{workshop_id}/users/{user_id}/discovery-complete")
+async def is_user_discovery_complete(workshop_id: str, user_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """Check if a user has completed discovery for a workshop."""
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    # Check if user exists in workshop
+    user = db_service.get_user(user_id)
+    if not user or user.workshop_id != workshop_id:
+        raise HTTPException(status_code=404, detail="User not found in workshop")
+
+    is_complete = db_service.is_user_discovery_complete(workshop_id, user_id)
+
+    return {
+        "workshop_id": workshop_id,
+        "user_id": user_id,
+        "user_name": user.name,
+        "user_email": user.email,
+        "discovery_complete": is_complete,
+    }
 
 
 @router.post("/{workshop_id}/migrate-annotations")
@@ -2113,6 +2671,7 @@ async def start_evaluation_job(
                     judge_prompt=request.judge_prompt,
                     evaluation_model_name=request.evaluation_model_name,
                     mlflow_config=mlflow_config,
+                    judge_type=request.judge_type,  # Pass explicit judge type from selected rubric question
                 ):
                     if isinstance(message, dict):
                         # This is the final result
@@ -2240,504 +2799,455 @@ async def start_evaluation_job(
     }
 
 
-@router.post("/{workshop_id}/start-simple-evaluation")
+@router.post('/{workshop_id}/start-simple-evaluation')
 async def start_simple_evaluation(
-    workshop_id: str, request: SimpleEvaluationRequest, db: Session = Depends(get_db)
+  workshop_id: str,
+  request: SimpleEvaluationRequest,
+  db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
-    """Start a simple evaluation job using Databricks Model Serving (no MLflow required).
-
-    This endpoint evaluates the judge prompt by directly calling a Databricks model serving
-    endpoint. This is useful when MLflow is not available or configured.
-    """
-    db_service = DatabaseService(db)
-    workshop = db_service.get_workshop(workshop_id)
-    if not workshop:
-        raise HTTPException(status_code=404, detail="Workshop not found")
-
-    # Get MLflow config for Databricks credentials (host + token)
-    mlflow_config = db_service.get_mlflow_config(workshop_id)
-    if not mlflow_config:
-        raise HTTPException(
-            status_code=400, detail="Databricks configuration not found. Please configure in Intake phase."
+  """Start a simple evaluation job using Databricks Model Serving (no MLflow required).
+  
+  This endpoint evaluates the judge prompt by directly calling a Databricks model serving
+  endpoint. This is useful when MLflow is not available or configured.
+  """
+  db_service = DatabaseService(db)
+  workshop = db_service.get_workshop(workshop_id)
+  if not workshop:
+    raise HTTPException(status_code=404, detail='Workshop not found')
+  
+  # Get MLflow config for Databricks credentials (host + token)
+  mlflow_config = db_service.get_mlflow_config(workshop_id)
+  if not mlflow_config:
+    raise HTTPException(status_code=400, detail='Databricks configuration not found. Please configure in Intake phase.')
+  
+  # Get Databricks token
+  from server.services.token_storage_service import token_storage
+  databricks_token = token_storage.get_token(workshop_id)
+  if not databricks_token:
+    databricks_token = db_service.get_databricks_token(workshop_id)
+    if databricks_token:
+      token_storage.store_token(workshop_id, databricks_token)
+  if not databricks_token:
+    raise HTTPException(status_code=400, detail='Databricks token not found')
+  
+  # Create job for tracking
+  job_id = str(uuid.uuid4())
+  job = create_job(job_id, workshop_id)
+  job.set_status("running")
+  job.add_log("Simple evaluation job started (using Databricks Model Serving)")
+  
+  # Run evaluation in background thread
+  def run_simple_evaluation_background():
+    import re
+    try:
+      from server.services.databricks_service import DatabricksService
+      from server.database import SessionLocal
+      from sklearn.metrics import cohen_kappa_score, accuracy_score, confusion_matrix
+      import numpy as np
+      
+      thread_db = SessionLocal()
+      try:
+        thread_db_service = DatabaseService(thread_db)
+        
+        # Initialize Databricks service
+        job.add_log(f"Connecting to Databricks workspace: {mlflow_config.databricks_host}")
+        databricks_svc = DatabricksService(
+          workspace_url=mlflow_config.databricks_host,
+          token=databricks_token
         )
-
-    # Get Databricks token
-    from server.services.token_storage_service import token_storage
-
-    databricks_token = token_storage.get_token(workshop_id)
-    if not databricks_token:
-        databricks_token = db_service.get_databricks_token(workshop_id)
-        if databricks_token:
-            token_storage.store_token(workshop_id, databricks_token)
-    if not databricks_token:
-        raise HTTPException(status_code=400, detail="Databricks token not found")
-
-    # Create job for tracking
-    job_id = str(uuid.uuid4())
-    job = create_job(job_id, workshop_id)
-    job.set_status("running")
-    job.add_log("Simple evaluation job started (using Databricks Model Serving)")
-
-    # Run evaluation in background thread
-    def run_simple_evaluation_background():
-        import re
-
-        try:
-            from server.services.databricks_service import DatabricksService
-            from server.database import SessionLocal
-            from sklearn.metrics import cohen_kappa_score, accuracy_score, confusion_matrix
-            import numpy as np
-
-            thread_db = SessionLocal()
-            try:
-                thread_db_service = DatabaseService(thread_db)
-
-                # Initialize Databricks service
-                job.add_log(f"Connecting to Databricks workspace: {mlflow_config.databricks_host}")
-                databricks_svc = DatabricksService(workspace_url=mlflow_config.databricks_host, token=databricks_token)
-
-                # Get rubric to determine judge type
-                rubric = thread_db_service.get_rubric(workshop_id)
+        
+        # Get rubric to determine judge type
+        rubric = thread_db_service.get_rubric(workshop_id)
+        is_binary_judge = False
+        judge_type_str = 'likert'
+        
+        if rubric:
+          # First, try to parse rubric questions to get per-question judge types
+          # This is more accurate than the rubric-level judge_type
+          if rubric.question:
+            # Access the private method through the instance
+            questions = thread_db_service._parse_rubric_questions(rubric.question)
+            job.add_log(f"📋 Parsed {len(questions)} questions from rubric")
+            if questions:
+              # Log question details for debugging
+              for i, q in enumerate(questions):
+                job.add_log(f"  Question {i+1}: id={q.get('id')}, judge_type={q.get('judge_type')}, title={q.get('title', '')[:50]}")
+              
+              # Check if any question is binary
+              binary_questions = [q for q in questions if q.get('judge_type') == 'binary']
+              likert_questions = [q for q in questions if q.get('judge_type') == 'likert']
+              
+              job.add_log(f"📊 Found {len(binary_questions)} binary questions and {len(likert_questions)} likert questions")
+              
+              if binary_questions and not likert_questions:
+                # All questions are binary
+                is_binary_judge = True
+                judge_type_str = 'binary'
+                job.add_log(f"✅ All questions are binary - using binary judge type")
+              elif likert_questions and not binary_questions:
+                # All questions are likert
                 is_binary_judge = False
-                judge_type_str = "likert"
-
-                if rubric:
-                    # First, try to parse rubric questions to get per-question judge types
-                    # This is more accurate than the rubric-level judge_type
-                    if rubric.question:
-                        # Access the private method through the instance
-                        questions = thread_db_service._parse_rubric_questions(rubric.question)
-                        job.add_log(f"📋 Parsed {len(questions)} questions from rubric")
-                        if questions:
-                            # Log question details for debugging
-                            for i, q in enumerate(questions):
-                                job.add_log(
-                                    f"  Question {i + 1}: id={q.get('id')}, judge_type={q.get('judge_type')}, title={q.get('title', '')[:50]}"
-                                )
-
-                            # Check if any question is binary
-                            binary_questions = [q for q in questions if q.get("judge_type") == "binary"]
-                            likert_questions = [q for q in questions if q.get("judge_type") == "likert"]
-
-                            job.add_log(
-                                f"📊 Found {len(binary_questions)} binary questions and {len(likert_questions)} likert questions"
-                            )
-
-                            if binary_questions and not likert_questions:
-                                # All questions are binary
-                                is_binary_judge = True
-                                judge_type_str = "binary"
-                                job.add_log(f"✅ All questions are binary - using binary judge type")
-                            elif likert_questions and not binary_questions:
-                                # All questions are likert
-                                is_binary_judge = False
-                                judge_type_str = "likert"
-                                job.add_log(f"✅ All questions are likert - using likert judge type")
-                            elif binary_questions:
-                                # Mixed - but if we have binary questions, prefer binary
-                                # (most common case: rubric has default likert but questions are binary)
-                                is_binary_judge = True
-                                judge_type_str = "binary"
-                                job.add_log(
-                                    f"⚠️ Mixed judge types detected - using binary (found {len(binary_questions)} binary questions)"
-                                )
-                            else:
-                                job.add_log(
-                                    f"⚠️ No judge_type found in questions - will fall back to rubric-level judge_type"
-                                )
-
-                    # Fallback to rubric-level judge_type if no questions parsed or all questions are likert
-                    if judge_type_str == "likert" and not is_binary_judge:
-                        judge_type_enum = rubric.judge_type
-                        judge_type_str = (
-                            judge_type_enum.value if isinstance(judge_type_enum, JudgeType) else str(judge_type_enum)
-                        )
-                        is_binary_judge = judge_type_enum == JudgeType.BINARY
-
-                job.add_log(
-                    f"Judge type from rubric: {judge_type_str} ({'Binary (Pass/Fail)' if is_binary_judge else 'Likert (1-5)'})"
-                )
-                job.add_log(
-                    f"🔍 Final judge type determination: is_binary_judge={is_binary_judge}, judge_type_str='{judge_type_str}'"
-                )
-
-                # Get traces and annotations
-                traces = thread_db_service.get_traces(workshop_id)
-                annotations = thread_db_service.get_annotations(workshop_id)
-
-                if not traces:
-                    job.set_status("failed")
-                    job.error = "No traces found"
-                    job.add_log("ERROR: No traces found for evaluation")
-                    job.save()
-                    return
-
-                if not annotations:
-                    job.set_status("failed")
-                    job.error = "No annotations found"
-                    job.add_log("ERROR: No annotations found for evaluation")
-                    job.save()
-                    return
-
-                job.add_log(f"Found {len(traces)} traces and {len(annotations)} annotations")
-
-                # Group annotations by trace to get human ratings
-                # Use per-question ratings if available (supports binary 0/1), fall back to legacy rating
-                trace_annotations = {}
-                for ann in annotations:
-                    if ann.trace_id not in trace_annotations:
-                        trace_annotations[ann.trace_id] = []
-
-                    # Prefer ratings dict (contains actual 0/1 for binary, 1-5 for likert)
-                    if ann.ratings and len(ann.ratings) > 0:
-                        # Get all ratings from the dict (could be multiple questions)
-                        for rating in ann.ratings.values():
-                            trace_annotations[ann.trace_id].append(rating)
-                    else:
-                        # Fall back to legacy rating field
-                        trace_annotations[ann.trace_id].append(ann.rating)
-
-                # Get trace data mapping
-                trace_map = {t.id: t for t in traces}
-
-                evaluations = []
-                job.add_log(f"Evaluating {len(trace_annotations)} traces using endpoint: {request.endpoint_name}")
-
-                # Log sample ratings for debugging
-                all_ratings = []
-                for ratings in trace_annotations.values():
-                    all_ratings.extend(ratings)
-                job.add_log(f"Sample ratings: {all_ratings[:10]}{'...' if len(all_ratings) > 10 else ''}")
-
-                # Infer judge type from actual ratings if not already determined correctly
-                # If all ratings are 0 or 1, it's binary; if we see 2-5, it's likert
-                if all_ratings:
-                    unique_ratings = set(all_ratings)
-                    has_zero = 0 in unique_ratings
-                    has_two_to_five = bool(unique_ratings.intersection({2, 3, 4, 5}))
-
-                    if has_zero and not has_two_to_five:
-                        # We have 0s and no 2-5 values, so it's binary
-                        if not is_binary_judge:
-                            job.add_log(f"⚠️ Judge type inferred from ratings: binary (found 0 values, no 2-5 values)")
-                            is_binary_judge = True
-                            judge_type_str = "binary"
-                    elif has_two_to_five:
-                        # We have 2-5 values, so it's likert
-                        if is_binary_judge:
-                            job.add_log(f"⚠️ Judge type inferred from ratings: likert (found 2-5 values)")
-                            is_binary_judge = False
-                            judge_type_str = "likert"
-
-                for idx, (trace_id, ratings) in enumerate(trace_annotations.items()):
-                    trace = trace_map.get(trace_id)
-                    if not trace:
-                        continue
-
-                    # Get human rating based on judge type
-                    if is_binary_judge:
-                        # For binary, use majority vote (mode)
-                        human_rating = 1 if sum(ratings) > len(ratings) / 2 else 0
-                    else:
-                        # For Likert, use rounded average
-                        human_rating = round(sum(ratings) / len(ratings))
-
-                    # Get trace input and output directly from the Trace model
-                    trace_input = trace.input or ""
-                    trace_output = trace.output or ""
-
-                    # Log trace data status
-                    has_input = bool(trace_input.strip())
-                    has_output = bool(trace_output.strip())
-
-                    # Skip only if BOTH input and output are empty
-                    if not has_input and not has_output:
-                        job.add_log(f"Warning: Skipping trace {trace_id[:8]}... - no input/output data found")
-                        continue
-
-                    # Log warning if output is empty (but still evaluate)
-                    if not has_output:
-                        job.add_log(f"Note: Trace {trace_id[:8]}... has no output, evaluating with input only")
-                        trace_output = "(No output provided)"
-
-                    # Log first trace for debugging
-                    if idx == 0:
-                        job.add_log(f"Sample trace input (first 100 chars): {trace_input[:100]}...")
-                        job.add_log(f"Sample trace output (first 100 chars): {trace_output[:100]}...")
-
-                    # Replace placeholders in prompt
-                    filled_prompt = request.judge_prompt.replace("{input}", trace_input).replace(
-                        "{output}", trace_output
-                    )
-
-                    try:
-                        # Call Databricks model serving endpoint
-                        response = databricks_svc.call_serving_endpoint(
-                            endpoint_name=request.endpoint_name, prompt=filled_prompt, temperature=0.0, max_tokens=500
-                        )
-
-                        # Parse the response to extract rating based on judge type
-                        response_text = response.get("choices", [{}])[0].get("message", {}).get("content", "")
-                        response_lower = response_text.lower()
-
-                        predicted_rating = None
-
-                        # Log which branch we're taking for debugging
-                        if idx < 3:  # Log first 3 traces for debugging
-                            job.add_log(
-                                f"🔍 Parsing response for trace {trace_id[:8]}... - is_binary_judge={is_binary_judge}, response preview: {response_text[:100]}"
-                            )
-
-                        if is_binary_judge:
-                            # Binary judge: look for Pass/Fail keywords FIRST (most reliable)
-                            pass_keywords = [
-                                "pass",
-                                "yes",
-                                "correct",
-                                "meets",
-                                "acceptable",
-                                "approve",
-                                "good",
-                                "satisfies",
-                            ]
-                            fail_keywords = [
-                                "fail",
-                                "no",
-                                "incorrect",
-                                "does not meet",
-                                "unacceptable",
-                                "reject",
-                                "bad",
-                                "does not satisfy",
-                            ]
-
-                            if any(word in response_lower for word in pass_keywords):
-                                predicted_rating = 1  # Pass
-                                job.add_log(
-                                    f"✅ Binary judge: Found PASS keyword in response for trace {trace_id[:8]}..."
-                                )
-                            elif any(word in response_lower for word in fail_keywords):
-                                predicted_rating = 0  # Fail
-                                job.add_log(
-                                    f"✅ Binary judge: Found FAIL keyword in response for trace {trace_id[:8]}..."
-                                )
-                            else:
-                                # Try to extract ONLY 0 or 1 (strict - reject anything else)
-                                # Use word boundaries to avoid matching "3" in "13" or "30"
-                                match = re.search(r"\b(0|1)\b", response_text)
-                                if match:
-                                    predicted_rating = int(match.group(1))
-                                    job.add_log(
-                                        f"✅ Binary judge: Extracted {predicted_rating} from response for trace {trace_id[:8]}..."
-                                    )
-                                else:
-                                    # Check if response contains any number - if it's not 0 or 1, log warning
-                                    number_match = re.search(r"\b([0-9]+)\b", response_text)
-                                    if number_match:
-                                        found_number = int(number_match.group(1))
-                                        if found_number not in [0, 1]:
-                                            job.add_log(
-                                                f"⚠️ Binary judge: Response contains {found_number} (not 0 or 1) for trace {trace_id[:8]}... - ignoring. Response: {response_text[:150]}"
-                                            )
-
-                            # Default for binary - only if we couldn't parse anything
-                            if predicted_rating is None:
-                                job.add_log(
-                                    f"⚠️ Binary judge: Could not parse binary rating from response for trace {trace_id[:8]}... - defaulting to 1 (Pass). Response: {response_text[:150]}"
-                                )
-                                predicted_rating = 1  # Default to pass if unclear
-
-                            # Final validation: ensure predicted_rating is strictly 0 or 1
-                            if predicted_rating not in [0, 1]:
-                                job.add_log(
-                                    f"❌ Binary judge: Invalid rating {predicted_rating} detected - forcing to 1. Response: {response_text[:150]}"
-                                )
-                                predicted_rating = 1
-                        else:
-                            # Likert judge: look for numeric rating 1-5
-                            match = re.search(r"\b([1-5])\b", response_text)
-                            if match:
-                                predicted_rating = int(match.group(1))
-
-                            # Default for Likert
-                            if predicted_rating is None:
-                                predicted_rating = 3  # Default to neutral if unclear
-
-                        # Log the final predicted rating for debugging (first few traces)
-                        if idx < 3:
-                            job.add_log(
-                                f"📊 Final predicted_rating for trace {trace_id[:8]}...: {predicted_rating} (is_binary_judge={is_binary_judge})"
-                            )
-
-                        evaluations.append(
-                            {
-                                "trace_id": trace_id,
-                                "predicted_rating": predicted_rating,
-                                "human_rating": human_rating,
-                                "confidence": 0.8,
-                                "reasoning": response_text[:500] if response_text else None,
-                            }
-                        )
-
-                        if (idx + 1) % 5 == 0 or idx == len(trace_annotations) - 1:
-                            job.add_log(f"Evaluated {idx + 1}/{len(trace_annotations)} traces")
-
-                    except Exception as eval_err:
-                        import traceback
-
-                        error_details = traceback.format_exc()
-                        job.add_log(f"Warning: Failed to evaluate trace {trace_id[:8]}...: {str(eval_err)[:100]}")
-                        job.add_log(f"Error details: {error_details[-300:]}")  # Last 300 chars of traceback
-                        # Use default rating on error (use human rating as fallback)
-                        evaluations.append(
-                            {
-                                "trace_id": trace_id,
-                                "predicted_rating": human_rating,
-                                "human_rating": human_rating,
-                                "confidence": 0.0,
-                                "reasoning": f"Evaluation error: {str(eval_err)}",
-                            }
-                        )
-
-                if not evaluations:
-                    job.set_status("failed")
-                    job.error = "No evaluations completed"
-                    job.add_log("ERROR: No evaluations completed successfully")
-                    job.save()
-                    return
-
-                # Calculate metrics
-                job.add_log("Calculating evaluation metrics...")
-                predicted = [e["predicted_rating"] for e in evaluations]
-                human = [e["human_rating"] for e in evaluations]
-
-                if is_binary_judge:
-                    # Binary metrics: unweighted Cohen's Kappa, labels [0, 1]
-                    job.add_log("Using binary metrics (Pass=1, Fail=0)")
-                    try:
-                        kappa = cohen_kappa_score(human, predicted)  # Unweighted for binary
-                    except:
-                        kappa = 0.0
-
-                    try:
-                        conf_matrix = confusion_matrix(human, predicted, labels=[0, 1])
-                        conf_matrix_list = conf_matrix.tolist()
-                    except:
-                        conf_matrix_list = [[0] * 2 for _ in range(2)]
+                judge_type_str = 'likert'
+                job.add_log(f"✅ All questions are likert - using likert judge type")
+              elif binary_questions:
+                # Mixed - but if we have binary questions, prefer binary
+                # (most common case: rubric has default likert but questions are binary)
+                is_binary_judge = True
+                judge_type_str = 'binary'
+                job.add_log(f"⚠️ Mixed judge types detected - using binary (found {len(binary_questions)} binary questions)")
+              else:
+                job.add_log(f"⚠️ No judge_type found in questions - will fall back to rubric-level judge_type")
+          
+          # Fallback to rubric-level judge_type if no questions parsed or all questions are likert
+          if judge_type_str == 'likert' and not is_binary_judge:
+            judge_type_enum = rubric.judge_type
+            judge_type_str = judge_type_enum.value if isinstance(judge_type_enum, JudgeType) else str(judge_type_enum)
+            is_binary_judge = judge_type_enum == JudgeType.BINARY
+        
+        job.add_log(f"Judge type from rubric: {judge_type_str} ({'Binary (Pass/Fail)' if is_binary_judge else 'Likert (1-5)'})")
+        job.add_log(f"🔍 Final judge type determination: is_binary_judge={is_binary_judge}, judge_type_str='{judge_type_str}'")
+        
+        # Get traces and annotations
+        traces = thread_db_service.get_traces(workshop_id)
+        annotations = thread_db_service.get_annotations(workshop_id)
+        
+        if not traces:
+          job.set_status("failed")
+          job.error = "No traces found"
+          job.add_log("ERROR: No traces found for evaluation")
+          job.save()
+          return
+        
+        if not annotations:
+          job.set_status("failed")
+          job.error = "No annotations found"
+          job.add_log("ERROR: No annotations found for evaluation")
+          job.save()
+          return
+        
+        job.add_log(f"Found {len(traces)} traces and {len(annotations)} annotations")
+        
+        # Group annotations by trace to get human ratings
+        # Use per-question ratings if available (supports binary 0/1), fall back to legacy rating
+        trace_annotations = {}
+        for ann in annotations:
+          if ann.trace_id not in trace_annotations:
+            trace_annotations[ann.trace_id] = []
+          
+          # Prefer ratings dict (contains actual 0/1 for binary, 1-5 for likert)
+          if ann.ratings and len(ann.ratings) > 0:
+            # Get all ratings from the dict (could be multiple questions)
+            for rating in ann.ratings.values():
+              trace_annotations[ann.trace_id].append(rating)
+          else:
+            # Fall back to legacy rating field
+            trace_annotations[ann.trace_id].append(ann.rating)
+        
+        # Get trace data mapping
+        trace_map = {t.id: t for t in traces}
+        
+        evaluations = []
+        job.add_log(f"Evaluating {len(trace_annotations)} traces using endpoint: {request.endpoint_name}")
+        
+        # Log sample ratings for debugging
+        all_ratings = []
+        for ratings in trace_annotations.values():
+          all_ratings.extend(ratings)
+        job.add_log(f"Sample ratings: {all_ratings[:10]}{'...' if len(all_ratings) > 10 else ''}")
+        
+        # Infer judge type from actual ratings if not already determined correctly
+        # If all ratings are 0 or 1, it's binary; if we see 2-5, it's likert
+        if all_ratings:
+          unique_ratings = set(all_ratings)
+          has_zero = 0 in unique_ratings
+          has_two_to_five = bool(unique_ratings.intersection({2, 3, 4, 5}))
+          
+          if has_zero and not has_two_to_five:
+            # We have 0s and no 2-5 values, so it's binary
+            if not is_binary_judge:
+              job.add_log(f"⚠️ Judge type inferred from ratings: binary (found 0 values, no 2-5 values)")
+              is_binary_judge = True
+              judge_type_str = 'binary'
+          elif has_two_to_five:
+            # We have 2-5 values, so it's likert
+            if is_binary_judge:
+              job.add_log(f"⚠️ Judge type inferred from ratings: likert (found 2-5 values)")
+              is_binary_judge = False
+              judge_type_str = 'likert'
+        
+        for idx, (trace_id, ratings) in enumerate(trace_annotations.items()):
+          trace = trace_map.get(trace_id)
+          if not trace:
+            continue
+          
+          # Get human rating based on judge type
+          if is_binary_judge:
+            # For binary, use majority vote (mode)
+            human_rating = 1 if sum(ratings) > len(ratings) / 2 else 0
+          else:
+            # For Likert, use rounded average
+            human_rating = round(sum(ratings) / len(ratings))
+          
+          # Get trace input and output directly from the Trace model
+          trace_input = trace.input or ''
+          trace_output = trace.output or ''
+          
+          # Log trace data status
+          has_input = bool(trace_input.strip())
+          has_output = bool(trace_output.strip())
+          
+          # Skip only if BOTH input and output are empty
+          if not has_input and not has_output:
+            job.add_log(f"Warning: Skipping trace {trace_id[:8]}... - no input/output data found")
+            continue
+          
+          # Log warning if output is empty (but still evaluate)
+          if not has_output:
+            job.add_log(f"Note: Trace {trace_id[:8]}... has no output, evaluating with input only")
+            trace_output = "(No output provided)"
+          
+          # Log first trace for debugging
+          if idx == 0:
+            job.add_log(f"Sample trace input (first 100 chars): {trace_input[:100]}...")
+            job.add_log(f"Sample trace output (first 100 chars): {trace_output[:100]}...")
+          
+          # Replace placeholders in prompt
+          filled_prompt = request.judge_prompt.replace('{input}', trace_input).replace('{output}', trace_output)
+          
+          try:
+            # Call Databricks model serving endpoint
+            response = databricks_svc.call_serving_endpoint(
+              endpoint_name=request.endpoint_name,
+              prompt=filled_prompt,
+              temperature=0.0,
+              max_tokens=500
+            )
+            
+            # Parse the response to extract rating based on judge type
+            response_text = response.get('choices', [{}])[0].get('message', {}).get('content', '')
+            response_lower = response_text.lower()
+            
+            predicted_rating = None
+            
+            # Log which branch we're taking for debugging
+            if idx < 3:  # Log first 3 traces for debugging
+              job.add_log(f"🔍 Parsing response for trace {trace_id[:8]}... - is_binary_judge={is_binary_judge}, response preview: {response_text[:100]}")
+            
+            if is_binary_judge:
+              # Binary judge: look for Pass/Fail keywords FIRST (most reliable)
+              pass_keywords = ['pass', 'yes', 'correct', 'meets', 'acceptable', 'approve', 'good', 'satisfies']
+              fail_keywords = ['fail', 'no', 'incorrect', 'does not meet', 'unacceptable', 'reject', 'bad', 'does not satisfy']
+              
+              if any(word in response_lower for word in pass_keywords):
+                predicted_rating = 1  # Pass
+                job.add_log(f"✅ Binary judge: Found PASS keyword in response for trace {trace_id[:8]}...")
+              elif any(word in response_lower for word in fail_keywords):
+                predicted_rating = 0  # Fail
+                job.add_log(f"✅ Binary judge: Found FAIL keyword in response for trace {trace_id[:8]}...")
+              else:
+                # Try to extract ONLY 0 or 1 (strict - reject anything else)
+                # Use word boundaries to avoid matching "3" in "13" or "30"
+                match = re.search(r'\b(0|1)\b', response_text)
+                if match:
+                  predicted_rating = int(match.group(1))
+                  job.add_log(f"✅ Binary judge: Extracted {predicted_rating} from response for trace {trace_id[:8]}...")
                 else:
-                    # Likert metrics: quadratic weighted Cohen's Kappa, labels [1, 2, 3, 4, 5]
-                    job.add_log("Using Likert metrics (1-5 scale)")
-                    try:
-                        kappa = cohen_kappa_score(human, predicted, weights="quadratic")
-                    except:
-                        kappa = 0.0
+                  # Check if response contains any number - if it's not 0 or 1, log warning
+                  number_match = re.search(r'\b([0-9]+)\b', response_text)
+                  if number_match:
+                    found_number = int(number_match.group(1))
+                    if found_number not in [0, 1]:
+                      job.add_log(f"⚠️ Binary judge: Response contains {found_number} (not 0 or 1) for trace {trace_id[:8]}... - ignoring. Response: {response_text[:150]}")
+              
+              # Default for binary - only if we couldn't parse anything
+              if predicted_rating is None:
+                job.add_log(f"⚠️ Binary judge: Could not parse binary rating from response for trace {trace_id[:8]}... - defaulting to 1 (Pass). Response: {response_text[:150]}")
+                predicted_rating = 1  # Default to pass if unclear
+              
+              # Final validation: ensure predicted_rating is strictly 0 or 1
+              if predicted_rating not in [0, 1]:
+                job.add_log(f"❌ Binary judge: Invalid rating {predicted_rating} detected - forcing to 1. Response: {response_text[:150]}")
+                predicted_rating = 1
+            else:
+              # Likert judge: look for numeric rating 1-5
+              match = re.search(r'\b([1-5])\b', response_text)
+              if match:
+                predicted_rating = int(match.group(1))
+              
+              # Default for Likert
+              if predicted_rating is None:
+                predicted_rating = 3  # Default to neutral if unclear
+            
+            # Log the final predicted rating for debugging (first few traces)
+            if idx < 3:
+              job.add_log(f"📊 Final predicted_rating for trace {trace_id[:8]}...: {predicted_rating} (is_binary_judge={is_binary_judge})")
+            
+            evaluations.append({
+              'trace_id': trace_id,
+              'predicted_rating': predicted_rating,
+              'human_rating': human_rating,
+              'confidence': 0.8,
+              'reasoning': response_text[:500] if response_text else None
+            })
+            
+            if (idx + 1) % 5 == 0 or idx == len(trace_annotations) - 1:
+              job.add_log(f"Evaluated {idx + 1}/{len(trace_annotations)} traces")
+              
+          except Exception as eval_err:
+            import traceback
+            error_details = traceback.format_exc()
+            job.add_log(f"Warning: Failed to evaluate trace {trace_id[:8]}...: {str(eval_err)[:100]}")
+            job.add_log(f"Error details: {error_details[-300:]}")  # Last 300 chars of traceback
+            # Use default rating on error (use human rating as fallback)
+            evaluations.append({
+              'trace_id': trace_id,
+              'predicted_rating': human_rating,
+              'human_rating': human_rating,
+              'confidence': 0.0,
+              'reasoning': f"Evaluation error: {str(eval_err)}"
+            })
+        
+        if not evaluations:
+          job.set_status("failed")
+          job.error = "No evaluations completed"
+          job.add_log("ERROR: No evaluations completed successfully")
+          job.save()
+          return
+        
+        # Calculate metrics
+        job.add_log("Calculating evaluation metrics...")
+        predicted = [e['predicted_rating'] for e in evaluations]
+        human = [e['human_rating'] for e in evaluations]
+        
+        if is_binary_judge:
+          # Binary metrics: unweighted Cohen's Kappa, labels [0, 1]
+          job.add_log("Using binary metrics (Pass=1, Fail=0)")
+          try:
+            kappa = cohen_kappa_score(human, predicted)  # Unweighted for binary
+          except:
+            kappa = 0.0
+          
+          try:
+            conf_matrix = confusion_matrix(human, predicted, labels=[0, 1])
+            conf_matrix_list = conf_matrix.tolist()
+          except:
+            conf_matrix_list = [[0]*2 for _ in range(2)]
+        else:
+          # Likert metrics: quadratic weighted Cohen's Kappa, labels [1, 2, 3, 4, 5]
+          job.add_log("Using Likert metrics (1-5 scale)")
+          try:
+            kappa = cohen_kappa_score(human, predicted, weights='quadratic')
+          except:
+            kappa = 0.0
+          
+          try:
+            conf_matrix = confusion_matrix(human, predicted, labels=[1, 2, 3, 4, 5])
+            conf_matrix_list = conf_matrix.tolist()
+          except:
+            conf_matrix_list = [[0]*5 for _ in range(5)]
+        
+        accuracy = accuracy_score(human, predicted)
+        
+        metrics = {
+          'correlation': float(kappa),
+          'accuracy': float(accuracy),
+          'total_evaluations': len(evaluations),
+          'confusion_matrix': conf_matrix_list,
+          'agreement_by_rating': {},
+          'is_binary': is_binary_judge,
+          'judge_type': 'binary' if is_binary_judge else 'likert',
+          'rating_labels': ['Fail', 'Pass'] if is_binary_judge else ['1', '2', '3', '4', '5']
+        }
+        
+        job.add_log(f"Evaluation complete: κ={kappa:.3f}, accuracy={accuracy:.1%}, judge_type={'binary' if is_binary_judge else 'likert'}")
+        
+        # Build result
+        result = {
+          'success': True,
+          'evaluations': evaluations,
+          'metrics': metrics
+        }
+        
+        # Save to database
+        try:
+          import uuid as uuid_mod
+          from server.models import JudgePromptCreate, JudgeEvaluation
+          
+          # Use existing prompt_id if provided, otherwise create new
+          if request.prompt_id:
+            prompt_id_to_use = request.prompt_id
+            existing_prompt = thread_db_service.get_judge_prompt(workshop_id, request.prompt_id)
+            if existing_prompt:
+              result["saved_prompt_id"] = existing_prompt.id
+              result["saved_prompt_version"] = existing_prompt.version
+            else:
+              prompt_id_to_use = None
+          else:
+            prompt_id_to_use = None
+          
+          if not prompt_id_to_use:
+            new_prompt_data = JudgePromptCreate(
+              prompt_text=request.judge_prompt,
+              few_shot_examples=[],
+              model_name=f"simple:{request.endpoint_name}",
+              model_parameters={'mode': 'simple_model_serving'},
+            )
+            new_prompt = thread_db_service.create_judge_prompt(workshop_id, new_prompt_data)
+            prompt_id_to_use = new_prompt.id
+            result["saved_prompt_id"] = new_prompt.id
+            result["saved_prompt_version"] = new_prompt.version
+          
+          # Save metrics
+          thread_db_service.update_judge_prompt_metrics(prompt_id_to_use, metrics)
+          
+          # Save evaluations
+          evaluations_to_save = [
+            JudgeEvaluation(
+              id=str(uuid_mod.uuid4()),
+              workshop_id=workshop_id,
+              prompt_id=prompt_id_to_use,
+              trace_id=e['trace_id'],
+              predicted_rating=e['predicted_rating'],
+              human_rating=e['human_rating'],
+              confidence=e.get('confidence'),
+              reasoning=e.get('reasoning')
+            )
+            for e in evaluations
+          ]
+          thread_db_service.store_judge_evaluations(evaluations_to_save)
+          job.add_log(f"Saved {len(evaluations_to_save)} evaluations to database")
+          
+        except Exception as save_err:
+          job.add_log(f"WARNING: Could not save to database: {save_err}")
+        
+        job.result = result
+        job.set_status("completed")
+        job.add_log("Simple evaluation completed successfully")
+        job.save()
+        
+      finally:
+        thread_db.close()
+        
+    except Exception as e:
+      logger.exception("Simple evaluation job failed: %s", e)
+      job.set_status("failed")
+      job.error = str(e)
+      job.add_log(f"ERROR: Evaluation failed: {e}")
+      job.save()
+  
+  # Start background thread
+  thread = threading.Thread(target=run_simple_evaluation_background, daemon=True)
+  thread.start()
+  
+  logger.info("Started simple evaluation job %s", job_id)
+  return {
+    "job_id": job_id,
+    "status": "running",
+    "message": "Simple evaluation job started. Poll /evaluation-job/{job_id} for status."
+  }
 
-                    try:
-                        conf_matrix = confusion_matrix(human, predicted, labels=[1, 2, 3, 4, 5])
-                        conf_matrix_list = conf_matrix.tolist()
-                    except:
-                        conf_matrix_list = [[0] * 5 for _ in range(5)]
 
-                accuracy = accuracy_score(human, predicted)
-
-                metrics = {
-                    "correlation": float(kappa),
-                    "accuracy": float(accuracy),
-                    "total_evaluations": len(evaluations),
-                    "confusion_matrix": conf_matrix_list,
-                    "agreement_by_rating": {},
-                    "is_binary": is_binary_judge,
-                    "judge_type": "binary" if is_binary_judge else "likert",
-                    "rating_labels": ["Fail", "Pass"] if is_binary_judge else ["1", "2", "3", "4", "5"],
-                }
-
-                job.add_log(
-                    f"Evaluation complete: κ={kappa:.3f}, accuracy={accuracy:.1%}, judge_type={'binary' if is_binary_judge else 'likert'}"
-                )
-
-                # Build result
-                result = {"success": True, "evaluations": evaluations, "metrics": metrics}
-
-                # Save to database
-                try:
-                    import uuid as uuid_mod
-                    from server.models import JudgePromptCreate, JudgeEvaluation
-
-                    # Use existing prompt_id if provided, otherwise create new
-                    if request.prompt_id:
-                        prompt_id_to_use = request.prompt_id
-                        existing_prompt = thread_db_service.get_judge_prompt(workshop_id, request.prompt_id)
-                        if existing_prompt:
-                            result["saved_prompt_id"] = existing_prompt.id
-                            result["saved_prompt_version"] = existing_prompt.version
-                        else:
-                            prompt_id_to_use = None
-                    else:
-                        prompt_id_to_use = None
-
-                    if not prompt_id_to_use:
-                        new_prompt_data = JudgePromptCreate(
-                            prompt_text=request.judge_prompt,
-                            few_shot_examples=[],
-                            model_name=f"simple:{request.endpoint_name}",
-                            model_parameters={"mode": "simple_model_serving"},
-                        )
-                        new_prompt = thread_db_service.create_judge_prompt(workshop_id, new_prompt_data)
-                        prompt_id_to_use = new_prompt.id
-                        result["saved_prompt_id"] = new_prompt.id
-                        result["saved_prompt_version"] = new_prompt.version
-
-                    # Save metrics
-                    thread_db_service.update_judge_prompt_metrics(prompt_id_to_use, metrics)
-
-                    # Save evaluations
-                    evaluations_to_save = [
-                        JudgeEvaluation(
-                            id=str(uuid_mod.uuid4()),
-                            workshop_id=workshop_id,
-                            prompt_id=prompt_id_to_use,
-                            trace_id=e["trace_id"],
-                            predicted_rating=e["predicted_rating"],
-                            human_rating=e["human_rating"],
-                            confidence=e.get("confidence"),
-                            reasoning=e.get("reasoning"),
-                        )
-                        for e in evaluations
-                    ]
-                    thread_db_service.store_judge_evaluations(evaluations_to_save)
-                    job.add_log(f"Saved {len(evaluations_to_save)} evaluations to database")
-
-                except Exception as save_err:
-                    job.add_log(f"WARNING: Could not save to database: {save_err}")
-
-                job.result = result
-                job.set_status("completed")
-                job.add_log("Simple evaluation completed successfully")
-                job.save()
-
-            finally:
-                thread_db.close()
-
-        except Exception as e:
-            logger.exception("Simple evaluation job failed: %s", e)
-            job.set_status("failed")
-            job.error = str(e)
-            job.add_log(f"ERROR: Evaluation failed: {e}")
-            job.save()
-
-    # Start background thread
-    thread = threading.Thread(target=run_simple_evaluation_background, daemon=True)
-    thread.start()
-
-    logger.info("Started simple evaluation job %s", job_id)
-    return {
-        "job_id": job_id,
-        "status": "running",
-        "message": "Simple evaluation job started. Poll /evaluation-job/{job_id} for status.",
-    }
-
-
-@router.get("/{workshop_id}/evaluation-job/{job_id}")
+@router.get('/{workshop_id}/evaluation-job/{job_id}')
 async def get_evaluation_job_status(
     workshop_id: str,
     job_id: str,
