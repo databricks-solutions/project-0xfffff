@@ -3331,3 +3331,214 @@ async def get_alignment_status(workshop_id: str, db: Session = Depends(get_db)) 
         if traces_ready
         else "No traces ready for alignment",
     }
+
+
+# ============================================================================
+# Custom LLM Provider Endpoints
+# ============================================================================
+
+from server.models import (
+    CustomLLMProviderConfigCreate,
+    CustomLLMProviderStatus,
+    CustomLLMProviderTestResult,
+)
+from server.services.token_storage_service import token_storage
+import httpx
+
+
+def _get_custom_llm_storage_key(workshop_id: str) -> str:
+    """Get the storage key for custom LLM API keys."""
+    return f"custom_llm_{workshop_id}"
+
+
+def _build_chat_completions_url(base_url: str) -> str:
+    """Ensure URL ends with /chat/completions for OpenAI-compatible endpoints."""
+    base_url = base_url.rstrip('/')
+
+    # If URL already ends with /chat/completions, use as-is
+    if base_url.endswith('/chat/completions'):
+        return base_url
+
+    # If URL ends with /v1, append /chat/completions
+    if base_url.endswith('/v1'):
+        return f"{base_url}/chat/completions"
+
+    # Otherwise, assume it's a base URL and append full path
+    return f"{base_url}/v1/chat/completions"
+
+
+@router.get("/{workshop_id}/custom-llm-provider")
+async def get_custom_llm_provider_status(
+    workshop_id: str,
+    db: Session = Depends(get_db),
+) -> CustomLLMProviderStatus:
+    """Get the status of custom LLM provider configuration for a workshop.
+
+    Returns configuration status including whether it's configured, enabled,
+    and whether an API key is available (without exposing the actual key).
+    """
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    config = db_service.get_custom_llm_provider_config(workshop_id)
+
+    if not config:
+        return CustomLLMProviderStatus(
+            workshop_id=workshop_id,
+            is_configured=False,
+            is_enabled=False,
+            has_api_key=False,
+        )
+
+    # Check if API key exists in token storage
+    storage_key = _get_custom_llm_storage_key(workshop_id)
+    has_api_key = token_storage.get_token(storage_key) is not None
+
+    return CustomLLMProviderStatus(
+        workshop_id=workshop_id,
+        is_configured=True,
+        is_enabled=config.is_enabled,
+        provider_name=config.provider_name,
+        base_url=config.base_url,
+        model_name=config.model_name,
+        has_api_key=has_api_key,
+    )
+
+
+@router.post("/{workshop_id}/custom-llm-provider")
+async def create_custom_llm_provider(
+    workshop_id: str,
+    config_data: CustomLLMProviderConfigCreate,
+    db: Session = Depends(get_db),
+) -> CustomLLMProviderStatus:
+    """Create or update custom LLM provider configuration for a workshop.
+
+    The API key is stored in-memory only and will expire after 24 hours.
+    Configuration details (provider name, base URL, model name) are persisted.
+    """
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    # Store API key in memory (not in database)
+    storage_key = _get_custom_llm_storage_key(workshop_id)
+    token_storage.store_token(storage_key, config_data.api_key)
+
+    # Create or update the configuration in the database
+    config = db_service.create_custom_llm_provider_config(workshop_id, config_data)
+
+    return CustomLLMProviderStatus(
+        workshop_id=workshop_id,
+        is_configured=True,
+        is_enabled=config.is_enabled,
+        provider_name=config.provider_name,
+        base_url=config.base_url,
+        model_name=config.model_name,
+        has_api_key=True,
+    )
+
+
+@router.delete("/{workshop_id}/custom-llm-provider", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_custom_llm_provider(
+    workshop_id: str,
+    db: Session = Depends(get_db),
+):
+    """Delete custom LLM provider configuration for a workshop.
+
+    Removes both the persisted configuration and the in-memory API key.
+    """
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    # Remove API key from memory
+    storage_key = _get_custom_llm_storage_key(workshop_id)
+    token_storage.delete_token(storage_key)
+
+    # Delete configuration from database
+    db_service.delete_custom_llm_provider_config(workshop_id)
+
+
+@router.post("/{workshop_id}/custom-llm-provider/test")
+async def test_custom_llm_provider(
+    workshop_id: str,
+    db: Session = Depends(get_db),
+) -> CustomLLMProviderTestResult:
+    """Test connection to the configured custom LLM provider.
+
+    Makes a minimal API call to verify the endpoint is reachable and
+    the API key is valid. Returns response time on success.
+    """
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    config = db_service.get_custom_llm_provider_config(workshop_id)
+    if not config:
+        raise HTTPException(
+            status_code=404,
+            detail="Custom LLM provider not configured for this workshop"
+        )
+
+    # Get API key from memory
+    storage_key = _get_custom_llm_storage_key(workshop_id)
+    api_key = token_storage.get_token(storage_key)
+    if not api_key:
+        raise HTTPException(
+            status_code=400,
+            detail="API key not found. Please reconfigure the custom LLM provider."
+        )
+
+    # Build the full URL
+    url = _build_chat_completions_url(config.base_url)
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": config.model_name,
+        "messages": [{"role": "user", "content": "Hi"}],
+        "max_tokens": 5,
+    }
+
+    start_time = time.time()
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(url, headers=headers, json=payload)
+            response_time_ms = int((time.time() - start_time) * 1000)
+
+            if response.status_code == 200:
+                return CustomLLMProviderTestResult(
+                    success=True,
+                    message=f"Successfully connected to {config.provider_name}",
+                    response_time_ms=response_time_ms,
+                )
+            elif response.status_code == 401:
+                return CustomLLMProviderTestResult(
+                    success=False,
+                    message="Authentication failed: Invalid API key",
+                    error_code="AUTH_FAILED",
+                )
+            else:
+                return CustomLLMProviderTestResult(
+                    success=False,
+                    message=f"Request failed with status {response.status_code}",
+                    error_code="REQUEST_FAILED",
+                )
+    except httpx.TimeoutException:
+        return CustomLLMProviderTestResult(
+            success=False,
+            message="Connection timed out",
+            error_code="TIMEOUT",
+        )
+    except Exception as e:
+        return CustomLLMProviderTestResult(
+            success=False,
+            message=f"Connection error: {str(e)}",
+            error_code="CONNECTION_ERROR",
+        )

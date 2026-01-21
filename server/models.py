@@ -552,3 +552,44 @@ class DatabricksConnectionTest(BaseModel):
   endpoints_count: Optional[int] = Field(default=None, description='Number of available endpoints')
   error: Optional[str] = Field(default=None, description='Error message if connection failed')
   message: str = Field(..., description='Human-readable status message')
+
+
+# Custom LLM Provider Models
+class CustomLLMProviderConfig(BaseModel):
+  """Configuration for custom OpenAI-compatible LLM provider."""
+
+  provider_name: str = Field(..., description='User-friendly provider name')
+  base_url: str = Field(..., description='Base URL for the OpenAI-compatible endpoint')
+  api_key: str = Field(..., description='API key (not persisted to DB)')
+  model_name: str = Field(..., description='Model name/identifier')
+  is_enabled: bool = Field(default=True, description='Whether custom provider is active')
+
+
+class CustomLLMProviderConfigCreate(BaseModel):
+  """Request model for creating/updating custom LLM provider config."""
+
+  provider_name: str = Field(..., description='User-friendly provider name')
+  base_url: str = Field(..., description='Base URL for the OpenAI-compatible endpoint')
+  api_key: str = Field(..., description='API key for authentication')
+  model_name: str = Field(..., description='Model name/identifier')
+
+
+class CustomLLMProviderStatus(BaseModel):
+  """Status of custom LLM provider configuration."""
+
+  workshop_id: str
+  is_configured: bool = False
+  is_enabled: bool = False
+  provider_name: Optional[str] = None
+  base_url: Optional[str] = None  # Shown in UI for reference
+  model_name: Optional[str] = None
+  has_api_key: bool = False  # Whether key is stored (don't expose actual key)
+
+
+class CustomLLMProviderTestResult(BaseModel):
+  """Result of testing custom LLM provider connection."""
+
+  success: bool
+  message: str
+  response_time_ms: Optional[int] = None
+  error_code: Optional[str] = None

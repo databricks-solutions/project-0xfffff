@@ -173,6 +173,9 @@ class WorkshopDB(Base):
     user_discovery_completions = relationship(
         "UserDiscoveryCompletionDB", back_populates="workshop", cascade="all, delete-orphan"
     )
+    custom_llm_provider = relationship(
+        "CustomLLMProviderConfigDB", back_populates="workshop", uselist=False, cascade="all, delete-orphan"
+    )
 
 
 class TraceDB(Base):
@@ -373,6 +376,28 @@ class UserTraceOrderDB(Base):
 
     # Relationships
     workshop = relationship("WorkshopDB", back_populates="user_trace_orders")
+
+
+class CustomLLMProviderConfigDB(Base):
+    """Database model for custom OpenAI-compatible LLM provider configuration.
+
+    This stores the non-sensitive configuration for custom LLM endpoints.
+    The API key is NOT stored here - it's stored in-memory via TokenStorageService.
+    """
+
+    __tablename__ = "custom_llm_provider_config"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False, unique=True)
+    provider_name = Column(String, nullable=False)  # User-friendly name, e.g., "Azure OpenAI"
+    base_url = Column(String, nullable=False)  # Base URL for the endpoint
+    model_name = Column(String, nullable=False)  # Model identifier
+    is_enabled = Column(Boolean, default=True)  # Whether to use custom provider vs Databricks
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    # Relationships
+    workshop = relationship("WorkshopDB", back_populates="custom_llm_provider")
 
 
 def get_db():

@@ -52,6 +52,16 @@ interface RouteParams {
 /**
  * Mock data store for a scenario
  */
+export interface CustomLLMProviderConfig {
+  workshop_id: string;
+  is_configured: boolean;
+  is_enabled: boolean;
+  provider_name?: string;
+  base_url?: string;
+  model_name?: string;
+  has_api_key: boolean;
+}
+
 export interface MockDataStore {
   workshop?: Workshop;
   users: User[];
@@ -60,6 +70,7 @@ export interface MockDataStore {
   findings: DiscoveryFinding[];
   annotations: Annotation[];
   discoveryComplete: Map<string, boolean>;
+  customLlmProvider?: CustomLLMProviderConfig;
 }
 
 /**
@@ -321,6 +332,80 @@ export class ApiMocker {
         } else {
           await route.fulfill({ status: 404, json: { detail: 'No rubric found' } });
         }
+      },
+    });
+
+    // Custom LLM Provider routes
+    this.routes.push({
+      pattern: /\/workshops\/([a-f0-9-]+)\/custom-llm-provider$/i,
+      get: async (route, params) => {
+        const workshopId = params.workshopId || this.store.workshop?.id || '';
+        const config = this.store.customLlmProvider;
+        if (config && config.workshop_id === workshopId) {
+          await route.fulfill({ json: config });
+        } else {
+          await route.fulfill({
+            json: {
+              workshop_id: workshopId,
+              is_configured: false,
+              is_enabled: false,
+              has_api_key: false,
+            },
+          });
+        }
+      },
+      post: async (route, params) => {
+        const body = route.request().postDataJSON();
+        const workshopId = params.workshopId || this.store.workshop?.id || '';
+        const config: CustomLLMProviderConfig = {
+          workshop_id: workshopId,
+          is_configured: true,
+          is_enabled: true,
+          provider_name: body?.provider_name || 'Custom Provider',
+          base_url: body?.base_url || '',
+          model_name: body?.model_name || '',
+          has_api_key: !!body?.api_key,
+        };
+        this.store.customLlmProvider = config;
+        await route.fulfill({ json: config });
+      },
+      delete: async (route, params) => {
+        const workshopId = params.workshopId || this.store.workshop?.id || '';
+        if (this.store.customLlmProvider?.workshop_id === workshopId) {
+          this.store.customLlmProvider = undefined;
+        }
+        await route.fulfill({ status: 204 });
+      },
+    });
+
+    // Custom LLM Provider test endpoint
+    this.routes.push({
+      pattern: /\/workshops\/([a-f0-9-]+)\/custom-llm-provider\/test$/i,
+      post: async (route, params) => {
+        const workshopId = params.workshopId || this.store.workshop?.id || '';
+        const config = this.store.customLlmProvider;
+        if (!config || config.workshop_id !== workshopId) {
+          await route.fulfill({
+            status: 404,
+            json: { detail: 'Custom LLM provider not configured for this workshop' },
+          });
+          return;
+        }
+        if (!config.has_api_key) {
+          await route.fulfill({
+            status: 400,
+            json: { detail: 'API key not found. Please reconfigure the custom LLM provider.' },
+          });
+          return;
+        }
+        // Simulate successful test
+        await route.fulfill({
+          json: {
+            success: true,
+            message: `Successfully connected to ${config.provider_name}`,
+            response_time_ms: 150,
+          },
+        });
       },
     });
 

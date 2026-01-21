@@ -19,6 +19,9 @@ import type { MLflowIntakeConfig } from '../models/MLflowIntakeConfig';
 import type { MLflowIntakeConfigCreate } from '../models/MLflowIntakeConfigCreate';
 import type { MLflowIntakeStatus } from '../models/MLflowIntakeStatus';
 import type { MLflowTraceInfo } from '../models/MLflowTraceInfo';
+import type { CustomLLMProviderConfigCreate } from '../models/CustomLLMProviderConfigCreate';
+import type { CustomLLMProviderStatus } from '../models/CustomLLMProviderStatus';
+import type { CustomLLMProviderTestResult } from '../models/CustomLLMProviderTestResult';
 import type { Rubric } from '../models/Rubric';
 import type { RubricCreate } from '../models/RubricCreate';
 import type { Trace } from '../models/Trace';
@@ -1468,6 +1471,94 @@ export class WorkshopsService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/workshops/{workshop_id}/migrate-annotations',
+            path: {
+                'workshop_id': workshopId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Custom Llm Provider Status
+     * Get the status of custom LLM provider configuration for a workshop.
+     * @param workshopId
+     * @returns CustomLLMProviderStatus Successful Response
+     * @throws ApiError
+     */
+    public static getCustomLlmProviderStatusWorkshopsWorkshopIdCustomLlmProviderGet(
+        workshopId: string,
+    ): CancelablePromise<CustomLLMProviderStatus> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/custom-llm-provider',
+            path: {
+                'workshop_id': workshopId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Create Custom Llm Provider
+     * Create or update custom LLM provider configuration for a workshop.
+     * @param workshopId
+     * @param requestBody
+     * @returns CustomLLMProviderStatus Successful Response
+     * @throws ApiError
+     */
+    public static createCustomLlmProviderWorkshopsWorkshopIdCustomLlmProviderPost(
+        workshopId: string,
+        requestBody: CustomLLMProviderConfigCreate,
+    ): CancelablePromise<CustomLLMProviderStatus> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/custom-llm-provider',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Delete Custom Llm Provider
+     * Delete custom LLM provider configuration for a workshop.
+     * @param workshopId
+     * @returns void
+     * @throws ApiError
+     */
+    public static deleteCustomLlmProviderWorkshopsWorkshopIdCustomLlmProviderDelete(
+        workshopId: string,
+    ): CancelablePromise<void> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/workshops/{workshop_id}/custom-llm-provider',
+            path: {
+                'workshop_id': workshopId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Test Custom Llm Provider
+     * Test connection to the configured custom LLM provider.
+     * @param workshopId
+     * @returns CustomLLMProviderTestResult Successful Response
+     * @throws ApiError
+     */
+    public static testCustomLlmProviderWorkshopsWorkshopIdCustomLlmProviderTestPost(
+        workshopId: string,
+    ): CancelablePromise<CustomLLMProviderTestResult> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/custom-llm-provider/test',
             path: {
                 'workshop_id': workshopId,
             },

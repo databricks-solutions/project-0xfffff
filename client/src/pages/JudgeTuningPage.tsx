@@ -32,6 +32,7 @@ import { getModelOptions, getBackendModelName, getFrontendModelName, getDisplayN
 import { parseRubricQuestions } from '@/utils/rubricUtils';
 import { Pagination } from '@/components/Pagination';
 import { TraceDataViewer } from '@/components/TraceDataViewer';
+import { CustomLLMProviderConfig } from '@/components/CustomLLMProviderConfig';
 import { toast } from 'sonner';
 
 import type { 
@@ -1407,6 +1408,17 @@ The response partially meets the criteria because...`;
               </div>
             </div>
           )}
+
+          {/* Custom LLM Provider Configuration */}
+          <div className="mb-4">
+            <CustomLLMProviderConfig
+              workshopId={workshopId!}
+              onConfigChange={(config) => {
+                // Track when custom provider is configured for model dropdown
+                console.log('Custom LLM provider config changed:', config);
+              }}
+            />
+          </div>
 
           {/* Performance Metrics Bar - Only show after evaluation has been run */}
           {metrics && hasEvaluated && (() => {
