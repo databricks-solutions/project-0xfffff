@@ -1,6 +1,6 @@
 # Spec Test Coverage Map
 
-**Generated**: 2026-01-21 09:25:25
+**Generated**: 2026-01-21 12:15:13
 
 This report shows which tests cover each specification.
 Tests are tagged using framework-specific conventions:
@@ -18,12 +18,12 @@ Tests are tagged using framework-specific conventions:
 | [ANNOTATION_SPEC](#annotation-spec) | 4 | 1 | 0 | 5 | ✅ Covered |
 | [AUTHENTICATION_SPEC](#authentication-spec) | 8 | 1 | 0 | 9 | ✅ Covered |
 | [BUILD_AND_DEPLOY_SPEC](#build-and-deploy-spec) | 1 | 0 | 0 | 1 | 🟡 Partial |
+| [CUSTOM_LLM_PROVIDER_SPEC](#custom-llm-provider-spec) | 8 | 1 | 0 | 9 | ✅ Covered |
 | [DATASETS_SPEC](#datasets-spec) | 2 | 0 | 1 | 3 | ✅ Covered |
 | [DESIGN_SYSTEM_SPEC](#design-system-spec) | 0 | 0 | 1 | 1 | 🟡 Partial |
 | [DISCOVERY_TRACE_ASSIGNMENT_SPEC](#discovery-trace-assignment-spec) | 3 | 1 | 1 | 5 | ✅ Covered |
 | [JUDGE_EVALUATION_SPEC](#judge-evaluation-spec) | 28 | 0 | 1 | 29 | ✅ Covered |
 | [RUBRIC_SPEC](#rubric-spec) | 0 | 1 | 1 | 2 | 🟡 Partial |
-| [TRACE_DISPLAY_SPEC](#trace-display-spec) | 0 | 5 | 0 | 5 | ✅ Covered |
 | [UI_COMPONENTS_SPEC](#ui-components-spec) | 0 | 0 | 0 | 0 | ❌ Uncovered |
 
 **Coverage**: 9/10 specs (90%)
@@ -65,6 +65,23 @@ Tests are tagged using framework-specific conventions:
 ### pytest
 
 - `tests/unit/test_health_smoke.py` (test_health_endpoint)
+
+## CUSTOM_LLM_PROVIDER_SPEC
+
+### pytest
+
+- `tests/unit/routers/test_custom_llm_provider_router.py` (test_get_custom_llm_provider_not_configured)
+- `tests/unit/routers/test_custom_llm_provider_router.py` (test_get_custom_llm_provider_configured)
+- `tests/unit/routers/test_custom_llm_provider_router.py` (test_create_custom_llm_provider)
+- `tests/unit/routers/test_custom_llm_provider_router.py` (test_delete_custom_llm_provider)
+- `tests/unit/routers/test_custom_llm_provider_router.py` (test_test_custom_llm_provider_success)
+- `tests/unit/routers/test_custom_llm_provider_router.py` (test_test_custom_llm_provider_auth_failure)
+- `tests/unit/routers/test_custom_llm_provider_router.py` (test_test_custom_llm_provider_no_config)
+- `tests/unit/routers/test_custom_llm_provider_router.py` (test_test_custom_llm_provider_no_api_key)
+
+### Playwright (E2E)
+
+- `client/tests/e2e/custom-llm-provider.spec.ts`
 
 ## DATASETS_SPEC
 
@@ -145,16 +162,6 @@ Tests are tagged using framework-specific conventions:
 ### Vitest (Unit)
 
 - `client/src/utils/rubricUtils.test.ts`
-
-## TRACE_DISPLAY_SPEC
-
-### Playwright (E2E)
-
-- `client/tests/e2e/jsonpath-trace-display.spec.ts`
-- `client/tests/e2e/jsonpath-trace-display.spec.ts`
-- `client/tests/e2e/jsonpath-trace-display.spec.ts`
-- `client/tests/e2e/jsonpath-trace-display.spec.ts`
-- `client/tests/e2e/jsonpath-trace-display.spec.ts`
 
 ## UI_COMPONENTS_SPEC
 

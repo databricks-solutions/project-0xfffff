@@ -40,6 +40,7 @@ dependencies = [
     "PyYAML>=6.0",
     "dspy>=3.0.4",
     "jsonpath-ng>=1.5.3",
+    "litellm>=1.75.9",
 ]
 
 [tool.alembic]
@@ -71,6 +72,7 @@ test = [
 [project.scripts]
 human-eval-workshop = "server.app:main"
 spec-coverage-analyzer = "tools.spec_coverage_analyzer:main"
+spec-tagging-validator = "tools.spec_tagging_validator:main"
 
 [project.urls]
 Homepage = "https://github.com/databricks/human-eval-workshop"

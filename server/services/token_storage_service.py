@@ -47,6 +47,10 @@ class TokenStorageService:
         return True
       return False
 
+  def delete_token(self, key: str) -> bool:
+    """Alias for remove_token for API consistency."""
+    return self.remove_token(key)
+
   def has_token(self, workshop_id: str) -> bool:
     """Check if a valid (non-expired) token exists for a workshop."""
     return self.get_token(workshop_id) is not None

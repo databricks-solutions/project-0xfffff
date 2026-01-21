@@ -12,6 +12,7 @@ This directory contains declarative specifications for the Human Evaluation Work
 | [DISCOVERY_TRACE_ASSIGNMENT_SPEC](./DISCOVERY_TRACE_ASSIGNMENT_SPEC.md) | Trace Assignment | trace, assignment, phase, round, visibility, participant |
 | [RUBRIC_SPEC](./RUBRIC_SPEC.md) | Rubric Management | rubric, question, parsing, delimiter, scale, binary, Likert |
 | [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md) | Judge & Alignment | judge, evaluation, MLflow, binary, SIMBA, IRR, alignment |
+| [CUSTOM_LLM_PROVIDER_SPEC](./CUSTOM_LLM_PROVIDER_SPEC.md) | Custom LLM Providers | custom provider, OpenAI-compatible, proxy_url, Azure, vLLM |
 | [UI_COMPONENTS_SPEC](./UI_COMPONENTS_SPEC.md) | UI Components | pagination, trace viewer, table, export, keyboard shortcuts |
 | [BUILD_AND_DEPLOY_SPEC](./BUILD_AND_DEPLOY_SPEC.md) | Build & Deploy | build, deploy, Alembic, migrations, database, bootstrap |
 | [TESTING_SPEC](./TESTING_SPEC.md) | Testing | unit test, e2e, pytest, vitest, playwright, coverage |
@@ -112,6 +113,18 @@ Use this index to find relevant specs by keyword.
 - **binary judge** → [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md)
 - **feedback_value_type** → [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md)
 - **JudgeTuningPage** → [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md)
+
+### Custom LLM Providers
+- **custom provider** → [CUSTOM_LLM_PROVIDER_SPEC](./CUSTOM_LLM_PROVIDER_SPEC.md)
+- **custom LLM** → [CUSTOM_LLM_PROVIDER_SPEC](./CUSTOM_LLM_PROVIDER_SPEC.md)
+- **OpenAI-compatible** → [CUSTOM_LLM_PROVIDER_SPEC](./CUSTOM_LLM_PROVIDER_SPEC.md)
+- **proxy_url** → [CUSTOM_LLM_PROVIDER_SPEC](./CUSTOM_LLM_PROVIDER_SPEC.md)
+- **Azure OpenAI** → [CUSTOM_LLM_PROVIDER_SPEC](./CUSTOM_LLM_PROVIDER_SPEC.md)
+- **vLLM** → [CUSTOM_LLM_PROVIDER_SPEC](./CUSTOM_LLM_PROVIDER_SPEC.md)
+- **base_url** → [CUSTOM_LLM_PROVIDER_SPEC](./CUSTOM_LLM_PROVIDER_SPEC.md)
+- **custom endpoint** → [CUSTOM_LLM_PROVIDER_SPEC](./CUSTOM_LLM_PROVIDER_SPEC.md)
+- **LiteLLM** → [CUSTOM_LLM_PROVIDER_SPEC](./CUSTOM_LLM_PROVIDER_SPEC.md)
+- **FMAPI** → [CUSTOM_LLM_PROVIDER_SPEC](./CUSTOM_LLM_PROVIDER_SPEC.md)
 
 ### UI Components
 - **pagination** → [UI_COMPONENTS_SPEC](./UI_COMPONENTS_SPEC.md)

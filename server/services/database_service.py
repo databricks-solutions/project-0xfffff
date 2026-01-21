@@ -2668,10 +2668,10 @@ class DatabaseService:
     
     # Clear active annotation trace list so new selection can be made
     workshop.active_annotation_trace_ids = None
-    
+
     self.db.commit()
     self.db.refresh(workshop)
-    
+
     return Workshop(
       id=workshop.id,
       name=workshop.name,
@@ -2686,3 +2686,105 @@ class DatabaseService:
       active_annotation_trace_ids=workshop.active_annotation_trace_ids or [],
       created_at=workshop.created_at,
     )
+
+  # Custom LLM Provider operations
+  def get_custom_llm_provider_config(self, workshop_id: str):
+    """Get the custom LLM provider configuration for a workshop.
+
+    Returns the DB model directly (CustomLLMProviderConfigDB) for use in router,
+    or None if no configuration exists.
+    """
+    from server.database import CustomLLMProviderConfigDB
+
+    return (
+      self.db.query(CustomLLMProviderConfigDB)
+      .filter(CustomLLMProviderConfigDB.workshop_id == workshop_id)
+      .first()
+    )
+
+  def create_custom_llm_provider_config(self, workshop_id: str, config_data):
+    """Create or update custom LLM provider configuration for a workshop.
+
+    Args:
+      workshop_id: The workshop ID
+      config_data: CustomLLMProviderConfigCreate with provider details
+
+    Returns:
+      The created or updated CustomLLMProviderConfigDB record
+    """
+    from server.database import CustomLLMProviderConfigDB
+
+    # Check if config already exists
+    existing_config = (
+      self.db.query(CustomLLMProviderConfigDB)
+      .filter(CustomLLMProviderConfigDB.workshop_id == workshop_id)
+      .first()
+    )
+
+    if existing_config:
+      # Update existing config
+      existing_config.provider_name = config_data.provider_name
+      existing_config.base_url = config_data.base_url
+      existing_config.model_name = config_data.model_name
+      existing_config.is_enabled = True
+      self.db.commit()
+      self.db.refresh(existing_config)
+      return existing_config
+    else:
+      # Create new config
+      new_config = CustomLLMProviderConfigDB(
+        id=str(uuid.uuid4()),
+        workshop_id=workshop_id,
+        provider_name=config_data.provider_name,
+        base_url=config_data.base_url,
+        model_name=config_data.model_name,
+        is_enabled=True,
+      )
+      self.db.add(new_config)
+      self.db.commit()
+      self.db.refresh(new_config)
+      return new_config
+
+  def delete_custom_llm_provider_config(self, workshop_id: str) -> bool:
+    """Delete custom LLM provider configuration for a workshop.
+
+    Args:
+      workshop_id: The workshop ID
+
+    Returns:
+      True if a config was deleted, False if none existed
+    """
+    from server.database import CustomLLMProviderConfigDB
+
+    deleted_count = (
+      self.db.query(CustomLLMProviderConfigDB)
+      .filter(CustomLLMProviderConfigDB.workshop_id == workshop_id)
+      .delete(synchronize_session=False)
+    )
+    self.db.commit()
+    return deleted_count > 0
+
+  def update_custom_llm_provider_enabled(self, workshop_id: str, is_enabled: bool):
+    """Update the enabled status of the custom LLM provider.
+
+    Args:
+      workshop_id: The workshop ID
+      is_enabled: Whether the custom provider should be enabled
+
+    Returns:
+      The updated config or None if not found
+    """
+    from server.database import CustomLLMProviderConfigDB
+
+    config = (
+      self.db.query(CustomLLMProviderConfigDB)
+      .filter(CustomLLMProviderConfigDB.workshop_id == workshop_id)
+      .first()
+    )
+
+    if config:
+      config.is_enabled = is_enabled
+      self.db.commit()
+      self.db.refresh(config)
+
+    return config
