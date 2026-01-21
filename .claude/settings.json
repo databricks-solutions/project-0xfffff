@@ -1,5 +1,4 @@
 {
-  "$schema": "https://raw.githubusercontent.com/anthropics/claude-code/main/config-schema.json",
   "permissions": {
     "deny": [
       "Bash(rm -rf:*)",
@@ -29,5 +28,22 @@
       "Bash(git commit:*)",
       "Read(*)"
     ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -c \"from mlflow.claude_code.hooks import stop_hook_handler; stop_hook_handler()\""
+          }
+        ]
+      }
+    ]
+  },
+  "environment": {
+    "MLFLOW_CLAUDE_TRACING_ENABLED": "true",
+    "MLFLOW_TRACKING_URI": "databricks",
+    "MLFLOW_EXPERIMENT_ID": "2517718719903786"
   }
 }

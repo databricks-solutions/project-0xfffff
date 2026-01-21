@@ -1,6 +1,6 @@
 # Spec Test Coverage Map
 
-**Generated**: 2026-01-20 12:07:35
+**Generated**: 2026-01-20 17:00:54
 
 This report shows which tests cover each specification.
 Tests are tagged using framework-specific conventions:
