@@ -431,6 +431,15 @@ export class TestScenario {
 
     const createdWorkshop = (await workshopResponse.json()) as Workshop;
     store.workshop.id = createdWorkshop.id;
+
+    // Update facilitator's workshop_id with the real workshop ID
+    const facilitatorIndex = store.users.findIndex((u) => u.role === 'facilitator');
+    if (facilitatorIndex !== -1) {
+      store.users[facilitatorIndex] = {
+        ...store.users[facilitatorIndex],
+        workshop_id: createdWorkshop.id,
+      };
+    }
   }
 
   /**

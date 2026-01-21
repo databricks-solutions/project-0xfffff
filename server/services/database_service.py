@@ -137,6 +137,8 @@ class DatabaseService:
       discovery_randomize_traces=getattr(db_workshop, 'discovery_randomize_traces', False) or False,
       annotation_randomize_traces=getattr(db_workshop, 'annotation_randomize_traces', False) or False,
       judge_name=db_workshop.judge_name or 'workshop_judge',
+      input_jsonpath=getattr(db_workshop, 'input_jsonpath', None),
+      output_jsonpath=getattr(db_workshop, 'output_jsonpath', None),
       created_at=db_workshop.created_at,
     )
 
@@ -222,6 +224,40 @@ class DatabaseService:
       return None
 
     db_workshop.judge_name = judge_name
+    self.db.commit()
+    self.db.refresh(db_workshop)
+
+    # Clear cache for this workshop
+    cache_key = self._get_cache_key('workshop', workshop_id)
+    if cache_key in self._cache:
+      del self._cache[cache_key]
+
+    return self.get_workshop(workshop_id)
+
+  def update_workshop_jsonpath_settings(
+    self,
+    workshop_id: str,
+    input_jsonpath: Optional[str] = None,
+    output_jsonpath: Optional[str] = None,
+  ) -> Optional[Workshop]:
+    """Update the JSONPath settings for trace display in a workshop.
+
+    Args:
+      workshop_id: The workshop ID
+      input_jsonpath: JSONPath expression for extracting trace input display (or None to clear)
+      output_jsonpath: JSONPath expression for extracting trace output display (or None to clear)
+
+    Returns:
+      Updated Workshop model or None if workshop not found
+    """
+    db_workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if not db_workshop:
+      return None
+
+    # Update the JSONPath fields (empty string is treated same as None)
+    db_workshop.input_jsonpath = input_jsonpath if input_jsonpath and input_jsonpath.strip() else None
+    db_workshop.output_jsonpath = output_jsonpath if output_jsonpath and output_jsonpath.strip() else None
+
     self.db.commit()
     self.db.refresh(db_workshop)
 

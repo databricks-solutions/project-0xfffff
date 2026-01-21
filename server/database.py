@@ -155,6 +155,8 @@ class WorkshopDB(Base):
     discovery_questions_model_name = Column(
         String, default="demo"
     )  # LLM model/endpoint for discovery question generation
+    input_jsonpath = Column(Text, nullable=True)  # JSONPath query for extracting trace input display
+    output_jsonpath = Column(Text, nullable=True)  # JSONPath query for extracting trace output display
     created_at = Column(DateTime, default=func.now())
 
     # Relationships

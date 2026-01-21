@@ -159,6 +159,8 @@ class Workshop(BaseModel):
   annotation_randomize_traces: bool = False  # Whether to randomize trace order in annotation
   judge_name: str = 'workshop_judge'  # Name used for MLflow feedback entries
   discovery_questions_model_name: str = 'demo'  # LLM model/endpoint for discovery question generation
+  input_jsonpath: Optional[str] = None  # JSONPath query for extracting trace input display
+  output_jsonpath: Optional[str] = None  # JSONPath query for extracting trace output display
   created_at: datetime = Field(default_factory=datetime.now)
 
 

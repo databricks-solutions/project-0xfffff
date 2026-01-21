@@ -24,30 +24,32 @@ async function selectWorkshopFromDropdown(page: Page, workshopId: string): Promi
     await page.waitForSelector('[role="listbox"]', { timeout: 3000 }).catch(() => {});
     await page.waitForTimeout(200);
 
-    // Try multiple selector patterns for Radix Select item with specific value
-    // Radix uses data-radix-collection-item and the value is in data-value
-    const selectors = [
-      `[role="option"][data-value="${workshopId}"]`,
-      `[data-radix-collection-item][data-value="${workshopId}"]`,
-      `div[role="option"]:has-text("${workshopId.substring(0, 8)}")`, // partial ID match
-    ];
+    // Radix Select stores the value in data-value attribute on the option element
+    // Try the data-value selector first (most reliable)
+    const dataValueSelector = `[role="option"][data-value="${workshopId}"]`;
+    const workshopOption = page.locator(dataValueSelector);
 
-    let clicked = false;
-    for (const selector of selectors) {
-      const workshopOption = page.locator(selector);
-      if (await workshopOption.isVisible({ timeout: 500 }).catch(() => false)) {
-        await workshopOption.click();
-        clicked = true;
-        break;
-      }
-    }
-
-    // Fallback: click first option if nothing else worked
-    if (!clicked) {
-      const firstOption = page.locator('[role="option"]').first();
-      if (await firstOption.isVisible({ timeout: 500 }).catch(() => false)) {
-        await firstOption.click();
-      }
+    if (await workshopOption.isVisible({ timeout: 1000 }).catch(() => false)) {
+      await workshopOption.click();
+    } else {
+      // If data-value selector didn't work, log and fail explicitly
+      // Don't fall back to first option as this causes wrong workshop selection
+      const availableOptions = await page.locator('[role="option"]').all();
+      const optionValues = await Promise.all(
+        availableOptions.map(async (opt) => {
+          const value = await opt.getAttribute('data-value');
+          const text = await opt.textContent();
+          return `${value}: ${text}`;
+        })
+      );
+      console.error(
+        `[selectWorkshopFromDropdown] Could not find workshop ${workshopId}. ` +
+        `Available options: ${optionValues.join(', ')}`
+      );
+      throw new Error(
+        `Workshop ${workshopId} not found in dropdown. ` +
+        `Available: ${optionValues.join(', ')}`
+      );
     }
   }
 }

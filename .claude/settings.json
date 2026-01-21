@@ -1,5 +1,4 @@
 {
-  "$schema": "https://raw.githubusercontent.com/anthropics/claude-code/main/config-schema.json",
   "permissions": {
     "deny": [
       "Bash(rm -rf:*)",

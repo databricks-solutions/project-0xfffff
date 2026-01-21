@@ -241,6 +241,114 @@ async def update_judge_name(workshop_id: str, judge_name: str, db: Session = Dep
     return {"message": "Judge name updated successfully", "judge_name": judge_name}
 
 
+# JSONPath Settings Models
+class JsonPathSettingsUpdate(BaseModel):
+    """Request model for updating JSONPath settings."""
+    input_jsonpath: Optional[str] = None
+    output_jsonpath: Optional[str] = None
+
+
+class JsonPathPreviewRequest(BaseModel):
+    """Request model for previewing JSONPath extraction."""
+    input_jsonpath: Optional[str] = None
+    output_jsonpath: Optional[str] = None
+
+
+@router.put("/{workshop_id}/jsonpath-settings")
+async def update_jsonpath_settings(
+    workshop_id: str,
+    settings: JsonPathSettingsUpdate,
+    db: Session = Depends(get_db)
+) -> Workshop:
+    """Update JSONPath settings for trace display customization.
+
+    These settings allow facilitators to configure JSONPath queries that
+    extract specific values from trace inputs and outputs for cleaner display
+    in the TraceViewer.
+    """
+    from server.utils.jsonpath_utils import validate_jsonpath
+
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    # Validate JSONPath expressions if provided
+    if settings.input_jsonpath:
+        is_valid, error_msg = validate_jsonpath(settings.input_jsonpath)
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=f"Invalid input JSONPath: {error_msg}")
+
+    if settings.output_jsonpath:
+        is_valid, error_msg = validate_jsonpath(settings.output_jsonpath)
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=f"Invalid output JSONPath: {error_msg}")
+
+    # Update settings
+    updated_workshop = db_service.update_workshop_jsonpath_settings(
+        workshop_id,
+        input_jsonpath=settings.input_jsonpath,
+        output_jsonpath=settings.output_jsonpath,
+    )
+
+    if not updated_workshop:
+        raise HTTPException(status_code=500, detail="Failed to update JSONPath settings")
+
+    return updated_workshop
+
+
+@router.post("/{workshop_id}/preview-jsonpath")
+async def preview_jsonpath(
+    workshop_id: str,
+    preview_request: JsonPathPreviewRequest,
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """Preview JSONPath extraction against the first trace in the workshop.
+
+    This allows facilitators to test their JSONPath queries before saving
+    to verify they extract the expected content.
+    """
+    from server.utils.jsonpath_utils import apply_jsonpath
+
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    # Get the first trace from the workshop
+    traces = db_service.get_traces(workshop_id)
+    if not traces:
+        return {"error": "No traces available for preview"}
+
+    first_trace = traces[0]
+
+    # Apply JSONPath to input
+    input_result = None
+    input_success = False
+    if preview_request.input_jsonpath:
+        input_result, input_success = apply_jsonpath(
+            first_trace.input,
+            preview_request.input_jsonpath
+        )
+
+    # Apply JSONPath to output
+    output_result = None
+    output_success = False
+    if preview_request.output_jsonpath:
+        output_result, output_success = apply_jsonpath(
+            first_trace.output,
+            preview_request.output_jsonpath
+        )
+
+    return {
+        "trace_id": first_trace.id,
+        "input_result": input_result if input_success else first_trace.input,
+        "input_success": input_success,
+        "output_result": output_result if output_success else first_trace.output,
+        "output_success": output_success,
+    }
+
+
 @router.post("/{workshop_id}/resync-annotations")
 async def resync_annotations(workshop_id: str, db: Session = Depends(get_db)):
     """Re-sync all annotations to MLflow with the current workshop judge_name.

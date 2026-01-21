@@ -2,11 +2,11 @@ import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { 
-  Users, 
-  FileText, 
-  Star, 
-  BarChart3, 
+import {
+  Users,
+  FileText,
+  Star,
+  BarChart3,
   Settings,
   Plus,
   Eye
@@ -15,6 +15,7 @@ import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useAllTraces, useFacilitatorAnnotations } from '@/hooks/useWorkshopApi';
 import { UsersService } from '@/client';
 import { useQuery } from '@tanstack/react-query';
+import { JsonPathSettings } from './JsonPathSettings';
 
 interface GeneralDashboardProps {
   onNavigate?: (phase: string) => void;
@@ -165,6 +166,9 @@ export const GeneralDashboard: React.FC<GeneralDashboardProps> = ({ onNavigate }
           </Button>
         </CardContent>
       </Card>
+
+      {/* Trace Display Settings */}
+      <JsonPathSettings />
     </div>
   );
 };

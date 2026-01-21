@@ -25,6 +25,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useQueryClient } from '@tanstack/react-query';
 import { PhaseControlButton } from './PhaseControlButton';
+import { JsonPathSettings } from './JsonPathSettings';
 import { toast } from 'sonner';
 import { parseRubricQuestions } from '@/utils/rubricUtils';
 import { getBackendModelName, getFrontendModelName, getModelOptions } from '@/utils/modelMapping';
@@ -1366,6 +1367,9 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
             </div>
           </CardContent>
         </Card>
+
+        {/* JSONPath Settings - Only show in general dashboard view */}
+        {!focusPhase && <JsonPathSettings />}
       </div>
     </div>
   );
