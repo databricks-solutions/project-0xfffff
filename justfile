@@ -274,6 +274,11 @@ spec-coverage:
   @echo ""
   @echo "📋 Coverage report: SPEC_COVERAGE_MAP.md"
 
+[group('dev')]
+spec-tagging-check:
+  @echo "✅ Validating that all tests are tagged with specs..."
+  uv run spec-tagging-validator
+
 [group('db')]
 db-upgrade:
   uv run alembic upgrade head
@@ -437,16 +442,11 @@ e2e-test mode="headless" workers="1" *args="":
   # If Playwright is configured with webServer, avoid double-starting when we already started servers via `just e2e`.
   export PW_NO_WEBSERVER=1
 
-  # Default test path, can be overridden with args
+  # Always run from tests/e2e directory, pass any extra args (like --grep) to playwright
   TEST_PATH="tests/e2e"
-  EXTRA_ARGS=""
+  EXTRA_ARGS="{{args}}"
 
-  # If args provided, use them as test path/filter
-  if [ -n "{{args}}" ]; then
-    TEST_PATH="{{args}}"
-  fi
-
-  echo "Running tests in {{mode}} mode with {{workers}} workers: $TEST_PATH"
+  echo "Running tests in {{mode}} mode with {{workers}} workers: $TEST_PATH $EXTRA_ARGS"
 
   case "{{mode}}" in
     ui)

@@ -27,6 +27,7 @@ Run these commands to verify code changes:
 3. **Run linting**: `just ui-lint`
 4. **Run E2E tests**: `just e2e`
 5. **Add new tests** if the feature isn't covered
+6. **Tag all tests with specs** - Run validation: `just spec-tagging-check`
 
 ## Reference Files
 
@@ -88,6 +89,58 @@ this.routes.push({
 });
 ```
 
+## Spec Tagging Enforcement
+
+**All tests MUST be tagged with spec markers** to maintain coverage tracking.
+
+### Validation Commands
+
+```bash
+# Validate that all tests are tagged
+just spec-tagging-check
+
+# If validation fails, fix the issues and run again
+# Then regenerate the coverage map
+just spec-coverage
+```
+
+### Tagging Guidelines
+
+#### Python (pytest)
+Always add `@pytest.mark.spec("SPEC_NAME")` before test functions:
+```python
+@pytest.mark.spec("CUSTOM_LLM_PROVIDER_SPEC")
+def test_create_provider(client):
+    # Test implementation
+```
+
+#### Playwright E2E
+Add `test.use({ tag: ['@spec:SPEC_NAME'] })` at the top of test describe block:
+```typescript
+test.describe('Feature Name', () => {
+  test.use({ tag: ['@spec:CUSTOM_LLM_PROVIDER_SPEC'] });
+
+  test('should do X', async ({ page }) => { ... });
+  test('should do Y', async ({ page }) => { ... });
+});
+```
+
+#### Vitest Unit Tests
+Add `// @spec SPEC_NAME` comment at the top of the file:
+```typescript
+// @spec CUSTOM_LLM_PROVIDER_SPEC
+
+describe('Feature', () => {
+  it('should do something', () => { ... });
+});
+```
+
+### Exit Codes
+
+- **0**: All tests are properly tagged ✅
+- **1**: Some tests are missing spec tags ❌ (fix and rerun)
+- **2**: Error scanning files (check file paths)
+
 ## Critical Files
 
 - `specs/TESTING_SPEC.md` - Full testing specification
@@ -95,3 +148,5 @@ this.routes.push({
 - `client/tests/lib/mocks/api-mocker.ts` - Mock handlers
 - `client/tests/lib/scenario-builder.ts` - TestScenario class
 - `justfile` - All test commands
+- `tools/spec_tagging_validator.py` - Spec tagging validation tool
+- `tools/spec_coverage_analyzer.py` - Spec coverage analyzer
