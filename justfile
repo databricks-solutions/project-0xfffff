@@ -256,18 +256,26 @@ ui-build:
 
   npm -C {{client-dir}} run build
 
+# Run pytest (writes JSON report to .test-results/ for token-efficient summaries)
 [group('dev')]
-test-server:
-  uv run pytest -q
+test-server *args:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  mkdir -p .test-results
+  uv run pytest -q --json-report --json-report-file=.test-results/pytest.json {{args}}
 
 [group('dev')]
 ui-test:
   npm -C {{client-dir}} run test
 
+# Run vitest (writes JSON report to .test-results/ for token-efficient summaries)
 [group('dev')]
-ui-test-unit:
-  npm -C {{client-dir}} run test:unit
-  
+ui-test-unit *args:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  mkdir -p .test-results
+  VITEST_JSON_REPORT=1 npm -C {{client-dir}} run test:unit -- {{args}}
+
 [group('dev')]
 ui-lint:
   npm -C {{client-dir}} run lint
@@ -287,6 +295,46 @@ spec-coverage:
 spec-tagging-check:
   @echo "✅ Validating that all tests are tagged with specs..."
   uv run spec-tagging-validator
+
+[group('dev')]
+test-server-spec spec *args:
+  @echo "Running Python tests for {{spec}}..."
+  just test-server -k {{spec}} -v {{args}}
+
+[group('dev')]
+ui-test-unit-spec spec *args:
+  @echo "Running unit tests for {{spec}}..."
+  just ui-test-unit --grep "@spec:{{spec}}" {{args}}
+
+# Run E2E tests for a specific spec (writes JSON report to .test-results/)
+[group('e2e')]
+e2e-spec spec mode="headless" workers="1":
+  @echo "Running E2E tests for {{spec}} in {{mode}} mode..."
+  just e2e {{mode}} {{workers}} "@spec:{{spec}}"
+
+# Get token-efficient test summary from JSON reports
+[group('dev')]
+test-summary *args:
+  uv run test-summary {{args}}
+
+# Check status of a specific spec (test results + coverage info)
+[group('dev')]
+spec-status spec:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  echo "Spec: {{spec}}"
+  echo "=============="
+  echo ""
+  # Check if reports exist and filter by spec
+  if [ -f .test-results/pytest.json ] || [ -f .test-results/playwright.json ] || [ -f .test-results/vitest.json ]; then
+    uv run test-summary --spec {{spec}} || true
+  else
+    echo "No test reports found. Run tests first."
+  fi
+  echo ""
+  # Show spec coverage info
+  echo "Coverage from SPEC_COVERAGE_MAP.md:"
+  grep -A 10 "## {{spec}}" specs/SPEC_COVERAGE_MAP.md 2>/dev/null || echo "  (Run 'just spec-coverage' to generate)"
 
 [group('db')]
 db-upgrade:
@@ -524,10 +572,15 @@ _find-port start_port:
         exit(0)
   exit(1)
 
+# Run E2E tests (writes JSON report to .test-results/ for token-efficient summaries)
 [group('e2e')]
 e2e mode="headless" workers="1" *args:
   #!/usr/bin/env bash
   set -euo pipefail
+
+  # Enable JSON reporting for token-efficient output
+  export PW_JSON_REPORT=1
+  mkdir -p .test-results
 
   DB_PATH=".e2e-workshop.db"
 
