@@ -321,7 +321,7 @@ spec-validate:
 [group('dev')]
 test-server-spec spec *args:
   @echo "Running Python tests for {{spec}}..."
-  just test-server -k {{spec}} -v {{args}}
+  just test-server --spec {{spec}} -v {{args}}
 
 [group('dev')]
 ui-test-unit-spec spec *args:
@@ -521,26 +521,32 @@ e2e-test mode="headless" workers="1" *args="":
   # If Playwright is configured with webServer, avoid double-starting when we already started servers via `just e2e`.
   export PW_NO_WEBSERVER=1
 
-  # Default test path, can be overridden with args
+  # Default test path
   TEST_PATH="tests/e2e"
-  EXTRA_ARGS=""
+  GREP_ARGS=""
 
-  # If args provided, use them as test path/filter
+  # Check if args is a tag filter (starts with @) or a path
   if [ -n "{{args}}" ]; then
-    TEST_PATH="{{args}}"
+    if [[ "{{args}}" == @* ]]; then
+      # It's a tag filter - use --grep
+      GREP_ARGS="--grep \"{{args}}\""
+    else
+      # It's a path or other argument
+      TEST_PATH="{{args}}"
+    fi
   fi
 
-  echo "Running tests in {{mode}} mode with {{workers}} workers: $TEST_PATH"
+  echo "Running tests in {{mode}} mode with {{workers}} workers: $TEST_PATH $GREP_ARGS"
 
   case "{{mode}}" in
     ui)
-      npm -C {{client-dir}} run test -- $TEST_PATH --ui --workers={{workers}} $EXTRA_ARGS
+      eval "npm -C {{client-dir}} run test -- $TEST_PATH --ui --workers={{workers}} $GREP_ARGS"
       ;;
     headed)
-      npm -C {{client-dir}} run test -- $TEST_PATH --headed --workers={{workers}} $EXTRA_ARGS
+      eval "npm -C {{client-dir}} run test -- $TEST_PATH --headed --workers={{workers}} $GREP_ARGS"
       ;;
     headless)
-      npm -C {{client-dir}} run test -- $TEST_PATH --workers={{workers}} $EXTRA_ARGS
+      eval "npm -C {{client-dir}} run test -- $TEST_PATH --workers={{workers}} $GREP_ARGS"
       ;;
     *)
       echo "Unknown mode: {{mode}} (expected: headless|headed|ui)" >&2

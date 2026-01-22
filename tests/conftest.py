@@ -6,6 +6,40 @@ import pytest
 import pytest_asyncio
 
 
+def pytest_addoption(parser):
+    """Add --spec option for filtering tests by spec marker."""
+    parser.addoption(
+        "--spec",
+        action="store",
+        default=None,
+        help="Only run tests marked with the given spec name (e.g., --spec ASSISTED_FACILITATION_SPEC)",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    """Filter tests by --spec option if provided."""
+    spec_filter = config.getoption("--spec")
+    if spec_filter is None:
+        return
+
+    selected = []
+    deselected = []
+
+    for item in items:
+        # Check for spec marker on the test item or its parent class
+        spec_markers = list(item.iter_markers(name="spec"))
+        item_specs = [m.args[0] for m in spec_markers if m.args]
+
+        if spec_filter in item_specs:
+            selected.append(item)
+        else:
+            deselected.append(item)
+
+    if deselected:
+        config.hook.pytest_deselected(items=deselected)
+    items[:] = selected
+
+
 @pytest.fixture(scope="session")
 def app():
     # Import lazily so test collection doesn't accidentally trigger app startup.
