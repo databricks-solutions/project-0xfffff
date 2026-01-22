@@ -10,8 +10,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0005_discovery_questions_table"
-down_revision = "0004_discovery_questions_model"
+revision = "0007_discovery_questions_table"
+down_revision = "0006_discovery_questions_model"
 branch_labels = None
 depends_on = None
 
@@ -53,5 +53,3 @@ def downgrade() -> None:
         return
     op.drop_index("ix_discovery_questions_workshop_trace_user", table_name="discovery_questions")
     op.drop_table("discovery_questions")
-
-

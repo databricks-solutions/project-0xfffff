@@ -12,8 +12,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0004_discovery_questions_model"
-down_revision = "0003_judge_schema_updates"
+revision = "0006_discovery_questions_model"
+down_revision = "0005_add_jsonpath_columns"
 branch_labels = None
 depends_on = None
 
@@ -45,5 +45,3 @@ def upgrade() -> None:
 def downgrade() -> None:
     # SQLite drop-column is non-trivial; we intentionally omit downgrade support.
     pass
-
-

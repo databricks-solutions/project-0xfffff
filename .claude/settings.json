@@ -5,9 +5,7 @@
       "Bash(git push --force:*)",
       "Bash(git reset --hard:*)",
       "Bash(alembic revision:*)",
-      "Bash(alembic downgrade:*)",
-      "Edit(specs/*)",
-      "Write(specs/*)"
+      "Bash(alembic downgrade:*)"
     ],
     "ask": [
       "Bash(git push:*)",
@@ -15,7 +13,9 @@
       "Edit(server/models/*)",
       "Edit(alembic/*)",
       "Edit(.github/*)",
-      "Write(alembic/*)"
+      "Write(alembic/*)",
+      "Edit(specs/*)",
+      "Write(specs/*)"
     ],
     "allow": [
       "Bash(just:*)",

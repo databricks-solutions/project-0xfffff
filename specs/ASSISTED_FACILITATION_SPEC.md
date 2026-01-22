@@ -207,6 +207,13 @@ class DiscoveryQuestion:
     created_at: datetime
 ```
 
+**Per-User Question Storage**: Generated questions (Q2+) are stored per-user/per-trace to allow personalized question generation based on each participant's prior findings. The database layer must support:
+
+1. `get_discovery_questions(workshop_id, trace_id, user_id)` - Retrieve all generated questions for a specific user on a specific trace, ordered by creation time
+2. `add_discovery_question(workshop_id, trace_id, user_id, prompt, placeholder, category)` - Create a new question with auto-generated question_id (q_2, q_3, etc.)
+
+The `question_id` field provides stable IDs across the system (q_1 is always the fixed baseline, generated questions start at q_2).
+
 ### DraftRubricItem
 
 ```python
