@@ -17,12 +17,14 @@ def _ann(*, trace_id: str, user_id: str, rating: int) -> Annotation:
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Handles edge cases (no variation, single rater)")
 def test_calculate_cohens_kappa_raises_on_empty():
     with pytest.raises(ValueError, match="No annotations"):
         calculate_cohens_kappa([])
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Cohen's Kappa calculated for rater pairs")
 def test_calculate_cohens_kappa_raises_if_not_exactly_two_raters():
     annotations = [
         _ann(trace_id="t1", user_id="u1", rating=3),
@@ -35,6 +37,7 @@ def test_calculate_cohens_kappa_raises_if_not_exactly_two_raters():
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Cohen's Kappa calculated for rater pairs")
 def test_calculate_cohens_kappa_requires_two_paired_traces():
     # Only one trace rated by both raters
     annotations = [
@@ -47,6 +50,7 @@ def test_calculate_cohens_kappa_requires_two_paired_traces():
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Cohen's Kappa calculated for rater pairs")
 def test_calculate_cohens_kappa_perfect_agreement_is_one():
     annotations = [
         _ann(trace_id="t1", user_id="u1", rating=3),
@@ -58,6 +62,7 @@ def test_calculate_cohens_kappa_perfect_agreement_is_one():
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Alignment metrics reported")
 def test_interpret_cohens_kappa_bucket_edges():
     assert interpret_cohens_kappa(-0.1).startswith("Poor")
     assert interpret_cohens_kappa(0.0).startswith("Slight")
@@ -68,6 +73,7 @@ def test_interpret_cohens_kappa_bucket_edges():
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Alignment metrics reported")
 def test_is_cohens_kappa_acceptable_default_threshold():
     assert is_cohens_kappa_acceptable(0.3) is True
     assert is_cohens_kappa_acceptable(0.299) is False

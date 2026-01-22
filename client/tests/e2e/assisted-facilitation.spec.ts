@@ -103,7 +103,9 @@ const syntheticTraces = [
 test.describe('Assisted Facilitation Flow', {
   tag: ['@spec:ASSISTED_FACILITATION_SPEC'],
 }, () => {
-  test('discovery questions API returns coverage metadata and stops appropriately', async ({
+  test('discovery questions API returns coverage metadata and stops appropriately', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings are classified in real-time as participants submit them'],
+  }, async ({
     page,
     request,
   }) => {
@@ -185,7 +187,9 @@ test.describe('Assisted Facilitation Flow', {
     expect(findingResp.ok(), 'finding submit should succeed').toBeTruthy();
   });
 
-  test('participants can submit findings and complete discovery with synthetic traces', async ({ page, request }) => {
+  test('participants can submit findings and complete discovery with synthetic traces', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings are classified in real-time as participants submit them'],
+  }, async ({ page, request }) => {
     const runId = `${Date.now()}`;
     const participantEmail = `e2e-assisted-participant-${runId}@example.com`;
     const participantName = `E2E Assisted Participant ${runId}`;
@@ -279,7 +283,9 @@ test.describe('Assisted Facilitation Flow', {
       });
   });
 
-  test('discovery summaries API returns structured output with rubric candidates', async ({
+  test('discovery summaries API returns structured output with rubric candidates', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Facilitators see per-trace structured view with category breakdown'],
+  }, async ({
     request,
   }) => {
     const runId = `${Date.now()}`;
@@ -375,7 +381,9 @@ test.describe('Assisted Facilitation Flow', {
     }
   });
 
-  test('findings with user details includes participant info', async ({ request }) => {
+  test('findings with user details includes participant info', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Facilitators see per-trace structured view with category breakdown'],
+  }, async ({ request }) => {
     const runId = `${Date.now()}`;
 
     const facilitatorId = await getFacilitatorId(request);

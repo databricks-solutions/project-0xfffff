@@ -21,6 +21,7 @@ def _ann(*, trace_id: str, user_id: str, rating: int, ratings=None) -> Annotatio
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Works for both Likert and Binary scales")
 def test_get_unique_question_ids_sorted():
     annotations = [
         _ann(trace_id="t1", user_id="u1", rating=3, ratings={"q2": 2, "q1": 1}),
@@ -30,6 +31,7 @@ def test_get_unique_question_ids_sorted():
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Works for both Likert and Binary scales")
 def test_per_metric_returns_empty_when_no_ratings_dict_present():
     # Legacy-only annotations (ratings=None) => should return {} for per-metric computation
     annotations = [
@@ -40,12 +42,14 @@ def test_per_metric_returns_empty_when_no_ratings_dict_present():
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Handles edge cases (no variation, single rater)")
 def test_calculate_krippendorff_alpha_returns_zero_when_insufficient():
     assert calculate_krippendorff_alpha([]) == 0.0
     assert calculate_krippendorff_alpha([_ann(trace_id="t1", user_id="u1", rating=3)]) == 0.0
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Krippendorff's Alpha calculated correctly")
 def test_calculate_krippendorff_alpha_trivial_agreement_is_one():
     annotations = [
         _ann(trace_id="t1", user_id="u1", rating=3),
@@ -57,6 +61,7 @@ def test_calculate_krippendorff_alpha_trivial_agreement_is_one():
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Krippendorff's Alpha calculated correctly")
 def test_calculate_krippendorff_alpha_handles_missing_data():
     # t2 only rated by u1; still should produce a bounded score (not crash)
     annotations = [
@@ -69,6 +74,7 @@ def test_calculate_krippendorff_alpha_handles_missing_data():
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Krippendorff's Alpha calculated correctly")
 def test_calculate_krippendorff_alpha_specific_question_id_uses_ratings_dict():
     annotations = [
         _ann(trace_id="t1", user_id="u1", rating=1, ratings={"q1": 5}),

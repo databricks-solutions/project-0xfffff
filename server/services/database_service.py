@@ -13,6 +13,7 @@ from server.database import (
   AnnotationDB,
   DatabricksTokenDB,
   DiscoveryFindingDB,
+  DiscoveryQuestionDB,
   FacilitatorConfigDB,
   JudgeEvaluationDB,
   JudgePromptDB,

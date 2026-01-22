@@ -11,7 +11,9 @@ import { TestScenario } from '../lib/scenario-builder';
 test.describe('Assisted Facilitation v2 - Facilitator Dashboard', {
   tag: ['@spec:ASSISTED_FACILITATION_SPEC'],
 }, () => {
-  test('facilitator can view trace discovery state with category coverage', async ({
+  test('facilitator can view trace discovery state with category coverage', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Facilitators see per-trace structured view with category breakdown'],
+  }, async ({
     browser,
   }) => {
     // Setup: Create workshop with findings across multiple categories
@@ -54,7 +56,9 @@ test.describe('Assisted Facilitation v2 - Facilitator Dashboard', {
     await scenario.cleanup();
   });
 
-  test('facilitator can view and update per-trace thresholds', async ({
+  test('facilitator can view and update per-trace thresholds', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Thresholds are configurable per category per trace'],
+  }, async ({
     browser,
   }) => {
     // Setup: Create workshop
@@ -95,7 +99,9 @@ test.describe('Assisted Facilitation v2 - Facilitator Dashboard', {
     await scenario.cleanup();
   });
 
-  test('facilitator can generate targeted discovery questions', async ({
+  test('facilitator can generate targeted discovery questions', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Facilitators can generate targeted questions that broadcast to all participants'],
+  }, async ({
     browser,
   }) => {
     // Setup: Create workshop with some findings
@@ -139,7 +145,9 @@ test.describe('Assisted Facilitation v2 - Facilitator Dashboard', {
     await scenario.cleanup();
   });
 
-  test('facilitator dashboard shows multiple participants progress', async ({
+  test('facilitator dashboard shows multiple participants progress', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Facilitators see per-trace structured view with category breakdown'],
+  }, async ({
     browser,
   }) => {
     // Setup: Create workshop with multiple participants
@@ -188,7 +196,9 @@ test.describe('Assisted Facilitation v2 - Facilitator Dashboard', {
     await scenario.cleanup();
   });
 
-  test('facilitator can promote findings to draft rubric', async ({
+  test('facilitator can promote findings to draft rubric', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings can be promoted to draft rubric staging area'],
+  }, async ({
     browser,
   }) => {
     // Setup: Create workshop with findings
@@ -234,7 +244,9 @@ test.describe('Assisted Facilitation v2 - Facilitator Dashboard', {
     await scenario.cleanup();
   });
 
-  test('facilitator can view draft rubric staging area', async ({
+  test('facilitator can view draft rubric staging area', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings can be promoted to draft rubric staging area'],
+  }, async ({
     browser,
   }) => {
     // Setup: Create workshop
@@ -267,7 +279,9 @@ test.describe('Assisted Facilitation v2 - Facilitator Dashboard', {
     await scenario.cleanup();
   });
 
-  test('facilitator can access fuzzy progress via API', async ({
+  test('facilitator can access fuzzy progress via API', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Participants see only fuzzy progress (no category bias)'],
+  }, async ({
     browser,
   }) => {
     // Setup: Create workshop with participants in discovery
@@ -310,7 +324,9 @@ test.describe('Assisted Facilitation v2 - Facilitator Dashboard', {
     await scenario.cleanup();
   });
 
-  test('facilitator cannot see participant text inputs during discovery', async ({
+  test('facilitator cannot see participant text inputs during discovery', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Participants see only fuzzy progress (no category bias)'],
+  }, async ({
     browser,
   }) => {
     // Setup: Create workshop

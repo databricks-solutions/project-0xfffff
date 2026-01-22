@@ -11,7 +11,9 @@ import { TestScenario } from '../lib/scenario-builder';
 test.describe('Assisted Facilitation v2 - Draft Rubric Promotion', {
   tag: ['@spec:ASSISTED_FACILITATION_SPEC'],
 }, () => {
-  test('facilitator can promote individual findings to draft rubric', async ({
+  test('facilitator can promote individual findings to draft rubric', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings can be promoted to draft rubric staging area'],
+  }, async ({
     browser,
   }) => {
     // Setup: Create workshop with findings ready for promotion
@@ -62,7 +64,9 @@ test.describe('Assisted Facilitation v2 - Draft Rubric Promotion', {
     await scenario.cleanup();
   });
 
-  test('draft rubric shows promoted findings with attribution', async ({
+  test('draft rubric shows promoted findings with attribution', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings can be promoted to draft rubric staging area'],
+  }, async ({
     browser,
   }) => {
     // Setup: Create workshop with findings
@@ -110,7 +114,9 @@ test.describe('Assisted Facilitation v2 - Draft Rubric Promotion', {
     await scenario.cleanup();
   });
 
-  test('facilitator can remove findings from draft rubric', async ({
+  test('facilitator can remove findings from draft rubric', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings can be promoted to draft rubric staging area'],
+  }, async ({
     browser,
   }) => {
     // Setup: Create workshop with findings to be managed
@@ -176,7 +182,9 @@ test.describe('Assisted Facilitation v2 - Draft Rubric Promotion', {
     await scenario.cleanup();
   });
 
-  test('draft rubric staging area preserves finding metadata', async ({
+  test('draft rubric staging area preserves finding metadata', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings can be promoted to draft rubric staging area'],
+  }, async ({
     browser,
   }) => {
     // Setup: Create workshop with metadata-rich findings
@@ -236,7 +244,9 @@ test.describe('Assisted Facilitation v2 - Draft Rubric Promotion', {
     await scenario.cleanup();
   });
 
-  test('multiple facilitators can collaborate on draft rubric', async ({
+  test('multiple facilitators can collaborate on draft rubric', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings can be promoted to draft rubric staging area'],
+  }, async ({
     browser,
   }) => {
     // Setup: Create workshop with two facilitators (not typical, but test multi-user promotion)
@@ -318,7 +328,9 @@ test.describe('Assisted Facilitation v2 - Draft Rubric Promotion', {
     await scenario.cleanup();
   });
 
-  test('draft rubric can be edited before finalizing into rubric', async ({
+  test('draft rubric can be edited before finalizing into rubric', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings can be promoted to draft rubric staging area'],
+  }, async ({
     browser,
   }) => {
     // Setup: Create workshop in rubric phase
@@ -370,7 +382,9 @@ test.describe('Assisted Facilitation v2 - Draft Rubric Promotion', {
     await scenario.cleanup();
   });
 
-  test('draft rubric items track source trace and participant', async ({
+  test('draft rubric items track source trace and participant', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings can be promoted to draft rubric staging area'],
+  }, async ({
     browser,
   }) => {
     // Setup: Create workshop with multi-trace, multi-participant setup

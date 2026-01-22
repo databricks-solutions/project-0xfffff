@@ -2,6 +2,9 @@ import importlib
 import os
 import sys
 from types import SimpleNamespace
+import pytest
+
+pytestmark = pytest.mark.spec("ASSISTED_FACILITATION_SPEC")
 
 
 def _reload_discovery_dspy():
@@ -12,6 +15,7 @@ def _reload_discovery_dspy():
     return importlib.import_module(mod_name)
 
 
+@pytest.mark.spec("ASSISTED_FACILITATION_SPEC")
 def test_dspy_mlflow_autolog_is_noop_when_env_var_unset(monkeypatch):
     monkeypatch.delenv("MLFLOW_DSPY_DEV_EXPERIMENT_ID", raising=False)
 
@@ -22,6 +26,7 @@ def test_dspy_mlflow_autolog_is_noop_when_env_var_unset(monkeypatch):
     assert dspy_mod._MLFLOW_DSPY_AUTOLOG_ENABLED is False
 
 
+@pytest.mark.spec("ASSISTED_FACILITATION_SPEC")
 def test_dspy_mlflow_autolog_uses_experiment_id_from_env(monkeypatch):
     monkeypatch.setenv("MLFLOW_DSPY_DEV_EXPERIMENT_ID", "12345")
 

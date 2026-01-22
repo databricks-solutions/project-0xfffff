@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { convertTraceToTraceData } from './traceUtils';
 
 // @spec DATASETS_SPEC
+// @req Different users see different orders (per-user randomization)
 describe('traceUtils', () => {
   it('converts API trace fields and normalizes falsy optionals to undefined', () => {
     const out = convertTraceToTraceData({

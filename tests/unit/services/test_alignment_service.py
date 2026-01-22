@@ -6,6 +6,7 @@ from server.services.alignment_service import AlignmentService, likert_agreement
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Optimized prompt saved to judge")
 def test_normalize_judge_prompt_converts_placeholders_to_mlflow_style():
     prompt = "Rate {{ inputs }} vs {{ outputs }} and also {input}/{output}"
     normalized = AlignmentService._normalize_judge_prompt(prompt)
@@ -17,6 +18,7 @@ def test_normalize_judge_prompt_converts_placeholders_to_mlflow_style():
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Alignment metrics reported")
 def test_likert_agreement_metric_from_store_is_one_when_equal():
     ex = SimpleNamespace(_store={"result": 3})
     pred = SimpleNamespace(_store={"result": 3})

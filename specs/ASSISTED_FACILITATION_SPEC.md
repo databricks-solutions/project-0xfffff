@@ -253,10 +253,10 @@ class DraftRubricItem:
 
 ## Success Criteria
 
-1. Findings are classified in real-time as participants submit them
-2. Facilitators see per-trace structured view with category breakdown
-3. Facilitators can generate targeted questions that broadcast to all participants
-4. Disagreements are auto-detected and surfaced
-5. Participants see only fuzzy progress (no category bias)
-6. Findings can be promoted to draft rubric staging area
-7. Thresholds are configurable per category per trace
+- [ ] Findings are classified in real-time as participants submit them
+- [ ] Facilitators see per-trace structured view with category breakdown
+- [ ] Facilitators can generate targeted questions that broadcast to all participants
+- [ ] Disagreements are auto-detected and surfaced
+- [ ] Participants see only fuzzy progress (no category bias)
+- [ ] Findings can be promoted to draft rubric staging area
+- [ ] Thresholds are configurable per category per trace

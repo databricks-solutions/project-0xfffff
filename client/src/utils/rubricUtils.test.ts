@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { formatRubricQuestions, parseRubricQuestions, QUESTION_DELIMITER } from './rubricUtils';
 
 // @spec RUBRIC_SPEC
+// @req Questions with multi-line descriptions parse correctly
 describe('rubricUtils', () => {
   it('parses rubric questions using delimiter and first-colon split', () => {
     const text = [
@@ -18,6 +19,7 @@ describe('rubricUtils', () => {
     expect(parsed[1].description).toBe('Friendly: but only first colon splits title from description');
   });
 
+  // @req Frontend and backend use same delimiter constant
   it('round-trips format -> parse', () => {
     const questions = [
       { id: 'q_1', title: 'A', description: 'B' },

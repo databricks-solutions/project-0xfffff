@@ -4,6 +4,8 @@ import pytest
 from fastapi import HTTPException
 from server.services.discovery_service import DiscoveryService
 
+pytestmark = pytest.mark.spec("ASSISTED_FACILITATION_SPEC")
+
 
 class MockDatabaseService:
     """Mock database service for testing."""
@@ -25,9 +27,11 @@ class MockDatabaseService:
         return []
 
 
+@pytest.mark.spec("ASSISTED_FACILITATION_SPEC")
 class TestDiscoveryServiceV2:
     """Tests for DiscoveryService v2 methods."""
 
+    @pytest.mark.spec("ASSISTED_FACILITATION_SPEC")
     def test_get_fuzzy_progress_empty(self, mock_db_session):
         """Test fuzzy progress with no traces."""
         service = DiscoveryService(mock_db_session)
@@ -41,6 +45,7 @@ class TestDiscoveryServiceV2:
         assert result['status'] == 'exploring'
         assert result['percentage'] == 0.0
 
+    @pytest.mark.spec("ASSISTED_FACILITATION_SPEC")
     def test_get_fuzzy_progress_exploring(self, mock_db_session):
         """Test fuzzy progress in exploring state."""
         service = DiscoveryService(mock_db_session)
@@ -59,6 +64,7 @@ class TestDiscoveryServiceV2:
         assert result['status'] == 'exploring'
         assert 0 <= result['percentage'] < 30
 
+    @pytest.mark.spec("ASSISTED_FACILITATION_SPEC")
     def test_get_trace_discovery_state_structure(self, mock_db_session):
         """Test that get_trace_discovery_state returns correct structure."""
         service = DiscoveryService(mock_db_session)
@@ -90,6 +96,7 @@ class TestDiscoveryServiceV2:
         }
         assert set(result['categories'].keys()) == expected_categories
 
+    @pytest.mark.spec("ASSISTED_FACILITATION_SPEC")
     def test_promote_finding_structure(self, mock_db_session):
         """Test that promote_finding returns correct structure."""
         service = DiscoveryService(mock_db_session)
@@ -105,6 +112,7 @@ class TestDiscoveryServiceV2:
         assert 'promoted_by' in result
         assert result['promoted_by'] == 'facilitator_1'
 
+    @pytest.mark.spec("ASSISTED_FACILITATION_SPEC")
     def test_update_trace_thresholds_structure(self, mock_db_session):
         """Test that update_trace_thresholds returns correct structure."""
         service = DiscoveryService(mock_db_session)
@@ -123,6 +131,7 @@ class TestDiscoveryServiceV2:
         assert result['thresholds'] == thresholds
         assert result['updated'] is True
 
+    @pytest.mark.spec("ASSISTED_FACILITATION_SPEC")
     def test_submit_finding_v2_classification(self, mock_db_session):
         """Test that submit_finding_v2 classifies findings."""
         service = DiscoveryService(mock_db_session)

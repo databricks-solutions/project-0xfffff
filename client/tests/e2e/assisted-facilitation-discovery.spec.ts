@@ -12,7 +12,9 @@ import * as discoveryActions from '../lib/actions/discovery';
 test.describe('Assisted Facilitation v2 - Discovery Phase', {
   tag: ['@spec:ASSISTED_FACILITATION_SPEC'],
 }, () => {
-  test('participant can submit findings with real-time classification', async ({
+  test('participant can submit findings with real-time classification', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings are classified in real-time as participants submit them'],
+  }, async ({
     page,
     browser,
   }) => {
@@ -61,7 +63,9 @@ test.describe('Assisted Facilitation v2 - Discovery Phase', {
     await scenario.cleanup();
   });
 
-  test('fuzzy progress indicator shows correct state for participants', async ({
+  test('fuzzy progress indicator shows correct state for participants', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Participants see only fuzzy progress (no category bias)'],
+  }, async ({
     page,
     browser,
   }) => {
@@ -120,7 +124,9 @@ test.describe('Assisted Facilitation v2 - Discovery Phase', {
     await scenario.cleanup();
   });
 
-  test('multiple participants can submit findings concurrently', async ({
+  test('multiple participants can submit findings concurrently', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings are classified in real-time as participants submit them'],
+  }, async ({
     browser,
   }) => {
     // Setup: Create workshop with 3 participants
@@ -165,7 +171,9 @@ test.describe('Assisted Facilitation v2 - Discovery Phase', {
     await scenario.cleanup();
   });
 
-  test('findings are persisted correctly after navigation', async ({
+  test('findings are persisted correctly after navigation', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings are classified in real-time as participants submit them'],
+  }, async ({
     browser,
   }) => {
     // Setup: Create workshop with traces
@@ -212,7 +220,9 @@ test.describe('Assisted Facilitation v2 - Discovery Phase', {
     await scenario.cleanup();
   });
 
-  test('completion button disabled until all traces have findings', async ({
+  test('completion button disabled until all traces have findings', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Participants see only fuzzy progress (no category bias)'],
+  }, async ({
     browser,
   }) => {
     // Setup: Create workshop with 3 traces
@@ -262,7 +272,9 @@ test.describe('Assisted Facilitation v2 - Discovery Phase', {
     await scenario.cleanup();
   });
 
-  test('question generation button is available during discovery', async ({
+  test('question generation button is available during discovery', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Facilitators can generate targeted questions that broadcast to all participants'],
+  }, async ({
     browser,
   }) => {
     // Setup: Create workshop

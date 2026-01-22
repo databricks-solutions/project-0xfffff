@@ -11,7 +11,9 @@ import { TestScenario } from '../lib/scenario-builder';
 test.describe('Assisted Facilitation v2 - Classification & Disagreements', {
   tag: ['@spec:ASSISTED_FACILITATION_SPEC'],
 }, () => {
-  test('findings are classified into correct categories', async ({
+  test('findings are classified into correct categories', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings are classified in real-time as participants submit them'],
+  }, async ({
     browser,
   }) => {
     // Setup: Create workshop with participants
@@ -98,8 +100,9 @@ test.describe('Assisted Facilitation v2 - Classification & Disagreements', {
     await scenario.cleanup();
   });
 
-  test('disagreements are detected between participants with conflicting views',
-    async ({ browser }) => {
+  test('disagreements are detected between participants with conflicting views', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Disagreements are auto-detected and surfaced'],
+  }, async ({ browser }) => {
       // Setup: Create workshop with 2 participants on same traces
       const scenario = await TestScenario.create(browser)
         .withWorkshop({ name: 'Disagreement Detection Test' })
@@ -155,7 +158,9 @@ test.describe('Assisted Facilitation v2 - Classification & Disagreements', {
     }
   );
 
-  test('category coverage is tracked across participants', async ({
+  test('category coverage is tracked across participants', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Facilitators see per-trace structured view with category breakdown'],
+  }, async ({
     browser,
   }) => {
     // Setup: Create workshop where participants cover different categories
@@ -218,7 +223,9 @@ test.describe('Assisted Facilitation v2 - Classification & Disagreements', {
     await scenario.cleanup();
   });
 
-  test('findings are accessible with classification metadata', async ({
+  test('findings are accessible with classification metadata', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings are classified in real-time as participants submit them'],
+  }, async ({
     browser,
   }) => {
     // Setup: Create workshop
@@ -269,7 +276,9 @@ test.describe('Assisted Facilitation v2 - Classification & Disagreements', {
     await scenario.cleanup();
   });
 
-  test('category thresholds guide participant discovery', async ({
+  test('category thresholds guide participant discovery', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Thresholds are configurable per category per trace'],
+  }, async ({
     browser,
   }) => {
     // Setup: Create workshop with custom thresholds
@@ -325,7 +334,9 @@ test.describe('Assisted Facilitation v2 - Classification & Disagreements', {
     await scenario.cleanup();
   });
 
-  test('api endpoint provides findings with optional classification', async ({
+  test('api endpoint provides findings with optional classification', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings are classified in real-time as participants submit them'],
+  }, async ({
     browser,
   }) => {
     // Setup: Create workshop with findings
