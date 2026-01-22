@@ -16,6 +16,13 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     css: true,
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    // JSON reporter for LLM agents (set VITEST_JSON_REPORT=1)
+    reporters: process.env.VITEST_JSON_REPORT === '1'
+      ? ['json']
+      : ['default'],
+    outputFile: process.env.VITEST_JSON_REPORT === '1'
+      ? '../.test-results/vitest.json'
+      : undefined,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],

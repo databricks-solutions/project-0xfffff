@@ -18,6 +18,61 @@ Run these commands to verify code changes:
 | `just spec-coverage` | Generates spec coverage map | Before / after feature change |
 | `just spec-validate` | Validates all tests are spec-tagged | Before committing |
 
+## Token-Efficient Test Results (for LLM Agents)
+
+All test commands automatically write JSON reports to `.test-results/`. Use `just test-summary` to get concise, token-efficient summaries instead of parsing verbose output.
+
+### Reading Test Results Efficiently
+
+```bash
+# After running any test command, get a concise summary
+just test-summary
+
+# Get summary for a specific runner
+just test-summary --runner pytest
+just test-summary --runner playwright
+just test-summary --runner vitest
+
+# Filter by spec (shows only failures for that spec)
+just test-summary --spec AUTHENTICATION_SPEC
+
+# Get JSON output for programmatic parsing
+just test-summary --json
+
+# Quick check: spec status (test results + coverage info)
+just spec-status AUTHENTICATION_SPEC
+```
+
+### Output Format
+
+**When tests pass** (~50 tokens):
+```
+PASS: 45 passed, 0 failed (1.2s)
+```
+
+**When tests fail** (~200-500 tokens, grouped by spec):
+```
+FAIL: 43 passed, 2 failed (1.2s)
+
+AUTHENTICATION_SPEC (1 failure):
+  - test_login_invalid_password (tests/test_auth.py:25) [pytest]
+    AssertionError: Expected 200, got 401
+
+RUBRIC_SPEC (1 failure):
+  - test_rubric_validation (tests/test_rubric.py:45) [pytest]
+    ValidationError: Missing required field
+```
+
+### JSON Reports Location
+
+| Runner | Report Path |
+|--------|-------------|
+| pytest | `.test-results/pytest.json` |
+| Playwright | `.test-results/playwright.json` |
+| Vitest | `.test-results/vitest.json` |
+
+You can read these directly with the Read tool for detailed failure analysis when needed.
+
 ## Spec-Filtered Test Commands
 
 These commands efficiently run tests for a specific spec. Replace `SPEC_NAME` with the actual spec (e.g., `AUTHENTICATION_SPEC`):
@@ -123,6 +178,8 @@ just spec-coverage
 |------|---------|-------|
 | `spec-validate` | Ensures all tests are spec-tagged (fails if not) | `just spec-validate` |
 | `spec-coverage` | Generates SPEC_COVERAGE_MAP.md report | `just spec-coverage` |
+| `spec-status SPEC` | Show test results + coverage for a spec | `just spec-status AUTHENTICATION_SPEC` |
+| `test-summary` | Token-efficient summary from JSON reports | `just test-summary --spec SPEC_NAME` |
 | `test-server-spec SPEC` | Run Python tests for a spec | `just test-server-spec SPEC_NAME` |
 | `ui-test-unit-spec SPEC` | Run unit tests for a spec | `just ui-test-unit-spec SPEC_NAME` |
 | `e2e-spec SPEC [mode] [workers]` | Run E2E tests for a spec | `just e2e-spec SPEC_NAME headless 1` |
@@ -167,11 +224,43 @@ just e2e-spec AUTHENTICATION_SPEC headed
 ### "What is the coverage of RUBRIC_SPEC?"
 
 ```bash
-# Generate or view the coverage map
+# Quick status check (test results + coverage info)
+just spec-status RUBRIC_SPEC
+
+# Or generate the full coverage map
 just spec-coverage
 
 # View coverage details
 cat specs/SPEC_COVERAGE_MAP.md | grep -A20 "RUBRIC_SPEC"
+```
+
+### "Run tests and give me a quick summary"
+
+```bash
+# Run tests (JSON reports written automatically)
+just test-server
+
+# Get token-efficient summary
+just test-summary
+
+# If failures, get details grouped by spec
+just test-summary --spec AUTHENTICATION_SPEC
+```
+
+### "Debug a failing spec"
+
+```bash
+# 1. Check current status
+just spec-status AUTHENTICATION_SPEC
+
+# 2. Run tests for that spec
+just test-server-spec AUTHENTICATION_SPEC
+
+# 3. Get summary (failures grouped by spec)
+just test-summary --spec AUTHENTICATION_SPEC
+
+# 4. If needed, read the full JSON report for stack traces
+# Read .test-results/pytest.json for detailed failure info
 ```
 
 ### "I just added new tests - ensure they're tagged"
@@ -265,12 +354,14 @@ this.routes.push({
 
 - `specs/TESTING_SPEC.md` - Full testing specification
 - `specs/SPEC_COVERAGE_MAP.md` - Auto-generated test coverage by spec
+- `.test-results/` - JSON test reports (pytest.json, playwright.json, vitest.json)
 - `client/tests/lib/README.md` - E2E test infrastructure docs
 - `client/tests/lib/mocks/api-mocker.ts` - Mock handlers
 - `client/tests/lib/scenario-builder.ts` - TestScenario class
 - `justfile` - All test commands including spec-filtered variants
 - `tools/spec_tagging_validator.py` - Validates test spec tagging
 - `tools/spec_coverage_analyzer.py` - Generates coverage map
+- `tools/test_summary.py` - Token-efficient test result summarizer
 - `pyproject.toml` - pytest markers and test configuration
 
 ## Architecture Overview
@@ -283,18 +374,23 @@ The spec-based testing system provides these layers:
 │  just test-server-spec SPEC_NAME                        │
 │  just ui-test-unit-spec SPEC_NAME                       │
 │  just e2e-spec SPEC_NAME [mode] [workers]               │
-│  just spec-validate / spec-coverage                     │
+│  just spec-validate / spec-coverage / spec-status       │
+│  just test-summary [--spec SPEC] [--json]               │
 │                                                          │
-├─ Test Runners ─────────────────────────────────────────┤
+├─ Test Runners (write JSON to .test-results/) ──────────┤
 │                                                          │
 │  pytest (Python)  → @pytest.mark.spec("SPEC_NAME")      │
+│    └─ .test-results/pytest.json                         │
 │  Playwright (E2E) → test.use({ tag: ['@spec:...'] })    │
+│    └─ .test-results/playwright.json                     │
 │  Vitest (Unit)    → // @spec SPEC_NAME comments         │
+│    └─ .test-results/vitest.json                         │
 │                                                          │
 ├─ Analysis Tools ───────────────────────────────────────┤
 │                                                          │
-│  spec-tagging-validator  → Enforces tagging             │
-│  spec-coverage-analyzer  → Generates SPEC_COVERAGE_MAP  │
+│  test-summary           → Token-efficient results       │
+│  spec-tagging-validator → Enforces tagging              │
+│  spec-coverage-analyzer → Generates SPEC_COVERAGE_MAP   │
 │                                                          │
 └─────────────────────────────────────────────────────────┘
 ```
