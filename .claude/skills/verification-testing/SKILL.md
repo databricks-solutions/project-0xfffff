@@ -15,6 +15,21 @@ Run these commands to verify code changes:
 | `just ui-test-unit` | React unit tests | After frontend changes |
 | `just ui-lint` | TypeScript/ESLint | Before committing |
 | `just e2e` | Full E2E tests | After any feature change |
+| `just spec-coverage` | Generates spec coverage map | Before / after feature change |
+
+## Test Tagging
+
+Tests tagged will be included in the SPEC coverage map so it is critical you use these tags
+
+```python
+@pytest.mark.spec("AUTHENTICATION_SPEC")
+def test_login(): ...
+```
+
+```typescript
+test('login', { tag: ['@spec:AUTHENTICATION_SPEC'] }, ...)
+```
+
 
 ## Verification Workflow
 
