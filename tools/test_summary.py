@@ -95,9 +95,16 @@ class TestSummary:
         return by_spec
 
 
-def extract_spec_from_pytest(node_id: str, markers: list | None = None) -> str | None:
-    """Extract spec name from pytest node ID or markers."""
-    # Check markers first (most reliable)
+def extract_spec_from_pytest(
+    node_id: str, markers: list | None = None, file_path: str | None = None
+) -> str | None:
+    """Extract spec name from pytest node ID, markers, or source file.
+
+    For class-level @pytest.mark.spec decorators, pytest-json-report doesn't
+    include the marker args in the test output. We fall back to reading the
+    source file to find the spec marker.
+    """
+    # Check markers first (most reliable for method-level markers)
     if markers:
         for marker in markers:
             if isinstance(marker, dict) and marker.get("name") == "spec":
@@ -110,7 +117,71 @@ def extract_spec_from_pytest(node_id: str, markers: list | None = None) -> str |
     if match:
         return match.group(1)
 
+    # Final fallback: read the source file and look for @pytest.mark.spec on class
+    if file_path:
+        spec = _extract_spec_from_source_file(file_path, node_id)
+        if spec:
+            return spec
+
     return None
+
+
+# Cache for source file spec extraction to avoid repeated file reads
+_source_file_spec_cache: dict[str, str | None] = {}
+
+
+def _extract_spec_from_source_file(file_path: str, node_id: str) -> str | None:
+    """Extract spec from source file for class-level markers.
+
+    When a test class has @pytest.mark.spec("SPEC_NAME"), pytest-json-report
+    doesn't include the marker args. We parse the source to find it.
+    """
+    # Check if this is a class method (has :: twice, e.g., file.py::Class::method)
+    parts = node_id.split("::")
+    if len(parts) < 2:
+        return None
+
+    # Cache key is file_path + class_name (if present)
+    class_name = parts[1] if len(parts) >= 2 else None
+    cache_key = f"{file_path}::{class_name}" if class_name else file_path
+
+    if cache_key in _source_file_spec_cache:
+        return _source_file_spec_cache[cache_key]
+
+    try:
+        source_path = Path(file_path)
+        if not source_path.exists():
+            _source_file_spec_cache[cache_key] = None
+            return None
+
+        content = source_path.read_text()
+
+        # Pattern to find @pytest.mark.spec("SPEC_NAME") before a class definition
+        # This handles both class-level and module-level markers
+        if class_name:
+            # Look for marker right before the class definition
+            pattern = re.compile(
+                rf'@pytest\.mark\.spec\(["\']([A-Z_]+)["\']\)\s*\n(?:@[^\n]+\n)*class\s+{re.escape(class_name)}\b',
+                re.MULTILINE,
+            )
+            match = pattern.search(content)
+            if match:
+                _source_file_spec_cache[cache_key] = match.group(1)
+                return match.group(1)
+
+        # Also check for module-level docstring with @spec comment
+        module_pattern = re.compile(r'@spec\s+([A-Z_]+)')
+        match = module_pattern.search(content[:500])  # Only check first 500 chars
+        if match:
+            _source_file_spec_cache[cache_key] = match.group(1)
+            return match.group(1)
+
+        _source_file_spec_cache[cache_key] = None
+        return None
+
+    except Exception:
+        _source_file_spec_cache[cache_key] = None
+        return None
 
 
 def extract_spec_from_playwright(title: str, tags: list | None = None) -> str | None:
@@ -179,7 +250,7 @@ def parse_pytest_report(report_path: Path) -> TestSummary:
                 file_path=file_path,
                 line_number=line_number,
                 error_message=error_message[:200],  # Truncate for token efficiency
-                spec=extract_spec_from_pytest(node_id, markers),
+                spec=extract_spec_from_pytest(node_id, markers, file_path),
             )
         )
 
