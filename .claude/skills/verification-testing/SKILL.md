@@ -15,14 +15,159 @@ Run these commands to verify code changes:
 | `just ui-test-unit` | All React unit tests | After frontend changes |
 | `just ui-lint` | TypeScript/ESLint | Before committing |
 | `just e2e` | All E2E tests | After any feature change |
-| `just spec-coverage` | Generates spec coverage map | Before / after feature change |
+| `just spec-coverage` | Generates spec coverage report | Before / after feature change |
+| `just spec-coverage --json` | JSON coverage report to stdout | For programmatic analysis |
+| `just spec-coverage --affected` | Coverage for specs affected by changes | During development |
+| `just test-affected` | Run tests for affected specs only | Quick verification of changes |
 | `just spec-validate` | Validates all tests are spec-tagged | Before committing |
+
+## Spec Coverage Report
+
+The spec coverage report shows **requirement-level coverage** across the test pyramid. It parses success criteria (`- [ ]` items) from spec files and tracks which requirements have tests.
+
+### Console Output (pytest-cov style)
+
+```bash
+just spec-coverage
+```
+
+```
+SPEC COVERAGE REPORT
+==============================================================================
+Name                                 Reqs  Cover%  Unit  Int  E2E-M  E2E-R
+------------------------------------------------------------------------------
+   ANNOTATION_SPEC                      9     67%     4    0      2      0
+ * AUTHENTICATION_SPEC                  7     43%     5    1      1      0
+ ! BUILD_AND_DEPLOY_SPEC               15      7%     1    0      0      0
+   DATASETS_SPEC                        9    100%     3    0      1      1
+...
+------------------------------------------------------------------------------
+TOTAL                                  96     45%    52    4     12      2
+
+Legend: ! = low coverage (<50%), * = partial coverage (50-99%)
+```
+
+### JSON Output
+
+```bash
+just spec-coverage --json
+```
+
+Returns detailed JSON with:
+- Per-spec requirement coverage
+- Test type breakdown (unit, integration, e2e-mocked, e2e-real)
+- Uncovered requirements list
+- Test pyramid totals
+
+### Affected Mode
+
+Only show coverage for specs affected by recent changes:
+
+```bash
+# Specs affected since last commit (default)
+just spec-coverage --affected
+
+# Specs affected since specific commit/branch
+just spec-coverage --affected main
+just spec-coverage --affected abc123
+
+# Run tests only for affected specs
+just test-affected           # since HEAD~1
+just test-affected main      # since main branch
+
+# Combine with JSON output
+just spec-coverage --affected --json
+```
+
+The affected detector maps changed files to specs using:
+- File path patterns (e.g., `server/routers/users.py` -> `AUTHENTICATION_SPEC`)
+- Spec markers in changed test files
+- Core files like `database_service.py` affect all specs
+
+### Filter to Specific Specs
+
+```bash
+# Only analyze specific specs
+just spec-coverage --specs AUTHENTICATION_SPEC ANNOTATION_SPEC
+```
+
+### Test Type Classification
+
+Tests are automatically classified by type:
+
+| Type | Description | How Detected |
+|------|-------------|--------------|
+| `unit` | Isolated unit tests | pytest in `tests/unit/`, Vitest `*.test.ts` |
+| `integration` | Real API/DB tests | pytest in `tests/integration/` or `@pytest.mark.integration` |
+| `e2e-mocked` | E2E with mocked API | Playwright tests (default) |
+| `e2e-real` | E2E with real API | Playwright with `@e2e-real` tag or `withRealApi()` |
+
+## Test Tagging (Required)
+
+Tests **must** be tagged with spec markers. Optionally, link tests to specific requirements using `@req` markers.
+
+### Python (pytest)
+
+```python
+# Basic spec tagging
+@pytest.mark.spec("AUTHENTICATION_SPEC")
+def test_login(): ...
+
+# With requirement link (recommended for requirement-level coverage)
+@pytest.mark.spec("AUTHENTICATION_SPEC")
+@pytest.mark.req("No permission denied errors on normal login")
+def test_login_no_permission_denied(): ...
+
+# Integration test (auto-detected from path or marker)
+@pytest.mark.spec("AUTHENTICATION_SPEC")
+@pytest.mark.integration
+def test_login_with_real_db(): ...
+```
+
+### TypeScript/E2E (Playwright)
+
+```typescript
+// File-level tagging
+test.use({ tag: ['@spec:AUTHENTICATION_SPEC'] });
+
+// With requirement link
+test.use({ tag: ['@spec:AUTHENTICATION_SPEC', '@req:No permission denied errors'] });
+
+// Real API test (not mocked)
+test.use({ tag: ['@spec:AUTHENTICATION_SPEC', '@e2e-real'] });
+test('login with real API', async ({ page }) => {
+  const scenario = await TestScenario.create(page).withWorkshop().withRealApi().build();
+  ...
+});
+```
+
+### TypeScript/Unit (Vitest)
+
+```typescript
+// @spec AUTHENTICATION_SPEC
+// @req No permission denied errors on normal login
+
+import { describe, it, expect } from 'vitest';
+
+describe('login', () => {
+  it('should authenticate', () => { ... });
+});
+```
+
+## Spec-Filtered Test Commands
+
+Run tests for a specific spec:
+
+| Command | Purpose | Example |
+|---------|---------|---------|
+| `just test-server-spec SPEC_NAME` | Python tests for a spec | `just test-server-spec AUTHENTICATION_SPEC` |
+| `just ui-test-unit-spec SPEC_NAME` | Unit tests for a spec | `just ui-test-unit-spec RUBRIC_SPEC` |
+| `just e2e-spec SPEC_NAME` | E2E tests for a spec (headless) | `just e2e-spec ANNOTATION_SPEC` |
+| `just e2e-spec SPEC_NAME headed` | E2E with visible browser | `just e2e-spec ANNOTATION_SPEC headed` |
 
 ## Token-Efficient Test Results (for LLM Agents)
 
-All test commands automatically write JSON reports to `.test-results/`. Use `just test-summary` to get concise, token-efficient summaries instead of parsing verbose output.
-
-### Reading Test Results Efficiently
+All test commands automatically write JSON reports to `.test-results/`. Use `just test-summary` for concise summaries.
 
 ```bash
 # After running any test command, get a concise summary
@@ -30,13 +175,11 @@ just test-summary
 
 # Get summary for a specific runner
 just test-summary --runner pytest
-just test-summary --runner playwright
-just test-summary --runner vitest
 
-# Filter by spec (shows only failures for that spec)
+# Filter by spec
 just test-summary --spec AUTHENTICATION_SPEC
 
-# Get JSON output for programmatic parsing
+# Get JSON output
 just test-summary --json
 
 # Quick check: spec status (test results + coverage info)
@@ -50,17 +193,13 @@ just spec-status AUTHENTICATION_SPEC
 PASS: 45 passed, 0 failed (1.2s)
 ```
 
-**When tests fail** (~200-500 tokens, grouped by spec):
+**When tests fail** (~200-500 tokens):
 ```
 FAIL: 43 passed, 2 failed (1.2s)
 
 AUTHENTICATION_SPEC (1 failure):
   - test_login_invalid_password (tests/test_auth.py:25) [pytest]
     AssertionError: Expected 200, got 401
-
-RUBRIC_SPEC (1 failure):
-  - test_rubric_validation (tests/test_rubric.py:45) [pytest]
-    ValidationError: Missing required field
 ```
 
 ### JSON Reports Location
@@ -71,247 +210,75 @@ RUBRIC_SPEC (1 failure):
 | Playwright | `.test-results/playwright.json` |
 | Vitest | `.test-results/vitest.json` |
 
-You can read these directly with the Read tool for detailed failure analysis when needed.
-
-## Spec-Filtered Test Commands
-
-These commands efficiently run tests for a specific spec. Replace `SPEC_NAME` with the actual spec (e.g., `AUTHENTICATION_SPEC`):
-
-| Command | Purpose | Example |
-|---------|---------|---------|
-| `just test-server-spec SPEC_NAME` | Python tests for a spec | `just test-server-spec AUTHENTICATION_SPEC` |
-| `just ui-test-unit-spec SPEC_NAME` | Unit tests for a spec | `just ui-test-unit-spec RUBRIC_SPEC` |
-| `just e2e-spec SPEC_NAME` | E2E tests for a spec (headless) | `just e2e-spec ANNOTATION_SPEC` |
-| `just e2e-spec SPEC_NAME headed` | E2E tests for a spec (visible browser) | `just e2e-spec ANNOTATION_SPEC headed` |
-| `just e2e-spec SPEC_NAME headless 4` | E2E tests with 4 workers | `just e2e-spec ANNOTATION_SPEC headless 4` |
-
-## Test Tagging (Required)
-
-Tests **must** be tagged with spec markers to track coverage and enable spec-based filtering. This is critical for maintaining the SPEC_COVERAGE_MAP and enabling commands like "Run all tests for AUTHENTICATION_SPEC".
-
-### Python (pytest)
-
-```python
-@pytest.mark.spec("AUTHENTICATION_SPEC")
-def test_login(): ...
-```
-
-### TypeScript/E2E (Playwright)
-
-File-level tagging (applies to all tests in the file):
-```typescript
-import { test } from '@playwright/test';
-
-test.use({ tag: ['@spec:AUTHENTICATION_SPEC'] });
-
-test('login succeeds', async ({ page }) => { ... });
-```
-
-Or test-level tagging:
-```typescript
-test('login succeeds', { tag: ['@spec:AUTHENTICATION_SPEC'] }, async ({ page }) => { ... });
-```
-
-### TypeScript/Unit (Vitest)
-
-File-level comment:
-```typescript
-// @spec AUTHENTICATION_SPEC
-
-import { describe, it, expect } from 'vitest';
-
-describe('login', () => {
-  it('should authenticate', () => { ... });
-});
-```
-
-Or describe-level:
-```typescript
-describe('@spec:AUTHENTICATION_SPEC - Auth flow', () => {
-  it('should authenticate', () => { ... });
-});
-```
-
-## Spec-Based Test Filtering
-
-Once tests are properly tagged, you can run tests for specific specs efficiently:
-
-### Run All Tests for a Spec (Python)
-
-```bash
-# Run only AUTHENTICATION_SPEC tests
-just test-server-spec AUTHENTICATION_SPEC
-
-# For multiple specs, run each separately
-just test-server-spec AUTHENTICATION_SPEC
-just test-server-spec RUBRIC_SPEC
-```
-
-### Run All Tests for a Spec (E2E - Playwright)
-
-```bash
-# Run tests tagged with @spec:AUTHENTICATION_SPEC (headless)
-just e2e-spec AUTHENTICATION_SPEC
-
-# Run in headed mode for debugging
-just e2e-spec AUTHENTICATION_SPEC headed
-
-# Run with multiple workers for speed
-just e2e-spec AUTHENTICATION_SPEC headless 4
-```
-
-### Check Spec Coverage
-
-```bash
-# Validate all tests are properly tagged
-just spec-validate
-
-# Generate detailed coverage report
-just spec-coverage
-
-# View SPEC_COVERAGE_MAP.md for coverage details
-```
-
 ## Spec Tools Reference
 
 | Tool | Purpose | Usage |
 |------|---------|-------|
-| `spec-validate` | Ensures all tests are spec-tagged (fails if not) | `just spec-validate` |
-| `spec-coverage` | Generates SPEC_COVERAGE_MAP.md report | `just spec-coverage` |
+| `spec-coverage` | Generate coverage report (console + markdown) | `just spec-coverage` |
+| `spec-coverage --json` | Generate JSON coverage report | `just spec-coverage --json` |
+| `spec-validate` | Ensure all tests are spec-tagged | `just spec-validate` |
 | `spec-status SPEC` | Show test results + coverage for a spec | `just spec-status AUTHENTICATION_SPEC` |
-| `test-summary` | Token-efficient summary from JSON reports | `just test-summary --spec SPEC_NAME` |
-| `test-server-spec SPEC` | Run Python tests for a spec | `just test-server-spec SPEC_NAME` |
-| `ui-test-unit-spec SPEC` | Run unit tests for a spec | `just ui-test-unit-spec SPEC_NAME` |
-| `e2e-spec SPEC [mode] [workers]` | Run E2E tests for a spec | `just e2e-spec SPEC_NAME headless 1` |
-
+| `test-summary` | Token-efficient test result summary | `just test-summary --spec SPEC_NAME` |
 
 ## Verification Workflow
 
 ### After Implementing a Feature
 
 1. **Read the relevant spec** in `specs/` to understand success criteria
-2. **Tag your tests** with the spec name before running:
-   - Use `@pytest.mark.spec("SPEC_NAME")` for pytest
-   - Use `test.use({ tag: ['@spec:SPEC_NAME'] })` for Playwright
-   - Use `// @spec SPEC_NAME` for Vitest
+2. **Tag your tests** with spec and requirement markers:
+   - `@pytest.mark.spec("SPEC_NAME")` + `@pytest.mark.req("requirement text")`
+   - `test.use({ tag: ['@spec:SPEC_NAME', '@req:requirement text'] })`
+   - `// @spec SPEC_NAME` + `// @req requirement text`
 3. **Run unit tests** for the layer you changed:
-   - Backend: `just test-server` or `uv run pytest -m spec-<SPEC_NAME>`
+   - Backend: `just test-server`
    - Frontend: `just ui-test-unit`
-4. **Run spec-specific E2E tests**: `just e2e headless "@spec:SPEC_NAME"`
-5. **Validate tagging**: `uv run spec-tagging-validator`
+4. **Run E2E tests**: `just e2e-spec SPEC_NAME`
+5. **Check coverage**: `just spec-coverage`
 6. **Run linting**: `just ui-lint`
-7. **Generate coverage map**: `just spec-coverage`
-8. **Before committing**: Ensure all new tests are tagged
+7. **Validate tagging**: `just spec-validate`
 
-## Practical Example Workflows
+### Practical Examples
 
-### "Run all tests for AUTHENTICATION_SPEC"
-
-```bash
-# Run Python tests for AUTHENTICATION_SPEC
-just test-server-spec AUTHENTICATION_SPEC
-
-# Run unit tests for AUTHENTICATION_SPEC
-just ui-test-unit-spec AUTHENTICATION_SPEC
-
-# Run E2E tests for AUTHENTICATION_SPEC
-just e2e-spec AUTHENTICATION_SPEC
-
-# Or with visible browser to debug
-just e2e-spec AUTHENTICATION_SPEC headed
-```
-
-### "What is the coverage of RUBRIC_SPEC?"
+**"What is the coverage of AUTHENTICATION_SPEC?"**
 
 ```bash
-# Quick status check (test results + coverage info)
-just spec-status RUBRIC_SPEC
-
-# Or generate the full coverage map
-just spec-coverage
-
-# View coverage details
-cat specs/SPEC_COVERAGE_MAP.md | grep -A20 "RUBRIC_SPEC"
-```
-
-### "Run tests and give me a quick summary"
-
-```bash
-# Run tests (JSON reports written automatically)
-just test-server
-
-# Get token-efficient summary
-just test-summary
-
-# If failures, get details grouped by spec
-just test-summary --spec AUTHENTICATION_SPEC
-```
-
-### "Debug a failing spec"
-
-```bash
-# 1. Check current status
+# Quick status check
 just spec-status AUTHENTICATION_SPEC
 
-# 2. Run tests for that spec
-just test-server-spec AUTHENTICATION_SPEC
-
-# 3. Get summary (failures grouped by spec)
-just test-summary --spec AUTHENTICATION_SPEC
-
-# 4. If needed, read the full JSON report for stack traces
-# Read .test-results/pytest.json for detailed failure info
-```
-
-### "I just added new tests - ensure they're tagged"
-
-```bash
-# Run the validator to catch untagged tests
-just spec-validate
-
-# If it fails, add tags to your tests:
-# - pytest: @pytest.mark.spec("SPEC_NAME")
-# - Playwright: test.use({ tag: ['@spec:SPEC_NAME'] })
-# - Vitest: // @spec SPEC_NAME
-
-# Then regenerate coverage
+# Or generate full report
 just spec-coverage
+
+# JSON for detailed analysis
+just spec-coverage --json | jq '.specs.AUTHENTICATION_SPEC'
 ```
 
-### "Speed up E2E tests for a specific spec"
+**"Which requirements are uncovered?"**
 
 ```bash
-# Run with 4 workers (faster on multi-core machines)
-just e2e-spec ANNOTATION_SPEC headless 4
-
-# Run in headed mode for debugging
-just e2e-spec ANNOTATION_SPEC headed 1
+just spec-coverage --json | jq '.specs | to_entries[] | select(.value.uncovered | length > 0) | {spec: .key, uncovered: .value.uncovered}'
 ```
 
-## Reference Files
+**"What's the test pyramid balance?"**
 
-| Reference | Purpose | When to Read |
-|-----------|---------|--------------|
-| `e2e-patterns.md` | TestScenario builder API | When writing E2E tests |
-| `mocking.md` | E2E mocking + MLflow/external service mocking | When adding new endpoints or testing integrations |
-| `unit-tests.md` | pytest and vitest patterns | When writing unit tests |
-| `specs/SPEC_COVERAGE_MAP.md` | Current test coverage by spec | When checking what tests exist for a spec |
-| `specs/TESTING_SPEC.md` | Complete testing specification | When understanding testing requirements |
+```bash
+just spec-coverage --json | jq '.pyramid'
+# Returns: {"unit": 52, "integration": 4, "e2e-mocked": 12, "e2e-real": 2}
+```
 
 ## Key Concepts
 
 ### Test Pyramid
 
 ```
-        ┌─────────┐
-        │   E2E   │  ← Playwright (slow, high confidence)
-        └────┬────┘
-     ┌───────┴───────┐
-     │  Integration  │  ← API tests (medium speed)
-     └───────┬───────┘
-┌────────────┴────────────┐
-│       Unit Tests        │  ← pytest/vitest (fast)
-└─────────────────────────┘
+        +----------+
+        |   E2E    |  <- Playwright (slow, high confidence)
+        +----+-----+
+     +-------+-------+
+     |  Integration  |  <- pytest with real DB/API
+     +-------+-------+
++------------+------------+
+|       Unit Tests        |  <- pytest/vitest (fast)
++-------------------------+
 ```
 
 ### E2E Mocking Strategy
@@ -319,18 +286,12 @@ just e2e-spec ANNOTATION_SPEC headed 1
 **Mock by default** - The test infrastructure mocks all API calls unless you opt out:
 
 ```typescript
-// Everything mocked (default)
+// Everything mocked (default) - classified as e2e-mocked
 const scenario = await TestScenario.create(page)
   .withWorkshop()
   .build();
 
-// Selective real API
-const scenario = await TestScenario.create(page)
-  .withWorkshop()
-  .withReal('/users/auth/login')  // Only auth is real
-  .build();
-
-// Full integration (no mocks)
+// Full integration (no mocks) - classified as e2e-real
 const scenario = await TestScenario.create(page)
   .withWorkshop()
   .withRealApi()
@@ -350,47 +311,50 @@ this.routes.push({
 });
 ```
 
+## Reference Files
+
+| Reference | Purpose | When to Read |
+|-----------|---------|--------------|
+| `e2e-patterns.md` | TestScenario builder API | When writing E2E tests |
+| `mocking.md` | E2E mocking + MLflow/external service mocking | When adding new endpoints |
+| `unit-tests.md` | pytest and vitest patterns | When writing unit tests |
+| `specs/SPEC_COVERAGE_MAP.md` | Current test coverage by spec | Checking coverage status |
+| `specs/TESTING_SPEC.md` | Complete testing specification | Understanding test requirements |
+
 ## Critical Files
 
-- `specs/TESTING_SPEC.md` - Full testing specification
 - `specs/SPEC_COVERAGE_MAP.md` - Auto-generated test coverage by spec
 - `.test-results/` - JSON test reports (pytest.json, playwright.json, vitest.json)
-- `client/tests/lib/README.md` - E2E test infrastructure docs
 - `client/tests/lib/mocks/api-mocker.ts` - Mock handlers
 - `client/tests/lib/scenario-builder.ts` - TestScenario class
-- `justfile` - All test commands including spec-filtered variants
-- `tools/spec_tagging_validator.py` - Validates test spec tagging
 - `tools/spec_coverage_analyzer.py` - Generates coverage map
+- `tools/spec_tagging_validator.py` - Validates test spec tagging
 - `tools/test_summary.py` - Token-efficient test result summarizer
-- `pyproject.toml` - pytest markers and test configuration
+- `pyproject.toml` - pytest markers (`spec`, `req`, `integration`)
 
 ## Architecture Overview
 
-The spec-based testing system provides these layers:
-
 ```
-┌─ User Commands (justfile) ──────────────────────────────┐
-│                                                          │
-│  just test-server-spec SPEC_NAME                        │
-│  just ui-test-unit-spec SPEC_NAME                       │
-│  just e2e-spec SPEC_NAME [mode] [workers]               │
-│  just spec-validate / spec-coverage / spec-status       │
-│  just test-summary [--spec SPEC] [--json]               │
-│                                                          │
-├─ Test Runners (write JSON to .test-results/) ──────────┤
-│                                                          │
-│  pytest (Python)  → @pytest.mark.spec("SPEC_NAME")      │
-│    └─ .test-results/pytest.json                         │
-│  Playwright (E2E) → test.use({ tag: ['@spec:...'] })    │
-│    └─ .test-results/playwright.json                     │
-│  Vitest (Unit)    → // @spec SPEC_NAME comments         │
-│    └─ .test-results/vitest.json                         │
-│                                                          │
-├─ Analysis Tools ───────────────────────────────────────┤
-│                                                          │
-│  test-summary           → Token-efficient results       │
-│  spec-tagging-validator → Enforces tagging              │
-│  spec-coverage-analyzer → Generates SPEC_COVERAGE_MAP   │
-│                                                          │
-└─────────────────────────────────────────────────────────┘
++- User Commands (justfile) ----------------------------------+
+|                                                             |
+|  just spec-coverage [--json]                               |
+|  just test-server-spec SPEC_NAME                           |
+|  just e2e-spec SPEC_NAME [mode] [workers]                  |
+|  just spec-validate / spec-status                          |
+|                                                             |
++- Test Runners (write JSON to .test-results/) --------------+
+|                                                             |
+|  pytest  -> @pytest.mark.spec() + @pytest.mark.req()       |
+|  Playwright -> { tag: ['@spec:...', '@req:...'] }          |
+|  Vitest  -> // @spec + // @req comments                    |
+|                                                             |
++- Coverage Analyzer ----------------------------------------+
+|                                                             |
+|  1. Parse specs for success criteria (- [ ] items)         |
+|  2. Scan tests for @spec and @req markers                  |
+|  3. Match tests to requirements (fuzzy matching)           |
+|  4. Classify test types (unit/integration/e2e-mocked/real) |
+|  5. Generate coverage report (console, JSON, markdown)     |
+|                                                             |
++------------------------------------------------------------+
 ```
