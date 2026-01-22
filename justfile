@@ -274,6 +274,26 @@ spec-coverage:
   @echo ""
   @echo "📋 Coverage report: SPEC_COVERAGE_MAP.md"
 
+[group('dev')]
+spec-validate:
+  @echo "🏷️  Validating spec tags on all tests..."
+  uv run spec-tagging-validator
+
+[group('dev')]
+test-server-spec spec:
+  @echo "Running Python tests for {{spec}}..."
+  uv run pytest -k {{spec}} -v
+
+[group('dev')]
+ui-test-unit-spec spec:
+  @echo "Running unit tests for {{spec}}..."
+  npm -C {{client-dir}} run test:unit -- --grep "@spec:{{spec}}"
+
+[group('e2e')]
+e2e-spec spec mode="headless" workers="1":
+  @echo "Running E2E tests for {{spec}} in {{mode}} mode..."
+  just e2e {{mode}} {{workers}} "@spec:{{spec}}"
+
 [group('db')]
 db-upgrade:
   uv run alembic upgrade head
