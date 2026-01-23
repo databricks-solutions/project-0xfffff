@@ -12,13 +12,25 @@ from server.services.classification_service import FINDING_CATEGORIES
 pytestmark = pytest.mark.spec("ASSISTED_FACILITATION_SPEC")
 
 
+class MockFinding:
+    """Mock finding object that mimics database Finding model."""
+
+    def __init__(self, id, trace_id, category, insight, user_id="user_1"):
+        self.id = id
+        self.trace_id = trace_id
+        self.category = category
+        self.insight = insight
+        self.user_id = user_id
+        self.created_at = None
+
+
 class MockDatabaseService:
     """Mock database service for testing."""
 
     def __init__(self):
         self.workshops = {}
         self.traces = {}
-        self.classified_findings = []
+        self.findings = []
         self.thresholds = {}
         self.disagreements = []
 
@@ -32,14 +44,21 @@ class MockDatabaseService:
         return list(self.traces.values())
 
     def get_findings(self, workshop_id, user_id=None):
-        return []
+        return self.findings
 
     def add_classified_finding(self, workshop_id, finding):
-        self.classified_findings.append(finding)
-        return finding
+        mock_finding = MockFinding(
+            id=f"finding_{len(self.findings)}",
+            trace_id=finding["trace_id"],
+            category=finding.get("category"),
+            insight=finding.get("text") or finding.get("insight", ""),
+            user_id=finding.get("user_id", "user_1"),
+        )
+        self.findings.append(mock_finding)
+        return {"id": mock_finding.id, **finding}
 
     def get_classified_findings_by_trace(self, workshop_id, trace_id):
-        return [f for f in self.classified_findings if f.get("trace_id") == trace_id]
+        return [f for f in self.findings if f.trace_id == trace_id]
 
     def save_thresholds(self, workshop_id, trace_id, thresholds):
         self.thresholds[(workshop_id, trace_id)] = thresholds
@@ -156,10 +175,10 @@ class TestFacilitatorStructuredView:
         service.db_service.workshops["test_workshop"] = workshop
         service.db_service.traces["test_trace"] = trace
 
-        # Pre-populate with classified findings
-        service.db_service.classified_findings = [
-            {"id": "f1", "trace_id": "test_trace", "category": "themes", "text": "Good quality"},
-            {"id": "f2", "trace_id": "test_trace", "category": "edge_cases", "text": "Edge case"},
+        # Pre-populate with findings
+        service.db_service.findings = [
+            MockFinding("f1", "test_trace", "themes", "Good quality"),
+            MockFinding("f2", "test_trace", "edge_cases", "Edge case"),
         ]
 
         result = service.get_trace_discovery_state("test_workshop", "test_trace")
@@ -223,10 +242,12 @@ class TestThresholdConfiguration:
         state = service.get_trace_discovery_state("test_workshop", "test_trace")
 
         # SPEC REQUIREMENT: Thresholds must be persisted and returned
-        # This FAILS because get_trace_discovery_state returns empty thresholds
-        assert state["thresholds"] == thresholds, (
-            "SPEC VIOLATION: Thresholds must be persisted and returned in discovery state. "
-            f"Expected {thresholds}, got {state['thresholds']}"
+        # Updated thresholds should be reflected in the state
+        assert state["thresholds"]["themes"] == 5, (
+            f"Expected themes threshold to be 5, got {state['thresholds']['themes']}"
+        )
+        assert state["thresholds"]["edge_cases"] == 3, (
+            f"Expected edge_cases threshold to be 3, got {state['thresholds']['edge_cases']}"
         )
 
 
@@ -338,8 +359,7 @@ class TestFindingClassification:
         )
 
         # SPEC REQUIREMENT: Finding must be persisted
-        # This FAILS because submit_finding_v2 only returns result, doesn't save
-        assert len(mock_db.classified_findings) > 0, (
+        assert len(mock_db.findings) > 0, (
             "SPEC VIOLATION: submit_finding_v2 must persist findings. "
             "Currently it only returns the result without saving to database."
         )

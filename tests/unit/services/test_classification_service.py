@@ -107,6 +107,10 @@ class TestClassificationPersistence:
                 self.saved_findings.append(finding)
                 return finding
 
+            def get_classified_findings_by_trace(self, workshop_id, trace_id):
+                """Return findings for disagreement detection."""
+                return []
+
         service = DiscoveryService(mock_db_session)
         service.db_service = MockDbService()
 
@@ -143,9 +147,18 @@ class TestClassificationPersistence:
         class MockWorkshop:
             id = "test_workshop"
 
+        class MockFinding:
+            def __init__(self, trace_id, category, insight, user_id="user_1"):
+                self.id = f"finding_{trace_id}_{category}"
+                self.trace_id = trace_id
+                self.category = category
+                self.insight = insight
+                self.user_id = user_id
+                self.created_at = None
+
         class MockDbService:
             def __init__(self):
-                self.classified_findings = []
+                self.findings = []
 
             def get_workshop(self, workshop_id):
                 return MockWorkshop()
@@ -153,27 +166,30 @@ class TestClassificationPersistence:
             def get_trace(self, trace_id):
                 return MockTrace()
 
-            def get_classified_findings_by_trace(self, workshop_id, trace_id):
-                """Return findings grouped by category."""
-                return self.classified_findings
+            def get_findings(self, workshop_id, user_id=None):
+                """Return all findings for the workshop."""
+                return self.findings
 
         service = DiscoveryService(mock_db_session)
-        service.db_service = MockDbService()
+        mock_db = MockDbService()
+        # Pre-populate with findings that should be returned
+        mock_db.findings = [
+            MockFinding("test_trace", "themes", "Good response quality"),
+            MockFinding("test_trace", "edge_cases", "Edge case behavior"),
+        ]
+        service.db_service = mock_db
 
         # Get discovery state
         state = service.get_trace_discovery_state("test_workshop", "test_trace")
 
-        # SPEC REQUIREMENT: Discovery state must have populated categories from DB
-        # Currently returns empty placeholder - this should FAIL
+        # Verify findings from database are included in state
         categories = state["categories"]
         total_findings = sum(len(findings) for findings in categories.values())
+        assert total_findings == 2, (
+            f"Expected 2 findings from database, got {total_findings}"
+        )
 
-        # Note: This test documents expected behavior. Currently get_trace_discovery_state
-        # returns empty placeholder data instead of querying actual stored findings.
-        # The test passes trivially because there are no findings, but the real issue
-        # is that even if findings were stored, they wouldn't be retrieved.
-
-        # Verify the structure exists (this part passes)
+        # Verify the structure exists
         assert "categories" in state
         assert all(cat in categories for cat in FINDING_CATEGORIES)
 
@@ -209,6 +225,10 @@ class TestDisagreementDetection:
 
             def get_trace(self, trace_id):
                 return MockTrace()
+
+            def add_classified_finding(self, workshop_id, finding):
+                """Store the classified finding."""
+                return {"id": "finding_1", **finding}
 
             def get_classified_findings_by_trace(self, workshop_id, trace_id):
                 return []
@@ -249,6 +269,16 @@ class TestDisagreementDetection:
         class MockWorkshop:
             id = "test_workshop"
 
+        stored_disagreements = [
+            {
+                "id": "disagreement_1",
+                "trace_id": "test_trace",
+                "user_ids": ["user_1", "user_2"],
+                "finding_ids": ["finding_1", "finding_2"],
+                "summary": "Users disagree on response quality",
+            }
+        ]
+
         class MockDbService:
             def get_workshop(self, workshop_id):
                 return MockWorkshop()
@@ -256,18 +286,13 @@ class TestDisagreementDetection:
             def get_trace(self, trace_id):
                 return MockTrace()
 
+            def get_findings(self, workshop_id, user_id=None):
+                """Return all findings for the workshop."""
+                return []
+
             def get_disagreements_by_trace(self, workshop_id, trace_id):
                 """Should return disagreements for the trace."""
-                # Simulate a stored disagreement
-                return [
-                    {
-                        "id": "disagreement_1",
-                        "trace_id": trace_id,
-                        "user_ids": ["user_1", "user_2"],
-                        "finding_ids": ["finding_1", "finding_2"],
-                        "summary": "Users disagree on response quality",
-                    }
-                ]
+                return stored_disagreements
 
         service = DiscoveryService(mock_db_session)
         service.db_service = MockDbService()
@@ -275,8 +300,7 @@ class TestDisagreementDetection:
         state = service.get_trace_discovery_state("test_workshop", "test_trace")
 
         # SPEC REQUIREMENT: Discovery state must include disagreements from DB
-        # Currently returns empty array - this documents the gap
         assert "disagreements" in state
-
-        # Note: Currently get_trace_discovery_state returns empty disagreements
-        # because it doesn't query the database. This test documents expected behavior.
+        assert len(state["disagreements"]) == 1, (
+            f"Expected 1 disagreement from database, got {len(state['disagreements'])}"
+        )
