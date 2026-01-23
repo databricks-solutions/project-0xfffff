@@ -226,6 +226,7 @@ class DiscoveryFindingDB(Base):
     trace_id = Column(String, ForeignKey("traces.id"), nullable=False)
     user_id = Column(String, nullable=False)
     insight = Column(Text, nullable=False)
+    category = Column(String, nullable=True)  # Classification category (themes, edge_cases, etc.)
     created_at = Column(DateTime, default=func.now())
 
     # Relationships

@@ -920,8 +920,8 @@ class DiscoveryService:
         """Submit finding with real-time classification.
 
         This method:
-        1. Saves raw finding
-        2. Classifies finding into category
+        1. Classifies finding into category
+        2. Persists finding with category to database
         3. Runs disagreement detection
         4. Returns classified finding
         """
@@ -934,7 +934,19 @@ class DiscoveryService:
         # Full LLM integration will happen in Phase 2
         category = self._classify_finding_locally(finding_text)
 
+        # Build finding data for persistence
+        finding_data = {
+            "trace_id": trace_id,
+            "user_id": user_id,
+            "text": finding_text,
+            "category": category,
+        }
+
+        # Persist the classified finding to database
+        saved_finding = self.db_service.add_classified_finding(workshop_id, finding_data)
+
         result = {
+            "id": saved_finding.get("id"),
             "trace_id": trace_id,
             "user_id": user_id,
             "text": finding_text,
@@ -980,20 +992,49 @@ class DiscoveryService:
         if not trace or trace.workshop_id != workshop_id:
             raise HTTPException(status_code=404, detail="Trace not found")
 
-        # For now, return placeholder structure
-        # Full implementation with DB queries will be in Phase 3
+        # Get all findings for this trace
+        all_findings = self.db_service.get_findings(workshop_id)
+        trace_findings = [f for f in all_findings if f.trace_id == trace_id]
+
+        # Initialize categories with empty lists
+        categories: dict[str, list[dict[str, Any]]] = {
+            "themes": [],
+            "edge_cases": [],
+            "boundary_conditions": [],
+            "failure_modes": [],
+            "missing_info": [],
+        }
+
+        # Group findings by category
+        for finding in trace_findings:
+            category = finding.category or "themes"  # Default to themes if no category
+            if category not in categories:
+                category = "themes"  # Fallback for unknown categories
+
+            finding_dict = {
+                "id": finding.id,
+                "trace_id": finding.trace_id,
+                "user_id": finding.user_id,
+                "text": finding.insight,  # Map insight to text for API consistency
+                "category": category,
+                "question_id": "q_1",  # Default question ID
+                "promoted": False,  # Not promoted by default
+                "created_at": finding.created_at.isoformat() if finding.created_at else None,
+            }
+            categories[category].append(finding_dict)
+
         return {
             "trace_id": trace_id,
-            "categories": {
-                "themes": [],
-                "edge_cases": [],
-                "boundary_conditions": [],
-                "failure_modes": [],
-                "missing_info": [],
+            "categories": categories,
+            "disagreements": [],  # TODO: Implement disagreement detection
+            "questions": [],  # Questions are user-specific, not returned here
+            "thresholds": {
+                "themes": 3,
+                "edge_cases": 2,
+                "boundary_conditions": 2,
+                "failure_modes": 2,
+                "missing_info": 1,
             },
-            "disagreements": [],
-            "questions": [],
-            "thresholds": {},
         }
 
     def get_fuzzy_progress(self, workshop_id: str) -> dict[str, Any]:

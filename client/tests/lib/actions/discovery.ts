@@ -178,9 +178,26 @@ export async function getDiscoveryCompletionStatus(
 
 /**
  * Wait for the discovery phase title to be visible
+ * If not visible after initial wait, try reloading once (useful when workshop state changed externally)
  */
 export async function waitForDiscoveryPhase(page: Page): Promise<void> {
-  await expect(page.getByTestId('discovery-phase-title')).toBeVisible({
-    timeout: 10000,
-  });
+  const discoveryTitle = page.getByTestId('discovery-phase-title');
+
+  // First try - check if discovery phase is already visible
+  const isVisible = await discoveryTitle.isVisible().catch(() => false);
+  if (isVisible) {
+    return;
+  }
+
+  // Wait a bit for React Query to fetch fresh data
+  await page.waitForTimeout(1000);
+
+  // Try waiting for the title with a reasonable timeout
+  try {
+    await expect(discoveryTitle).toBeVisible({ timeout: 15000 });
+  } catch {
+    // If still not visible, reload the page to force fresh data fetch
+    await page.reload();
+    await expect(discoveryTitle).toBeVisible({ timeout: 15000 });
+  }
 }

@@ -14,6 +14,7 @@ from server.database import (
   DatabricksTokenDB,
   DiscoveryFindingDB,
   DiscoveryQuestionDB,
+  DiscoverySummaryDB,
   FacilitatorConfigDB,
   JudgeEvaluationDB,
   JudgePromptDB,
@@ -696,6 +697,8 @@ class DatabaseService:
           # Update existing finding
           logger.info(f"🔄 Updating existing finding: id={existing_finding.id}")
           existing_finding.insight = finding_data.insight
+          if finding_data.category is not None:
+            existing_finding.category = finding_data.category
           self.db.commit()
           self.db.refresh(existing_finding)
           db_finding = existing_finding
@@ -709,6 +712,7 @@ class DatabaseService:
             trace_id=finding_data.trace_id,
             user_id=finding_data.user_id,
             insight=finding_data.insight,
+            category=finding_data.category,
           )
           self.db.add(db_finding)
           self.db.commit()
@@ -721,9 +725,10 @@ class DatabaseService:
           trace_id=db_finding.trace_id,
           user_id=db_finding.user_id,
           insight=db_finding.insight,
+          category=db_finding.category,
           created_at=db_finding.created_at,
         )
-        
+
       except IntegrityError as e:
         # Handle race condition - another request inserted the same record
         last_error = e
@@ -745,6 +750,8 @@ class DatabaseService:
             ).first()
             if existing:
               existing.insight = finding_data.insight
+              if finding_data.category is not None:
+                existing.category = finding_data.category
               self.db.commit()
               self.db.refresh(existing)
               logger.info(f"✅ Finding updated after conflict: id={existing.id}")
@@ -754,6 +761,7 @@ class DatabaseService:
                 trace_id=existing.trace_id,
                 user_id=existing.user_id,
                 insight=existing.insight,
+                category=existing.category,
                 created_at=existing.created_at,
               )
           except Exception as final_error:
@@ -809,10 +817,40 @@ class DatabaseService:
         trace_id=db_finding.trace_id,
         user_id=db_finding.user_id,
         insight=db_finding.insight,
+        category=db_finding.category,
         created_at=db_finding.created_at,
       )
       for db_finding in db_findings
     ]
+
+  def add_classified_finding(self, workshop_id: str, finding: dict) -> dict:
+    """Add a classified finding with category.
+
+    This is a convenience method that wraps add_finding with category support.
+    Used by submit_finding_v2 to persist classified findings.
+
+    Args:
+        workshop_id: The workshop ID
+        finding: Dict containing trace_id, user_id, text/insight, and category
+
+    Returns:
+        The persisted finding dict with id and created_at
+    """
+    finding_data = DiscoveryFindingCreate(
+      trace_id=finding["trace_id"],
+      user_id=finding["user_id"],
+      insight=finding.get("text") or finding.get("insight", ""),
+      category=finding.get("category"),
+    )
+    saved = self.add_finding(workshop_id, finding_data)
+    return {
+      "id": saved.id,
+      "trace_id": saved.trace_id,
+      "user_id": saved.user_id,
+      "text": saved.insight,
+      "category": saved.category,
+      "created_at": saved.created_at.isoformat() if saved.created_at else None,
+    }
 
   def get_findings_with_user_details(self, workshop_id: str, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """Get discovery findings with user details for facilitator view."""
@@ -2666,13 +2704,13 @@ class DatabaseService:
     # Keep completed phases up to discovery (annotation not yet complete)
     completed = workshop.completed_phases or []
     workshop.completed_phases = [p for p in completed if p in ['intake', 'discovery']]
-    
+
     # Clear active annotation trace list so new selection can be made
     workshop.active_annotation_trace_ids = None
-    
+
     self.db.commit()
     self.db.refresh(workshop)
-    
+
     return Workshop(
       id=workshop.id,
       name=workshop.name,
@@ -2687,3 +2725,178 @@ class DatabaseService:
       active_annotation_trace_ids=workshop.active_annotation_trace_ids or [],
       created_at=workshop.created_at,
     )
+
+  # Discovery Question operations (per-user question storage)
+  def get_discovery_questions(
+    self, workshop_id: str, trace_id: str, user_id: str
+  ) -> List[Dict[str, Any]]:
+    """Retrieve all generated questions for a specific user on a specific trace.
+
+    Returns questions ordered by creation time. The fixed Q1 question is not stored
+    in the database; only generated questions (Q2+) are returned.
+
+    Args:
+      workshop_id: The workshop ID
+      trace_id: The trace ID
+      user_id: The user ID
+
+    Returns:
+      List of question dictionaries with id, prompt, placeholder, and category fields.
+    """
+    db_questions = (
+      self.db.query(DiscoveryQuestionDB)
+      .filter(
+        and_(
+          DiscoveryQuestionDB.workshop_id == workshop_id,
+          DiscoveryQuestionDB.trace_id == trace_id,
+          DiscoveryQuestionDB.user_id == user_id,
+        )
+      )
+      .order_by(DiscoveryQuestionDB.created_at)
+      .all()
+    )
+
+    return [
+      {
+        'id': q.question_id,
+        'prompt': q.prompt,
+        'placeholder': q.placeholder,
+        'category': q.category,
+      }
+      for q in db_questions
+    ]
+
+  def add_discovery_question(
+    self,
+    workshop_id: str,
+    trace_id: str,
+    user_id: str,
+    prompt: str,
+    placeholder: Optional[str] = None,
+    category: Optional[str] = None,
+  ) -> Dict[str, Any]:
+    """Create a new question for a user on a trace with auto-generated question_id.
+
+    Question IDs start at q_2 (since q_1 is the fixed baseline question) and
+    increment for each new question for this user/trace combination.
+
+    Args:
+      workshop_id: The workshop ID
+      trace_id: The trace ID
+      user_id: The user ID
+      prompt: The question prompt text
+      placeholder: Optional placeholder text for the input field
+      category: Optional category this question targets (themes, edge_cases, etc.)
+
+    Returns:
+      Dictionary with the created question's id, prompt, placeholder, and category.
+    """
+    # Get existing questions for this user/trace to determine next question_id
+    existing_questions = (
+      self.db.query(DiscoveryQuestionDB)
+      .filter(
+        and_(
+          DiscoveryQuestionDB.workshop_id == workshop_id,
+          DiscoveryQuestionDB.trace_id == trace_id,
+          DiscoveryQuestionDB.user_id == user_id,
+        )
+      )
+      .all()
+    )
+
+    # Calculate next question number (start at 2 since q_1 is the fixed baseline)
+    if existing_questions:
+      # Extract numbers from existing question_ids (e.g., "q_2" -> 2)
+      existing_numbers = []
+      for q in existing_questions:
+        try:
+          num = int(q.question_id.split('_')[1])
+          existing_numbers.append(num)
+        except (IndexError, ValueError):
+          continue
+      next_number = max(existing_numbers, default=1) + 1
+    else:
+      next_number = 2  # First generated question is q_2
+
+    question_id = f'q_{next_number}'
+
+    # Create new question record
+    db_question = DiscoveryQuestionDB(
+      workshop_id=workshop_id,
+      trace_id=trace_id,
+      user_id=user_id,
+      question_id=question_id,
+      prompt=prompt,
+      placeholder=placeholder,
+      category=category,
+    )
+
+    self.db.add(db_question)
+    self.db.commit()
+    self.db.refresh(db_question)
+
+    return {
+      'id': db_question.question_id,
+      'prompt': db_question.prompt,
+      'placeholder': db_question.placeholder,
+      'category': db_question.category,
+    }
+
+  # Discovery Summary operations
+  def get_latest_discovery_summary(self, workshop_id: str) -> Optional[Dict[str, Any]]:
+    """Get the most recent discovery summary for a workshop.
+
+    Args:
+        workshop_id: The workshop ID
+
+    Returns:
+        Dict with 'payload' key containing the summary data, or None if not found
+    """
+    summary = (
+      self.db.query(DiscoverySummaryDB)
+      .filter(DiscoverySummaryDB.workshop_id == workshop_id)
+      .order_by(DiscoverySummaryDB.created_at.desc())
+      .first()
+    )
+
+    if not summary:
+      return None
+
+    return {
+      'id': summary.id,
+      'workshop_id': summary.workshop_id,
+      'model_name': summary.model_name,
+      'payload': summary.payload,
+      'created_at': summary.created_at,
+      'updated_at': summary.updated_at,
+    }
+
+  def save_discovery_summary(self, workshop_id: str, payload: Dict[str, Any], model_name: Optional[str] = None) -> Dict[str, Any]:
+    """Save a discovery summary for a workshop.
+
+    Args:
+        workshop_id: The workshop ID
+        payload: The summary payload (overall, by_user, by_trace)
+        model_name: Optional model name used for classification
+
+    Returns:
+        Dict with the saved summary data
+    """
+    summary = DiscoverySummaryDB(
+      workshop_id=workshop_id,
+      model_name=model_name,
+      payload=payload,
+    )
+
+    self.db.add(summary)
+    self.db.commit()
+    self.db.refresh(summary)
+
+    return {
+      'id': summary.id,
+      'workshop_id': summary.workshop_id,
+      'model_name': summary.model_name,
+      'payload': summary.payload,
+      'created_at': summary.created_at,
+      'updated_at': summary.updated_at,
+    }

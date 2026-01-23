@@ -90,6 +90,19 @@ just e2e-spec SPEC_NAME
 just e2e-spec SPEC_NAME headed
 ```
 
+### E2E Timeout Configuration
+
+If tests are timing out, increase Playwright timeouts via environment variables:
+
+```bash
+# Increase test timeout (default: 30s) and expect timeout (default: 5s)
+PW_TEST_TIMEOUT=60000 PW_EXPECT_TIMEOUT=10000 just e2e-spec SPEC_NAME
+```
+
+Server logs are suppressed by default during E2E tests. To view them:
+- Check `.test-results/api-server.log` and `.test-results/ui-server.log`
+- Or run servers manually with `just e2e-servers` (logs to stdout)
+
 ## Test Tagging
 
 All tests must be tagged with spec markers:

@@ -234,6 +234,20 @@ test.describe('Assisted Facilitation Flow', {
     await page.goto(`/?workshop=${workshopId}`);
     await expect(page.getByText('Workshop Portal')).toBeVisible();
     await page.locator('#email').fill(participantEmail);
+
+    // Select the workshop from dropdown (URL param is cleared on login page mount)
+    await page.waitForTimeout(500); // Wait for workshops to load
+    const workshopSelect = page.locator('button[role="combobox"]').first();
+    if (await workshopSelect.isVisible().catch(() => false)) {
+      await workshopSelect.click();
+      await page.waitForSelector('[role="listbox"]', { timeout: 3000 }).catch(() => {});
+      await page.waitForTimeout(200);
+      const workshopOption = page.locator(`[role="option"][data-value="${workshopId}"]`);
+      if (await workshopOption.isVisible({ timeout: 1000 }).catch(() => false)) {
+        await workshopOption.click();
+      }
+    }
+
     await page.locator('button[type="submit"]').click();
 
     // Should see discovery phase

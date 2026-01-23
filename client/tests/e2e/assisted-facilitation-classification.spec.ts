@@ -8,6 +8,48 @@
 import { test, expect } from '@playwright/test';
 import { TestScenario } from '../lib/scenario-builder';
 
+/** Valid finding categories per spec */
+const VALID_CATEGORIES = [
+  'themes',
+  'edge_cases',
+  'boundary_conditions',
+  'failure_modes',
+  'missing_info',
+] as const;
+
+type FindingCategory = (typeof VALID_CATEGORIES)[number];
+
+/** Type for classified finding (v2 spec requirement) */
+interface ClassifiedFinding {
+  id: string;
+  trace_id: string;
+  user_id: string;
+  text: string;
+  category: FindingCategory;
+  question_id: string;
+  promoted: boolean;
+  created_at?: string;
+}
+
+/** Type for disagreement detection result */
+interface Disagreement {
+  id: string;
+  trace_id: string;
+  user_ids: string[];
+  finding_ids: string[];
+  summary: string;
+  created_at?: string;
+}
+
+/** Type for trace discovery state (facilitator view) */
+interface TraceDiscoveryState {
+  trace_id: string;
+  categories: Record<FindingCategory, ClassifiedFinding[]>;
+  disagreements: Disagreement[];
+  questions: Array<{ id: string; prompt: string }>;
+  thresholds: Record<FindingCategory, number>;
+}
+
 test.describe('Assisted Facilitation v2 - Classification & Disagreements', {
   tag: ['@spec:ASSISTED_FACILITATION_SPEC'],
 }, () => {
@@ -36,66 +78,85 @@ test.describe('Assisted Facilitation v2 - Classification & Disagreements', {
     const testPage = await scenario.newPageAs(participant);
 
     // Wait for discovery phase to load
-    await testPage.waitForURL(/discovery|TraceViewer/);
-    await testPage.waitForTimeout(500);
+    await expect(testPage.getByTestId('discovery-phase-title')).toBeVisible({ timeout: 15000 });
 
     // Define test findings with expected categories
     const testFindings = [
       {
         text: 'This solution provides excellent clarity and maintainability.',
-        expectedCategory: 'themes', // General themes about code quality
+        expectedCategory: 'themes' as FindingCategory,
       },
       {
         text: 'Missing validation for null input parameters.',
-        expectedCategory: 'missing_info',
+        expectedCategory: 'missing_info' as FindingCategory,
       },
       {
         text: 'The code crashes when receiving empty arrays.',
-        expectedCategory: 'failure_modes',
+        expectedCategory: 'failure_modes' as FindingCategory,
       },
       {
         text: 'Works well at typical sizes but needs optimization for boundary values.',
-        expectedCategory: 'boundary_conditions',
+        expectedCategory: 'boundary_conditions' as FindingCategory,
       },
       {
         text: 'Doesnt handle the unusual case of mixed-type input arrays.',
-        expectedCategory: 'edge_cases',
+        expectedCategory: 'edge_cases' as FindingCategory,
       },
     ];
 
-    // Submit first finding
-    const textarea = testPage.locator('textarea').first();
-    await textarea.fill(testFindings[0].text);
-    await testPage.getByRole('button', { name: /Next/i }).click();
-
-    // Navigate through remaining traces and submit findings
-    for (let i = 1; i < Math.min(testFindings.length, 5); i++) {
-      await testPage.waitForTimeout(100);
-      const textarea = testPage.locator('textarea').first();
-      if (await textarea.isVisible()) {
-        await textarea.fill(testFindings[i].text);
-        if (i < 4) {
-          const nextBtn = testPage.getByRole('button', { name: /Next/i });
-          if (await nextBtn.isVisible().catch(() => false)) {
-            await nextBtn.click();
-          }
+    // Submit findings via v2 API endpoint (which supports classification)
+    const submittedFindings: ClassifiedFinding[] = [];
+    for (const testFinding of testFindings) {
+      const response = await testPage.request.post(
+        `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings-v2`,
+        {
+          data: {
+            trace_id: scenario.traces[submittedFindings.length % scenario.traces.length].id,
+            user_id: participant.id,
+            text: testFinding.text,
+          },
         }
-      }
-    }
-
-    // Verify findings were submitted
-    const findings = await scenario.api.getFindings();
-    expect(findings.length).toBeGreaterThanOrEqual(1);
-
-    // Verify findings have classifications (via local classification)
-    for (const finding of findings) {
-      expect(finding).toHaveProperty('insight');
-      // The insight text should match one of our test findings
-      const matchesTest = testFindings.some((tf) =>
-        finding.insight.includes(tf.text.substring(0, 20))
       );
-      expect(matchesTest || findings.length > 0).toBe(true);
+      expect(response.ok(), `Failed to submit finding: ${await response.text()}`).toBe(true);
+      const finding = await response.json() as ClassifiedFinding;
+      submittedFindings.push(finding);
     }
+
+    // SPEC REQUIREMENT: Findings must have a category field
+    for (const finding of submittedFindings) {
+      expect(finding).toHaveProperty('category');
+      expect(VALID_CATEGORIES).toContain(finding.category);
+    }
+
+    // SPEC REQUIREMENT: Classification should be accurate (at least for clear cases)
+    // Verify at least the "missing_info" finding is classified correctly
+    const missingInfoFinding = submittedFindings.find(f =>
+      f.text.toLowerCase().includes('missing validation')
+    );
+    expect(missingInfoFinding).toBeDefined();
+    expect(missingInfoFinding!.category).toBe('missing_info');
+
+    // Verify the "failure_modes" finding is classified correctly
+    const failureFinding = submittedFindings.find(f =>
+      f.text.toLowerCase().includes('crashes')
+    );
+    expect(failureFinding).toBeDefined();
+    expect(failureFinding!.category).toBe('failure_modes');
+
+    // SPEC REQUIREMENT: Findings must be persisted with classification
+    // Query the trace discovery state to verify findings are stored with categories
+    const traceId = scenario.traces[0].id;
+    const stateResponse = await testPage.request.get(
+      `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/traces/${traceId}/discovery-state`
+    );
+    expect(stateResponse.ok()).toBe(true);
+    const state = await stateResponse.json() as TraceDiscoveryState;
+
+    // Verify the state has categories with findings
+    expect(state).toHaveProperty('categories');
+    const totalClassifiedFindings = Object.values(state.categories)
+      .reduce((sum, findings) => sum + findings.length, 0);
+    expect(totalClassifiedFindings).toBeGreaterThan(0);
 
     await scenario.cleanup();
   });
@@ -115,44 +176,69 @@ test.describe('Assisted Facilitation v2 - Classification & Disagreements', {
 
       const participant1 = scenario.users.participant[0];
       const participant2 = scenario.users.participant[1];
+      const traceId = scenario.traces[0].id;
 
       // Facilitator starts discovery
       await scenario.loginAs(scenario.facilitator);
       await scenario.beginDiscovery();
 
-      // Participant 1: Positive views on code quality
-      const page1 = await scenario.newPageAs(participant1);
-      await page1.waitForURL(/discovery|TraceViewer/);
-
-      const textArea1 = page1.locator('textarea').first();
-      await textArea1.fill('Excellent code quality with great error handling.');
-      await page1.getByRole('button', { name: /Next/i }).click();
-
-      // Participant 2: Critical view on same trace
-      const page2 = await scenario.newPageAs(participant2);
-      await page2.waitForURL(/discovery|TraceViewer/);
-
-      const textArea2 = page2.locator('textarea').first();
-      await textArea2.fill('Poor performance and missing edge case handling.');
-
-      // Both submit findings
-      // Collect findings for analysis
-      await page1.waitForTimeout(500);
-
-      const findings = await scenario.api.getFindings();
-      expect(findings.length).toBeGreaterThanOrEqual(2);
-
-      // In a real implementation with LLM classification,
-      // disagreements would be detected automatically
-      // For now, verify we can query the findings
-      const conflictingFindings = findings.filter(
-        (f) =>
-          f.insight.toLowerCase().includes('excellent') ||
-          f.insight.toLowerCase().includes('poor')
+      // Submit conflicting findings on the SAME trace via v2 API
+      // Participant 1: Positive view
+      const response1 = await scenario.page.request.post(
+        `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings-v2`,
+        {
+          data: {
+            trace_id: traceId,
+            user_id: participant1.id,
+            text: 'Excellent code quality with great error handling. The response is comprehensive and accurate.',
+          },
+        }
       );
+      expect(response1.ok()).toBe(true);
 
-      // We should have submissions with different sentiment
-      expect(findings.length >= 2 || conflictingFindings.length >= 0).toBe(true);
+      // Participant 2: Negative view on SAME trace
+      const response2 = await scenario.page.request.post(
+        `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings-v2`,
+        {
+          data: {
+            trace_id: traceId,
+            user_id: participant2.id,
+            text: 'Poor quality response with significant errors. Missing critical information and inaccurate.',
+          },
+        }
+      );
+      expect(response2.ok()).toBe(true);
+
+      // SPEC REQUIREMENT: Disagreements are auto-detected and surfaced
+      // Query the trace discovery state to check for disagreements
+      const stateResponse = await scenario.page.request.get(
+        `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/traces/${traceId}/discovery-state`
+      );
+      expect(stateResponse.ok()).toBe(true);
+      const state = await stateResponse.json() as TraceDiscoveryState;
+
+      // Verify disagreements array exists and has detected conflicts
+      expect(state).toHaveProperty('disagreements');
+      expect(Array.isArray(state.disagreements)).toBe(true);
+
+      // SPEC REQUIREMENT: At least one disagreement should be detected
+      // when participants have clearly conflicting views on the same trace
+      expect(state.disagreements.length).toBeGreaterThan(0);
+
+      // Verify disagreement structure per spec
+      const disagreement = state.disagreements[0];
+      expect(disagreement).toHaveProperty('id');
+      expect(disagreement).toHaveProperty('trace_id');
+      expect(disagreement).toHaveProperty('user_ids');
+      expect(disagreement).toHaveProperty('finding_ids');
+      expect(disagreement).toHaveProperty('summary');
+
+      // Verify the disagreement involves both participants
+      expect(disagreement.user_ids).toContain(participant1.id);
+      expect(disagreement.user_ids).toContain(participant2.id);
+
+      // Verify the summary describes the conflict
+      expect(disagreement.summary.length).toBeGreaterThan(0);
 
       await scenario.cleanup();
     }
@@ -175,50 +261,86 @@ test.describe('Assisted Facilitation v2 - Classification & Disagreements', {
 
     const p1 = scenario.users.participant[0];
     const p2 = scenario.users.participant[1];
+    const traceId = scenario.traces[0].id;
 
     // Facilitator starts discovery
     await scenario.loginAs(scenario.facilitator);
     await scenario.beginDiscovery();
 
-    // Participant 1: Focuses on themes
-    const page1 = await scenario.newPageAs(p1);
-    await page1.waitForURL(/discovery|TraceViewer/);
-
-    for (let i = 0; i < 3; i++) {
-      const textarea = page1.locator('textarea').first();
-      if (await textarea.isVisible()) {
-        await textarea.fill(`General observation ${i + 1}: good code structure`);
-        if (i < 2) {
-          await page1.getByRole('button', { name: /Next/i }).click();
-          await page1.waitForTimeout(100);
-        }
+    // Submit findings via v2 API with clear category-targeted text
+    // Participant 1: Themes-focused findings
+    await scenario.page.request.post(
+      `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings-v2`,
+      {
+        data: {
+          trace_id: traceId,
+          user_id: p1.id,
+          text: 'The overall code structure demonstrates good organization and clarity.',
+        },
       }
+    );
+
+    // Participant 2: Edge case-focused findings
+    await scenario.page.request.post(
+      `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings-v2`,
+      {
+        data: {
+          trace_id: traceId,
+          user_id: p2.id,
+          text: 'Unusual edge case: what happens with unicode input or empty strings?',
+        },
+      }
+    );
+
+    // Participant 2: Missing info finding
+    await scenario.page.request.post(
+      `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings-v2`,
+      {
+        data: {
+          trace_id: traceId,
+          user_id: p2.id,
+          text: 'Missing documentation about error handling behavior.',
+        },
+      }
+    );
+
+    // SPEC REQUIREMENT: Facilitators see per-trace structured view with category breakdown
+    const stateResponse = await scenario.page.request.get(
+      `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/traces/${traceId}/discovery-state`
+    );
+    expect(stateResponse.ok()).toBe(true);
+    const state = await stateResponse.json() as TraceDiscoveryState;
+
+    // Verify structured category view exists
+    expect(state).toHaveProperty('categories');
+    expect(state.categories).toHaveProperty('themes');
+    expect(state.categories).toHaveProperty('edge_cases');
+    expect(state.categories).toHaveProperty('boundary_conditions');
+    expect(state.categories).toHaveProperty('failure_modes');
+    expect(state.categories).toHaveProperty('missing_info');
+
+    // Verify each category is an array
+    for (const category of VALID_CATEGORIES) {
+      expect(Array.isArray(state.categories[category])).toBe(true);
     }
 
-    // Participant 2: Focuses on edge cases
-    const page2 = await scenario.newPageAs(p2);
-    await page2.waitForURL(/discovery|TraceViewer/);
+    // SPEC REQUIREMENT: Findings are grouped by category
+    // At least one category should have findings
+    const totalFindings = Object.values(state.categories)
+      .reduce((sum, findings) => sum + findings.length, 0);
+    expect(totalFindings).toBeGreaterThanOrEqual(3);
 
-    for (let i = 0; i < 3; i++) {
-      const textarea = page2.locator('textarea').first();
-      if (await textarea.isVisible()) {
-        await textarea.fill(
-          `Edge case concern ${i + 1}: what about unusual inputs?`
-        );
-        if (i < 2) {
-          await page2.getByRole('button', { name: /Next/i }).click();
-          await page2.waitForTimeout(100);
-        }
-      }
-    }
-
-    // Both should have submitted findings
-    const findings = await scenario.api.getFindings();
-    expect(findings.length).toBeGreaterThanOrEqual(2);
-
-    // Verify we have contributions from both users
-    const uniqueUsers = new Set(findings.map((f) => f.user_id));
+    // Verify findings in categories have user attribution
+    const allFindings = Object.values(state.categories).flat();
+    const uniqueUsers = new Set(allFindings.map(f => f.user_id));
     expect(uniqueUsers.size).toBe(2);
+
+    // SPEC REQUIREMENT: Each finding shows user attribution
+    for (const finding of allFindings) {
+      expect(finding).toHaveProperty('user_id');
+      expect(finding).toHaveProperty('text');
+      expect(finding).toHaveProperty('category');
+    }
 
     await scenario.cleanup();
   });
@@ -239,39 +361,47 @@ test.describe('Assisted Facilitation v2 - Classification & Disagreements', {
       .build();
 
     const participant = scenario.users.participant[0];
+    const traceId = scenario.traces[0].id;
 
     // Facilitator starts discovery
     await scenario.loginAs(scenario.facilitator);
     await scenario.beginDiscovery();
 
-    // Participant submits finding
-    const testPage = await scenario.newPageAs(participant);
-    await testPage.waitForURL(/discovery|TraceViewer/);
+    // Submit finding via v2 API (which should provide classification)
+    const response = await scenario.page.request.post(
+      `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings-v2`,
+      {
+        data: {
+          trace_id: traceId,
+          user_id: participant.id,
+          text: 'Missing error handling for timeout scenarios.',
+        },
+      }
+    );
+    expect(response.ok()).toBe(true);
+    const finding = await response.json() as ClassifiedFinding;
 
-    const textarea = testPage.locator('textarea').first();
-    await textarea.fill('Missing error handling for timeout scenarios.');
-
-    // Submit via UI or API
-    await testPage.getByRole('button', { name: /Next|Submit|Complete/i }).click();
-    await testPage.waitForTimeout(500);
-
-    // Query findings and verify structure
-    const findings = await scenario.api.getFindings();
-    expect(findings.length).toBeGreaterThanOrEqual(1);
-
-    // Each finding should have required fields
-    const finding = findings[findings.length - 1];
-    expect(finding).toHaveProperty('id');
+    // SPEC REQUIREMENT: Findings must have classification metadata
+    // Required fields per ClassifiedFinding spec
     expect(finding).toHaveProperty('trace_id');
     expect(finding).toHaveProperty('user_id');
-    expect(finding).toHaveProperty('insight');
-    expect(finding).toHaveProperty('created_at');
+    expect(finding).toHaveProperty('text');
+    expect(finding).toHaveProperty('category');
+    expect(finding).toHaveProperty('question_id');
+    expect(finding).toHaveProperty('promoted');
 
-    // In v2, findings may also have classification metadata
-    // (category, question_id) - check if present
-    const hasClassification =
-      'category' in finding || 'question_id' in finding;
-    expect(typeof hasClassification).toBe('boolean');
+    // Verify category is valid
+    expect(VALID_CATEGORIES).toContain(finding.category);
+
+    // Verify question_id follows spec format (q_1 for first question)
+    expect(finding.question_id).toMatch(/^q_\d+$/);
+
+    // Verify promoted defaults to false
+    expect(finding.promoted).toBe(false);
+
+    // SPEC REQUIREMENT: The finding should be classified as missing_info
+    // based on the text "Missing error handling..."
+    expect(finding.category).toBe('missing_info');
 
     await scenario.cleanup();
   });
@@ -291,15 +421,14 @@ test.describe('Assisted Facilitation v2 - Classification & Disagreements', {
       .withRealApi()
       .build();
 
-    const participant = scenario.users.participant[0];
+    const traceId = scenario.traces[0].id;
 
     // Facilitator starts discovery
     await scenario.loginAs(scenario.facilitator);
     await scenario.beginDiscovery();
 
-    // Check if facilitator can set thresholds
-    const traceId = scenario.traces[0].id;
-    const thresholds = {
+    // SPEC REQUIREMENT: Thresholds are configurable per category per trace
+    const customThresholds: Record<FindingCategory, number> = {
       themes: 3,
       edge_cases: 2,
       boundary_conditions: 2,
@@ -309,79 +438,100 @@ test.describe('Assisted Facilitation v2 - Classification & Disagreements', {
 
     const response = await scenario.page.request.put(
       `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/traces/${traceId}/thresholds`,
-      { data: { thresholds } }
+      { data: { thresholds: customThresholds } }
     );
 
-    // Endpoint may not exist yet
-    if (response.ok()) {
-      // Participant submits findings
-      const testPage = await scenario.newPageAs(participant);
-      await testPage.waitForURL(/discovery|TraceViewer/);
+    // Endpoint MUST exist and work per spec
+    expect(response.ok(), `Threshold update failed: ${await response.text()}`).toBe(true);
 
-      // Participant should be guided to cover categories
-      for (let i = 0; i < 2; i++) {
-        const textarea = testPage.locator('textarea').first();
-        if (await textarea.isVisible()) {
-          await textarea.fill(`Finding ${i + 1}`);
-          const nextBtn = testPage.getByRole('button', { name: /Next/i });
-          if (i < 1 && (await nextBtn.isVisible().catch(() => false))) {
-            await nextBtn.click();
-          }
-        }
-      }
+    // Verify thresholds were saved by querying discovery state
+    const stateResponse = await scenario.page.request.get(
+      `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/traces/${traceId}/discovery-state`
+    );
+    expect(stateResponse.ok()).toBe(true);
+    const state = await stateResponse.json() as TraceDiscoveryState;
+
+    // SPEC REQUIREMENT: State must include thresholds
+    expect(state).toHaveProperty('thresholds');
+    expect(typeof state.thresholds).toBe('object');
+
+    // Verify thresholds match what we set
+    for (const [category, threshold] of Object.entries(customThresholds)) {
+      expect(state.thresholds[category as FindingCategory]).toBe(threshold);
+    }
+
+    // SPEC REQUIREMENT: Progress bars show count / threshold
+    // Verify the structure supports this by checking categories have arrays
+    // and thresholds have numbers
+    for (const category of VALID_CATEGORIES) {
+      expect(Array.isArray(state.categories[category])).toBe(true);
+      expect(typeof state.thresholds[category]).toBe('number');
     }
 
     await scenario.cleanup();
   });
 
-  test('api endpoint provides findings with optional classification', {
+  test('api endpoint provides findings with required classification', {
     tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings are classified in real-time as participants submit them'],
   }, async ({
     browser,
   }) => {
-    // Setup: Create workshop with findings
+    // Setup: Create workshop
     const scenario = await TestScenario.create(browser)
       .withWorkshop({ name: 'API Findings Test' })
       .withFacilitator()
       .withParticipants(1)
       .withTraces(2)
-      .withDiscoveryFinding({
-        insight: 'This handles edge cases appropriately.',
-        traceIndex: 0,
-      })
       .inPhase('discovery')
       .withRealApi()
       .build();
 
-    // Facilitator logs in
+    const participant = scenario.users.participant[0];
+    const traceId = scenario.traces[0].id;
+
+    // Facilitator starts discovery
     await scenario.loginAs(scenario.facilitator);
+    await scenario.beginDiscovery();
 
-    // Query findings via API
-    const findings = await scenario.api.getFindings();
-    expect(Array.isArray(findings)).toBe(true);
-
-    if (findings.length > 0) {
-      const finding = findings[0];
-
-      // Standard fields
-      expect(finding).toHaveProperty('id');
-      expect(finding).toHaveProperty('trace_id');
-      expect(finding).toHaveProperty('user_id');
-      expect(finding).toHaveProperty('insight');
-
-      // Optional classification fields (v2 enhancement)
-      // These may or may not be present depending on implementation
-      if ('category' in finding) {
-        const validCategories = [
-          'themes',
-          'edge_cases',
-          'boundary_conditions',
-          'failure_modes',
-          'missing_info',
-        ];
-        expect(validCategories).toContain((finding as any).category);
+    // Submit finding via v2 API
+    const submitResponse = await scenario.page.request.post(
+      `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings-v2`,
+      {
+        data: {
+          trace_id: traceId,
+          user_id: participant.id,
+          text: 'This handles edge cases appropriately.',
+        },
       }
-    }
+    );
+    expect(submitResponse.ok()).toBe(true);
+
+    // SPEC REQUIREMENT: Query discovery state to get classified findings
+    const stateResponse = await scenario.page.request.get(
+      `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/traces/${traceId}/discovery-state`
+    );
+    expect(stateResponse.ok()).toBe(true);
+    const state = await stateResponse.json() as TraceDiscoveryState;
+
+    // Find the submitted finding in the categorized structure
+    const allFindings = Object.values(state.categories).flat();
+    expect(allFindings.length).toBeGreaterThan(0);
+
+    const finding = allFindings.find(f => f.text.includes('edge cases'));
+    expect(finding).toBeDefined();
+
+    // SPEC REQUIREMENT: All findings must have classification
+    expect(finding!).toHaveProperty('id');
+    expect(finding!).toHaveProperty('trace_id');
+    expect(finding!).toHaveProperty('user_id');
+    expect(finding!).toHaveProperty('text');
+    expect(finding!).toHaveProperty('category');
+
+    // Verify category is valid
+    expect(VALID_CATEGORIES).toContain(finding!.category);
+
+    // This finding should be classified as edge_cases based on content
+    expect(finding!.category).toBe('edge_cases');
 
     await scenario.cleanup();
   });

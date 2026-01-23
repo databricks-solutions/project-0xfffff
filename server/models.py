@@ -195,6 +195,7 @@ class DiscoveryFindingCreate(BaseModel):
   trace_id: str
   user_id: str
   insight: str
+  category: Optional[str] = None  # Classification category (themes, edge_cases, etc.)
 
 
 class DiscoveryFinding(BaseModel):
@@ -203,6 +204,7 @@ class DiscoveryFinding(BaseModel):
   trace_id: str
   user_id: str
   insight: str
+  category: Optional[str] = None  # Classification category (themes, edge_cases, etc.)
   created_at: datetime = Field(default_factory=datetime.now)
 
 
