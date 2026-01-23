@@ -945,6 +945,10 @@ class DiscoveryService:
         # Persist the classified finding to database
         saved_finding = self.db_service.add_classified_finding(workshop_id, finding_data)
 
+        # Run disagreement detection against other findings for this trace
+        trace_findings = self.db_service.get_classified_findings_by_trace(workshop_id, trace_id)
+        self.detect_disagreements(workshop_id, trace_id, trace_findings)
+
         result = {
             "id": saved_finding.get("id"),
             "trace_id": trace_id,
@@ -975,6 +979,145 @@ class DiscoveryService:
             return "edge_cases"
         else:
             return "themes"
+
+    def detect_disagreements(
+        self, workshop_id: str, trace_id: str, findings: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Detect disagreements among findings for a trace using DSPy.
+
+        Per spec: "After each finding submission, compare against other findings
+        for the same trace. If conflicting viewpoints detected, create a Disagreement record."
+
+        Args:
+            workshop_id: The workshop ID
+            trace_id: The trace ID
+            findings: List of finding dicts for the trace
+
+        Returns:
+            List of detected disagreement dicts
+        """
+        if not findings or len(findings) < 2:
+            return []
+
+        # Group findings by user
+        user_findings: dict[str, list[dict]] = {}
+        for f in findings:
+            uid = f.get("user_id", "unknown")
+            if uid not in user_findings:
+                user_findings[uid] = []
+            user_findings[uid].append(f)
+
+        # Need at least 2 users to have a disagreement
+        if len(user_findings) < 2:
+            return []
+
+        # Get workshop and check for LLM configuration
+        workshop = self.db_service.get_workshop(workshop_id)
+        if not workshop:
+            return []
+
+        model_name = (getattr(workshop, "discovery_questions_model_name", None) or "").strip()
+        if not model_name or model_name == "demo":
+            logger.debug("Disagreement detection skipped: no LLM model configured")
+            return []
+
+        mlflow_config = self.db_service.get_mlflow_config(workshop_id)
+        if not mlflow_config:
+            logger.debug("Disagreement detection skipped: no MLflow config")
+            return []
+
+        from server.services.token_storage_service import token_storage
+
+        databricks_token = token_storage.get_token(workshop_id) or self.db_service.get_databricks_token(workshop_id)
+        if not databricks_token:
+            logger.debug("Disagreement detection skipped: no Databricks token")
+            return []
+
+        # Get trace for context
+        trace = self.db_service.get_trace(trace_id)
+        if not trace:
+            return []
+
+        try:
+            from server.services.discovery_dspy import (
+                build_databricks_lm,
+                get_disagreement_signature,
+                get_predictor,
+                run_predict,
+            )
+
+            DetectFindingDisagreements = get_disagreement_signature()
+            lm = build_databricks_lm(
+                endpoint_name=model_name,
+                workspace_url=mlflow_config.databricks_host,
+                token=databricks_token,
+                temperature=0.1,  # Low temperature for consistent detection
+            )
+            predictor = get_predictor(DetectFindingDisagreements, lm, temperature=0.1, max_tokens=500)
+
+            # Format findings as "USER_ID|FINDING_ID|FINDING_TEXT"
+            findings_with_users = []
+            for f in findings[:10]:  # Limit to 10 findings to avoid token limits
+                user_id = f.get("user_id", "unknown")
+                finding_id = f.get("id", "unknown")
+                text = self._trim(f.get("text") or f.get("insight") or "", 300)
+                if text:
+                    findings_with_users.append(f"{user_id}|{finding_id}|{text}")
+
+            if len(findings_with_users) < 2:
+                return []
+
+            result = run_predict(
+                predictor,
+                lm,
+                trace_id=trace_id,
+                trace_input=self._trim(trace.input or "", 1000),
+                trace_output=self._trim(trace.output or "", 1000),
+                findings_with_users=findings_with_users,
+            )
+
+            detected = getattr(result, "disagreements", None)
+            if not detected or not isinstance(detected, list):
+                return []
+
+            # Save detected disagreements to database
+            disagreements = []
+            for d in detected[:5]:  # Limit to 5 disagreements
+                # Extract fields from DSPy output
+                if hasattr(d, "model_dump"):
+                    d_dict = d.model_dump()
+                elif isinstance(d, dict):
+                    d_dict = d
+                else:
+                    continue
+
+                user_ids = d_dict.get("user_ids", [])
+                finding_ids = d_dict.get("finding_ids", [])
+                summary = d_dict.get("summary", "")
+
+                if not summary or not user_ids:
+                    continue
+
+                saved = self.db_service.save_disagreement(
+                    workshop_id=workshop_id,
+                    trace_id=trace_id,
+                    user_ids=user_ids,
+                    finding_ids=finding_ids,
+                    summary=summary,
+                )
+                if saved:
+                    disagreements.append(saved)
+
+            return disagreements
+
+        except Exception as e:
+            logger.warning(
+                "Failed to detect disagreements via DSPy (workshop=%s, trace=%s): %s",
+                workshop_id,
+                trace_id,
+                e,
+            )
+            return []
 
     def get_trace_discovery_state(
         self, workshop_id: str, trace_id: str
@@ -1023,18 +1166,27 @@ class DiscoveryService:
             }
             categories[category].append(finding_dict)
 
+        # Get disagreements from database
+        disagreements = self.db_service.get_disagreements_by_trace(workshop_id, trace_id)
+
+        # Get thresholds from database, with defaults
+        default_thresholds = {
+            "themes": 3,
+            "edge_cases": 2,
+            "boundary_conditions": 2,
+            "failure_modes": 2,
+            "missing_info": 1,
+        }
+        saved_thresholds = self.db_service.get_thresholds(workshop_id, trace_id)
+        if saved_thresholds:
+            default_thresholds.update(saved_thresholds)
+
         return {
             "trace_id": trace_id,
             "categories": categories,
-            "disagreements": [],  # TODO: Implement disagreement detection
+            "disagreements": disagreements,
             "questions": [],  # Questions are user-specific, not returned here
-            "thresholds": {
-                "themes": 3,
-                "edge_cases": 2,
-                "boundary_conditions": 2,
-                "failure_modes": 2,
-                "missing_info": 1,
-            },
+            "thresholds": default_thresholds,
         }
 
     def get_fuzzy_progress(self, workshop_id: str) -> dict[str, Any]:
@@ -1093,5 +1245,7 @@ class DiscoveryService:
         if not trace or trace.workshop_id != workshop_id:
             raise HTTPException(status_code=404, detail="Trace not found")
 
-        # Placeholder - full DB operations in Phase 3
+        # Persist thresholds to database
+        self.db_service.save_thresholds(workshop_id, trace_id, thresholds)
+
         return {"trace_id": trace_id, "thresholds": thresholds, "updated": True}

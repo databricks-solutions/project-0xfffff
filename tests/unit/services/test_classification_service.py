@@ -170,6 +170,14 @@ class TestClassificationPersistence:
                 """Return all findings for the workshop."""
                 return self.findings
 
+            def get_disagreements_by_trace(self, workshop_id, trace_id):
+                """Return disagreements for the trace."""
+                return []
+
+            def get_thresholds(self, workshop_id, trace_id):
+                """Return thresholds for the trace."""
+                return None
+
         service = DiscoveryService(mock_db_session)
         mock_db = MockDbService()
         # Pre-populate with findings that should be returned
@@ -185,9 +193,7 @@ class TestClassificationPersistence:
         # Verify findings from database are included in state
         categories = state["categories"]
         total_findings = sum(len(findings) for findings in categories.values())
-        assert total_findings == 2, (
-            f"Expected 2 findings from database, got {total_findings}"
-        )
+        assert total_findings == 2, f"Expected 2 findings from database, got {total_findings}"
 
         # Verify the structure exists
         assert "categories" in state
@@ -203,7 +209,7 @@ class TestDisagreementDetection:
     """
 
     @pytest.mark.req("Disagreements are auto-detected and surfaced")
-    def test_disagreement_detection_called_on_submit(self, mock_db_session):
+    def test_disagreement_detection_called_on_submit(self, mock_db_session, monkeypatch):
         """Test that disagreement detection runs when a finding is submitted.
 
         SPEC: "Disagreement detection runs against other findings for the same trace"
@@ -213,34 +219,114 @@ class TestDisagreementDetection:
         class MockTrace:
             id = "test_trace"
             workshop_id = "test_workshop"
+            input = "User question"
+            output = "Model response"
 
         class MockWorkshop:
             id = "test_workshop"
+            discovery_questions_model_name = "test-model"
 
-        disagreement_detection_called = {"called": False}
+        class MockMLflowConfig:
+            databricks_host = "https://test.databricks.com"
+
+        stored_disagreements = []
 
         class MockDbService:
+            def __init__(self):
+                self.findings = []
+
             def get_workshop(self, workshop_id):
                 return MockWorkshop()
 
             def get_trace(self, trace_id):
                 return MockTrace()
 
+            def get_mlflow_config(self, workshop_id):
+                return MockMLflowConfig()
+
+            def get_databricks_token(self, workshop_id):
+                return "test-token"
+
             def add_classified_finding(self, workshop_id, finding):
                 """Store the classified finding."""
-                return {"id": "finding_1", **finding}
+                finding_id = f"finding_{len(self.findings)}"
+                stored = {"id": finding_id, **finding}
+                self.findings.append(stored)
+                return stored
 
             def get_classified_findings_by_trace(self, workshop_id, trace_id):
-                return []
+                return [f for f in self.findings if f.get("trace_id") == trace_id]
 
-            def detect_disagreements(self, trace_id, findings):
-                disagreement_detection_called["called"] = True
-                return []
+            def save_disagreement(self, workshop_id, trace_id, user_ids, finding_ids, summary):
+                disagreement = {
+                    "id": f"disagreement_{len(stored_disagreements)}",
+                    "workshop_id": workshop_id,
+                    "trace_id": trace_id,
+                    "user_ids": user_ids,
+                    "finding_ids": finding_ids,
+                    "summary": summary,
+                }
+                stored_disagreements.append(disagreement)
+                return disagreement
+
+        # Mock token storage
+        class MockTokenStorage:
+            def get_token(self, workshop_id):
+                return "test-token"
+
+        monkeypatch.setattr(
+            "server.services.token_storage_service.token_storage",
+            MockTokenStorage(),
+        )
+
+        # Mock the DSPy components to return a detected disagreement
+        class MockDetectedDisagreement:
+            def model_dump(self):
+                return {
+                    "user_ids": ["user_1", "user_2"],
+                    "finding_ids": ["finding_0", "finding_1"],
+                    "summary": "Users disagree on response quality: user_1 finds it great while user_2 finds it awful",
+                }
+
+        class MockPredictionResult:
+            disagreements = [MockDetectedDisagreement()]
+
+        def mock_run_predict(predictor, lm, **kwargs):
+            # Only return disagreement when we have 2+ findings with different users
+            findings = kwargs.get("findings_with_users", [])
+            users = set()
+            for f in findings:
+                parts = f.split("|")
+                if len(parts) >= 1:
+                    users.add(parts[0])
+            if len(users) >= 2:
+                return MockPredictionResult()
+            # Return empty if not enough users
+            return type("Empty", (), {"disagreements": []})()
+
+        monkeypatch.setattr(
+            "server.services.discovery_dspy.run_predict",
+            mock_run_predict,
+        )
+
+        # Mock other DSPy imports
+        monkeypatch.setattr(
+            "server.services.discovery_dspy.build_databricks_lm",
+            lambda **kwargs: "mock_lm",
+        )
+        monkeypatch.setattr(
+            "server.services.discovery_dspy.get_disagreement_signature",
+            lambda: "MockSignature",
+        )
+        monkeypatch.setattr(
+            "server.services.discovery_dspy.get_predictor",
+            lambda sig, lm, **kwargs: "mock_predictor",
+        )
 
         service = DiscoveryService(mock_db_session)
         service.db_service = MockDbService()
 
-        # Submit a finding
+        # Submit two conflicting findings from different users
         service.submit_finding_v2(
             "test_workshop",
             "test_trace",
@@ -248,11 +334,17 @@ class TestDisagreementDetection:
             "This is a great response.",
         )
 
-        # SPEC REQUIREMENT: Disagreement detection should be triggered
-        # This will FAIL because submit_finding_v2 doesn't call disagreement detection
-        assert disagreement_detection_called["called"], (
-            "SPEC VIOLATION: submit_finding_v2 must trigger disagreement detection. "
-            "Per spec: 'Disagreement detection runs against other findings for the same trace'"
+        service.submit_finding_v2(
+            "test_workshop",
+            "test_trace",
+            "user_2",
+            "This is an awful response.",
+        )
+
+        # SPEC REQUIREMENT: Conflicting findings should result in a disagreement
+        assert len(stored_disagreements) > 0, (
+            "SPEC VIOLATION: Conflicting findings ('great' vs 'awful') must be detected as a disagreement. "
+            "Per spec: 'If conflicting viewpoints detected, create a Disagreement record'"
         )
 
     @pytest.mark.req("Disagreements are auto-detected and surfaced")
@@ -293,6 +385,10 @@ class TestDisagreementDetection:
             def get_disagreements_by_trace(self, workshop_id, trace_id):
                 """Should return disagreements for the trace."""
                 return stored_disagreements
+
+            def get_thresholds(self, workshop_id, trace_id):
+                """Return thresholds for the trace."""
+                return None
 
         service = DiscoveryService(mock_db_session)
         service.db_service = MockDbService()

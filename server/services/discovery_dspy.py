@@ -459,8 +459,52 @@ class ClassifyFinding(BaseModel):
     )
 
 
-class DetectDisagreements(BaseModel):
-    """Detect disagreements between participant findings."""
+class DetectedDisagreement(BaseModel):
+    """A detected disagreement between participants on a trace."""
 
-    findings: list[str] = Field(description="Findings with user attribution")
-    disagreements: list[DisagreementOutput] = Field(description="Detected disagreements")
+    user_ids: list[str] = Field(description="User IDs involved in the disagreement")
+    finding_ids: list[str] = Field(description="Finding IDs that conflict")
+    summary: str = Field(description="Brief summary of the conflicting viewpoints")
+
+
+def _define_disagreement_signature():
+    """Define the disagreement detection DSPy signature."""
+    dspy = _import_dspy()
+
+    class DetectFindingDisagreements(dspy.Signature):
+        """Detect semantic disagreements among participant findings for a trace.
+
+        Analyze findings from different users and identify conflicting viewpoints.
+        A disagreement exists when participants have opposing or contradictory
+        assessments of the same aspect of the LLM response.
+
+        Rules:
+        - Only flag genuine semantic conflicts, not just different observations
+        - A disagreement requires at least 2 users with opposing views
+        - Summarize the conflict without quoting users verbatim
+        - Focus on substantive disagreements about quality, correctness, or behavior
+        """
+
+        trace_id: str = dspy.InputField(desc="Trace identifier")
+        trace_input: str = dspy.InputField(desc="The LLM input (for context)")
+        trace_output: str = dspy.InputField(desc="The LLM output (for context)")
+        findings_with_users: list[str] = dspy.InputField(
+            desc="Findings formatted as 'USER_ID|FINDING_ID|FINDING_TEXT'"
+        )
+
+        disagreements: list[DetectedDisagreement] = dspy.OutputField(
+            desc="List of detected disagreements between users (may be empty)"
+        )
+
+    return DetectFindingDisagreements
+
+
+_DISAGREEMENT_SIG: type | None = None
+
+
+def get_disagreement_signature():
+    """Get the disagreement detection DSPy signature."""
+    global _DISAGREEMENT_SIG
+    if _DISAGREEMENT_SIG is None:
+        _DISAGREEMENT_SIG = _define_disagreement_signature()
+    return _DISAGREEMENT_SIG
