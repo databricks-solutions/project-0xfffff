@@ -60,7 +60,7 @@ As the facilitator, you are **not annotating like an SME**. Your responsibilitie
 
 ### Step 1: Download the Project
 
-1. Go to [https://github.com/databricks-solutions/project-0xfffff/releases/tag/v1.1.0](https://github.com/databricks-solutions/project-0xfffff/releases/tag/v1.1.0)
+1. Go to [https://github.com/databricks-solutions/project-0xfffff/releases](https://github.com/databricks-solutions/project-0xfffff/releases) to find the latest version
 
 2. Click to download **`project-with-build.zip`**
 
@@ -80,7 +80,7 @@ As the facilitator, you are **not annotating like an SME**. Your responsibilitie
 
 1. Click into **project-0xfffff**
 2. Navigate to the **client** folder
-3. Verify that the **build** folder is present
+3. Verify that the **build** folder is present 
 
 ### Step 4: Create the App
 
