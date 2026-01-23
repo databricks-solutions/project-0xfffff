@@ -282,14 +282,14 @@ SMEs apply the rubric to label traces. As facilitator, you observe but do not la
    - **Use all available traces** - For comprehensive annotation
 3. Optional: Enable **Randomize trace order**
 4. Click **Start Annotation**
-5. Give SMEs time to annotate (e.g., 10 minutes)
+5. Give SMEs time to annotate (e.g., 5 minutes)
 
 ![Annotation Configuration](facilitator_guide_images/31-annotation-config-start.png)
 
 ### Monitoring
 
 Track:
-- Traces annotated (e.g., 15/58)
+- Traces annotated (e.g., 3/10)
 - Participation per SME
 - Rating distribution
 
