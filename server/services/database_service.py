@@ -684,12 +684,13 @@ class DatabaseService:
     for attempt in range(max_retries):
       try:
         # First, try to find existing record to preserve its ID
-        # Use with_for_update() to lock the row and prevent race conditions
+        # Note: Removed with_for_update() - SQLite doesn't support row-level locking
+        # and it can cause issues. SQLite uses file-level locking instead.
         existing_finding = self.db.query(DiscoveryFindingDB).filter(
           DiscoveryFindingDB.workshop_id == workshop_id,
           DiscoveryFindingDB.trace_id == finding_data.trace_id,
           DiscoveryFindingDB.user_id == finding_data.user_id
-        ).with_for_update().first()
+        ).first()
         
         if existing_finding:
           # Update existing finding
@@ -1178,10 +1179,11 @@ class DatabaseService:
     last_error = None
     for attempt in range(max_retries):
       try:
+        # Note: Removed with_for_update() - SQLite doesn't support row-level locking
+        # and it can cause silent failures. SQLite uses file-level locking instead.
         existing_annotation = (
           self.db.query(AnnotationDB)
           .filter(AnnotationDB.user_id == annotation_data.user_id, AnnotationDB.trace_id == annotation_data.trace_id)
-          .with_for_update()  # Lock the row if it exists
           .first()
         )
 
