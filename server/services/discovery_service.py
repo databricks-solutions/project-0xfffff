@@ -914,13 +914,13 @@ class DiscoveryService:
 
     # --------- Assisted Facilitation v2 Methods ---------
 
-    def submit_finding_v2(
+    async def submit_finding_v2(
         self, workshop_id: str, trace_id: str, user_id: str, finding_text: str
     ) -> dict[str, Any]:
         """Submit finding with real-time classification.
 
         This method:
-        1. Classifies finding into category
+        1. Classifies finding into category using LLM (or falls back to keyword-based)
         2. Persists finding with category to database
         3. Runs disagreement detection
         4. Returns classified finding
@@ -930,9 +930,12 @@ class DiscoveryService:
         if not trace or trace.workshop_id != workshop_id:
             raise HTTPException(status_code=404, detail="Trace not found")
 
-        # For now, implement basic classification without LLM
-        # Full LLM integration will happen in Phase 2
-        category = self._classify_finding_locally(finding_text)
+        # Try LLM-based classification if configured
+        category = await self._classify_finding_with_llm(
+            workshop_id=workshop_id,
+            finding_text=finding_text,
+            trace=trace,
+        )
 
         # Build finding data for persistence
         finding_data = {
@@ -947,7 +950,7 @@ class DiscoveryService:
 
         # Run disagreement detection against other findings for this trace
         trace_findings = self.db_service.get_classified_findings_by_trace(workshop_id, trace_id)
-        self.detect_disagreements(workshop_id, trace_id, trace_findings)
+        await self._detect_disagreements_with_llm(workshop_id, trace_id, trace_findings, trace)
 
         result = {
             "id": saved_finding.get("id"),
@@ -960,6 +963,123 @@ class DiscoveryService:
         }
 
         return result
+
+    async def _classify_finding_with_llm(
+        self, workshop_id: str, finding_text: str, trace: Any
+    ) -> str:
+        """Classify finding using LLM if configured, otherwise fall back to keyword-based."""
+        from server.services.classification_service import ClassificationService
+        from server.services.token_storage_service import token_storage
+
+        # Get LLM configuration
+        mlflow_config = self.db_service.get_mlflow_config(workshop_id)
+        workshop = self.db_service.get_workshop(workshop_id)
+        model_name = getattr(workshop, "discovery_questions_model_name", None) or ""
+
+        if not mlflow_config or not model_name:
+            logger.debug("No LLM config for workshop %s, using local classification", workshop_id)
+            return self._classify_finding_locally(finding_text)
+
+        # Get token from memory or database
+        databricks_token = token_storage.get_token(workshop_id)
+        if not databricks_token:
+            databricks_token = self.db_service.get_databricks_token(workshop_id)
+
+        if not databricks_token:
+            logger.debug("No Databricks token for workshop %s, using local classification", workshop_id)
+            return self._classify_finding_locally(finding_text)
+
+        # Extract trace input/output for context
+        trace_input = ""
+        trace_output = ""
+        if trace:
+            trace_input = str(getattr(trace, "input", "") or "")[:1000]
+            trace_output = str(getattr(trace, "output", "") or "")[:1000]
+
+        # Use LLM classification
+        try:
+            classification_service = ClassificationService(self.db)
+            category = await classification_service.classify_finding(
+                finding_text=finding_text,
+                trace_input=trace_input,
+                trace_output=trace_output,
+                workshop_id=workshop_id,
+                model_name=model_name.strip(),
+                databricks_host=mlflow_config.databricks_host,
+                databricks_token=databricks_token,
+            )
+            return category
+        except Exception as e:
+            logger.warning("LLM classification failed for workshop %s: %s", workshop_id, e)
+            return self._classify_finding_locally(finding_text)
+
+    async def _detect_disagreements_with_llm(
+        self, workshop_id: str, trace_id: str, findings: list[dict[str, Any]], trace: Any
+    ) -> None:
+        """Detect disagreements using LLM if configured."""
+        from server.services.classification_service import ClassificationService
+        from server.services.token_storage_service import token_storage
+        from server.models import ClassifiedFinding
+
+        if not findings or len(findings) < 2:
+            return
+
+        # Get LLM configuration
+        mlflow_config = self.db_service.get_mlflow_config(workshop_id)
+        workshop = self.db_service.get_workshop(workshop_id)
+        model_name = getattr(workshop, "discovery_questions_model_name", None) or ""
+
+        if not mlflow_config or not model_name:
+            # Fall back to simple keyword-based detection
+            self.detect_disagreements(workshop_id, trace_id, findings)
+            return
+
+        # Get token from memory or database
+        databricks_token = token_storage.get_token(workshop_id)
+        if not databricks_token:
+            databricks_token = self.db_service.get_databricks_token(workshop_id)
+
+        if not databricks_token:
+            self.detect_disagreements(workshop_id, trace_id, findings)
+            return
+
+        # Convert findings to ClassifiedFinding objects
+        classified_findings = []
+        for f in findings:
+            classified_findings.append(ClassifiedFinding(
+                id=f.get("id", ""),
+                workshop_id=workshop_id,
+                trace_id=trace_id,
+                user_id=f.get("user_id", ""),
+                text=f.get("text", ""),
+                category=f.get("category", "themes"),
+                question_id=f.get("question_id", ""),
+                promoted=f.get("promoted", False),
+            ))
+
+        try:
+            classification_service = ClassificationService(self.db)
+            disagreements = await classification_service.detect_disagreements(
+                trace_id=trace_id,
+                findings=classified_findings,
+                workshop_id=workshop_id,
+                model_name=model_name.strip(),
+                databricks_host=mlflow_config.databricks_host,
+                databricks_token=databricks_token,
+            )
+
+            # Persist disagreements to database
+            for d in disagreements:
+                self.db_service.save_disagreement(
+                    workshop_id=workshop_id,
+                    trace_id=d.trace_id,
+                    user_ids=d.user_ids,
+                    finding_ids=d.finding_ids,
+                    summary=d.summary,
+                )
+        except Exception as e:
+            logger.warning("LLM disagreement detection failed for workshop %s: %s", workshop_id, e)
+            self.detect_disagreements(workshop_id, trace_id, findings)
 
     @staticmethod
     def _classify_finding_locally(finding_text: str) -> str:
@@ -1135,9 +1255,8 @@ class DiscoveryService:
         if not trace or trace.workshop_id != workshop_id:
             raise HTTPException(status_code=404, detail="Trace not found")
 
-        # Get all findings for this trace
-        all_findings = self.db_service.get_findings(workshop_id)
-        trace_findings = [f for f in all_findings if f.trace_id == trace_id]
+        # Get all classified findings for this trace from ClassifiedFindingDB
+        trace_findings = self.db_service.get_classified_findings_by_trace(workshop_id, trace_id)
 
         # Initialize categories with empty lists
         categories: dict[str, list[dict[str, Any]]] = {
@@ -1150,19 +1269,19 @@ class DiscoveryService:
 
         # Group findings by category
         for finding in trace_findings:
-            category = finding.category or "themes"  # Default to themes if no category
+            category = finding.get("category") or "themes"  # Default to themes if no category
             if category not in categories:
                 category = "themes"  # Fallback for unknown categories
 
             finding_dict = {
-                "id": finding.id,
-                "trace_id": finding.trace_id,
-                "user_id": finding.user_id,
-                "text": finding.insight,  # Map insight to text for API consistency
+                "id": finding.get("id"),
+                "trace_id": finding.get("trace_id"),
+                "user_id": finding.get("user_id"),
+                "text": finding.get("text"),
                 "category": category,
-                "question_id": "q_1",  # Default question ID
-                "promoted": False,  # Not promoted by default
-                "created_at": finding.created_at.isoformat() if finding.created_at else None,
+                "question_id": finding.get("question_id", "q_1"),
+                "promoted": finding.get("promoted", False),
+                "created_at": finding.get("created_at"),
             }
             categories[category].append(finding_dict)
 

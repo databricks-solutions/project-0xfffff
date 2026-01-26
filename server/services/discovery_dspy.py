@@ -216,8 +216,12 @@ def build_databricks_lm(endpoint_name: str, workspace_url: str, token: str, *, t
     api_base = f"{workspace_url.rstrip('/')}/serving-endpoints"
 
     # DSPy commonly uses LiteLLM-style model names like `openai/gpt-4o-mini`.
-    # We keep the `openai/` provider prefix but point `api_base` to Databricks.
-    model = f"databricks/{endpoint_name}"
+    # We keep the `databricks/` provider prefix but point `api_base` to Databricks.
+    # Handle case where endpoint_name already has the prefix
+    if endpoint_name.startswith("databricks/"):
+        model = endpoint_name
+    else:
+        model = f"databricks/{endpoint_name}"
 
     try:
         return dspy.LM(model=model, api_key=token, api_base=api_base, temperature=temperature)
@@ -457,6 +461,52 @@ class ClassifyFinding(BaseModel):
     category: str = Field(
         description="One of: themes, edge_cases, boundary_conditions, failure_modes, missing_info"
     )
+
+
+def _define_classification_signature():
+    """Define the classification DSPy signature."""
+    dspy = _import_dspy()
+
+    class ClassifyDiscoveryFinding(dspy.Signature):
+        """Classify a discovery finding into exactly one category.
+
+        Categories:
+        - themes: General observations about quality, clarity, maintainability, patterns
+        - edge_cases: Unusual inputs, special cases, uncommon scenarios
+        - boundary_conditions: Limits, size boundaries, performance at scale
+        - failure_modes: Crashes, errors, broken functionality, bugs
+        - missing_info: Missing validation, incomplete handling, absent checks
+
+        Rules:
+        - Choose the single most appropriate category
+        - Consider the finding text in context of the trace input/output
+        - "missing" usually means missing_info
+        - "crash", "fail", "error", "broken" usually means failure_modes
+        - "edge", "corner", "unusual" usually means edge_cases
+        - "boundary", "limit", "scale" usually means boundary_conditions
+        - Everything else is typically themes
+        """
+
+        finding_text: str = dspy.InputField(desc="The finding text to classify")
+        trace_input: str = dspy.InputField(desc="The LLM input for context")
+        trace_output: str = dspy.InputField(desc="The LLM output for context")
+
+        category: str = dspy.OutputField(
+            desc="One of: themes, edge_cases, boundary_conditions, failure_modes, missing_info"
+        )
+
+    return ClassifyDiscoveryFinding
+
+
+_CLASSIFICATION_SIG: type | None = None
+
+
+def get_classification_signature():
+    """Get the classification DSPy signature."""
+    global _CLASSIFICATION_SIG
+    if _CLASSIFICATION_SIG is None:
+        _CLASSIFICATION_SIG = _define_classification_signature()
+    return _CLASSIFICATION_SIG
 
 
 class DetectedDisagreement(BaseModel):

@@ -178,3 +178,58 @@ export async function reloadWorkshop(
   await page.goto(`/?workshop=${workshopId}`);
   await page.waitForLoadState('networkidle');
 }
+
+/**
+ * Configure the discovery questions LLM model for a workshop
+ */
+export async function configureDiscoveryLLM(
+  page: Page,
+  workshopId: string,
+  modelName: string,
+  apiUrl: string = 'http://127.0.0.1:8000'
+): Promise<void> {
+  const response = await page.request.put(
+    `${apiUrl}/workshops/${workshopId}/discovery-questions-model`,
+    {
+      data: { model_name: modelName },
+    }
+  );
+
+  if (!response.ok()) {
+    throw new Error(
+      `Failed to configure discovery LLM: ${response.status()} ${await response.text()}`
+    );
+  }
+}
+
+/**
+ * Configure MLflow integration for a workshop
+ */
+export async function configureMLflow(
+  page: Page,
+  workshopId: string,
+  config: {
+    databricks_host: string;
+    databricks_token: string;
+    experiment_id: string;
+  },
+  apiUrl: string = 'http://127.0.0.1:8000'
+): Promise<void> {
+  const response = await page.request.post(
+    `${apiUrl}/workshops/${workshopId}/mlflow-config`,
+    {
+      data: {
+        databricks_host: config.databricks_host,
+        databricks_token: config.databricks_token,
+        experiment_id: config.experiment_id,
+        max_traces: 100,
+      },
+    }
+  );
+
+  if (!response.ok()) {
+    throw new Error(
+      `Failed to configure MLflow: ${response.status()} ${await response.text()}`
+    );
+  }
+}

@@ -68,7 +68,7 @@ class ClassificationService:
             return "themes"
 
         try:
-            from server.services.discovery_dspy import ClassifyFinding
+            from server.services.discovery_dspy import get_classification_signature
 
             lm = build_databricks_lm(
                 endpoint_name=model_name,
@@ -77,7 +77,8 @@ class ClassificationService:
                 temperature=0.1,  # Lower temp for consistent classification
             )
 
-            predictor = get_predictor(ClassifyFinding, lm, temperature=0.1, max_tokens=50)
+            ClassifyDiscoveryFinding = get_classification_signature()
+            predictor = get_predictor(ClassifyDiscoveryFinding, lm, temperature=0.1, max_tokens=50)
 
             result = run_predict(
                 predictor,
@@ -98,13 +99,14 @@ class ClassificationService:
             return "themes"
 
         except Exception as e:
-            logger.exception(
+            logger.warning(
                 "Failed to classify finding via LLM (workshop=%s, model=%s): %s",
                 workshop_id,
                 model_name,
                 e,
             )
-            return "themes"
+            # Re-raise so caller can fall back to local classification
+            raise
 
     async def detect_disagreements(
         self,
@@ -136,7 +138,7 @@ class ClassificationService:
             return []
 
         try:
-            from server.services.discovery_dspy import DetectDisagreements
+            from server.services.discovery_dspy import get_disagreement_signature
 
             lm = build_databricks_lm(
                 endpoint_name=model_name,
@@ -145,17 +147,21 @@ class ClassificationService:
                 temperature=0.1,
             )
 
-            predictor = get_predictor(DetectDisagreements, lm, temperature=0.1, max_tokens=500)
+            DetectFindingDisagreements = get_disagreement_signature()
+            predictor = get_predictor(DetectFindingDisagreements, lm, temperature=0.1, max_tokens=500)
 
-            # Format findings with user attribution
-            findings_text = [
-                f"User {f.user_id}: {f.text[:200]}" for f in findings[:10]
+            # Format findings with user attribution as "USER_ID|FINDING_ID|FINDING_TEXT"
+            findings_with_users = [
+                f"{f.user_id}|{f.id}|{f.text[:200]}" for f in findings[:10]
             ]
 
             result = run_predict(
                 predictor,
                 lm,
-                findings=findings_text,
+                trace_id=trace_id,
+                trace_input="",  # Not used for disagreement detection
+                trace_output="",
+                findings_with_users=findings_with_users,
             )
 
             disagreements = getattr(result, "disagreements", None)

@@ -262,7 +262,7 @@ async def submit_finding_v2(
 ) -> Dict[str, Any]:
     """Submit finding with real-time classification (v2 assisted facilitation)."""
     svc = DiscoveryService(db)
-    return svc.submit_finding_v2(
+    return await svc.submit_finding_v2(
         workshop_id=workshop_id,
         trace_id=request.trace_id,
         user_id=request.user_id,
