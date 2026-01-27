@@ -357,9 +357,6 @@ deploy:
   PROFILE="${DATABRICKS_CONFIG_PROFILE:-DEFAULT}"
   APP="${DATABRICKS_APP_NAME:?DATABRICKS_APP_NAME is not set (run \`just configure\`)}"
 
-  echo "🔨 Building frontend..."
-  just ui-build
-
   echo "📦 Syncing files to workspace..."
   DATABRICKS_USERNAME=$(databricks --profile "$PROFILE" current-user me | jq -r .userName)
   WORKSPACE_PATH="/Workspace/Users/$DATABRICKS_USERNAME/$APP"
@@ -379,6 +376,7 @@ deploy:
   fi
 
   echo "🚀 Deploying app: $APP"
+  echo "   Databricks will run: npm install → pip install → npm run build → app.yaml command"
   databricks --profile "$PROFILE" apps deploy "$APP" --source-code-path "$WORKSPACE_PATH"
 
   echo ""

@@ -1,0 +1,8 @@
+{
+  "name": "human-eval-workshop",
+  "private": true,
+  "description": "Root package.json to enable Databricks Apps Node.js build flow",
+  "scripts": {
+    "build": "npm -C client install && npm -C client run build"
+  }
+}
