@@ -29,9 +29,7 @@ import {
   ExternalLink,
   Database,
   RefreshCw,
-  Link,
-  Code,
-  Hash
+  Link
 } from "lucide-react";
 import { toast } from 'sonner';
 import { useInvalidateTraces, useWorkshop } from '@/hooks/useWorkshopApi';
@@ -44,29 +42,33 @@ import { useJsonPathExtraction } from '@/hooks/useJsonPathExtraction';
 // ============================================================================
 
 /**
- * Detect if a string looks like markdown content
+ * Detect if a string should be rendered as markdown
+ * Be conservative - only render as markdown if there's clear formatting that benefits from it
  */
 const isMarkdownContent = (str: string): boolean => {
   if (!str || typeof str !== 'string') return false;
   
-  // Check for common markdown patterns
-  const markdownPatterns = [
-    /^#{1,6}\s+/m,           // Headers: # Header
+  // Don't render short strings as markdown (likely just field values)
+  if (str.length < 100) return false;
+  
+  // Check for markdown patterns that actually benefit from rendering
+  const beneficialPatterns = [
     /\*\*[^*]+\*\*/,         // Bold: **text**
-    /\*[^*]+\*/,             // Italic: *text*
-    /^\s*[-*+]\s+/m,         // Unordered lists: - item
-    /^\s*\d+\.\s+/m,         // Ordered lists: 1. item
-    /\[.+\]\(.+\)/,          // Links: [text](url)
-    /```[\s\S]*```/,         // Code blocks: ```code```
-    /`[^`]+`/,               // Inline code: `code`
-    /^\s*>\s+/m,             // Blockquotes: > quote
-    /\|.+\|/,                // Tables: | cell |
-    /\n\n/,                  // Multiple paragraphs
+    /^\s*[-*+]\s+.+$/m,      // Unordered lists with content: - item
+    /^\s*\d+\.\s+.+$/m,      // Ordered lists with content: 1. item
+    /\[.+\]\(https?:\/\/.+\)/,  // Links with URLs: [text](url)
+    /```[\s\S]+```/,         // Code blocks with content
+    /^\s*>\s+.+$/m,          // Blockquotes with content
+    /\|.+\|.+\|/,            // Tables with multiple cells
   ];
   
-  // If the string has multiple markdown patterns, it's likely markdown
-  const matchCount = markdownPatterns.filter(pattern => pattern.test(str)).length;
-  return matchCount >= 2 || str.length > 200; // Long text or multiple patterns
+  // Only render as markdown if it has actual formatting
+  const hasFormatting = beneficialPatterns.some(pattern => pattern.test(str));
+  
+  // Also check for multiple paragraphs (line breaks) in longer text
+  const hasMultipleParagraphs = str.length > 200 && /\n\n/.test(str);
+  
+  return hasFormatting || hasMultipleParagraphs;
 };
 
 /**
@@ -105,9 +107,36 @@ const tryParseJson = (str: string): { success: boolean; data: any } => {
 };
 
 /**
- * Format a field name for display (convert camelCase/snake_case to Title Case)
+ * Format a field name for display (convert camelCase/snake_case to readable text)
  */
 const formatFieldName = (name: string): string => {
+  // Common technical field name mappings to friendly names
+  const friendlyNames: Record<string, string> = {
+    'url_citations': 'Sources',
+    'url': 'Link',
+    'trajectory': 'Reasoning Steps',
+    'thought': 'Thinking',
+    'tool_name': 'Tool Used',
+    'tool_args': 'Tool Input',
+    'tool_response': 'Tool Output',
+    'observation': 'Result',
+    'annotations': 'References',
+    'state': 'Status',
+    'context': 'Context',
+    'args': 'Arguments',
+    'kwargs': 'Parameters',
+    'content': 'Content',
+    'message': 'Message',
+    'messages': 'Messages',
+    'role': 'Role',
+    'type': 'Type',
+  };
+  
+  const lowerName = name.toLowerCase();
+  if (friendlyNames[lowerName]) {
+    return friendlyNames[lowerName];
+  }
+  
   return name
     .replace(/_/g, ' ')
     .replace(/([a-z])([A-Z])/g, '$1 $2')
@@ -115,36 +144,34 @@ const formatFieldName = (name: string): string => {
 };
 
 /**
- * Collapsible section for any content
+ * Collapsible section for any content - clean, user-friendly design
  */
 const CollapsibleSection: React.FC<{
   title: string;
   defaultExpanded?: boolean;
   children: React.ReactNode;
-  badge?: string;
-}> = ({ title, defaultExpanded = false, children, badge }) => {
+  itemCount?: number;
+}> = ({ title, defaultExpanded = false, children, itemCount }) => {
   const [expanded, setExpanded] = useState(defaultExpanded);
 
   return (
-    <div className="border rounded-lg overflow-hidden bg-white">
-      <Button
-        variant="ghost"
+    <div className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
+      <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between p-3 h-auto text-gray-700 hover:bg-gray-50"
+        className="w-full flex items-center justify-between p-3 text-left hover:bg-gray-50 transition-colors"
       >
         <div className="flex items-center gap-2">
-          <Code className="h-4 w-4 text-gray-500" />
-          <span className="font-medium text-sm">{title}</span>
-          {badge && (
-            <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
-              {badge}
+          <span className="font-medium text-gray-700">{title}</span>
+          {itemCount !== undefined && itemCount > 0 && (
+            <span className="text-xs text-gray-500">
+              ({itemCount})
             </span>
           )}
         </div>
-        {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-      </Button>
+        <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+      </button>
       {expanded && (
-        <div className="border-t bg-gray-50 p-3 max-h-96 overflow-auto">
+        <div className="border-t border-gray-100 bg-gray-50/50 p-4 max-h-[500px] overflow-auto">
           {children}
         </div>
       )}
@@ -189,22 +216,21 @@ const SmartValueRenderer: React.FC<{
           href={value}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-blue-600 hover:underline flex items-center gap-1 break-all"
+          className="text-blue-600 hover:underline inline-flex items-center gap-1 break-all"
         >
-          <ExternalLink className="h-3 w-3 flex-shrink-0" />
           {value}
+          <ExternalLink className="h-3 w-3 flex-shrink-0" />
         </a>
       );
     }
 
-    // Check if it's embedded JSON
+    // Check if it's embedded JSON string
     if (isJsonString(value)) {
       const { success, data } = tryParseJson(value);
       if (success) {
         return (
           <CollapsibleSection 
-            title={fieldName ? formatFieldName(fieldName) : 'JSON Data'} 
-            badge="JSON"
+            title={fieldName ? formatFieldName(fieldName) : 'Details'} 
             defaultExpanded={defaultExpanded}
           >
             <SmartValueRenderer value={data} depth={depth + 1} />
@@ -213,10 +239,10 @@ const SmartValueRenderer: React.FC<{
       }
     }
 
-    // Check if it's markdown
+    // Only render as markdown if it has actual markdown formatting
     if (isMarkdownContent(value)) {
       return (
-        <div className="prose prose-sm max-w-none text-gray-800">
+        <div className="prose prose-sm max-w-none text-gray-800 prose-headings:text-gray-900 prose-headings:font-semibold prose-p:text-gray-700 prose-li:text-gray-700 prose-a:text-blue-600">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>
             {value}
           </ReactMarkdown>
@@ -224,26 +250,27 @@ const SmartValueRenderer: React.FC<{
       );
     }
 
-    // Plain string
+    // Plain text - render as-is with proper line breaks
     return <span className="text-gray-800 whitespace-pre-wrap">{value}</span>;
   }
 
   // Handle arrays
   if (Array.isArray(value)) {
     if (value.length === 0) {
-      return <span className="text-gray-400 italic">[]</span>;
+      return <span className="text-gray-400 italic">Empty</span>;
     }
 
-    // Check if it's an array of simple values
+    // Check if it's an array of simple values (strings, numbers, booleans)
     const isSimpleArray = value.every(v => 
       typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'
     );
 
+    // For short simple arrays, show inline
     if (isSimpleArray && value.length <= 5) {
       return (
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap gap-2">
           {value.map((item, idx) => (
-            <span key={idx} className="bg-gray-100 px-2 py-0.5 rounded text-sm">
+            <span key={idx} className="bg-gray-100 px-2 py-1 rounded text-sm text-gray-700">
               <SmartValueRenderer value={item} depth={depth + 1} />
             </span>
           ))}
@@ -251,17 +278,46 @@ const SmartValueRenderer: React.FC<{
       );
     }
 
-    // Complex array - show as collapsible
+    // Check if it's an array of message objects - render directly without extra nesting
+    const isMessageArray = value.every(v => 
+      typeof v === 'object' && v !== null && ('content' in v || 'text' in v)
+    );
+
+    if (isMessageArray) {
+      return (
+        <div className="space-y-3">
+          {value.map((item, idx) => (
+            <div key={idx} className="bg-white rounded-lg p-3 border border-gray-100">
+              <SmartValueRenderer value={item} depth={depth + 1} />
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    // For complex arrays with 1-2 items, show directly without collapsing
+    if (value.length <= 2) {
+      return (
+        <div className="space-y-3">
+          {value.map((item, idx) => (
+            <div key={idx} className="bg-white rounded-lg p-3 border border-gray-100">
+              <SmartValueRenderer value={item} depth={depth + 1} />
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    // For larger complex arrays, show as collapsible list
     return (
       <CollapsibleSection 
-        title={fieldName ? formatFieldName(fieldName) : 'Array'} 
-        badge={`${value.length} items`}
+        title={fieldName ? formatFieldName(fieldName) : 'Items'} 
+        itemCount={value.length}
         defaultExpanded={defaultExpanded || depth === 0}
       >
-        <div className="space-y-2">
+        <div className="space-y-3">
           {value.map((item, idx) => (
-            <div key={idx} className="border-l-2 border-gray-200 pl-3">
-              <div className="text-xs text-gray-500 mb-1">Item {idx + 1}</div>
+            <div key={idx} className="bg-white rounded-lg p-3 border border-gray-100">
               <SmartValueRenderer value={item} depth={depth + 1} />
             </div>
           ))}
@@ -275,7 +331,38 @@ const SmartValueRenderer: React.FC<{
     const entries = Object.entries(value);
     
     if (entries.length === 0) {
-      return <span className="text-gray-400 italic">{'{}'}</span>;
+      return <span className="text-gray-400 italic">Empty</span>;
+    }
+
+    // Check if this is a message object (has role/content pattern)
+    const isMessageObject = 'content' in value && ('role' in value || 'type' in value);
+    if (isMessageObject) {
+      const content = value.content || value.text || '';
+      const role = value.role || value.type || '';
+      const otherFields = Object.entries(value).filter(([k]) => !['content', 'text', 'role', 'type'].includes(k));
+      
+      return (
+        <div className="space-y-2">
+          {/* Show role/type as a small label */}
+          {role && (
+            <div className="text-xs text-gray-500 uppercase tracking-wide">{role}</div>
+          )}
+          {/* Show main content */}
+          <div className="text-gray-800">
+            <SmartValueRenderer value={content} depth={depth + 1} />
+          </div>
+          {/* Show any other fields inline */}
+          {otherFields.length > 0 && (
+            <div className="flex flex-wrap gap-3 text-xs text-gray-500 pt-1">
+              {otherFields.map(([key, val]) => (
+                <span key={key}>
+                  {formatFieldName(key)}: {typeof val === 'string' ? val : JSON.stringify(val)}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      );
     }
 
     // Identify "main content" fields that should be rendered prominently
@@ -292,12 +379,9 @@ const SmartValueRenderer: React.FC<{
             <SmartValueRenderer value={mainEntry[1]} fieldName={mainEntry[0]} depth={depth + 1} defaultExpanded />
           </div>
           
-          {/* Other fields as collapsible sections */}
+          {/* Other fields as collapsible sections - only if there are any */}
           {otherEntries.length > 0 && (
-            <div className="space-y-2 mt-4 pt-4 border-t">
-              <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
-                Additional Data
-              </div>
+            <div className="space-y-2 mt-4 pt-4 border-t border-gray-200">
               {otherEntries.map(([key, val]) => (
                 <SmartObjectField key={key} fieldKey={key} value={val} depth={depth + 1} />
               ))}
@@ -307,9 +391,29 @@ const SmartValueRenderer: React.FC<{
       );
     }
 
+    // Check if all values are simple (strings, numbers, booleans) - display as inline table
+    const allSimple = entries.every(([, val]) => 
+      typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean' || val === null
+    );
+    
+    if (allSimple && entries.length <= 6) {
+      return (
+        <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+          {entries.map(([key, val]) => (
+            <React.Fragment key={key}>
+              <span className="text-sm font-medium text-gray-500">{formatFieldName(key)}:</span>
+              <span className="text-sm text-gray-800">
+                <SmartValueRenderer value={val} depth={depth + 1} />
+              </span>
+            </React.Fragment>
+          ))}
+        </div>
+      );
+    }
+
     // For nested objects, show all fields
     return (
-      <div className="space-y-2">
+      <div className="space-y-1">
         {entries.map(([key, val]) => (
           <SmartObjectField key={key} fieldKey={key} value={val} depth={depth + 1} />
         ))}
@@ -322,7 +426,7 @@ const SmartValueRenderer: React.FC<{
 };
 
 /**
- * Render a single object field with smart formatting
+ * Render a single object field with smart formatting - clean, user-friendly design
  */
 const SmartObjectField: React.FC<{
   fieldKey: string;
@@ -336,41 +440,32 @@ const SmartObjectField: React.FC<{
   const isLongString = typeof value === 'string' && value.length > 200;
   const shouldCollapse = isComplexValue || isLongString;
 
-  // Check if string value is markdown or JSON
-  const isMarkdown = typeof value === 'string' && isMarkdownContent(value);
-  const valueIsJson = typeof value === 'string' && isJsonString(value);
+  // Get count for display
+  const itemCount = Array.isArray(value) 
+    ? value.length 
+    : typeof value === 'object' && value !== null
+      ? Object.keys(value).length 
+      : undefined;
 
   if (shouldCollapse) {
-    const badge = Array.isArray(value) 
-      ? `${value.length} items` 
-      : isMarkdown 
-        ? 'Markdown' 
-        : valueIsJson 
-          ? 'JSON' 
-          : typeof value === 'object' 
-            ? `${Object.keys(value).length} fields` 
-            : undefined;
-
     return (
-      <div className="border rounded-lg overflow-hidden bg-white">
-        <Button
-          variant="ghost"
+      <div className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
+        <button
           onClick={() => setExpanded(!expanded)}
-          className="w-full flex items-center justify-between p-2 h-auto text-gray-700 hover:bg-gray-50"
+          className="w-full flex items-center justify-between p-3 text-left hover:bg-gray-50 transition-colors"
         >
           <div className="flex items-center gap-2">
-            <Hash className="h-3 w-3 text-gray-400" />
-            <span className="font-medium text-sm">{formatFieldName(fieldKey)}</span>
-            {badge && (
-              <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">
-                {badge}
+            <span className="font-medium text-gray-700">{formatFieldName(fieldKey)}</span>
+            {itemCount !== undefined && (
+              <span className="text-xs text-gray-500">
+                ({itemCount})
               </span>
             )}
           </div>
-          {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-        </Button>
+          <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        </button>
         {expanded && (
-          <div className="border-t bg-gray-50 p-3 max-h-96 overflow-auto">
+          <div className="border-t border-gray-100 bg-gray-50/50 p-4 max-h-[500px] overflow-auto">
             <SmartValueRenderer value={value} fieldName={fieldKey} depth={depth} />
           </div>
         )}
@@ -378,15 +473,15 @@ const SmartObjectField: React.FC<{
     );
   }
 
-  // Simple value - show inline
+  // Simple value - show inline on same line
   return (
-    <div className="flex items-start gap-2 py-1">
-      <span className="text-sm font-medium text-gray-600 min-w-0 flex-shrink-0">
+    <div className="flex items-baseline gap-2 py-0.5">
+      <span className="text-sm font-medium text-gray-500 whitespace-nowrap">
         {formatFieldName(fieldKey)}:
       </span>
-      <div className="flex-1 min-w-0">
+      <span className="text-sm text-gray-800">
         <SmartValueRenderer value={value} depth={depth} />
-      </div>
+      </span>
     </div>
   );
 };
