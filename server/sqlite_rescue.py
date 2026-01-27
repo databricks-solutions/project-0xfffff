@@ -51,8 +51,50 @@ def _get_config() -> tuple[str | None, str | None, int]:
     return local_db_path, volume_backup_path, backup_after_ops
 
 
-def _copy_file_safely(src: str, dst: str) -> bool:
+def _validate_volume_path(path: str) -> tuple[bool, str]:
+    """Validate that a path looks like a Unity Catalog volume path.
+
+    UC volume paths must be: /Volumes/<catalog>/<schema>/<volume>/...
+    The volume itself must already exist - we cannot create it.
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    if not path:
+        return False, "Path is empty"
+
+    if not path.startswith("/Volumes/"):
+        return False, f"Path must start with /Volumes/, got: {path}"
+
+    parts = path.split("/")
+    # /Volumes/catalog/schema/volume/file.db -> ['', 'Volumes', 'catalog', 'schema', 'volume', 'file.db']
+    if len(parts) < 6:
+        return False, (
+            f"Invalid Unity Catalog volume path: {path}. "
+            "Expected format: /Volumes/<catalog>/<schema>/<volume>/<filename>"
+        )
+
+    return True, ""
+
+
+def _get_volume_root(path: str) -> str | None:
+    """Extract the volume root from a UC volume path.
+
+    /Volumes/catalog/schema/volume/subdir/file.db -> /Volumes/catalog/schema/volume
+    """
+    parts = path.split("/")
+    if len(parts) >= 5:
+        return "/".join(parts[:5])
+    return None
+
+
+def _copy_file_safely(src: str, dst: str, is_volume_dest: bool = False) -> bool:
     """Copy file with atomic semantics (write to temp, then rename).
+
+    Args:
+        src: Source file path
+        dst: Destination file path
+        is_volume_dest: If True, destination is a UC volume (don't try to create parent dirs)
 
     Returns:
         True if successful, False otherwise.
@@ -64,8 +106,18 @@ def _copy_file_safely(src: str, dst: str) -> bool:
         logger.warning(f"Source file does not exist: {src}")
         return False
 
-    # Ensure destination directory exists
-    dst_path.parent.mkdir(parents=True, exist_ok=True)
+    # For UC volumes, the volume must already exist - don't try to create directories
+    # For local paths, ensure destination directory exists
+    if not is_volume_dest:
+        dst_path.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        # For UC volumes, verify the parent directory exists
+        if not dst_path.parent.exists():
+            logger.error(
+                f"Volume directory does not exist: {dst_path.parent}. "
+                "Ensure the Unity Catalog volume is created and the app has write access."
+            )
+            return False
 
     # Write to temp file first, then rename for atomicity
     tmp_path = dst_path.with_suffix(dst_path.suffix + ".tmp")
@@ -153,6 +205,12 @@ def backup_to_volume(force: bool = False) -> bool:
             logger.warning("SQLITE_VOLUME_BACKUP_PATH not configured - cannot backup")
         return False
 
+    # Validate volume path format
+    is_valid, error_msg = _validate_volume_path(volume_backup_path)
+    if not is_valid:
+        logger.error(f"Invalid SQLITE_VOLUME_BACKUP_PATH: {error_msg}")
+        return False
+
     if not local_db_path:
         logger.warning("Could not determine local DB path from DATABASE_URL")
         return False
@@ -161,6 +219,15 @@ def backup_to_volume(force: bool = False) -> bool:
 
     if not local_path.exists():
         logger.warning(f"Local database does not exist at {local_db_path} - nothing to backup")
+        return False
+
+    # Check if the volume root exists (quick fail if volume not mounted/accessible)
+    volume_root = _get_volume_root(volume_backup_path)
+    if volume_root and not Path(volume_root).exists():
+        logger.error(
+            f"Unity Catalog volume not accessible: {volume_root}. "
+            "Ensure the volume exists and the app's service principal has 'Can read and write' permission."
+        )
         return False
 
     # Prevent concurrent backups (unless forced for shutdown)
@@ -176,14 +243,14 @@ def backup_to_volume(force: bool = False) -> bool:
         # to ensure all data is in the main DB file
         _checkpoint_sqlite(local_db_path)
 
-        success = _copy_file_safely(local_db_path, volume_backup_path)
+        success = _copy_file_safely(local_db_path, volume_backup_path, is_volume_dest=True)
 
         if success:
             # Also backup WAL file if it exists (belt and suspenders)
             wal_src = str(local_path) + "-wal"
             wal_dst = volume_backup_path + "-wal"
             if Path(wal_src).exists():
-                _copy_file_safely(wal_src, wal_dst)
+                _copy_file_safely(wal_src, wal_dst, is_volume_dest=True)
 
             logger.info(f"Successfully backed up database to {volume_backup_path}")
         else:
@@ -268,6 +335,25 @@ def install_shutdown_handlers() -> None:
         )
         return
 
+    # Validate volume path format early to catch misconfiguration at startup
+    is_valid, error_msg = _validate_volume_path(volume_backup_path)
+    if not is_valid:
+        logger.error(
+            f"Invalid SQLITE_VOLUME_BACKUP_PATH: {error_msg}. "
+            "Shutdown backup handlers NOT installed."
+        )
+        return
+
+    # Check if volume is accessible
+    volume_root = _get_volume_root(volume_backup_path)
+    if volume_root and not Path(volume_root).exists():
+        logger.error(
+            f"Unity Catalog volume not accessible: {volume_root}. "
+            "Ensure the volume exists and the app's service principal has 'Can read and write' permission. "
+            "Shutdown backup handlers NOT installed."
+        )
+        return
+
     # Store original handlers to chain if needed
     original_sigterm = signal.getsignal(signal.SIGTERM)
     original_sigint = signal.getsignal(signal.SIGINT)
@@ -299,6 +385,17 @@ def get_rescue_status() -> dict:
     local_exists = Path(local_db_path).exists() if local_db_path else False
     volume_exists = Path(volume_backup_path).exists() if volume_backup_path else False
 
+    # Check path validity and volume accessibility
+    path_valid = False
+    path_error = None
+    volume_accessible = False
+
+    if volume_backup_path:
+        path_valid, path_error = _validate_volume_path(volume_backup_path)
+        if path_valid:
+            volume_root = _get_volume_root(volume_backup_path)
+            volume_accessible = Path(volume_root).exists() if volume_root else False
+
     return {
         "configured": volume_backup_path is not None,
         "local_db_path": local_db_path,
@@ -306,6 +403,9 @@ def get_rescue_status() -> dict:
         "backup_after_ops": backup_after_ops if volume_backup_path else None,
         "local_exists": local_exists,
         "volume_backup_exists": volume_exists,
+        "path_valid": path_valid,
+        "path_error": path_error,
+        "volume_accessible": volume_accessible,
         "write_op_count": _write_op_count,
         "shutdown_handlers_installed": _shutdown_handlers_installed,
     }
