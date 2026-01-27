@@ -9,11 +9,27 @@ command:
   - "1800"
 
 # SQLite Rescue: Backup/restore DB to Unity Catalog Volume for persistence
-# across container restarts. Set this to your Volume path, e.g.:
-#   /Volumes/<catalog>/<schema>/<volume>/workshop.db
+# across container restarts.
 #
+# IMPORTANT: Databricks Apps do NOT support FUSE mounts for UC volumes.
+# This app uses the Databricks SDK Files API for volume access.
+#
+# Setup steps:
+# 1. Add the Unity Catalog volume as an App resource in the Apps UI
+# 2. Grant the app "Can read and write" permission on the volume
+# 3. Give it a resource key (e.g., "db_backup_volume")
+# 4. Uncomment and configure the env section below
+#
+# Note: valueFrom provides the volume base path (e.g., /Volumes/catalog/schema/volume).
+# The app automatically appends "/workshop.db" to construct the full backup path.
+#
+# env:
+#   - name: SQLITE_VOLUME_PATH
+#     valueFrom: db_backup_volume  # Resource key from Apps UI
+#   - name: SQLITE_BACKUP_AFTER_OPS
+#     value: "50"  # Backup after every 50 write operations (default: 50, 0 to disable)
+#
+# Alternative: Specify the full path directly (works but less portable):
 # env:
 #   - name: SQLITE_VOLUME_BACKUP_PATH
 #     value: "/Volumes/your_catalog/your_schema/your_volume/workshop.db"
-#   - name: SQLITE_BACKUP_AFTER_OPS
-#     value: "50"  # Backup after every 50 write operations (default: 50, 0 to disable)
