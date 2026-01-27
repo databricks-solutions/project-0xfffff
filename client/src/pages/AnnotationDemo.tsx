@@ -23,11 +23,7 @@ import {
   Send,
   AlertCircle,
   Table,
-  RefreshCw,
-  ChevronDown,
-  ChevronUp,
-  ThumbsUp,
-  ThumbsDown
+  RefreshCw
 } from 'lucide-react';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useUser, useRoleCheck } from '@/context/UserContext';
@@ -39,123 +35,29 @@ import { toast } from 'sonner';
 
 /**
  * Format rubric description with proper structure for readability
- * Parses "High Score Characteristics" and "Low Score Characteristics" sections
- * and renders bullet points properly
+ * Simply splits on " - " (space-dash-space) and renders as bullet points
  */
 const FormattedRubricDescription: React.FC<{ description: string }> = ({ description }) => {
-  const [expanded, setExpanded] = useState(false);
-  
   if (!description) return null;
 
-  // Parse the description into sections
-  const parseDescription = (text: string) => {
-    // Split by common patterns for high/low score characteristics
-    const highScoreMatch = text.match(/High Score Characteristics?:?\s*([\s\S]*?)(?=Low Score Characteristics?:|$)/i);
-    const lowScoreMatch = text.match(/Low Score Characteristics?:?\s*([\s\S]*?)$/i);
-    
-    // Get intro text (before High Score Characteristics)
-    const introMatch = text.match(/^([\s\S]*?)(?=High Score Characteristics?:|$)/i);
-    const intro = introMatch ? introMatch[1].trim() : '';
-    
-    // Parse bullet points from text (separated by " - ")
-    const parseBullets = (text: string): string[] => {
-      if (!text) return [];
-      // Split by " - " pattern but keep meaningful content
-      return text
-        .split(/\s+-\s+/)
-        .map(item => item.trim())
-        .filter(item => item.length > 0 && !item.match(/^(High|Low) Score Characteristics?:?$/i));
-    };
-
-    const highScoreText = highScoreMatch ? highScoreMatch[1].trim() : '';
-    const lowScoreText = lowScoreMatch ? lowScoreMatch[1].trim() : '';
-
-    return {
-      intro: intro.replace(/High Score Characteristics?:?.*$/is, '').trim(),
-      highScore: parseBullets(highScoreText),
-      lowScore: parseBullets(lowScoreText),
-    };
-  };
-
-  const { intro, highScore, lowScore } = parseDescription(description);
-  const hasDetailedContent = highScore.length > 0 || lowScore.length > 0;
-
-  // If no structured content, show as formatted text with line breaks on dashes
-  if (!hasDetailedContent) {
-    const formattedIntro = intro || description;
-    // Split on " - " and show as bullet list if there are multiple items
-    const items = formattedIntro.split(/\s+-\s+/).filter(item => item.trim());
-    
-    if (items.length > 1) {
-      return (
-        <div className="text-sm text-gray-600 mt-2">
-          <ul className="list-disc list-inside space-y-1 ml-2">
-            {items.map((item, idx) => (
-              <li key={idx} className="text-gray-600">{item.trim()}</li>
-            ))}
-          </ul>
-        </div>
-      );
-    }
-    
-    return <p className="text-sm text-gray-600 mt-2">{formattedIntro}</p>;
+  // Split on " - " and show as bullet list if there are multiple items
+  const items = description.split(/\s+-\s+/).map(item => item.trim()).filter(item => item.length > 0);
+  
+  if (items.length <= 1) {
+    // Single item or no splits - show as plain text
+    return <p className="text-sm text-gray-600 mt-2">{description}</p>;
   }
 
   return (
-    <div className="mt-2 space-y-2">
-      {/* Intro text */}
-      {intro && (
-        <p className="text-sm text-gray-700">{intro}</p>
-      )}
-      
-      {/* Expand/Collapse button for scoring criteria */}
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 transition-colors"
-      >
-        {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-        {expanded ? 'Hide' : 'Show'} scoring criteria
-      </button>
-
-      {expanded && (
-        <div className="grid md:grid-cols-2 gap-3 mt-2">
-          {/* High Score Section */}
-          {highScore.length > 0 && (
-            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-              <div className="flex items-center gap-2 mb-2">
-                <ThumbsUp className="h-4 w-4 text-green-600" />
-                <span className="text-sm font-medium text-green-800">High Score (4-5)</span>
-              </div>
-              <ul className="space-y-1">
-                {highScore.map((item, idx) => (
-                  <li key={idx} className="text-xs text-green-700 flex items-start gap-2">
-                    <span className="text-green-500 mt-0.5">•</span>
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Low Score Section */}
-          {lowScore.length > 0 && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-              <div className="flex items-center gap-2 mb-2">
-                <ThumbsDown className="h-4 w-4 text-red-600" />
-                <span className="text-sm font-medium text-red-800">Low Score (1-2)</span>
-              </div>
-              <ul className="space-y-1">
-                {lowScore.map((item, idx) => (
-                  <li key={idx} className="text-xs text-red-700 flex items-start gap-2">
-                    <span className="text-red-500 mt-0.5">•</span>
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
+    <div className="text-sm text-gray-600 mt-2">
+      <ul className="space-y-1.5">
+        {items.map((item, idx) => (
+          <li key={idx} className="flex items-start gap-2">
+            <span className="text-gray-400 mt-0.5 flex-shrink-0">•</span>
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 };
