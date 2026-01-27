@@ -372,6 +372,12 @@ deploy:
     --exclude ".venv" \
     --exclude ".e2e-*"
 
+  # Create app if it doesn't exist
+  if ! databricks --profile "$PROFILE" apps get "$APP" &>/dev/null; then
+    echo "📱 Creating app: $APP"
+    databricks --profile "$PROFILE" apps create "$APP"
+  fi
+
   echo "🚀 Deploying app: $APP"
   databricks --profile "$PROFILE" apps deploy "$APP" --source-code-path "$WORKSPACE_PATH"
 
