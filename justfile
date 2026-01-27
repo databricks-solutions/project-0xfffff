@@ -245,6 +245,15 @@ ui-dev:
 
 [group('dev')]
 ui-build:
+  #!/usr/bin/env bash
+  set -euo pipefail
+
+  # Run npm install if node_modules is missing or package.json is newer
+  if [ ! -d "{{client-dir}}/node_modules" ] || [ "{{client-dir}}/package.json" -nt "{{client-dir}}/node_modules" ]; then
+    echo "📦 Installing frontend dependencies..."
+    npm -C {{client-dir}} install
+  fi
+
   npm -C {{client-dir}} run build
 
 [group('dev')]
