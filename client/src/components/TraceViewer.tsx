@@ -42,29 +42,33 @@ import { useJsonPathExtraction } from '@/hooks/useJsonPathExtraction';
 // ============================================================================
 
 /**
- * Detect if a string looks like markdown content
+ * Detect if a string should be rendered as markdown
+ * Be conservative - only render as markdown if there's clear formatting that benefits from it
  */
 const isMarkdownContent = (str: string): boolean => {
   if (!str || typeof str !== 'string') return false;
   
-  // Check for common markdown patterns
-  const markdownPatterns = [
-    /^#{1,6}\s+/m,           // Headers: # Header
+  // Don't render short strings as markdown (likely just field values)
+  if (str.length < 100) return false;
+  
+  // Check for markdown patterns that actually benefit from rendering
+  const beneficialPatterns = [
     /\*\*[^*]+\*\*/,         // Bold: **text**
-    /\*[^*]+\*/,             // Italic: *text*
-    /^\s*[-*+]\s+/m,         // Unordered lists: - item
-    /^\s*\d+\.\s+/m,         // Ordered lists: 1. item
-    /\[.+\]\(.+\)/,          // Links: [text](url)
-    /```[\s\S]*```/,         // Code blocks: ```code```
-    /`[^`]+`/,               // Inline code: `code`
-    /^\s*>\s+/m,             // Blockquotes: > quote
-    /\|.+\|/,                // Tables: | cell |
-    /\n\n/,                  // Multiple paragraphs
+    /^\s*[-*+]\s+.+$/m,      // Unordered lists with content: - item
+    /^\s*\d+\.\s+.+$/m,      // Ordered lists with content: 1. item
+    /\[.+\]\(https?:\/\/.+\)/,  // Links with URLs: [text](url)
+    /```[\s\S]+```/,         // Code blocks with content
+    /^\s*>\s+.+$/m,          // Blockquotes with content
+    /\|.+\|.+\|/,            // Tables with multiple cells
   ];
   
-  // If the string has multiple markdown patterns, it's likely markdown
-  const matchCount = markdownPatterns.filter(pattern => pattern.test(str)).length;
-  return matchCount >= 2 || str.length > 200; // Long text or multiple patterns
+  // Only render as markdown if it has actual formatting
+  const hasFormatting = beneficialPatterns.some(pattern => pattern.test(str));
+  
+  // Also check for multiple paragraphs (line breaks) in longer text
+  const hasMultipleParagraphs = str.length > 200 && /\n\n/.test(str);
+  
+  return hasFormatting || hasMultipleParagraphs;
 };
 
 /**
@@ -235,15 +239,19 @@ const SmartValueRenderer: React.FC<{
       }
     }
 
-    // Render all text content as markdown - it handles plain text gracefully
-    // and properly formats headers, lists, code blocks, etc.
-    return (
-      <div className="prose prose-sm max-w-none text-gray-800 prose-headings:text-gray-900 prose-headings:font-semibold prose-p:text-gray-700 prose-li:text-gray-700 prose-a:text-blue-600">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-          {value}
-        </ReactMarkdown>
-      </div>
-    );
+    // Only render as markdown if it has actual markdown formatting
+    if (isMarkdownContent(value)) {
+      return (
+        <div className="prose prose-sm max-w-none text-gray-800 prose-headings:text-gray-900 prose-headings:font-semibold prose-p:text-gray-700 prose-li:text-gray-700 prose-a:text-blue-600">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {value}
+          </ReactMarkdown>
+        </div>
+      );
+    }
+
+    // Plain text - render as-is with proper line breaks
+    return <span className="text-gray-800 whitespace-pre-wrap">{value}</span>;
   }
 
   // Handle arrays
