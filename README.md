@@ -6,9 +6,9 @@ A collaborative platform for annotating and evaluating LLM traces with MLflow in
 
 For detailed documentation, see the [/doc](doc/) folder:
 
-- **[Facilitator Guide](doc/facilitator_guide.md)** - A comprehensive guide for facilitators to deploy, configure, and run the workshop.
+- **[Facilitator Guide](doc/FACILITATOR_GUIDE.md)** - A comprehensive guide for facilitators to deploy, configure, and run the workshop.
 - **[Release Notes](doc/RELEASE_NOTES.md)** - Latest release information and quick start
-- **[Facilitator Guide](doc/FACILITATOR_GUIDE.md)** - Client build instructions
+- **[Build Guide](doc/FACILITATOR_GUIDE.md)** - Client build instructions
 - **[Authentication Fix](doc/AUTHENTICATION_FIX.md)** - Authentication improvements
 - **[Annotation Editing](doc/ANNOTATION_EDITING_FIX.md)** - Annotation editing features
 - **[Database Migrations](doc/DB_MIGRATIONS.md)** - SQLite schema migrations (Alembic)

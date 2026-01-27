@@ -60,7 +60,7 @@ As the facilitator, you are **not annotating like an SME**. Your responsibilitie
 
 ### Step 1: Download the Project
 
-1. Go to [https://github.com/databricks-solutions/project-0xfffff/releases/tag/v1.1.0](https://github.com/databricks-solutions/project-0xfffff/releases/tag/v1.1.0)
+1. Go to [https://github.com/databricks-solutions/project-0xfffff/release](https://github.com/databricks-solutions/project-0xfffff/releases)
 
 2. Click to download **`project-with-build.zip`**
 
