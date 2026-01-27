@@ -31,6 +31,9 @@ jobs:
           cache: 'npm'
           cache-dependency-path: client/package-lock.json
 
+      - name: Install just
+        uses: extractions/setup-just@v2
+
       - name: Install Python dependencies
         run: uv sync
 
