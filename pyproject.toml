@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "A comprehensive full-stack application for conducting human evaluation workshops on AI/ML models"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { file = "LICENSE.MD" }
+license = { file = "LICENSE.md" }
 authors = [
     { name = "Databricks Team" }
 ]
