@@ -344,8 +344,15 @@ export function RubricCreationDemo() {
       // Immediately update local state to remove the deleted question
       setQuestions(prevQuestions => prevQuestions.filter(q => q.id !== id));
       
-      // Also invalidate queries to ensure consistency
+      // Set editing flag to prevent useEffect from overwriting our local state
+      // when the query is invalidated and refetched
+      setIsEditingExisting(true);
+      
+      // Invalidate queries to ensure backend is in sync
       queryClient.invalidateQueries({ queryKey: ['rubric', workshopId] });
+      
+      // Reset editing flag after a short delay to allow future syncs
+      setTimeout(() => setIsEditingExisting(false), 1000);
       
       toast.success('Question deleted successfully');
     } catch (error) {
