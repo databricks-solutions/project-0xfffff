@@ -33,6 +33,75 @@ import type { Trace, Rubric, Annotation } from '@/client';
 import { parseRubricQuestions as parseQuestions } from '@/utils/rubricUtils';
 import { toast } from 'sonner';
 
+/**
+ * Render text with newlines preserved
+ */
+const TextWithNewlines: React.FC<{ text: string }> = ({ text }) => {
+  if (!text.includes('\n')) {
+    return <>{text}</>;
+  }
+  
+  return (
+    <>
+      {text.split('\n').map((line, idx, arr) => (
+        <React.Fragment key={idx}>
+          {line}
+          {idx < arr.length - 1 && <br />}
+        </React.Fragment>
+      ))}
+    </>
+  );
+};
+
+/**
+ * Format rubric description with proper structure for readability
+ * Simply splits on " - " (space-dash-space) and renders as bullet points
+ * Collapses long lists (>2 items) with expand/collapse functionality
+ * Preserves newlines within items
+ */
+const FormattedRubricDescription: React.FC<{ description: string }> = ({ description }) => {
+  const [expanded, setExpanded] = useState(false);
+  
+  if (!description) return null;
+
+  // Split on " - " and show as bullet list if there are multiple items
+  const items = description.split(/\s+-\s+/).map(item => item.trim()).filter(item => item.length > 0);
+  
+  if (items.length <= 1) {
+    // Single item or no splits - show as plain text with newlines preserved
+    return (
+      <p className="text-sm text-gray-600 mt-2">
+        <TextWithNewlines text={description} />
+      </p>
+    );
+  }
+
+  // Show first 2 items when collapsed, all when expanded
+  const visibleItems = expanded ? items : items.slice(0, 2);
+  const hasMore = items.length > 2;
+
+  return (
+    <div className="text-sm text-gray-600 mt-2">
+      <ul className="space-y-1.5">
+        {visibleItems.map((item, idx) => (
+          <li key={idx} className="flex items-start gap-2">
+            <span className="text-gray-400 mt-0.5 flex-shrink-0">•</span>
+            <span><TextWithNewlines text={item} /></span>
+          </li>
+        ))}
+      </ul>
+      {hasMore && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="mt-2 text-xs text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+        >
+          {expanded ? 'Show less' : `Show ${items.length - 2} more...`}
+        </button>
+      )}
+    </div>
+  );
+};
+
 // Convert API trace to TraceData format
 const convertTraceToTraceData = (trace: Trace): TraceData => ({
   id: trace.id,
@@ -1176,9 +1245,7 @@ export function AnnotationDemo() {
                        question.judgeType === 'binary' ? 'Binary' : 'Free-form'}
                     </Badge>
                   </div>
-                  <p className="text-sm text-gray-600 mt-1">
-                    {question.description}
-                  </p>
+                  <FormattedRubricDescription description={question.description} />
                 </div>
                 
                 <div className="space-y-4">
