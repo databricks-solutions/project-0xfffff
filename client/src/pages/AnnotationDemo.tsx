@@ -55,7 +55,7 @@ const TextWithNewlines: React.FC<{ text: string }> = ({ text }) => {
 
 /**
  * Format rubric description with proper structure for readability
- * Simply splits on " - " (space-dash-space) and renders as bullet points
+ * Splits on multiple patterns: newlines with bullets (•, -, *), or " - " inline
  * Collapses long lists (>2 items) with expand/collapse functionality
  * Preserves newlines within items
  */
@@ -64,8 +64,28 @@ const FormattedRubricDescription: React.FC<{ description: string }> = ({ descrip
   
   if (!description) return null;
 
-  // Split on " - " and show as bullet list if there are multiple items
-  const items = description.split(/\s+-\s+/).map(item => item.trim()).filter(item => item.length > 0);
+  // Try multiple splitting strategies
+  let items: string[] = [];
+  
+  // Strategy 1: Split on newlines with bullet markers (•, -, *)
+  if (description.includes('\n')) {
+    const lines = description.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+    // Check if lines start with bullet markers
+    const bulletPattern = /^[•\-\*]\s*/;
+    const hasBullets = lines.some(line => bulletPattern.test(line));
+    
+    if (hasBullets) {
+      items = lines.map(line => line.replace(bulletPattern, '').trim()).filter(item => item.length > 0);
+    } else {
+      // Just use lines as items if there are multiple
+      items = lines;
+    }
+  }
+  
+  // Strategy 2: If no newline splits worked, try " - " inline split
+  if (items.length <= 1) {
+    items = description.split(/\s+-\s+/).map(item => item.trim()).filter(item => item.length > 0);
+  }
   
   if (items.length <= 1) {
     // Single item or no splits - show as plain text with newlines preserved
