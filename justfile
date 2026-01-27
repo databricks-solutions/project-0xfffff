@@ -30,7 +30,7 @@ setup: setup-uv setup-prereqs setup-python setup-client configure test-connectio
   @echo ""
   @echo "🎯 Virtual environment created at: .venv/"
   @echo ""
-  @echo "Next step: run './deploy.sh' when ready to deploy"
+  @echo "Next step: run 'just deploy' when ready to deploy"
 
 # Install uv
 [group('setup')]
@@ -342,9 +342,33 @@ api port="8000":
 
 [group('app')]
 deploy:
+  #!/usr/bin/env bash
+  set -euo pipefail
+
+  PROFILE="${DATABRICKS_CONFIG_PROFILE:-DEFAULT}"
+  APP="${DATABRICKS_APP_NAME:?DATABRICKS_APP_NAME is not set (run \`just configure\`)}"
+
+  echo "🔨 Building frontend..."
   just ui-build
-  just db-bootstrap
-  SKIP_UI_BUILD=1 ./deploy.sh
+
+  echo "📦 Syncing files to workspace..."
+  DATABRICKS_USERNAME=$(databricks --profile "$PROFILE" current-user me | jq -r .userName)
+  WORKSPACE_PATH="/Workspace/Users/$DATABRICKS_USERNAME/$APP"
+
+  databricks --profile "$PROFILE" sync . "$WORKSPACE_PATH" \
+    --exclude ".git" \
+    --exclude "node_modules" \
+    --exclude "__pycache__" \
+    --exclude "*.db" \
+    --exclude ".venv" \
+    --exclude ".e2e-*"
+
+  echo "🚀 Deploying app: $APP"
+  databricks --profile "$PROFILE" apps deploy "$APP" --source-code-path "$WORKSPACE_PATH"
+
+  echo ""
+  echo "✅ Deployment initiated for $APP"
+  echo "   Run 'just app-info' to check deployment status"
 
 [group('dev')]
 dev api_port="8000" ui_port="5173":
