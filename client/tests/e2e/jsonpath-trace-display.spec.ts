@@ -142,7 +142,7 @@ test.describe('JSONPath Trace Display Customization', { tag }, () => {
     await scenario.cleanup();
   });
 
-  test('TraceViewer shows raw content when JSONPath is not configured', {
+  test('TraceViewer shows content when JSONPath is not configured', {
     tag: ['@spec:TRACE_DISPLAY_SPEC'],
   }, async ({ browser }) => {
     const runId = `${Date.now()}`;
@@ -165,16 +165,17 @@ test.describe('JSONPath Trace Display Customization', { tag }, () => {
       .withRealApi()
       .build();
 
-    // Participant views trace - should see RAW JSON
+    // Participant views trace - should see formatted JSON content
     const participant = scenario.users.participant[0];
     const participantPage = await scenario.newPageAs(participant);
 
     // Should be in discovery phase
     await expect(participantPage.getByTestId('discovery-phase-title')).toBeVisible();
 
-    // The TraceViewer should show the RAW JSON content (since no JSONPath configured)
-    await expect(participantPage.getByText(/"messages"/)).toBeVisible();
-    await expect(participantPage.getByText(/"response"/)).toBeVisible();
+    // The TraceViewer should show the content (smart JSON renderer formats field names)
+    // Check for the actual content values instead of raw JSON keys
+    await expect(participantPage.getByText(`Raw JSON test ${runId}`)).toBeVisible();
+    await expect(participantPage.getByText(`Raw JSON output ${runId}`)).toBeVisible();
 
     await scenario.cleanup();
   });
