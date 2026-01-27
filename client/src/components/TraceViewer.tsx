@@ -433,12 +433,13 @@ const SmartObjectField: React.FC<{
   value: any;
   depth: number;
 }> = ({ fieldKey, value, depth }) => {
-  const [expanded, setExpanded] = useState(false);
-  
   // Determine if this field should be collapsible
   const isComplexValue = typeof value === 'object' && value !== null;
   const isLongString = typeof value === 'string' && value.length > 200;
   const shouldCollapse = isComplexValue || isLongString;
+  
+  // Top-level fields (depth 0-1) start expanded so users see content immediately
+  const [expanded, setExpanded] = useState(depth <= 1);
 
   // Get count for display
   const itemCount = Array.isArray(value) 
