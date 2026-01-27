@@ -206,7 +206,7 @@ test.describe('Custom LLM Provider Configuration', () => {
     await page.getByRole('button', { name: /Save Configuration/i }).click();
 
     // Should show error about required fields
-    await expect(page.getByText(/required/i).or(page.getByText(/fill/i))).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText('Please fill in all required fields')).toBeVisible({ timeout: 5000 });
 
     await scenario.cleanup();
   });
