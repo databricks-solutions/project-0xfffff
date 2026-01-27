@@ -226,6 +226,20 @@ export function TraceViewerDemo() {
   const savingTracesRef = useRef<Set<string>>(new Set()); // Track which traces are currently saving
   const isSavingRef = useRef(false); // Track if any user-initiated save is in progress
   const saveStatusRef = useRef<Map<string, 'saved' | 'saving' | 'failed'>>(new Map()); // Track save status per trace
+  const lastNavigationTimeRef = useRef<number>(0); // Track last navigation to prevent rapid clicking
+  const NAVIGATION_DEBOUNCE_MS = 300; // Minimum time between navigations
+  
+  // Failed save queue for retry mechanism
+  interface FailedSaveData {
+    traceId: string;
+    q1: string;
+    q2: string;
+    attempts: number;
+    lastAttempt: number;
+  }
+  const failedSaveQueueRef = useRef<Map<string, FailedSaveData>>(new Map());
+  const [failedSaveCount, setFailedSaveCount] = useState(0);
+  const retryIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
   // Retry utility with exponential backoff
   const retryWithBackoff = async <T,>(
@@ -344,9 +358,40 @@ export function TraceViewerDemo() {
         saveStatusRef.current.set(traceId, 'failed');
       }
       
-      // Only show toast for user-initiated saves
+      // Queue for retry
+      const existingEntry = failedSaveQueueRef.current.get(traceId);
+      if (!existingEntry) {
+        // New entry - add to queue
+        failedSaveQueueRef.current.set(traceId, {
+          traceId,
+          q1: q1Trimmed,
+          q2: q2Trimmed,
+          attempts: 1,
+          lastAttempt: Date.now()
+        });
+        setFailedSaveCount(failedSaveQueueRef.current.size);
+        
+        // Notify user once when save fails (only for new failures)
+        toast.warning('Save in progress... will retry automatically', {
+          duration: 3000,
+          id: `save-retry-${traceId}` // Prevent duplicate toasts
+        });
+      } else {
+        // Update existing entry with latest data
+        failedSaveQueueRef.current.set(traceId, {
+          ...existingEntry,
+          q1: q1Trimmed,
+          q2: q2Trimmed,
+          attempts: existingEntry.attempts + 1,
+          lastAttempt: Date.now()
+        });
+      }
+      
+      console.warn(`Queued trace ${traceId} for retry (attempt ${(existingEntry?.attempts || 0) + 1})`);
+      
+      // Only show error toast for user-initiated saves (not background)
       if (!isBackground) {
-        toast.error('Failed to save. Please try again.');
+        toast.error('Failed to save. Will retry automatically.');
       }
       return false;
     } finally {
@@ -358,6 +403,127 @@ export function TraceViewerDemo() {
       }
     }
   }, [submitFinding, user?.id]);
+  
+  // Process failed save queue - retry one at a time
+  const processFailedSaveQueue = useCallback(async () => {
+    if (failedSaveQueueRef.current.size === 0) return;
+    
+    const now = Date.now();
+    const entries = Array.from(failedSaveQueueRef.current.entries());
+    
+    for (const [traceId, data] of entries) {
+      // Skip if attempted too recently (wait at least 5 seconds between retries)
+      if (now - data.lastAttempt < 5000) continue;
+      
+      // Skip if max attempts reached (10 attempts max)
+      if (data.attempts >= 10) {
+        console.error(`Max retry attempts reached for trace ${traceId}, removing from queue`);
+        failedSaveQueueRef.current.delete(traceId);
+        setFailedSaveCount(failedSaveQueueRef.current.size);
+        continue;
+      }
+      
+      console.log(`Retrying failed save for trace ${traceId} (attempt ${data.attempts + 1})`);
+      
+      // Update last attempt time
+      data.lastAttempt = now;
+      data.attempts += 1;
+      
+      try {
+        const content = `Quality Assessment: ${data.q1}\n\nImprovement Analysis: ${data.q2}`;
+        
+        await submitFinding.mutateAsync({
+          trace_id: traceId,
+          user_id: user?.id || 'demo_user',
+          insight: content
+        });
+        
+        // Success! Remove from queue
+        failedSaveQueueRef.current.delete(traceId);
+        setFailedSaveCount(failedSaveQueueRef.current.size);
+        setSubmittedFindings(prev => new Set([...prev, traceId]));
+        
+        // Update saved state
+        savedStateRef.current.set(traceId, { q1: data.q1, q2: data.q2 });
+        saveStatusRef.current.set(traceId, 'saved');
+        
+        console.log(`Successfully saved queued finding for trace ${traceId}`);
+        
+        // Only process one at a time to avoid overwhelming the backend
+        break;
+      } catch (error) {
+        console.error(`Retry failed for trace ${traceId}:`, error);
+        // Will be retried on next interval
+      }
+    }
+  }, [submitFinding, user?.id]);
+  
+  // Set up periodic retry for failed saves
+  useEffect(() => {
+    // Run retry every 5 seconds
+    retryIntervalRef.current = setInterval(() => {
+      processFailedSaveQueue();
+    }, 5000);
+    
+    return () => {
+      if (retryIntervalRef.current) {
+        clearInterval(retryIntervalRef.current);
+      }
+    };
+  }, [processFailedSaveQueue]);
+  
+  // Warn user before leaving if there are pending saves
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (failedSaveQueueRef.current.size > 0) {
+        e.preventDefault();
+        e.returnValue = 'You have unsaved findings. Are you sure you want to leave?';
+        return e.returnValue;
+      }
+    };
+    
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+  
+  // Manual retry all failed saves
+  const retryAllFailedSaves = async () => {
+    if (failedSaveQueueRef.current.size === 0) return;
+    
+    toast.info(`Retrying ${failedSaveQueueRef.current.size} unsaved findings...`);
+    
+    const entries = Array.from(failedSaveQueueRef.current.entries());
+    let successCount = 0;
+    
+    for (const [traceId, data] of entries) {
+      try {
+        const content = `Quality Assessment: ${data.q1}\n\nImprovement Analysis: ${data.q2}`;
+        
+        await submitFinding.mutateAsync({
+          trace_id: traceId,
+          user_id: user?.id || 'demo_user',
+          insight: content
+        });
+        
+        failedSaveQueueRef.current.delete(traceId);
+        setSubmittedFindings(prev => new Set([...prev, traceId]));
+        savedStateRef.current.set(traceId, { q1: data.q1, q2: data.q2 });
+        saveStatusRef.current.set(traceId, 'saved');
+        successCount++;
+      } catch (error) {
+        console.error(`Failed to save finding for trace ${traceId}:`, error);
+      }
+    }
+    
+    setFailedSaveCount(failedSaveQueueRef.current.size);
+    
+    if (successCount > 0) {
+      toast.success(`Successfully saved ${successCount} findings`);
+    }
+    if (failedSaveQueueRef.current.size > 0) {
+      toast.error(`${failedSaveQueueRef.current.size} findings still pending`);
+    }
+  };
   
   // NOTE: Removed blur auto-save as it conflicts with button clicks
   // The Next/Previous buttons already handle saving before navigation
@@ -377,6 +543,17 @@ export function TraceViewerDemo() {
       console.warn('nextTrace: Already navigating (ref check)');
       return;
     }
+    
+    // Debounce rapid clicks to prevent overwhelming the backend
+    const now = Date.now();
+    if (now - lastNavigationTimeRef.current < NAVIGATION_DEBOUNCE_MS) {
+      console.warn('nextTrace: Navigation debounced', { 
+        timeSinceLastNav: now - lastNavigationTimeRef.current,
+        debounceMs: NAVIGATION_DEBOUNCE_MS 
+      });
+      return;
+    }
+    lastNavigationTimeRef.current = now;
     
     // Check if we can navigate
     if (currentTraceIndex >= traceData.length - 1) {
@@ -461,6 +638,17 @@ export function TraceViewerDemo() {
       console.warn('prevTrace: Already navigating (ref check)');
       return;
     }
+    
+    // Debounce rapid clicks to prevent overwhelming the backend
+    const now = Date.now();
+    if (now - lastNavigationTimeRef.current < NAVIGATION_DEBOUNCE_MS) {
+      console.warn('prevTrace: Navigation debounced', { 
+        timeSinceLastNav: now - lastNavigationTimeRef.current,
+        debounceMs: NAVIGATION_DEBOUNCE_MS 
+      });
+      return;
+    }
+    lastNavigationTimeRef.current = now;
     
     // Check if we can navigate
     if (currentTraceIndex <= 0) {
@@ -660,12 +848,24 @@ export function TraceViewerDemo() {
           <div className="mb-6">
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm text-gray-600">Progress</span>
-              <span className="text-sm text-gray-600">
-                {submittedFindings.size} of {traceData.length} complete
-                {isDiscoveryComplete && (
-                  <span className="ml-2 text-green-600 font-medium">✓ All traces reviewed!</span>
+              <div className="flex items-center gap-3">
+                {failedSaveCount > 0 && (
+                  <button 
+                    onClick={retryAllFailedSaves}
+                    className="flex items-center gap-1 text-sm text-amber-600 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded cursor-pointer transition-colors"
+                    title="Click to retry saving"
+                  >
+                    <RefreshCw className="h-3 w-3 animate-spin" />
+                    {failedSaveCount} pending save{failedSaveCount > 1 ? 's' : ''} - click to retry
+                  </button>
                 )}
-              </span>
+                <span className="text-sm text-gray-600">
+                  {submittedFindings.size} of {traceData.length} complete
+                  {isDiscoveryComplete && (
+                    <span className="ml-2 text-green-600 font-medium">✓ All traces reviewed!</span>
+                  )}
+                </span>
+              </div>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2">
               <div

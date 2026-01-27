@@ -569,9 +569,18 @@ async def submit_annotation(
     if not workshop:
         raise HTTPException(status_code=404, detail="Workshop not found")
 
-    result = db_service.add_annotation(workshop_id, annotation)
-    logger.info(f"✅ Annotation saved to DB: id={result.id}, ratings={result.ratings}")
-    return result
+    try:
+        result = db_service.add_annotation(workshop_id, annotation)
+        logger.info(f"✅ Annotation saved to DB: id={result.id}, ratings={result.ratings}")
+        return result
+    except Exception as e:
+        logger.error(f"❌ Failed to save annotation: {type(e).__name__}: {e}")
+        logger.error(f"   Annotation data: trace_id={annotation.trace_id}, user_id={annotation.user_id}")
+        # Re-raise as HTTP 500 so the client knows something went wrong
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to save annotation: {str(e)}"
+        )
 
 
 @router.get("/{workshop_id}/annotations")

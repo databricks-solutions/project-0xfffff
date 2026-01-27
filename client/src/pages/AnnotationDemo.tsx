@@ -92,6 +92,21 @@ export function AnnotationDemo() {
   const savedStateRef = useRef<Map<string, SavedAnnotationState>>(new Map());
   const savingTracesRef = useRef<Set<string>>(new Set()); // Track which traces are currently saving
   const isSavingRef = useRef(false); // Track if any user-initiated save is in progress
+  const lastNavigationTimeRef = useRef<number>(0); // Track last navigation to prevent rapid clicking
+  const NAVIGATION_DEBOUNCE_MS = 300; // Minimum time between navigations
+  
+  // Failed save queue for retry mechanism
+  interface FailedSaveData {
+    traceId: string;
+    ratings: Record<string, number>;
+    freeformResponses: Record<string, string>;
+    comment: string;
+    attempts: number;
+    lastAttempt: number;
+  }
+  const failedSaveQueueRef = useRef<Map<string, FailedSaveData>>(new Map());
+  const [failedSaveCount, setFailedSaveCount] = useState(0);
+  const retryIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
   // Retry utility with exponential backoff
   const retryWithBackoff = useCallback(async <T,>(
@@ -578,8 +593,43 @@ export function AnnotationDemo() {
         traceId: targetTraceId,
         isBackground
       });
-      // Only show toast for user-initiated saves
-      if (!isBackground) {
+      
+      // Queue for retry if this was a background save
+      if (isBackground) {
+        const existingEntry = failedSaveQueueRef.current.get(targetTraceId);
+        const attempts = existingEntry ? existingEntry.attempts + 1 : 1;
+        
+        // Only add to queue if not already there (avoid duplicates from rapid clicking)
+        if (!existingEntry) {
+          failedSaveQueueRef.current.set(targetTraceId, {
+            traceId: targetTraceId,
+            ratings: { ...ratingsToSave },
+            freeformResponses: { ...freeformToSave },
+            comment: commentToSave,
+            attempts,
+            lastAttempt: Date.now()
+          });
+          setFailedSaveCount(failedSaveQueueRef.current.size);
+          
+          // Notify user once when save fails (only for new failures)
+          toast.warning('Save in progress... will retry automatically', {
+            duration: 3000,
+            id: `save-retry-${targetTraceId}` // Prevent duplicate toasts
+          });
+        } else {
+          // Update existing entry with latest data
+          failedSaveQueueRef.current.set(targetTraceId, {
+            ...existingEntry,
+            ratings: { ...ratingsToSave },
+            freeformResponses: { ...freeformToSave },
+            comment: commentToSave,
+            attempts,
+            lastAttempt: Date.now()
+          });
+        }
+        
+        console.warn(`Queued trace ${targetTraceId} for retry (attempt ${attempts})`);
+      } else {
         toast.error('Failed to save annotation. Please try again.');
       }
       return false;
@@ -592,6 +642,95 @@ export function AnnotationDemo() {
       }
     }
   };
+  
+  // Process failed save queue - retry one at a time
+  const processFailedSaveQueue = useCallback(async () => {
+    if (failedSaveQueueRef.current.size === 0) return;
+    
+    const now = Date.now();
+    const entries = Array.from(failedSaveQueueRef.current.entries());
+    
+    for (const [traceId, data] of entries) {
+      // Skip if attempted too recently (wait at least 5 seconds between retries)
+      if (now - data.lastAttempt < 5000) continue;
+      
+      // Skip if max attempts reached (10 attempts max)
+      if (data.attempts >= 10) {
+        console.error(`Max retry attempts reached for trace ${traceId}, removing from queue`);
+        failedSaveQueueRef.current.delete(traceId);
+        setFailedSaveCount(failedSaveQueueRef.current.size);
+        continue;
+      }
+      
+      console.log(`Retrying failed save for trace ${traceId} (attempt ${data.attempts + 1})`);
+      
+      // Update last attempt time
+      data.lastAttempt = now;
+      data.attempts += 1;
+      
+      try {
+        const numericRatings = Object.fromEntries(
+          Object.entries(data.ratings).filter(([_, v]) => typeof v === 'number')
+        );
+        
+        // Calculate legacy rating
+        let legacyRating = 3;
+        for (const question of rubricQuestions) {
+          if (question.judgeType === 'likert') {
+            const rating = data.ratings[question.id];
+            if (typeof rating === 'number' && rating >= 1 && rating <= 5) {
+              legacyRating = rating;
+              break;
+            }
+          }
+        }
+        
+        const annotationData = {
+          trace_id: traceId,
+          user_id: currentUserId,
+          rating: legacyRating,
+          ratings: numericRatings,
+          comment: buildCombinedComment(data.comment, data.freeformResponses)
+        };
+        
+        await submitAnnotation.mutateAsync(annotationData);
+        
+        // Success! Remove from queue
+        failedSaveQueueRef.current.delete(traceId);
+        setFailedSaveCount(failedSaveQueueRef.current.size);
+        setSubmittedAnnotations(prev => new Set([...prev, traceId]));
+        
+        // Update saved state
+        savedStateRef.current.set(traceId, {
+          ratings: { ...data.ratings },
+          freeformResponses: { ...data.freeformResponses },
+          comment: data.comment
+        });
+        
+        console.log(`Successfully saved queued annotation for trace ${traceId}`);
+        
+        // Only process one at a time to avoid overwhelming the backend
+        break;
+      } catch (error) {
+        console.error(`Retry failed for trace ${traceId}:`, error);
+        // Will be retried on next interval
+      }
+    }
+  }, [rubricQuestions, currentUserId, submitAnnotation, buildCombinedComment]);
+  
+  // Set up periodic retry for failed saves
+  useEffect(() => {
+    // Run retry every 5 seconds
+    retryIntervalRef.current = setInterval(() => {
+      processFailedSaveQueue();
+    }, 5000);
+    
+    return () => {
+      if (retryIntervalRef.current) {
+        clearInterval(retryIntervalRef.current);
+      }
+    };
+  }, [processFailedSaveQueue]);
 
   const handleSubmitAnnotation = async () => {
     await saveAnnotation();
@@ -612,6 +751,17 @@ export function AnnotationDemo() {
       console.warn('nextTrace: Already navigating', { isNavigating });
       return; // Prevent concurrent navigation
     }
+    
+    // Debounce rapid clicks to prevent overwhelming the backend
+    const now = Date.now();
+    if (now - lastNavigationTimeRef.current < NAVIGATION_DEBOUNCE_MS) {
+      console.warn('nextTrace: Navigation debounced', { 
+        timeSinceLastNav: now - lastNavigationTimeRef.current,
+        debounceMs: NAVIGATION_DEBOUNCE_MS 
+      });
+      return;
+    }
+    lastNavigationTimeRef.current = now;
     
     // Store current trace data for save
     const currentTraceId = currentTrace.id;
@@ -699,6 +849,17 @@ export function AnnotationDemo() {
       return; // Prevent concurrent navigation
     }
     
+    // Debounce rapid clicks to prevent overwhelming the backend
+    const now = Date.now();
+    if (now - lastNavigationTimeRef.current < NAVIGATION_DEBOUNCE_MS) {
+      console.warn('prevTrace: Navigation debounced', { 
+        timeSinceLastNav: now - lastNavigationTimeRef.current,
+        debounceMs: NAVIGATION_DEBOUNCE_MS 
+      });
+      return;
+    }
+    lastNavigationTimeRef.current = now;
+    
     // Check if we can navigate
     if (currentTraceIndex <= 0) {
       console.log('prevTrace: Already at first trace');
@@ -755,6 +916,80 @@ export function AnnotationDemo() {
   // Navigation is now optimistic, so we don't block on isSaving
   const isNextDisabled = !canAnnotate || Object.keys(currentRatings).length === 0 || isNavigating;
   
+  // Warn user before leaving if there are pending saves
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (failedSaveQueueRef.current.size > 0) {
+        e.preventDefault();
+        e.returnValue = 'You have unsaved annotations. Are you sure you want to leave?';
+        return e.returnValue;
+      }
+    };
+    
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+  
+  // Manual retry all failed saves
+  const retryAllFailedSaves = async () => {
+    if (failedSaveQueueRef.current.size === 0) return;
+    
+    toast.info(`Retrying ${failedSaveQueueRef.current.size} unsaved annotations...`);
+    
+    // Process all entries (not just one)
+    const entries = Array.from(failedSaveQueueRef.current.entries());
+    let successCount = 0;
+    
+    for (const [traceId, data] of entries) {
+      try {
+        const numericRatings = Object.fromEntries(
+          Object.entries(data.ratings).filter(([_, v]) => typeof v === 'number')
+        );
+        
+        let legacyRating = 3;
+        for (const question of rubricQuestions) {
+          if (question.judgeType === 'likert') {
+            const rating = data.ratings[question.id];
+            if (typeof rating === 'number' && rating >= 1 && rating <= 5) {
+              legacyRating = rating;
+              break;
+            }
+          }
+        }
+        
+        const annotationData = {
+          trace_id: traceId,
+          user_id: currentUserId,
+          rating: legacyRating,
+          ratings: numericRatings,
+          comment: buildCombinedComment(data.comment, data.freeformResponses)
+        };
+        
+        await submitAnnotation.mutateAsync(annotationData);
+        
+        failedSaveQueueRef.current.delete(traceId);
+        setSubmittedAnnotations(prev => new Set([...prev, traceId]));
+        savedStateRef.current.set(traceId, {
+          ratings: { ...data.ratings },
+          freeformResponses: { ...data.freeformResponses },
+          comment: data.comment
+        });
+        successCount++;
+      } catch (error) {
+        console.error(`Failed to save annotation for trace ${traceId}:`, error);
+      }
+    }
+    
+    setFailedSaveCount(failedSaveQueueRef.current.size);
+    
+    if (successCount > 0) {
+      toast.success(`Successfully saved ${successCount} annotations`);
+    }
+    if (failedSaveQueueRef.current.size > 0) {
+      toast.error(`${failedSaveQueueRef.current.size} annotations still pending`);
+    }
+  };
+  
   if (tracesLoading || rubricLoading) {
     return (
       <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
@@ -806,7 +1041,19 @@ export function AnnotationDemo() {
           <div className="mb-6">
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm text-gray-600">Progress</span>
-              <span className="text-sm text-gray-600">{completedCount} of {traceData.length} complete</span>
+              <div className="flex items-center gap-3">
+                {failedSaveCount > 0 && (
+                  <button 
+                    onClick={retryAllFailedSaves}
+                    className="flex items-center gap-1 text-sm text-amber-600 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded cursor-pointer transition-colors"
+                    title="Click to retry saving"
+                  >
+                    <RefreshCw className="h-3 w-3 animate-spin" />
+                    {failedSaveCount} pending save{failedSaveCount > 1 ? 's' : ''} - click to retry
+                  </button>
+                )}
+                <span className="text-sm text-gray-600">{completedCount} of {traceData.length} complete</span>
+              </div>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2">
               <div

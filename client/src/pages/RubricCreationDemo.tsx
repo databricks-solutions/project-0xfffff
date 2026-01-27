@@ -330,19 +330,26 @@ export function RubricCreationDemo() {
   const deleteQuestion = async (id: string) => {
     try {
       // Call the new delete endpoint for individual questions
-              await fetch(`/workshops/${workshopId}/rubric/questions/${id}`, {
+      const response = await fetch(`/workshops/${workshopId}/rubric/questions/${id}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
         },
       });
       
-      // Invalidate queries to refresh the UI
+      if (!response.ok) {
+        throw new Error('Failed to delete question');
+      }
+      
+      // Immediately update local state to remove the deleted question
+      setQuestions(prevQuestions => prevQuestions.filter(q => q.id !== id));
+      
+      // Also invalidate queries to ensure consistency
       queryClient.invalidateQueries({ queryKey: ['rubric', workshopId] });
       
-      
+      toast.success('Question deleted successfully');
     } catch (error) {
-      
+      console.error('Error deleting question:', error);
       toast.error('Failed to delete question. Please try again.');
     }
   };
