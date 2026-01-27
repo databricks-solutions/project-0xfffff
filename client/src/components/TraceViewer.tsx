@@ -8,7 +8,7 @@
  * by facilitators via workshop settings.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import ReactMarkdown from 'react-markdown';
@@ -23,13 +23,120 @@ import {
   ChevronUp,
   ExternalLink,
   Database,
-  RefreshCw
+  RefreshCw,
+  Link,
+  Brain,
+  Info
 } from "lucide-react";
 import { toast } from 'sonner';
 import { useInvalidateTraces, useWorkshop } from '@/hooks/useWorkshopApi';
 import { useMLflowConfig } from '@/hooks/useWorkshopApi';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useJsonPathExtraction } from '@/hooks/useJsonPathExtraction';
+
+// Interface for parsed structured output
+interface ParsedStructuredOutput {
+  answer: string;
+  annotations?: {
+    url_citations?: Array<{
+      url: string;
+      title: string;
+      type?: string;
+    }>;
+    [key: string]: any;
+  };
+  state?: any;
+  trajectory?: any;
+  [key: string]: any;
+}
+
+// Collapsible JSON section component
+const CollapsibleJsonSection: React.FC<{
+  title: string;
+  icon: React.ReactNode;
+  data: any;
+  defaultExpanded?: boolean;
+  colorClass?: string;
+}> = ({ title, icon, data, defaultExpanded = false, colorClass = 'text-gray-600' }) => {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  
+  if (!data || (typeof data === 'object' && Object.keys(data).length === 0)) {
+    return null;
+  }
+
+  return (
+    <div className="border rounded-lg overflow-hidden">
+      <Button
+        variant="ghost"
+        onClick={() => setExpanded(!expanded)}
+        className={`w-full flex items-center justify-between p-3 h-auto ${colorClass} hover:bg-gray-50`}
+      >
+        <div className="flex items-center gap-2">
+          {icon}
+          <span className="font-medium text-sm">{title}</span>
+        </div>
+        {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+      </Button>
+      {expanded && (
+        <div className="border-t bg-gray-50 p-3 max-h-96 overflow-auto">
+          <pre className="text-xs text-gray-700 whitespace-pre-wrap font-mono">
+            {JSON.stringify(data, null, 2)}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Citations display component
+const CitationsDisplay: React.FC<{
+  citations: Array<{ url: string; title: string; type?: string }>;
+}> = ({ citations }) => {
+  const [expanded, setExpanded] = useState(true);
+  
+  if (!citations || citations.length === 0) return null;
+
+  return (
+    <div className="border rounded-lg overflow-hidden border-blue-200 bg-blue-50/50">
+      <Button
+        variant="ghost"
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between p-3 h-auto text-blue-700 hover:bg-blue-100"
+      >
+        <div className="flex items-center gap-2">
+          <Link className="h-4 w-4" />
+          <span className="font-medium text-sm">Citations ({citations.length})</span>
+        </div>
+        {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+      </Button>
+      {expanded && (
+        <div className="border-t border-blue-200 p-3 space-y-2">
+          {citations.map((citation, idx) => (
+            <a
+              key={idx}
+              href={citation.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-start gap-2 p-2 rounded hover:bg-blue-100 transition-colors group"
+            >
+              <ExternalLink className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-blue-700 group-hover:underline truncate">
+                  {citation.title || citation.url}
+                </div>
+                {citation.type && (
+                  <span className="text-xs text-blue-500 bg-blue-100 px-1.5 py-0.5 rounded">
+                    {citation.type}
+                  </span>
+                )}
+              </div>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export interface TraceData {
   id: string;
@@ -75,7 +182,49 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({
 
   // Apply JSONPath extraction to input and output
   const displayInput = useJsonPathExtraction(trace.input, effectiveInputJsonPath);
-  const displayOutput = useJsonPathExtraction(trace.output, effectiveOutputJsonPath);
+  const rawDisplayOutput = useJsonPathExtraction(trace.output, effectiveOutputJsonPath);
+
+  // Parse structured output for smart rendering
+  const parsedOutput = useMemo((): { isStructured: boolean; data: ParsedStructuredOutput | null; rawText: string } => {
+    try {
+      const parsed = JSON.parse(rawDisplayOutput);
+      
+      // Check if it's a structured agent response with answer field
+      if (typeof parsed === 'object' && parsed !== null) {
+        // Common patterns for agent responses
+        if ('answer' in parsed || 'response' in parsed || 'result' in parsed || 'output' in parsed) {
+          const answer = parsed.answer || parsed.response || parsed.result || parsed.output || '';
+          return {
+            isStructured: true,
+            data: {
+              answer: typeof answer === 'string' ? answer : JSON.stringify(answer, null, 2),
+              annotations: parsed.annotations,
+              state: parsed.state,
+              trajectory: parsed.trajectory,
+              // Capture any other fields
+              ...Object.fromEntries(
+                Object.entries(parsed).filter(([key]) => 
+                  !['answer', 'response', 'result', 'output', 'annotations', 'state', 'trajectory'].includes(key)
+                )
+              )
+            },
+            rawText: rawDisplayOutput
+          };
+        }
+      }
+      
+      // Not a structured response, just return raw
+      return { isStructured: false, data: null, rawText: rawDisplayOutput };
+    } catch {
+      // Not JSON, return as plain text
+      return { isStructured: false, data: null, rawText: rawDisplayOutput };
+    }
+  }, [rawDisplayOutput]);
+
+  // Get the main display text (answer for structured, raw for plain)
+  const displayOutput = parsedOutput.isStructured && parsedOutput.data 
+    ? parsedOutput.data.answer 
+    : parsedOutput.rawText;
 
   const handleRefresh = () => {
     invalidateTraces();
@@ -236,7 +385,14 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({
           <div className="flex items-center gap-2">
             <Bot className="h-4 w-4 text-green-600" />
             <span className="font-medium text-green-800">Output</span>
+            {parsedOutput.isStructured && (
+              <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
+                Structured Response
+              </span>
+            )}
           </div>
+          
+          {/* Main Answer/Response */}
           <div className="bg-green-50 border-l-4 border-green-400 p-4 rounded-r-lg">
             <div className="text-gray-800 leading-relaxed prose prose-sm max-w-none">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
@@ -244,6 +400,62 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({
               </ReactMarkdown>
             </div>
           </div>
+
+          {/* Structured Output Metadata Sections */}
+          {parsedOutput.isStructured && parsedOutput.data && (
+            <div className="space-y-2 mt-4">
+              {/* Citations */}
+              {parsedOutput.data.annotations?.url_citations && (
+                <CitationsDisplay citations={parsedOutput.data.annotations.url_citations} />
+              )}
+
+              {/* Trajectory/Reasoning */}
+              <CollapsibleJsonSection
+                title="Agent Reasoning & Trajectory"
+                icon={<Brain className="h-4 w-4" />}
+                data={parsedOutput.data.trajectory}
+                colorClass="text-purple-600"
+              />
+
+              {/* State */}
+              <CollapsibleJsonSection
+                title="State Information"
+                icon={<Info className="h-4 w-4" />}
+                data={parsedOutput.data.state}
+                colorClass="text-amber-600"
+              />
+
+              {/* Other annotations (non-citation) */}
+              {parsedOutput.data.annotations && 
+               Object.keys(parsedOutput.data.annotations).filter(k => k !== 'url_citations').length > 0 && (
+                <CollapsibleJsonSection
+                  title="Additional Annotations"
+                  icon={<FileText className="h-4 w-4" />}
+                  data={Object.fromEntries(
+                    Object.entries(parsedOutput.data.annotations).filter(([k]) => k !== 'url_citations')
+                  )}
+                  colorClass="text-gray-600"
+                />
+              )}
+
+              {/* Any other fields */}
+              {(() => {
+                const otherFields = Object.fromEntries(
+                  Object.entries(parsedOutput.data).filter(([key]) => 
+                    !['answer', 'annotations', 'state', 'trajectory'].includes(key)
+                  )
+                );
+                return Object.keys(otherFields).length > 0 ? (
+                  <CollapsibleJsonSection
+                    title="Additional Data"
+                    icon={<Database className="h-4 w-4" />}
+                    data={otherFields}
+                    colorClass="text-gray-500"
+                  />
+                ) : null;
+              })()}
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
