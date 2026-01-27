@@ -70,6 +70,18 @@ if 'sqlite' in DATABASE_URL:
         cursor.execute("PRAGMA synchronous=NORMAL")
         cursor.close()
 
+
+# SQLite Rescue: Track write operations for backup triggering
+# This listener fires after successful commits and notifies the rescue module
+@event.listens_for(engine, "commit")
+def on_commit(conn):
+    """Record write operations for SQLite rescue backup triggering."""
+    try:
+        from server.sqlite_rescue import record_write_operation
+        record_write_operation()
+    except ImportError:
+        pass  # sqlite_rescue not available
+
 # Create session factory with better session management
 SessionLocal = sessionmaker(
     autocommit=False,

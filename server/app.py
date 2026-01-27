@@ -14,12 +14,33 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from server.config import ServerConfig
 from server.db_bootstrap import maybe_bootstrap_db_on_startup
 from server.routers import router
+from server.sqlite_rescue import (
+    backup_to_volume,
+    get_rescue_status,
+    install_shutdown_handlers,
+    restore_from_volume,
+)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan with proper startup and shutdown."""
     print("🚀 Application startup - lifespan function called!")
+
+    # SQLite Rescue: Restore from Unity Catalog Volume if configured
+    # This MUST happen before database bootstrap/migrations
+    rescue_status = get_rescue_status()
+    if rescue_status["configured"]:
+        print(f"📦 SQLite rescue configured: {rescue_status['volume_backup_path']}")
+        if restore_from_volume():
+            print("✅ Database restored from Unity Catalog Volume")
+        else:
+            print("ℹ️  No backup to restore (starting fresh or backup not found)")
+
+        # Install signal handlers for graceful shutdown backup
+        install_shutdown_handlers()
+    else:
+        print("⚠️  SQLITE_VOLUME_BACKUP_PATH not configured - database will NOT persist across container restarts")
 
     # NOTE: This is a *fallback* safety net for deployments that don't run `just db-bootstrap`.
     # It is designed to be safe under multi-process servers (e.g., gunicorn with multiple
@@ -28,7 +49,15 @@ async def lifespan(app: FastAPI):
 
     print("✅ Application startup complete!")
     yield
+
+    # SQLite Rescue: Backup to Unity Catalog Volume on shutdown
     print("🔄 Application shutting down...")
+    if rescue_status["configured"]:
+        print("💾 Backing up database to Unity Catalog Volume...")
+        if backup_to_volume(force=True):
+            print("✅ Database backed up successfully")
+        else:
+            print("⚠️  Database backup failed or skipped")
 
 
 # Request timing middleware
@@ -113,7 +142,16 @@ async def detailed_health():
             "invalid": getattr(pool, "invalid", lambda: 0)(),  # Handle missing invalid method
         }
 
-        return {"status": "healthy", "database": "connected", "connection_pool": pool_info, "timestamp": time.time()}
+        # Get SQLite rescue status
+        rescue_status = get_rescue_status()
+
+        return {
+            "status": "healthy",
+            "database": "connected",
+            "connection_pool": pool_info,
+            "sqlite_rescue": rescue_status,
+            "timestamp": time.time(),
+        }
     except Exception as e:
         return {"status": "unhealthy", "database": "disconnected", "error": str(e), "timestamp": time.time()}
 

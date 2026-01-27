@@ -1,4 +1,4 @@
-command: 
+command:
   - "gunicorn"
   - "server.app:app"
   - "-w"
@@ -7,3 +7,13 @@ command:
   - "uvicorn.workers.UvicornWorker"
   - "--timeout"
   - "1800"
+
+# SQLite Rescue: Backup/restore DB to Unity Catalog Volume for persistence
+# across container restarts. Set this to your Volume path, e.g.:
+#   /Volumes/<catalog>/<schema>/<volume>/workshop.db
+#
+# env:
+#   - name: SQLITE_VOLUME_BACKUP_PATH
+#     value: "/Volumes/your_catalog/your_schema/your_volume/workshop.db"
+#   - name: SQLITE_BACKUP_AFTER_OPS
+#     value: "50"  # Backup after every 50 write operations (default: 50, 0 to disable)
