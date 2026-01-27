@@ -339,3 +339,143 @@ just db-bootstrap
 ### Multi-Worker Database Issues
 
 Ensure `DB_BOOTSTRAP_ON_STARTUP=false` in production and run migrations as a separate step before starting workers.
+
+## Databricks Apps Deployment
+
+### Overview
+
+When deploying to Databricks Apps, the application runs in ephemeral containers that can be restarted during platform updates. SQLite databases stored on the local container filesystem will be lost. The SQLite Rescue module provides
+persistence by backing up to Unity Catalog Volumes.
+
+### Databricks Apps Authentication
+
+Databricks Apps automatically provides authentication to workspace resources via a dedicated **service principal**. Key points:
+
+**Automatic Credentials**:
+- `DATABRICKS_CLIENT_ID` - Automatically injected
+- `DATABRICKS_CLIENT_SECRET` - Automatically injected
+
+**Best Practices**:
+- Never hardcode personal access tokens (PATs) in code
+- Use the app's service principal for all Databricks API calls
+- Don't share service principal credentials between apps
+- Apply least privilege: grant only minimum required permissions
+
+**Resource Permissions**:
+| Resource Type | Common Permissions |
+|--------------|-------------------|
+| SQL Warehouse | CAN USE (queries), CAN MANAGE |
+| Unity Catalog Volume | Can read, Can read and write |
+| Secrets | Can read, Can write, Can manage |
+| Model Serving Endpoint | Can view, Can query, Can manage |
+| MLflow Experiments | Can read, Can edit, Can manage |
+
+**Configuring Resources**:
+1. In Databricks Apps UI, navigate to Configure step
+2. Click "+ Add resource" in App resources section
+3. Select resource type and set permissions for app service principal
+4. Assign a key and reference in `app.yaml` via `valueFrom`
+
+Reference: [Databricks Apps Resources Documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources)
+
+### SQLite Rescue Module
+
+**Purpose**: Persist SQLite database across container restarts by backing up to Unity Catalog Volumes.
+
+**IMPORTANT**: Databricks Apps do NOT support FUSE mounts for UC volumes. This module uses the
+Databricks SDK Files API (`WorkspaceClient.files`) for all volume operations.
+
+**Architecture**:
+┌─────────────────────────────────────────────────────────────────┐
+│                     CONTAINER LIFECYCLE                          │
+├─────────────────────────────────────────────────────────────────┤
+│  STARTUP                                                         │
+│  1. Check Unity Catalog Volume for backup (via SDK Files API)    │
+│  2. If found → download to local filesystem                      │
+│  3. Bootstrap/migrate as usual                                   │
+├─────────────────────────────────────────────────────────────────┤
+│  RUNNING                                                         │
+│  4. SQLite operates on local file (fast)                         │
+│  5. After N write operations → background upload to Volume       │
+├─────────────────────────────────────────────────────────────────┤
+│  SHUTDOWN (SIGTERM)                                              │
+│  6. Signal handler triggers backup to Volume                     │
+│  7. Upload local DB → Unity Catalog Volume (via SDK Files API)   │
+│  8. Exit cleanly                                                 │
+└─────────────────────────────────────────────────────────────────┘
+
+**Configuration** (`app.yaml`):
+
+Recommended: Use `valueFrom` to reference an App resource (the volume path is injected automatically):
+```yaml
+env:
+  - name: SQLITE_VOLUME_PATH
+    valueFrom: db_backup_volume  # Resource key from Apps UI
+  - name: SQLITE_BACKUP_AFTER_OPS
+    value: "50"  # Backup every 50 write operations (default: 50, 0 to disable)
+```
+
+Alternative: Hardcode the full path (less portable):
+```yaml
+env:
+  - name: SQLITE_VOLUME_BACKUP_PATH
+    value: "/Volumes/<catalog>/<schema>/<volume>/workshop.db"
+```
+
+Environment Variables:
+┌───────────────────────────┬──────────────────────────────────────────────────┬──────────────────────────┐
+│         Variable          │               Purpose                            │         Default          │
+├───────────────────────────┼──────────────────────────────────────────────────┼──────────────────────────┤
+│ SQLITE_VOLUME_PATH        │ Base volume path (appends /workshop.db)          │ (none - rescue disabled) │
+├───────────────────────────┼──────────────────────────────────────────────────┼──────────────────────────┤
+│ SQLITE_VOLUME_BACKUP_PATH │ Full path including filename (overrides above)   │ (none - rescue disabled) │
+├───────────────────────────┼──────────────────────────────────────────────────┼──────────────────────────┤
+│ SQLITE_BACKUP_AFTER_OPS   │ Write operations before auto-backup              │ 50                       │
+└───────────────────────────┴──────────────────────────────────────────────────┴──────────────────────────┘
+
+Key Files:
+┌─────────────────────────┬─────────────────────────────────────────────────────────┐
+│          File           │                         Purpose                         │
+├─────────────────────────┼─────────────────────────────────────────────────────────┤
+│ server/sqlite_rescue.py │ Core backup/restore logic (uses Databricks SDK)         │
+├─────────────────────────┼─────────────────────────────────────────────────────────┤
+│ server/app.py           │ Lifespan integration (startup restore, shutdown backup) │
+├─────────────────────────┼─────────────────────────────────────────────────────────┤
+│ server/database.py      │ SQLAlchemy commit listener for operation counting       │
+└─────────────────────────┴─────────────────────────────────────────────────────────┘
+
+API:
+- restore_from_volume() - Called on startup before DB bootstrap
+- backup_to_volume(force=True) - Called on shutdown
+- record_write_operation() - Called after each SQLAlchemy commit
+- get_rescue_status() - Returns current config and status (exposed in /health/detailed)
+
+Prerequisites:
+1. Create Unity Catalog Volume in your workspace
+2. Add the volume as an App resource in the Apps UI
+3. Grant the app "Can read and write" permission on the volume
+4. Assign a resource key (e.g., "db_backup_volume")
+5. Configure SQLITE_VOLUME_PATH in app.yaml using `valueFrom`
+
+Health Check:
+The /health/detailed endpoint includes sqlite_rescue status:
+```json
+{
+  "sqlite_rescue": {
+    "configured": true,
+    "volume_backup_path": "/Volumes/catalog/schema/volume/workshop.db",
+    "backup_after_ops": 50,
+    "local_exists": true,
+    "volume_backup_exists": true,
+    "sdk_available": true,
+    "write_op_count": 23,
+    "shutdown_handlers_installed": true
+  }
+}
+```
+
+Limitations:
+- Uses Databricks SDK Files API (FUSE mounts NOT supported in Apps)
+- The rescue module copies the entire DB file; not suitable for very large databases
+- Brief data loss possible if container crashes between backups (up to SQLITE_BACKUP_AFTER_OPS writes)
+
