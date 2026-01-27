@@ -36,8 +36,11 @@ import { toast } from 'sonner';
 /**
  * Format rubric description with proper structure for readability
  * Simply splits on " - " (space-dash-space) and renders as bullet points
+ * Collapses long lists (>2 items) with expand/collapse functionality
  */
 const FormattedRubricDescription: React.FC<{ description: string }> = ({ description }) => {
+  const [expanded, setExpanded] = useState(false);
+  
   if (!description) return null;
 
   // Split on " - " and show as bullet list if there are multiple items
@@ -48,16 +51,28 @@ const FormattedRubricDescription: React.FC<{ description: string }> = ({ descrip
     return <p className="text-sm text-gray-600 mt-2">{description}</p>;
   }
 
+  // Show first 2 items when collapsed, all when expanded
+  const visibleItems = expanded ? items : items.slice(0, 2);
+  const hasMore = items.length > 2;
+
   return (
     <div className="text-sm text-gray-600 mt-2">
       <ul className="space-y-1.5">
-        {items.map((item, idx) => (
+        {visibleItems.map((item, idx) => (
           <li key={idx} className="flex items-start gap-2">
             <span className="text-gray-400 mt-0.5 flex-shrink-0">•</span>
             <span>{item}</span>
           </li>
         ))}
       </ul>
+      {hasMore && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="mt-2 text-xs text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+        >
+          {expanded ? 'Show less' : `Show ${items.length - 2} more...`}
+        </button>
+      )}
     </div>
   );
 };
