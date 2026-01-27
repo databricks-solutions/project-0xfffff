@@ -181,8 +181,73 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({
   const effectiveOutputJsonPath = outputJsonPath ?? workshop?.output_jsonpath;
 
   // Apply JSONPath extraction to input and output
-  const displayInput = useJsonPathExtraction(trace.input, effectiveInputJsonPath);
+  const rawDisplayInput = useJsonPathExtraction(trace.input, effectiveInputJsonPath);
   const rawDisplayOutput = useJsonPathExtraction(trace.output, effectiveOutputJsonPath);
+
+  // Parse structured input for smart rendering
+  const parsedInput = useMemo((): { isStructured: boolean; userMessage: string; context: any; state: any; rawText: string } => {
+    try {
+      const parsed = JSON.parse(rawDisplayInput);
+      
+      if (typeof parsed === 'object' && parsed !== null) {
+        // Pattern 1: {"args": [[{"role": "user", "content": "...", "type": "message"}]], "context": {}, "state": {}}
+        if ('args' in parsed && Array.isArray(parsed.args)) {
+          const messages = parsed.args.flat().filter((m: any) => m && typeof m === 'object');
+          const userMessages = messages
+            .filter((m: any) => m.role === 'user' || m.type === 'message')
+            .map((m: any) => m.content || m.text || '')
+            .filter(Boolean);
+          
+          if (userMessages.length > 0) {
+            return {
+              isStructured: true,
+              userMessage: userMessages.join('\n\n'),
+              context: parsed.context,
+              state: parsed.state,
+              rawText: rawDisplayInput
+            };
+          }
+        }
+        
+        // Pattern 2: {"messages": [{"role": "user", "content": "..."}], ...}
+        if ('messages' in parsed && Array.isArray(parsed.messages)) {
+          const userMessages = parsed.messages
+            .filter((m: any) => m.role === 'user')
+            .map((m: any) => m.content || '')
+            .filter(Boolean);
+          
+          if (userMessages.length > 0) {
+            return {
+              isStructured: true,
+              userMessage: userMessages.join('\n\n'),
+              context: parsed.context,
+              state: parsed.state,
+              rawText: rawDisplayInput
+            };
+          }
+        }
+        
+        // Pattern 3: {"input": "...", ...} or {"query": "...", ...} or {"question": "...", ...}
+        const inputContent = parsed.input || parsed.query || parsed.question || parsed.prompt;
+        if (typeof inputContent === 'string') {
+          return {
+            isStructured: true,
+            userMessage: inputContent,
+            context: parsed.context,
+            state: parsed.state,
+            rawText: rawDisplayInput
+          };
+        }
+      }
+      
+      return { isStructured: false, userMessage: rawDisplayInput, context: null, state: null, rawText: rawDisplayInput };
+    } catch {
+      return { isStructured: false, userMessage: rawDisplayInput, context: null, state: null, rawText: rawDisplayInput };
+    }
+  }, [rawDisplayInput]);
+
+  // Get the main display text for input
+  const displayInput = parsedInput.userMessage;
 
   // Parse structured output for smart rendering
   const parsedOutput = useMemo((): { isStructured: boolean; data: ParsedStructuredOutput | null; rawText: string } => {
@@ -370,6 +435,11 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({
           <div className="flex items-center gap-2">
             <User className="h-4 w-4 text-blue-600" />
             <span className="font-medium text-blue-800">Input</span>
+            {parsedInput.isStructured && (
+              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
+                Structured Request
+              </span>
+            )}
           </div>
           <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg">
             <div className="text-gray-800 leading-relaxed prose prose-sm max-w-none">
@@ -378,6 +448,27 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({
               </ReactMarkdown>
             </div>
           </div>
+
+          {/* Structured Input Metadata Sections */}
+          {parsedInput.isStructured && (parsedInput.context || parsedInput.state) && (
+            <div className="space-y-2 mt-2">
+              {/* Context */}
+              <CollapsibleJsonSection
+                title="Request Context"
+                icon={<Info className="h-4 w-4" />}
+                data={parsedInput.context}
+                colorClass="text-blue-600"
+              />
+
+              {/* State */}
+              <CollapsibleJsonSection
+                title="Request State"
+                icon={<Database className="h-4 w-4" />}
+                data={parsedInput.state}
+                colorClass="text-blue-500"
+              />
+            </div>
+          )}
         </div>
 
         {/* Output */}
