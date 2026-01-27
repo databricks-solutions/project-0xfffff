@@ -402,7 +402,9 @@ const SmartValueRenderer: React.FC<{
           {entries.map(([key, val]) => (
             <React.Fragment key={key}>
               <span className="text-sm font-medium text-gray-500">{formatFieldName(key)}:</span>
-              <span className="text-sm text-gray-800">{val === null ? 'null' : String(val)}</span>
+              <span className="text-sm text-gray-800">
+                <SmartValueRenderer value={val} depth={depth + 1} />
+              </span>
             </React.Fragment>
           ))}
         </div>
