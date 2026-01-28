@@ -16,41 +16,64 @@ async function selectWorkshopFromDropdown(page: Page, workshopId: string): Promi
   const loadingText = page.getByText(/Loading workshops/i);
   await expect(loadingText).not.toBeVisible({ timeout: 5000 }).catch(() => {});
 
-  // Find and click the combobox to open the dropdown
+  // Find the combobox (Select trigger)
   const workshopSelect = page.locator('button[role="combobox"]').first();
-  if (await workshopSelect.isVisible().catch(() => false)) {
-    await workshopSelect.click();
-    // Wait for dropdown content to appear
-    await page.waitForSelector('[role="listbox"]', { timeout: 3000 }).catch(() => {});
-    await page.waitForTimeout(200);
+  if (!await workshopSelect.isVisible().catch(() => false)) {
+    // No dropdown visible - might be auto-submitted or different UI state
+    return;
+  }
 
-    // Radix Select stores the value in data-value attribute on the option element
-    // Try the data-value selector first (most reliable)
-    const dataValueSelector = `[role="option"][data-value="${workshopId}"]`;
-    const workshopOption = page.locator(dataValueSelector);
+  // Check if the workshop is already selected by looking at the trigger's data-state
+  // and the displayed text. If it shows the workshop name, we might be done.
+  // The Radix Select sets aria-expanded when open
+  const triggerText = await workshopSelect.textContent();
 
-    if (await workshopOption.isVisible({ timeout: 1000 }).catch(() => false)) {
-      await workshopOption.click();
-    } else {
-      // If data-value selector didn't work, log and fail explicitly
-      // Don't fall back to first option as this causes wrong workshop selection
-      const availableOptions = await page.locator('[role="option"]').all();
-      const optionValues = await Promise.all(
-        availableOptions.map(async (opt) => {
-          const value = await opt.getAttribute('data-value');
-          const text = await opt.textContent();
-          return `${value}: ${text}`;
-        })
-      );
-      console.error(
-        `[selectWorkshopFromDropdown] Could not find workshop ${workshopId}. ` +
-        `Available options: ${optionValues.join(', ')}`
-      );
+  // Click to open the dropdown
+  await workshopSelect.click();
+
+  // Wait for dropdown content to appear
+  await page.waitForSelector('[role="listbox"]', { timeout: 3000 }).catch(() => {});
+  await page.waitForTimeout(200);
+
+  // Radix Select stores the value in data-value attribute on the option element
+  // Try the data-value selector first (most reliable)
+  const dataValueSelector = `[role="option"][data-value="${workshopId}"]`;
+  const workshopOption = page.locator(dataValueSelector);
+
+  if (await workshopOption.isVisible({ timeout: 1000 }).catch(() => false)) {
+    await workshopOption.click();
+  } else {
+    // If data-value selector didn't work, check if the listbox is empty or workshop not found
+    const availableOptions = await page.locator('[role="option"]').all();
+
+    if (availableOptions.length === 0) {
+      // No options available - might be a timing issue or no workshops
+      // Close the dropdown by clicking elsewhere and throw
+      await page.keyboard.press('Escape');
       throw new Error(
-        `Workshop ${workshopId} not found in dropdown. ` +
-        `Available: ${optionValues.join(', ')}`
+        `No workshop options available in dropdown. Expected workshop: ${workshopId}`
       );
     }
+
+    const optionValues = await Promise.all(
+      availableOptions.map(async (opt) => {
+        const value = await opt.getAttribute('data-value');
+        const text = await opt.textContent();
+        return `${value}: ${text}`;
+      })
+    );
+
+    // Close dropdown before throwing
+    await page.keyboard.press('Escape');
+
+    console.error(
+      `[selectWorkshopFromDropdown] Could not find workshop ${workshopId}. ` +
+      `Trigger showed: "${triggerText}". Available options: ${optionValues.join(', ')}`
+    );
+    throw new Error(
+      `Workshop ${workshopId} not found in dropdown. ` +
+      `Available: ${optionValues.join(', ')}`
+    );
   }
 }
 
@@ -63,11 +86,12 @@ async function selectWorkshopFromDropdown(page: Page, workshopId: string): Promi
  * For participants/SMEs: selects the workshop from dropdown if workshop_id is provided
  */
 export async function loginAs(page: Page, user: User): Promise<void> {
-  // Navigate to the app if not already there
-  const currentUrl = page.url();
-  if (!currentUrl.includes('localhost') && !currentUrl.includes('127.0.0.1')) {
-    await page.goto('/');
-  }
+  // Always navigate to login page explicitly
+  await page.goto('/');
+
+  // Wait for React to mount
+  await page.waitForSelector('#root > *', { timeout: 10000 });
+  await page.waitForLoadState('networkidle');
 
   // Wait for login page to be visible
   await expect(page.getByText('Workshop Portal')).toBeVisible({ timeout: 10000 });
@@ -87,8 +111,9 @@ export async function loginAs(page: Page, user: User): Promise<void> {
       await passwordField.fill(password);
     }
 
-    // Wait for workshop options to load
-    await page.waitForTimeout(500);
+    // Wait for workshop options to load - wait for "Loading workshops..." to disappear
+    const loadingText = page.getByText(/Loading workshops/i);
+    await expect(loadingText).not.toBeVisible({ timeout: 10000 }).catch(() => {});
 
     // For facilitators, check if we need to click "Create New" or select existing workshop
     const createNewButton = page.getByRole('button', { name: /Create New/i });
@@ -116,8 +141,9 @@ export async function loginAs(page: Page, user: User): Promise<void> {
   } else {
     // For participants/SMEs, need to select workshop from dropdown
     if (user.workshop_id) {
-      // Wait for workshops to load
-      await page.waitForTimeout(500);
+      // Wait for workshops to load - wait for "Loading workshops..." to disappear
+      const loadingText = page.getByText(/Loading workshops/i);
+      await expect(loadingText).not.toBeVisible({ timeout: 10000 }).catch(() => {});
       await selectWorkshopFromDropdown(page, user.workshop_id);
     }
   }
@@ -128,6 +154,35 @@ export async function loginAs(page: Page, user: User): Promise<void> {
   // Wait for navigation away from login page
   // The login page shows "Workshop Portal" - wait for that to disappear
   await expect(page.getByText('Workshop Portal')).not.toBeVisible({ timeout: 10000 });
+
+  // For facilitators with a workshop_id, we need to navigate into the workshop
+  // After login, facilitators land on the "Welcome, Facilitator!" page showing workshop cards
+  if (user.role === 'facilitator' && user.workshop_id) {
+    // Check if we're on the workshop selection page
+    const welcomeFacilitator = page.getByText('Welcome, Facilitator!');
+    if (await welcomeFacilitator.isVisible({ timeout: 3000 }).catch(() => false)) {
+      // Wait for workshops to load on this page
+      const loadingWorkshops = page.getByText(/Loading workshops/i);
+      await expect(loadingWorkshops).not.toBeVisible({ timeout: 10000 }).catch(() => {});
+
+      // Click on the workshop card to enter the workshop
+      // The card has data-testid="workshop-card-{id}"
+      const workshopCard = page.locator(`[data-testid="workshop-card-${user.workshop_id}"]`);
+      if (await workshopCard.isVisible({ timeout: 5000 }).catch(() => false)) {
+        await workshopCard.click();
+        // Wait for URL to update with workshop ID
+        await page.waitForURL(/\?workshop=/, { timeout: 10000 });
+      } else {
+        // Fallback: try clicking on any workshop card that's visible
+        const anyCard = page.locator('[data-testid^="workshop-card-"]').first();
+        if (await anyCard.isVisible({ timeout: 2000 }).catch(() => false)) {
+          await anyCard.click();
+          await page.waitForURL(/\?workshop=/, { timeout: 10000 });
+        }
+      }
+    }
+  }
+
 }
 
 /**

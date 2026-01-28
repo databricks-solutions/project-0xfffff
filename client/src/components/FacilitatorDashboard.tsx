@@ -26,9 +26,11 @@ import { Label } from '@/components/ui/label';
 import { useQueryClient } from '@tanstack/react-query';
 import { PhaseControlButton } from './PhaseControlButton';
 import { JsonPathSettings } from './JsonPathSettings';
+import { TraceDiscoveryPanel } from './TraceDiscoveryPanel';
 import { toast } from 'sonner';
 import { parseRubricQuestions } from '@/utils/rubricUtils';
 import { getBackendModelName, getFrontendModelName, getModelOptions } from '@/utils/modelMapping';
+import { useTraceDiscoveryState, useUpdateTraceThresholds, usePromoteFinding, useGenerateDiscoveryQuestion } from '@/hooks/useWorkshopApi';
 
 interface FacilitatorDashboardProps {
   onNavigate: (phase: string) => void;
@@ -52,6 +54,15 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
   const { data: rubric } = useRubric(workshopId!);
   const { data: annotations } = useFacilitatorAnnotations(workshopId!);
   const { data: annotationsWithUserDetails } = useFacilitatorAnnotationsWithUserDetails(workshopId!);
+
+  // Expanded trace ID state - must be declared before hooks that use it
+  const [expandedTraceId, setExpandedTraceId] = React.useState<string | null>(null);
+
+  // TraceDiscoveryPanel hooks - only enabled when a trace is expanded
+  const { data: traceDiscoveryState, isLoading: isLoadingDiscoveryState } = useTraceDiscoveryState(workshopId!, expandedTraceId || '');
+  const updateThresholdsMutation = useUpdateTraceThresholds(workshopId!, expandedTraceId || '');
+  const promoteFindingMutation = usePromoteFinding(workshopId!);
+  const generateQuestionMutation = useGenerateDiscoveryQuestion(workshopId!, expandedTraceId || '');
 
   // Redirect non-facilitators
   if (!isFacilitator) {
@@ -290,7 +301,7 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
   const [isReorderingTraces, setIsReorderingTraces] = React.useState(false);
   const [isResettingDiscovery, setIsResettingDiscovery] = React.useState(false);
   const [isResettingAnnotation, setIsResettingAnnotation] = React.useState(false);
-  
+
   // Judge name state - used for MLflow feedback entries
   const [judgeName, setJudgeName] = React.useState<string>(workshop?.judge_name || 'workshop_judge');
   const [isSavingJudgeName, setIsSavingJudgeName] = React.useState(false);
@@ -877,59 +888,117 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
               <TabsContent value="traces">
                 {traceCoverageDetails.length > 0 ? (
                   <div className="space-y-3" data-testid="trace-coverage">
-                    {traceCoverageDetails.map((trace) => (
-                      <div key={trace.traceId} className="border rounded-lg p-4 bg-slate-50" data-testid="trace-item">
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-2">
-                              <h4 className="font-medium text-slate-900 text-sm">
-                                Trace: {trace.traceId.slice(0, 20)}...
-                              </h4>
-                              <Badge 
-                                variant={trace.isFullyReviewed ? 'default' : 'secondary'}
-                                className="text-xs"
-                              >
-                                {trace.reviewCount} review{trace.reviewCount !== 1 ? 's' : ''}
-                              </Badge>
-                              <Badge 
-                                variant={trace.uniqueReviewers >= 2 ? 'default' : 'outline'}
-                                className="text-xs"
-                              >
-                                {trace.uniqueReviewers} reviewer{trace.uniqueReviewers !== 1 ? 's' : ''}
-                              </Badge>
-                            </div>
-                            <p className="text-xs text-slate-600 line-clamp-2 mb-2">
-                              {trace.input.slice(0, 120)}...
-                            </p>
-                            {trace.reviewers.length > 0 && (
-                              <div className="flex flex-wrap gap-1">
-                                {trace.reviewers.map(reviewer => {
-                                  // Find the user name from the findings with user details
-                                  const userFinding = allFindingsWithUserDetails?.find(f => f.user_id === reviewer);
-                                  const reviewerName = userFinding?.user_name || reviewer;
-                                  return (
-                                    <Badge key={reviewer} variant="outline" className="text-xs px-2 py-0">
-                                      {reviewerName}
-                                    </Badge>
-                                  );
-                                })}
+                    {traceCoverageDetails.map((trace) => {
+                      // Get the actual trace ID (not MLflow trace ID) for discovery state
+                      const actualTrace = traces?.find(t => (t.mlflow_trace_id || t.id) === trace.traceId);
+                      const actualTraceId = actualTrace?.id || trace.traceId;
+                      const isExpanded = expandedTraceId === actualTraceId;
+
+                      return (
+                        <div key={trace.traceId}>
+                          <div
+                            className={`border rounded-lg p-4 cursor-pointer transition-colors ${
+                              isExpanded ? 'bg-indigo-50 border-indigo-200' : 'bg-slate-50 hover:bg-slate-100'
+                            }`}
+                            data-testid={`trace-row-${actualTraceId}`}
+                            onClick={() => setExpandedTraceId(isExpanded ? null : actualTraceId)}
+                          >
+                            <div className="flex items-start justify-between mb-3">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <ChevronRight className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                                  <h4 className="font-medium text-slate-900 text-sm">
+                                    Trace: {trace.traceId.slice(0, 20)}...
+                                  </h4>
+                                  <Badge
+                                    variant={trace.isFullyReviewed ? 'default' : 'secondary'}
+                                    className="text-xs"
+                                  >
+                                    {trace.reviewCount} review{trace.reviewCount !== 1 ? 's' : ''}
+                                  </Badge>
+                                  <Badge
+                                    variant={trace.uniqueReviewers >= 2 ? 'default' : 'outline'}
+                                    className="text-xs"
+                                  >
+                                    {trace.uniqueReviewers} reviewer{trace.uniqueReviewers !== 1 ? 's' : ''}
+                                  </Badge>
+                                </div>
+                                <p className="text-xs text-slate-600 line-clamp-2 mb-2 ml-6">
+                                  {trace.input.slice(0, 120)}...
+                                </p>
+                                {trace.reviewers.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 ml-6">
+                                    {trace.reviewers.map(reviewer => {
+                                      // Find the user name from the findings with user details
+                                      const userFinding = allFindingsWithUserDetails?.find(f => f.user_id === reviewer);
+                                      const reviewerName = userFinding?.user_name || reviewer;
+                                      return (
+                                        <Badge key={reviewer} variant="outline" className="text-xs px-2 py-0">
+                                          {reviewerName}
+                                        </Badge>
+                                      );
+                                    })}
+                                  </div>
+                                )}
                               </div>
-                            )}
-                          </div>
-                          <div className="flex flex-col items-end gap-1">
-                            <div className="text-right text-xs">
-                              <div className={`font-medium status-text ${
-                                trace.isFullyReviewed ? 'text-green-600' : 
-                                trace.reviewCount > 0 ? 'text-amber-600' : 'text-slate-400'
-                              }`}>
-                                {trace.isFullyReviewed ? '✓ Complete' : 
-                                 trace.reviewCount > 0 ? 'In Progress' : 'Pending'}
+                              <div className="flex flex-col items-end gap-1">
+                                <div className="text-right text-xs">
+                                  <div className={`font-medium status-text ${
+                                    trace.isFullyReviewed ? 'text-green-600' :
+                                    trace.reviewCount > 0 ? 'text-amber-600' : 'text-slate-400'
+                                  }`}>
+                                    {trace.isFullyReviewed ? '✓ Complete' :
+                                     trace.reviewCount > 0 ? 'In Progress' : 'Pending'}
+                                  </div>
+                                </div>
                               </div>
                             </div>
                           </div>
+
+                          {/* TraceDiscoveryPanel - shown when trace is expanded */}
+                          {isExpanded && (
+                            <div className="mt-2 ml-4 border-l-2 border-indigo-200 pl-4">
+                              {isLoadingDiscoveryState ? (
+                                <div className="py-8 text-center text-slate-500">
+                                  <div className="w-6 h-6 border-2 border-slate-300 border-t-indigo-600 rounded-full animate-spin mx-auto mb-2" />
+                                  <p className="text-sm">Loading discovery state...</p>
+                                </div>
+                              ) : traceDiscoveryState ? (
+                                <TraceDiscoveryPanel
+                                  traceId={actualTraceId}
+                                  state={traceDiscoveryState}
+                                  onGenerateQuestion={() => {
+                                    generateQuestionMutation.mutate(undefined, {
+                                      onSuccess: () => toast.success('Question generated successfully'),
+                                      onError: (err) => toast.error(`Failed to generate question: ${err.message}`),
+                                    });
+                                  }}
+                                  onPromote={(findingId) => {
+                                    promoteFindingMutation.mutate(
+                                      { findingId, promoterId: user?.id || 'facilitator' },
+                                      {
+                                        onSuccess: () => toast.success('Finding promoted to draft rubric'),
+                                        onError: (err) => toast.error(`Failed to promote finding: ${err.message}`),
+                                      }
+                                    );
+                                  }}
+                                  onUpdateThresholds={(newThresholds) => {
+                                    updateThresholdsMutation.mutate(newThresholds, {
+                                      onSuccess: () => toast.success('Thresholds updated'),
+                                      onError: (err) => toast.error(`Failed to update thresholds: ${err.message}`),
+                                    });
+                                  }}
+                                />
+                              ) : (
+                                <div className="py-8 text-center text-slate-500">
+                                  <p className="text-sm">No discovery state available for this trace</p>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="text-center py-8 text-slate-500">

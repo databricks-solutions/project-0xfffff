@@ -48,6 +48,7 @@ import {
 
 import {
   DEFAULT_API_URL,
+  DEFAULT_BASE_URL,
   DEFAULT_FACILITATOR,
   SAMPLE_TRACE_INPUTS,
   SAMPLE_TRACE_OUTPUTS,
@@ -259,12 +260,45 @@ export class TestScenario {
     // Get or create page
     let page = this.state.page;
     if (!page && this.state.browser) {
-      const context = await this.state.browser.newContext();
+      // Must pass baseURL so that page.goto('/') works correctly
+      const baseURL = process.env.PLAYWRIGHT_BASE_URL || DEFAULT_BASE_URL;
+      const context = await this.state.browser.newContext({
+        baseURL,
+      });
       page = await context.newPage();
     }
     if (!page) {
       throw new Error('No page or browser provided to TestScenario');
     }
+
+    // Setup browser error capture - collect JS errors and console errors
+    const jsErrors: string[] = [];
+    const consoleErrors: string[] = [];
+
+    page.on('pageerror', (err) => {
+      jsErrors.push(`[PageError] ${err.message}\n${err.stack || ''}`);
+      console.error('[PageError]', err.message);
+    });
+
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') {
+        const text = msg.text();
+        // Filter out non-critical errors:
+        // - favicon.ico 404s are normal
+        // - React DevTools messages are noise
+        // - 404 "resource" errors are often expected for optional API endpoints
+        // - net::ERR errors during navigation are often transient
+        const isNonCritical =
+          text.includes('favicon.ico') ||
+          text.includes('Download the React DevTools') ||
+          text.includes('the server responded with a status of 404') ||
+          text.includes('net::ERR_');
+        if (!isNonCritical) {
+          consoleErrors.push(`[ConsoleError] ${text}`);
+          console.error('[ConsoleError]', text);
+        }
+      }
+    });
 
     // Build mock data
     const store = this.buildMockData();
@@ -287,8 +321,8 @@ export class TestScenario {
       await this.persistMockDataToRealApi(page, store);
     }
 
-    // Build the scenario result
-    const scenario = this.buildScenarioResult(page, store);
+    // Build the scenario result, passing error arrays for cleanup to check
+    const scenario = this.buildScenarioResult(page, store, { jsErrors, consoleErrors });
 
     return scenario;
   }
@@ -972,9 +1006,14 @@ export class TestScenario {
   /**
    * Build the scenario result object with actions
    */
-  private buildScenarioResult(page: Page, store: MockDataStore): BuiltScenario {
+  private buildScenarioResult(
+    page: Page,
+    store: MockDataStore,
+    errorCapture: { jsErrors: string[]; consoleErrors: string[] } = { jsErrors: [], consoleErrors: [] }
+  ): BuiltScenario {
     const apiUrl = DEFAULT_API_URL;
     const contexts: BrowserContext[] = [];
+    const { jsErrors, consoleErrors } = errorCapture;
 
     // Organize users by role
     const usersByRole: UsersByRole = {
@@ -1106,9 +1145,32 @@ export class TestScenario {
         if (!this.state.browser) {
           throw new Error('Browser required for newPageAs - use browser fixture');
         }
-        const context = await this.state.browser.newContext();
+        // Must pass baseURL so that page.goto('/') works correctly
+        const context = await this.state.browser.newContext({
+          baseURL: DEFAULT_BASE_URL,
+        });
         contexts.push(context);
         const newPage = await context.newPage();
+
+        // Setup browser error capture on new page
+        newPage.on('pageerror', (err) => {
+          jsErrors.push(`[PageError] ${err.message}\n${err.stack || ''}`);
+          console.error('[PageError]', err.message);
+        });
+        newPage.on('console', (msg) => {
+          if (msg.type() === 'error') {
+            const text = msg.text();
+            const isNonCritical =
+              text.includes('favicon.ico') ||
+              text.includes('Download the React DevTools') ||
+              text.includes('the server responded with a status of 404') ||
+              text.includes('net::ERR_');
+            if (!isNonCritical) {
+              consoleErrors.push(`[ConsoleError] ${text}`);
+              console.error('[ConsoleError]', text);
+            }
+          }
+        });
 
         // Setup mocking on new page if needed
         if (this.state.mockAll) {
@@ -1136,6 +1198,23 @@ export class TestScenario {
         // Close all created contexts
         for (const context of contexts) {
           await context.close();
+        }
+
+        // Check for browser errors and fail if any were detected
+        const allErrors = [...jsErrors, ...consoleErrors];
+        if (allErrors.length > 0) {
+          console.error('\n' + '='.repeat(60));
+          console.error('BROWSER ERRORS DETECTED DURING TEST');
+          console.error('='.repeat(60));
+          allErrors.forEach((err, i) => {
+            console.error(`\n--- Error ${i + 1} ---`);
+            console.error(err);
+          });
+          console.error('='.repeat(60) + '\n');
+
+          throw new Error(
+            `Test had ${allErrors.length} browser error(s). First error: ${allErrors[0].substring(0, 200)}`
+          );
         }
       },
     };

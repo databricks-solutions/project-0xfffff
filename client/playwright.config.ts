@@ -6,6 +6,9 @@ const useWebServer = !process.env.PW_NO_WEBSERVER;
 // JSON reporter for LLM agents (token-efficient test results)
 const useJsonReporter = process.env.PW_JSON_REPORT === '1';
 
+// Verbose console error logging - set PW_VERBOSE_CONSOLE=1 to see all console output
+const verboseConsole = process.env.PW_VERBOSE_CONSOLE === '1';
+
 // Timeout configuration: can be overridden via environment variables
 const testTimeout = process.env.PW_TEST_TIMEOUT
   ? parseInt(process.env.PW_TEST_TIMEOUT, 10)

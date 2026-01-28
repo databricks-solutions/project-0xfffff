@@ -240,12 +240,21 @@ ui-install:
   npm -C {{client-dir}} install
 
 [group('dev')]
-ui-dev:
+ui-dev: openapi
   npm -C {{client-dir}} run dev
 
 [group('dev')]
-ui-build:
+ui-build: openapi
   npm -C {{client-dir}} run build
+
+# Generate OpenAPI spec from FastAPI and TypeScript client
+[group('dev')]
+openapi:
+  @echo "📜 Generating OpenAPI spec from FastAPI..."
+  @uv run python -m server.make_openapi --output /tmp/openapi.json
+  @echo "🔧 Generating TypeScript client..."
+  @npx openapi-typescript-codegen --input /tmp/openapi.json --output {{client-dir}}/src/client --client fetch
+  @echo "✅ TypeScript client generated at {{client-dir}}/src/client"
 
 # Run pytest (writes JSON report to .test-results/ for token-efficient summaries)
 [group('dev')]
@@ -256,19 +265,19 @@ test-server *args:
   uv run pytest -q --json-report --json-report-file=.test-results/pytest.json {{args}}
 
 [group('dev')]
-ui-test:
+ui-test: openapi
   npm -C {{client-dir}} run test
 
 # Run vitest (writes JSON report to .test-results/ for token-efficient summaries)
 [group('dev')]
-ui-test-unit *args:
+ui-test-unit *args: openapi
   #!/usr/bin/env bash
   set -euo pipefail
   mkdir -p .test-results
   VITEST_JSON_REPORT=1 npm -C {{client-dir}} run test:unit -- {{args}}
 
 [group('dev')]
-ui-lint:
+ui-lint: openapi
   npm -C {{client-dir}} run lint
 
 [group('dev')]
@@ -426,7 +435,7 @@ deploy:
   SKIP_UI_BUILD=1 ./deploy.sh
 
 [group('dev')]
-dev api_port="8000" ui_port="5173":
+dev api_port="8000" ui_port="5173": openapi
   #!/usr/bin/env bash
   set -euo pipefail
 
@@ -592,10 +601,26 @@ _find-port start_port:
   exit(1)
 
 # Run E2E tests (writes JSON report to .test-results/ for token-efficient summaries)
+# Loads environment variables from .env file (not .env.local) for CI secrets
+#
+# Browser Error Capture:
+#   Tests using TestScenario automatically capture browser console errors and
+#   JavaScript exceptions (pageerror). Errors are logged to stdout and cause
+#   test failure via scenario.cleanup(). This helps catch React errors, undefined
+#   function calls, and other client-side bugs.
+#
+# Example: just e2e headless 1 "my-test.spec.ts"
 [group('e2e')]
 e2e mode="headless" workers="1" *args:
   #!/usr/bin/env bash
   set -euo pipefail
+
+  # Load environment variables from .env file if it exists (for CI secrets like E2E_DATABRICKS_*)
+  if [ -f ".env" ]; then
+    set -a
+    source .env
+    set +a
+  fi
 
   # Enable JSON reporting for token-efficient output
   export PW_JSON_REPORT=1
