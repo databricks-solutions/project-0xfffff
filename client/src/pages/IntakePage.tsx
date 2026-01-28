@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,6 +11,7 @@ import { useWorkshopContext } from '@/context/WorkshopContext';
 import { toast } from 'sonner';
 import { useWorkflowContext } from '@/context/WorkflowContext';
 import { useQueryClient } from '@tanstack/react-query';
+import { useMLflowStatus } from '@/hooks/useWorkshopApi';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -74,14 +75,22 @@ export function IntakePage() {
   };
 
   const [config, setConfig] = useState<MLflowConfig>(getInitialConfig);
-  
-  const [status, setStatus] = useState<MLflowStatus | null>(null);
+
   const [isIngesting, setIsIngesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [isUploadingCsv, setIsUploadingCsv] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [csvImportDestination, setCsvImportDestination] = useState<'discovery' | 'mlflow' | null>(null);
+
+  // Fetch MLflow status using TanStack Query
+  const { data: statusData, refetch: refetchStatus } = useMLflowStatus(workshopId);
+
+  // Derive status with proper typing
+  const status: MLflowStatus | null = useMemo(() => {
+    if (!statusData) return null;
+    return statusData as unknown as MLflowStatus;
+  }, [statusData]);
 
   // Save config to localStorage whenever it changes
   useEffect(() => {
@@ -94,39 +103,19 @@ export function IntakePage() {
     }
   }, [config]);
 
-  // Load existing configuration and status
+  // Merge backend config with local config when status loads
   useEffect(() => {
-    loadStatus();
-  }, [workshopId]);
-
-  const loadStatus = async () => {
-    if (!workshopId) {
-      
-      return;
+    if (statusData?.config) {
+      setConfig(prev => ({
+        ...prev,
+        databricks_host: statusData.config?.databricks_host || prev.databricks_host,
+        databricks_token: statusData.config?.databricks_token || prev.databricks_token,
+        experiment_id: statusData.config?.experiment_id || prev.experiment_id,
+        max_traces: statusData.config?.max_traces || prev.max_traces,
+        filter_string: statusData.config?.filter_string || prev.filter_string
+      }));
     }
-    
-    try {
-      const response = await fetch(`/workshops/${workshopId}/mlflow-status`);
-      if (response.ok) {
-        const statusData = await response.json();
-        setStatus(statusData);
-        
-        // Merge backend config with existing config (prefer backend values if present)
-        if (statusData.config) {
-          setConfig(prev => ({
-            ...prev,
-            databricks_host: statusData.config.databricks_host || prev.databricks_host,
-            databricks_token: statusData.config.databricks_token || prev.databricks_token,
-            experiment_id: statusData.config.experiment_id || prev.experiment_id,
-            max_traces: statusData.config.max_traces || prev.max_traces,
-            filter_string: statusData.config.filter_string || prev.filter_string
-          }));
-        }
-      }
-    } catch (err) {
-      
-    }
-  };
+  }, [statusData?.config]);
 
   const handleConfigChange = (field: keyof MLflowConfig, value: string | number) => {
     setConfig(prev => ({
@@ -185,7 +174,7 @@ export function IntakePage() {
       if (response.ok) {
         const result = await response.json();
         
-        await loadStatus();
+        await refetchStatus();
         
         // Invalidate trace caches to ensure new traces are visible
         queryClient.invalidateQueries({ queryKey: ['traces', workshopId] });
@@ -237,7 +226,7 @@ export function IntakePage() {
       if (response.ok) {
         const result = await response.json();
 
-        await loadStatus();
+        await refetchStatus();
 
         // Invalidate trace caches to ensure new traces are visible
         queryClient.invalidateQueries({ queryKey: ['traces', workshopId] });
@@ -325,7 +314,7 @@ export function IntakePage() {
       if (response.ok) {
         const result = await response.json();
         
-        await loadStatus();
+        await refetchStatus();
         
         // Invalidate ALL workshop-related caches for a complete reset
         queryClient.invalidateQueries({ queryKey: ['traces', workshopId] });

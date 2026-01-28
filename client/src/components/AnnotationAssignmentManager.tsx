@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useUser, useRoleCheck } from '@/context/UserContext';
 import { UsersService, WorkshopsService } from '@/client';
@@ -57,33 +57,33 @@ export const AnnotationAssignmentManager: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [assigning, setAssigning] = useState(false);
 
-  useEffect(() => {
-    if (workshopId && canAssignAnnotations) {
-      loadData();
-    }
-  }, [workshopId, canAssignAnnotations]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
+    if (!workshopId) return;
     try {
       setLoading(true);
       setError(null);
 
       const [participantsRes, usersRes, tracesRes] = await Promise.all([
-        UsersService.getWorkshopParticipantsUsersWorkshopsWorkshopIdParticipantsGet(workshopId!),
+        UsersService.getWorkshopParticipantsUsersWorkshopsWorkshopIdParticipantsGet(workshopId),
         UsersService.listUsersUsersUsersGet(workshopId),
-        WorkshopsService.getTracesWorkshopsWorkshopIdTracesGet(workshopId!, 'all')
+        WorkshopsService.getTracesWorkshopsWorkshopIdTracesGet(workshopId, 'all')
       ]);
 
       setParticipants(participantsRes);
       setUsers(usersRes);
       setTraces(tracesRes);
     } catch (err: any) {
-      
       setError(err.response?.data?.detail || 'Failed to load data');
     } finally {
       setLoading(false);
     }
-  };
+  }, [workshopId]);
+
+  useEffect(() => {
+    if (workshopId && canAssignAnnotations) {
+      loadData();
+    }
+  }, [workshopId, canAssignAnnotations, loadData]);
 
   const handleAutoAssign = async () => {
     try {

@@ -96,6 +96,10 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
     enabled: !!workshopId && currentPhase === 'discovery' // Only enable during discovery phase
   });
 
+  // Check if rubric is available for phase logic (must be before early returns)
+  const { data: rubric } = useRubric(workshopId!);
+  const isRubricAvailable = !!rubric;
+
   // Use real user or show login prompt
   if (!user) {
     return (
@@ -113,7 +117,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
       </Card>
     );
   }
-  
+
   const currentUser = user;
 
   const getRoleIcon = () => {
@@ -131,10 +135,6 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
     }
     return "As a participant, you can contribute to discovery, annotations, and view results.";
   };
-  
-  // Check if rubric is available for phase logic
-  const { data: rubric } = useRubric(workshopId!);
-  const isRubricAvailable = !!rubric;
 
   const getWorkshopSteps = () => {
     const steps: WorkshopStep[] = [];
@@ -504,9 +504,13 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
             return false;
           })();
           
+          // Generate testid from step title (e.g., "Discovery Phase" -> "workflow-step-discovery")
+          const stepTestId = `workflow-step-${step.title.toLowerCase().replace(/\s+phase/i, '').replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}`;
+
           return (
             <button
               key={index}
+              data-testid={stepTestId}
               onClick={() => {
                 if (!isStartingPhase) {
                   step.action();

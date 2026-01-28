@@ -47,9 +47,8 @@ export function WorkshopCreationPage() {
       
       // Update URL to include workshop ID
       window.history.pushState({}, '', `?workshop=${workshop.id}`);
-      
     } catch (error) {
-      
+      // Silently ignore workshop creation errors - UI will show error state
     }
   };
 
@@ -60,15 +59,13 @@ export function WorkshopCreationPage() {
         description: 'A collaborative workshop to calibrate LLM judges through structured evaluation and consensus building.',
         facilitator_id: user?.id || 'demo_facilitator'
       });
-      
-      
+
       setWorkshopId(workshop.id);
-      
+
       // Update URL to include workshop ID
       window.history.pushState({}, '', `?workshop=${workshop.id}`);
-      
     } catch (error) {
-      
+      // Silently ignore workshop creation errors - UI will show error state
     }
   };
 
@@ -146,8 +143,9 @@ export function WorkshopCreationPage() {
                   </div>
                 ) : (
                   workshops.map((workshop) => (
-                    <div 
+                    <div
                       key={workshop.id}
+                      data-testid={`workshop-card-${workshop.id}`}
                       className="p-4 bg-white rounded-lg border border-gray-200 hover:border-green-400 hover:shadow-md transition-all cursor-pointer group"
                       onClick={() => handleSelectWorkshop(workshop)}
                     >

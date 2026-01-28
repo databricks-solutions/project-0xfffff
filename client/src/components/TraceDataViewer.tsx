@@ -106,9 +106,8 @@ export function TraceDataViewer({
     try {
       await navigator.clipboard.writeText(text);
       // You could add a toast notification here
-      
     } catch (error) {
-      
+      // Silently ignore clipboard errors
     }
   };
 

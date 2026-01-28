@@ -5,7 +5,7 @@
  * Krippendorff's Alpha with interpretation, suggestions, and detailed analysis.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -175,8 +175,11 @@ export function IRRResultsDemo({ workshopId }: IRRResultsProps) {
   // Parse rubric questions
   const rubricQuestions = rubric ? parseRubricQuestions(rubric) : [];
   
-  // Extract per-metric scores from IRR result
-  const perMetricScores = irrResult?.details?.per_metric_scores || {};
+  // Extract per-metric scores from IRR result (memoized to prevent reference changes)
+  const perMetricScores = useMemo(
+    () => irrResult?.details?.per_metric_scores ?? {},
+    [irrResult?.details?.per_metric_scores]
+  );
   const hasMetrics = Object.keys(perMetricScores).length > 0;
   
   // Traces start collapsed by default
@@ -220,8 +223,7 @@ export function IRRResultsDemo({ workshopId }: IRRResultsProps) {
       // The navigation will be handled by the WorkshopDemoLanding component
       // when it detects the phase change
     } catch (error) {
-      
-      
+      // Silently ignore errors - toast.error is shown elsewhere
     } finally {
       setIsAdvancing(false);
     }

@@ -272,10 +272,12 @@ export function JudgeTuningPage() {
   }, [selectedQuestionIndex, selectedQuestion, workshopId]);
 
   // Load initial data
+  // TODO: Refactor loadInitialData to use TanStack Query hooks (useRubric, useMLflowConfig, etc.)
   useEffect(() => {
     if (workshopId) {
       loadInitialData();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadInitialData is stable (only uses workshopId), needs TanStack Query refactor
   }, [workshopId]);
 
   // Load saved evaluations for the current question on mount and when question changes
@@ -298,7 +300,8 @@ export function JudgeTuningPage() {
         }
       }
     }
-  }, [workshopId]); // Only run on mount, not on question change (that's handled by the other useEffect)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally excludes selectedQuestionIndex; only load on mount, question changes handled separately
+  }, [workshopId]);
 
   // Refetch annotations when page becomes visible (user navigates back)
   useEffect(() => {

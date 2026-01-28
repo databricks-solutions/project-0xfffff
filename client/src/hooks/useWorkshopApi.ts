@@ -22,8 +22,10 @@ import type {
 
 // Query keys
 const QUERY_KEYS = {
-  workshops: () => ['workshops'],
-  workshopsForUser: (userId: string) => ['workshops', 'user', userId],
+  workshops: (facilitatorId?: string) => facilitatorId ? ['workshops', 'facilitator', facilitatorId] : ['workshops'],
+  workshopsForUser: (userId: string, facilitatorId?: string) => facilitatorId
+    ? ['workshops', 'user', userId, 'facilitator', facilitatorId]
+    : ['workshops', 'user', userId],
   workshop: (id: string) => ['workshop', id],
   traces: (workshopId: string) => ['traces', workshopId],
   findings: (workshopId: string, userId?: string) => ['findings', workshopId, userId],
@@ -87,11 +89,9 @@ async function listWorkshopsApi(userId?: string, facilitatorId?: string): Promis
 
 export function useListWorkshops(options?: { userId?: string; facilitatorId?: string; enabled?: boolean }) {
   const { userId, facilitatorId, enabled = true } = options || {};
-  
+
   return useQuery({
-    queryKey: userId 
-      ? QUERY_KEYS.workshopsForUser(userId)
-      : QUERY_KEYS.workshops(),
+    queryKey: ['workshops', { userId, facilitatorId }],
     queryFn: () => listWorkshopsApi(userId, facilitatorId),
     enabled,
     staleTime: 30000, // Consider data stale after 30 seconds
@@ -667,6 +667,30 @@ export function usePromoteFinding(workshopId: string) {
   });
 }
 
+export function useUpdateTraceThresholds(workshopId: string, traceId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (thresholds: Record<string, number>) => {
+      const response = await fetch(
+        `/workshops/${workshopId}/traces/${traceId}/thresholds`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ thresholds }),
+        }
+      );
+      if (!response.ok) {
+        throw new Error('Failed to update thresholds');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['trace-discovery-state', workshopId, traceId] });
+    },
+  });
+}
+
 export function useDraftRubric(workshopId: string) {
   return useQuery({
     queryKey: ['draft-rubric', workshopId],
@@ -735,5 +759,33 @@ export function usePreviewJsonPath(workshopId: string) {
       }
       return response.json();
     },
+  });
+}
+
+// MLflow status hook - fetches intake status and config
+export interface MLflowStatusResponse {
+  status: string;
+  total_traces: number;
+  recent_traces: number;
+  config?: {
+    databricks_host?: string;
+    databricks_token?: string;
+    experiment_id?: string;
+    max_traces?: number;
+    filter_string?: string;
+  };
+}
+
+export function useMLflowStatus(workshopId: string | null) {
+  return useQuery({
+    queryKey: ['mlflow-status', workshopId],
+    queryFn: async (): Promise<MLflowStatusResponse> => {
+      const response = await fetch(`/workshops/${workshopId}/mlflow-status`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch MLflow status');
+      }
+      return response.json();
+    },
+    enabled: !!workshopId,
   });
 }

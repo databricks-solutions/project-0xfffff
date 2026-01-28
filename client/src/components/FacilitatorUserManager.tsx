@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useUser } from '@/context/UserContext';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { UsersService } from '@/client';
@@ -39,16 +39,9 @@ export const FacilitatorUserManager: React.FC = () => {
     role: 'participant' as 'sme' | 'participant'
   });
 
-  useEffect(() => {
-    if (workshopId) {
-      loadUsers();
-    }
-  }, [workshopId]);
-
-
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async () => {
     if (!workshopId) return;
-    
+
     setIsLoading(true);
     setError(null);
     try {
@@ -60,7 +53,13 @@ export const FacilitatorUserManager: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [workshopId]);
+
+  useEffect(() => {
+    if (workshopId) {
+      loadUsers();
+    }
+  }, [workshopId, loadUsers]);
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();

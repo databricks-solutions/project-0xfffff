@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -118,9 +118,9 @@ export function DBSQLExportPage() {
   });
 
   // Save state to localStorage whenever form fields change
-  const saveStateToStorage = (newState: any) => {
+  const saveStateToStorage = useCallback((newState: any) => {
     if (!workshopId) return;
-    
+
     const storageKey = `dbsql-export-state-${workshopId}`;
     const stateToSave = {
       databricksHost,
@@ -131,17 +131,17 @@ export function DBSQLExportPage() {
       scrollPosition,
       ...newState
     };
-    
+
     localStorage.setItem(storageKey, JSON.stringify({
       state: stateToSave,
       timestamp: Date.now()
     }));
-  };
+  }, [workshopId, databricksHost, databricksToken, httpPath, catalog, schemaName, scrollPosition]);
 
   // Save state when form fields change
   useEffect(() => {
     saveStateToStorage({});
-  }, [databricksHost, databricksToken, httpPath, catalog, schemaName]);
+  }, [saveStateToStorage]);
 
   // Track scroll position
   useEffect(() => {
@@ -153,7 +153,7 @@ export function DBSQLExportPage() {
 
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+  }, [saveStateToStorage]);
 
   // Restore scroll position when component mounts
   useEffect(() => {

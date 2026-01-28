@@ -120,6 +120,7 @@ export function WorkflowProvider({ children }: WorkflowProviderProps) {
     // REMOVED: Auto-advancement that was causing phase/navigation confusion
     // Phase changes now only happen through explicit facilitator actions via API calls
     // This ensures frontend phase stays in sync with backend workshop phase
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- completedPhases excluded to avoid infinite loop (this effect sets it), workshop partial dep is intentional
   }, [traces, findings, rubric, annotations, participants, workshopId, user, workshop?.current_phase]);
 
   const markPhaseComplete = (phase: string) => {

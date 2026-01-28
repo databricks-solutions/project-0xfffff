@@ -64,34 +64,36 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
   const promoteFindingMutation = usePromoteFinding(workshopId!);
   const generateQuestionMutation = useGenerateDiscoveryQuestion(workshopId!, expandedTraceId || '');
 
-  // Redirect non-facilitators
-  if (!isFacilitator) {
-    return (
-      <div className="p-8 flex items-center justify-center h-full">
-        <div className="text-center">
-          <AlertCircle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
-          <div className="text-lg font-medium text-slate-900 mb-2">
-            Facilitator Access Required
-          </div>
-          <div className="text-sm text-slate-600">
-            This dashboard is only available to workshop facilitators
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Additional traces functionality - separate state for each phase
+  const [discoveryTracesCount, setDiscoveryTracesCount] = React.useState<string>('');
+  const [annotationTracesCount, setAnnotationTracesCount] = React.useState<string>('');
+  const [isAddingTraces, setIsAddingTraces] = React.useState(false);
+  const [isReorderingTraces, setIsReorderingTraces] = React.useState(false);
+  const [isResettingDiscovery, setIsResettingDiscovery] = React.useState(false);
+  const [isResettingAnnotation, setIsResettingAnnotation] = React.useState(false);
 
-  // Calculate progress metrics
+  // Judge name state - used for MLflow feedback entries
+  const [judgeName, setJudgeName] = React.useState<string>(workshop?.judge_name || 'workshop_judge');
+  const [isSavingJudgeName, setIsSavingJudgeName] = React.useState(false);
+
+  // Discovery question model selection (workshop-level)
+  const [discoveryQuestionsModel, setDiscoveryQuestionsModel] = React.useState<string>('demo');
+  const [isSavingDiscoveryQuestionsModel, setIsSavingDiscoveryQuestionsModel] = React.useState(false);
+  const [summariesLoading, setSummariesLoading] = React.useState(false);
+  const [summariesError, setSummariesError] = React.useState<string | null>(null);
+  const [summaries, setSummaries] = React.useState<any>(null);
+
+  // Calculate progress metrics (used in hooks below)
   // For discovery: use active discovery traces count or all traces
-  const discoveryTraceCount = ((workshop?.current_phase === 'discovery' || focusPhase === 'discovery') && workshop?.active_discovery_trace_ids?.length) 
-    ? workshop.active_discovery_trace_ids.length 
+  const discoveryTraceCount = ((workshop?.current_phase === 'discovery' || focusPhase === 'discovery') && workshop?.active_discovery_trace_ids?.length)
+    ? workshop.active_discovery_trace_ids.length
     : (traces?.length || 0);
-  
-  // For annotation: use active annotation traces count or all traces  
+
+  // For annotation: use active annotation traces count or all traces
   const annotationTraceCount = (workshop?.current_phase === 'annotation' && workshop?.active_annotation_trace_ids?.length)
     ? workshop.active_annotation_trace_ids.length
     : (traces?.length || 0);
-    
+
   const totalTraces = traces?.length || 0; // Keep for general use
   const tracesWithFindings = allFindings ? new Set(allFindings.map(f => f.trace_id)) : new Set();
   const completedDiscoveryTraces = Math.min(tracesWithFindings.size, discoveryTraceCount);
@@ -99,10 +101,10 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
 
   // Get user participation stats with user names
   const activeUsers = allFindings ? new Set(allFindings.map(f => f.user_id)) : new Set();
-  
+
   // For annotation phase, use annotation-based active users
   const activeAnnotators = annotations ? new Set(annotations.map(a => a.user_id)) : new Set();
-  
+
   // Calculate user contributions based on phase
   const userContributions = React.useMemo(() => {
     if (focusPhase === 'annotation') {
@@ -294,25 +296,6 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
     }
   };
 
-  // Additional traces functionality - separate state for each phase
-  const [discoveryTracesCount, setDiscoveryTracesCount] = React.useState<string>('');
-  const [annotationTracesCount, setAnnotationTracesCount] = React.useState<string>('');
-  const [isAddingTraces, setIsAddingTraces] = React.useState(false);
-  const [isReorderingTraces, setIsReorderingTraces] = React.useState(false);
-  const [isResettingDiscovery, setIsResettingDiscovery] = React.useState(false);
-  const [isResettingAnnotation, setIsResettingAnnotation] = React.useState(false);
-
-  // Judge name state - used for MLflow feedback entries
-  const [judgeName, setJudgeName] = React.useState<string>(workshop?.judge_name || 'workshop_judge');
-  const [isSavingJudgeName, setIsSavingJudgeName] = React.useState(false);
-
-  // Discovery question model selection (workshop-level)
-  const [discoveryQuestionsModel, setDiscoveryQuestionsModel] = React.useState<string>('demo');
-  const [isSavingDiscoveryQuestionsModel, setIsSavingDiscoveryQuestionsModel] = React.useState(false);
-  const [summariesLoading, setSummariesLoading] = React.useState(false);
-  const [summariesError, setSummariesError] = React.useState<string | null>(null);
-  const [summaries, setSummaries] = React.useState<any>(null);
-  
   // Derive judge name from rubric question title
   const deriveJudgeNameFromRubric = (questionTitle: string): string => {
     // Convert to snake_case and append _judge
@@ -348,7 +331,24 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
     }
     setDiscoveryQuestionsModel(getFrontendModelName(savedBackend));
   }, [workshop]);
-  
+
+  // Redirect non-facilitators (after all hooks)
+  if (!isFacilitator) {
+    return (
+      <div className="p-8 flex items-center justify-center h-full">
+        <div className="text-center">
+          <AlertCircle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+          <div className="text-lg font-medium text-slate-900 mb-2">
+            Facilitator Access Required
+          </div>
+          <div className="text-sm text-slate-600">
+            This dashboard is only available to workshop facilitators
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const handleSaveJudgeName = async () => {
     if (!judgeName.trim()) {
       toast.error('Please enter a valid judge name');

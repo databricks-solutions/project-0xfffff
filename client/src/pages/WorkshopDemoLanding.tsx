@@ -204,8 +204,9 @@ export function WorkshopDemoLanding() {
         }
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- error recovery should only trigger on error/workshopId changes, not when createWorkshop/setWorkshopId refs change
   }, [workshopError, workshopId, user?.role, isAutoRecovering]);
-  
+
   // Track previous phase and user to detect actual changes
   const previousPhaseRef = React.useRef<string | null>(null);
   const previousUserIdRef = React.useRef<string | null>(null);
@@ -303,8 +304,9 @@ export function WorkshopDemoLanding() {
       
       setCurrentView(view);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally excludes isManualNavigation to prevent circular updates when it changes
   }, [user, workshop, currentPhase, currentView]);
-  
+
   // ========================================
   // CONDITIONAL LOGIC AND EARLY RETURNS
   // ========================================

@@ -192,33 +192,19 @@ export function RubricCreationDemo() {
   // Use all traces for rubric creation page
   const { data: traces, refetch: refetchTraces } = useAllTraces(workshopId!);
   // Facilitators see all findings to create better rubric, others see their own
-  const { data: findings, refetch: refetchFindings, isRefetching: isRefetchingFindings } = isFacilitator 
-    ? useFacilitatorFindingsWithUserDetails(workshopId!) 
-    : useUserFindings(workshopId!, user);
+  // Note: We need to call both hooks unconditionally to satisfy rules-of-hooks
+  const facilitatorFindings = useFacilitatorFindingsWithUserDetails(workshopId!);
+  const userFindings = useUserFindings(workshopId!, user);
+  const { data: findings, refetch: refetchFindings, isRefetching: isRefetchingFindings } = isFacilitator
+    ? facilitatorFindings
+    : userFindings;
   const createRubric = useCreateRubric(workshopId!);
   const updateRubric = useUpdateRubric(workshopId!);
-  
-  // SECURITY: Block access if no valid user
-  if (!user || !user.id) {
-    return (
-      <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
-        <div className="text-center">
-          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <div className="text-lg font-medium text-gray-900 mb-2">
-            Authentication Required
-          </div>
-          <div className="text-sm text-gray-500">
-            You must be logged in to access rubric creation.
-          </div>
-        </div>
-      </div>
-    );
-  }
 
-  // Get discovery responses from real findings data, enriched with trace information
+  // Get discovery responses from real findings data, enriched with trace information (must be before early returns)
   const discoveryResponses = useDiscoveryResponses(findings, traces);
-  
-  // Helper to save scratch pad immediately to localStorage
+
+  // Helper to save scratch pad immediately to localStorage (must be before early returns)
   const saveScratchPadToStorage = useCallback((entries: ScratchPadEntry[]) => {
     if (!workshopId) return;
     const storageKey = `scratch-pad-${workshopId}`;
@@ -232,8 +218,8 @@ export function RubricCreationDemo() {
       localStorage.removeItem(storageKey);
     }
   }, [workshopId]);
-  
-  // Wrapper that saves immediately when setting scratch pad
+
+  // Wrapper that saves immediately when setting scratch pad (must be before early returns)
   const setScratchPad = useCallback((value: ScratchPadEntry[] | ((prev: ScratchPadEntry[]) => ScratchPadEntry[])) => {
     setScratchPadState(prev => {
       const newValue = typeof value === 'function' ? value(prev) : value;
@@ -243,7 +229,7 @@ export function RubricCreationDemo() {
     });
   }, [saveScratchPadToStorage]);
 
-  // Load scratch pad from localStorage on mount
+  // Load scratch pad from localStorage on mount (must be before early returns)
   useEffect(() => {
     if (workshopId) {
       const storageKey = `scratch-pad-${workshopId}`;
@@ -263,8 +249,8 @@ export function RubricCreationDemo() {
       }
     }
   }, [workshopId]);
-  
-  // Initialize questions and judge type from API data
+
+  // Initialize questions and judge type from API data (must be before early returns)
   useEffect(() => {
     if (rubric && !isEditingExisting) {
       setQuestions(convertApiRubricToQuestions(rubric));
@@ -277,6 +263,23 @@ export function RubricCreationDemo() {
       }
     }
   }, [rubric, isEditingExisting]);
+
+  // SECURITY: Block access if no valid user (after all hooks)
+  if (!user || !user.id) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
+        <div className="text-center">
+          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <div className="text-lg font-medium text-gray-900 mb-2">
+            Authentication Required
+          </div>
+          <div className="text-sm text-gray-500">
+            You must be logged in to access rubric creation.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const addQuestion = async () => {
     if (newQuestion.title.trim() && newQuestion.description.trim()) {
@@ -322,7 +325,7 @@ export function RubricCreationDemo() {
         // Invalidate queries to refresh the UI
         queryClient.invalidateQueries({ queryKey: ['rubric', workshopId] });
       } catch (error) {
-        
+        // Silently ignore errors - UI will show error via mutation state
       }
     }
   };
@@ -409,7 +412,7 @@ export function RubricCreationDemo() {
         };
         await updateRubric.mutateAsync(apiRubric);
       } catch (error) {
-        
+        // Silently ignore errors - UI will show error via mutation state
       }
     }
   };
