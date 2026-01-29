@@ -1484,48 +1484,17 @@ class DatabaseService:
     )
 
     # Check existing assessments on this trace to avoid duplicates and hitting the 50 limit
-    # Also collect stale assessments (old judge names) that should be deleted
     existing_assessments = set()
-    all_assessments = []  # List of (assessment_id, name, source_type) tuples
     try:
       trace = mlflow.get_trace(mlflow_trace_id)
       if trace and hasattr(trace, 'info') and hasattr(trace.info, 'assessments'):
         for assessment in (trace.info.assessments or []):
-          if hasattr(assessment, 'assessment_id') and hasattr(assessment, 'name'):
-            source_type = None
-            if hasattr(assessment, 'source') and assessment.source and hasattr(assessment.source, 'source_type'):
-              source_type = assessment.source.source_type
-            all_assessments.append((assessment.assessment_id, assessment.name, source_type))
-            
-            # Track existing human assessments by name
-            if source_type == AssessmentSourceType.HUMAN:
-              existing_assessments.add(assessment.name)
-      
-      logger.info(f"📊 Trace {mlflow_trace_id[:12]}... has {len(all_assessments)} total assessments, HUMAN: {existing_assessments}")
-      
-      # Build list of valid judge names from rubric
-      valid_judge_names = set(question_titles_by_index.values()) if question_titles_by_index else set()
-      valid_judge_names = {self._derive_judge_name_from_title(t) for t in valid_judge_names}
-      
-      # Delete stale assessments (old judge names not in current rubric) to make room
-      # Only delete if we're close to the 50 limit and need to add new assessments
-      if len(all_assessments) >= 45:  # Getting close to the 50 limit
-        stale_patterns = ['workshop_judge', 'question_', 'details_judge', 'format_judge']  # Common old patterns
-        deleted_count = 0
-        for assessment_id, name, source_type in all_assessments:
-          # Delete if it's NOT a valid current judge name AND matches stale patterns
-          is_stale = name not in valid_judge_names and any(p in name for p in stale_patterns)
-          if is_stale and deleted_count < 20:  # Don't delete too many at once
-            try:
-              mlflow.delete_assessment(trace_id=mlflow_trace_id, assessment_id=assessment_id)
-              deleted_count += 1
-              logger.info(f"🗑️ Deleted stale assessment '{name}' (id={assessment_id[:8]}...) from trace {mlflow_trace_id[:12]}...")
-              # Also remove from existing_assessments if it was there
-              existing_assessments.discard(name)
-            except Exception as del_e:
-              logger.warning(f"Failed to delete assessment {assessment_id}: {del_e}")
-        if deleted_count > 0:
-          logger.info(f"🗑️ Deleted {deleted_count} stale assessments from trace {mlflow_trace_id[:12]}...")
+          # Track existing human assessments by name
+          if hasattr(assessment, 'source') and assessment.source:
+            if hasattr(assessment.source, 'source_type') and assessment.source.source_type == AssessmentSourceType.HUMAN:
+              if hasattr(assessment, 'name'):
+                existing_assessments.add(assessment.name)
+      logger.info(f"📊 Trace {mlflow_trace_id[:12]}... has existing HUMAN assessments: {existing_assessments}")
     except Exception as e:
       logger.warning(f"Could not fetch existing assessments for trace {mlflow_trace_id}: {e}")
     
