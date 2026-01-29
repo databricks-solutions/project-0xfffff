@@ -176,7 +176,12 @@ export function IRRResultsDemo({ workshopId }: IRRResultsProps) {
   const rubricQuestions = rubric ? parseRubricQuestions(rubric) : [];
   
   // Extract per-metric scores from IRR result
-  const perMetricScores = irrResult?.details?.per_metric_scores || {};
+  // Filter to only include metrics that exist in the current rubric (not deleted)
+  const allPerMetricScores = irrResult?.details?.per_metric_scores || {};
+  const currentRubricIds = new Set(rubricQuestions.map((q: any) => q.id));
+  const perMetricScores = Object.fromEntries(
+    Object.entries(allPerMetricScores).filter(([metricId]) => currentRubricIds.has(metricId))
+  );
   const hasMetrics = Object.keys(perMetricScores).length > 0;
   
   // Traces start collapsed by default
@@ -192,12 +197,17 @@ export function IRRResultsDemo({ workshopId }: IRRResultsProps) {
   // Set active tab to first metric by default
   const [activeTab, setActiveTab] = useState("");
   
-  // Update active tab when metrics load
+  // Update active tab when metrics load or when current tab is no longer valid
   React.useEffect(() => {
-    const firstMetricId = Object.keys(perMetricScores)[0];
-    if (firstMetricId && !activeTab) {
+    const metricIds = Object.keys(perMetricScores);
+    const firstMetricId = metricIds[0];
+    
+    // Check if current active tab is still valid (metric not deleted)
+    const currentMetricId = activeTab?.replace('metric-', '');
+    const isCurrentTabValid = currentMetricId && metricIds.includes(currentMetricId);
+    
+    if (firstMetricId && (!activeTab || !isCurrentTabValid)) {
       setActiveTab(`metric-${firstMetricId}`);
-      
     }
   }, [perMetricScores, activeTab]);
   
