@@ -1170,6 +1170,17 @@ Now evaluate the following:
                         else:
                             null_prediction_rows += 1
                         
+                        # If we still couldn't parse a rating, use a sensible default
+                        if predicted_rating is None:
+                            if is_binary:
+                                # Default to PASS (1) for binary - matches simple evaluation behavior
+                                predicted_rating = 1.0
+                                yield f"⚠️ Could not parse rating for trace {trace_id[:8]}... - defaulting to 1.0 (PASS)"
+                            else:
+                                # Default to neutral (3) for Likert - matches simple evaluation behavior
+                                predicted_rating = 3.0
+                                yield f"⚠️ Could not parse rating for trace {trace_id[:8]}... - defaulting to 3.0 (neutral)"
+                        
                         evaluations.append({
                             'trace_id': trace_id,
                             'workshop_uuid': workshop_uuid,
