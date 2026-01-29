@@ -432,6 +432,9 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
         throw new Error(error.detail || 'Failed to reset annotation');
       }
 
+      // Set fresh start flag so AnnotationDemo starts from trace 1 after reset
+      localStorage.setItem(`annotation-fresh-start-${workshopId}`, 'true');
+
       // Invalidate annotation-related caches
       queryClient.invalidateQueries({ queryKey: ['workshop', workshopId] });
       queryClient.invalidateQueries({ queryKey: ['annotations', workshopId] });

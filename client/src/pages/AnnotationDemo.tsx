@@ -503,6 +503,23 @@ export function AnnotationDemo() {
   const hasInitialized = useRef(false);
   useEffect(() => {
     if (existingAnnotations && traceData.length > 0 && !hasNavigatedManually && !hasInitialized.current) {
+      // Check if this is a fresh start (user just started/reset annotation phase)
+      const freshStartKey = `annotation-fresh-start-${workshopId}`;
+      const isFreshStart = localStorage.getItem(freshStartKey) === 'true';
+      
+      if (isFreshStart) {
+        // Clear the flag
+        localStorage.removeItem(freshStartKey);
+        // Start from the first trace regardless of existing annotations
+        setCurrentTraceIndex(0);
+        setSubmittedAnnotations(new Set());
+        setCurrentRatings({});
+        setFreeformResponses({});
+        setComment('');
+        hasInitialized.current = true;
+        return;
+      }
+      
       // Only count annotations for traces that currently exist in traceData
       const validTraceIds = new Set(traceData.map((t: any) => t.id));
       const completedTraceIds = new Set(
@@ -551,7 +568,7 @@ export function AnnotationDemo() {
       
       hasInitialized.current = true;
     }
-  }, [existingAnnotations, traceData, hasNavigatedManually]);
+  }, [existingAnnotations, traceData, hasNavigatedManually, workshopId]);
 
   // Save annotation function - can be called synchronously or asynchronously
   const saveAnnotation = async (
