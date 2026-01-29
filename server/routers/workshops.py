@@ -2623,22 +2623,27 @@ async def start_alignment_job(
 
     mlflow_config.databricks_token = databricks_token
 
-    # IMPORTANT: Re-sync annotations to MLflow before alignment
-    # This ensures MLflow has the correct Feedback entries with the judge name
-    logger.info("Re-syncing annotations to MLflow before alignment...")
-    try:
-        resync_result = db_service.resync_annotations_to_mlflow(workshop_id)
-        logger.info(f"MLflow re-sync before alignment: {resync_result}")
-    except Exception as e:
-        logger.warning(f"MLflow re-sync failed before alignment: {e}")
-        # Don't fail - alignment might still work if feedback already exists
-
-    # Create job
+    # Create job first so we can log to it
     job_id = str(uuid.uuid4())
     job = create_job(job_id, workshop_id)
     job.set_status("running")
     job.add_log("Alignment job started")
-    job.add_log(f"Re-synced annotations to MLflow with judge names")
+
+    # IMPORTANT: Re-sync annotations to MLflow before alignment
+    # This ensures MLflow has the correct Feedback entries with the judge name
+    job.add_log(f"Re-syncing annotations to MLflow for judge '{request.judge_name}'...")
+    logger.info("Re-syncing annotations to MLflow before alignment...")
+    try:
+        resync_result = db_service.resync_annotations_to_mlflow(workshop_id)
+        logger.info(f"MLflow re-sync before alignment: {resync_result}")
+        job.add_log(f"MLflow re-sync result: synced={resync_result.get('synced', 0)}, total={resync_result.get('total', 0)}")
+        job.add_log(f"Judge names from rubric: {resync_result.get('judge_names', [])}")
+        if resync_result.get('errors'):
+            job.add_log(f"Sync errors: {resync_result.get('errors')}")
+    except Exception as e:
+        logger.warning(f"MLflow re-sync failed before alignment: {e}")
+        job.add_log(f"WARNING: MLflow re-sync failed: {e}")
+        # Don't fail - alignment might still work if feedback already exists
 
     # Run alignment in background thread
     def run_alignment_background():

@@ -1565,7 +1565,9 @@ class DatabaseService:
     # Get rubric questions to derive judge names
     rubric_db = self.db.query(RubricDB).filter(RubricDB.workshop_id == workshop_id).first()
     judge_names = []
+    question_titles = []
     if rubric_db and rubric_db.question:
+      logger.info(f"📋 Rubric raw question text (first 500 chars): {rubric_db.question[:500]}")
       # Support both new delimiter (|||QUESTION_SEPARATOR|||) and legacy delimiter (---)
       QUESTION_DELIMITER_NEW = '|||QUESTION_SEPARATOR|||'
       QUESTION_DELIMITER_LEGACY = '---'
@@ -1585,6 +1587,7 @@ class DatabaseService:
           content_part = q
         colon_idx = content_part.find(':')
         title = content_part[:colon_idx].strip() if colon_idx > 0 else content_part.strip()
+        question_titles.append(title)
         judge_names.append(self._derive_judge_name_from_title(title))
     
     # Get all annotations
@@ -1593,11 +1596,21 @@ class DatabaseService:
     synced_count = 0
     errors = []
     
+    # Log summary of what's in annotations for debugging
+    ratings_keys_found = set()
+    for annotation in annotations:
+      if annotation.ratings:
+        ratings_keys_found.update(annotation.ratings.keys())
+    logger.info(f"📊 Found rating keys across all annotations: {ratings_keys_found}")
+    logger.info(f"📊 Expected judge names: {judge_names}")
+    logger.info(f"📊 Expected question titles: {question_titles}")
+    
     for annotation in annotations:
       try:
         # Get the annotation DB record to access trace relationship
         annotation_db = self.db.query(AnnotationDB).filter(AnnotationDB.id == annotation.id).first()
         if annotation_db:
+          logger.info(f"📊 Syncing annotation: trace_id={annotation_db.trace_id[:8] if annotation_db.trace_id else 'None'}..., ratings={annotation_db.ratings}, legacy_rating={annotation_db.rating}")
           self._sync_annotation_with_mlflow(workshop_id, annotation_db)
           synced_count += 1
       except Exception as e:
@@ -1608,6 +1621,8 @@ class DatabaseService:
       'synced': synced_count,
       'total': len(annotations),
       'judge_names': judge_names,
+      'question_titles': question_titles,
+      'ratings_keys_found': list(ratings_keys_found),
       'errors': errors if errors else None
     }
 
