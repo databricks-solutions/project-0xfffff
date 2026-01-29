@@ -1454,9 +1454,15 @@ class DatabaseService:
     question_titles_by_index = {}
     if rubric_db and rubric_db.question:
       # Parse rubric questions to get titles
-      # Format: "title: description|||JUDGE_TYPE|||type|||QUESTION_SEPARATOR|||next question..."
-      QUESTION_DELIMITER = '|||QUESTION_SEPARATOR|||'
-      questions = rubric_db.question.split(QUESTION_DELIMITER)
+      # Support both new delimiter (|||QUESTION_SEPARATOR|||) and legacy delimiter (---) 
+      QUESTION_DELIMITER_NEW = '|||QUESTION_SEPARATOR|||'
+      QUESTION_DELIMITER_LEGACY = '---'
+      
+      if QUESTION_DELIMITER_NEW in rubric_db.question:
+        questions = rubric_db.question.split(QUESTION_DELIMITER_NEW)
+      else:
+        questions = rubric_db.question.split(QUESTION_DELIMITER_LEGACY)
+      
       for idx, q in enumerate(questions):
         q = q.strip()
         if not q:
@@ -1469,6 +1475,7 @@ class DatabaseService:
         colon_idx = content_part.find(':')
         title = content_part[:colon_idx].strip() if colon_idx > 0 else content_part.strip()
         question_titles_by_index[idx] = title
+        logger.debug(f"Parsed rubric question {idx}: title='{title}'")
 
     rationale = annotation_db.comment.strip() if annotation_db.comment else None
     source = AssessmentSource(
@@ -1542,8 +1549,15 @@ class DatabaseService:
     rubric_db = self.db.query(RubricDB).filter(RubricDB.workshop_id == workshop_id).first()
     judge_names = []
     if rubric_db and rubric_db.question:
-      QUESTION_DELIMITER = '|||QUESTION_SEPARATOR|||'
-      questions = rubric_db.question.split(QUESTION_DELIMITER)
+      # Support both new delimiter (|||QUESTION_SEPARATOR|||) and legacy delimiter (---)
+      QUESTION_DELIMITER_NEW = '|||QUESTION_SEPARATOR|||'
+      QUESTION_DELIMITER_LEGACY = '---'
+      
+      if QUESTION_DELIMITER_NEW in rubric_db.question:
+        questions = rubric_db.question.split(QUESTION_DELIMITER_NEW)
+      else:
+        questions = rubric_db.question.split(QUESTION_DELIMITER_LEGACY)
+      
       for q in questions:
         q = q.strip()
         if not q:
