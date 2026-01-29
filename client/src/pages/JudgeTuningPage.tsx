@@ -114,8 +114,11 @@ export function JudgeTuningPage() {
   const [evaluationMode, setEvaluationMode] = useState<'mlflow' | 'simple'>('mlflow');
   const [simpleEndpointName, setSimpleEndpointName] = useState<string>('databricks-claude-sonnet-4-5');
   
-  // Judge name derivation logic - based on selected question
-  const judgeName = useMemo(() => {
+  // Judge name - editable state with smart default derivation
+  const [judgeName, setJudgeName] = useState<string>('workshop_judge');
+  
+  // Derive default judge name from selected question (only when question changes)
+  const derivedJudgeName = useMemo(() => {
     // Derive from selected rubric question
     if (selectedQuestion?.title) {
       const title = selectedQuestion.title;
@@ -131,6 +134,11 @@ export function JudgeTuningPage() {
     // Fallback to default
     return 'workshop_judge';
   }, [selectedQuestion?.title, workshop?.judge_name]);
+  
+  // Update judge name when derived name changes (e.g., switching rubric questions)
+  useEffect(() => {
+    setJudgeName(derivedJudgeName);
+  }, [derivedJudgeName]);
 
   const logsStorageKey = useMemo(
     () => (workshopId ? `judge-alignment-logs-${workshopId}` : 'judge-alignment-logs'),
@@ -1944,12 +1952,12 @@ The response partially meets the criteria because...`;
                 <label className="text-sm font-medium text-gray-700 mb-2 block">Judge Name</label>
                 <Input
                   value={judgeName}
-                  readOnly
-                  className="bg-gray-50"
+                  onChange={(e) => setJudgeName(e.target.value)}
+                  className="bg-white"
                   placeholder="workshop_judge"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Set in Annotation Phase (Facilitator Dashboard)
+                  Used for MLflow feedback entries. Auto-derived from rubric question title.
                 </p>
               </div>
             </div>
@@ -1985,12 +1993,12 @@ The response partially meets the criteria because...`;
                 <label className="text-sm font-medium text-gray-700 mb-2 block">Judge Name</label>
                 <Input
                   value={judgeName}
-                  readOnly
-                  className="bg-gray-50"
+                  onChange={(e) => setJudgeName(e.target.value)}
+                  className="bg-white"
                   placeholder="workshop_judge"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Set in Annotation Phase (Facilitator Dashboard)
+                  Used for MLflow feedback entries. Auto-derived from rubric question title.
                 </p>
               </div>
             </div>
