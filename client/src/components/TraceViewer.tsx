@@ -96,14 +96,41 @@ const isJsonString = (str: string): boolean => {
 
 /**
  * Try to parse a string as JSON
+ * Also handles some common non-JSON formats like Python dict notation
  */
 const tryParseJson = (str: string): { success: boolean; data: any } => {
+  if (!str || typeof str !== 'string') {
+    return { success: false, data: null };
+  }
+  
+  // First, try direct JSON parse
   try {
     const data = JSON.parse(str);
     return { success: true, data };
   } catch {
-    return { success: false, data: null };
+    // Continue to try alternatives
   }
+  
+  // Try to fix common issues with object-like notation (e.g., Python dicts)
+  // This handles cases like: outputs: { "key": "value" }
+  const trimmed = str.trim();
+  if ((trimmed.includes('{') || trimmed.includes('[')) && 
+      (trimmed.includes(':') || trimmed.includes(','))) {
+    try {
+      // Try to convert unquoted keys to quoted keys
+      // Match unquoted keys followed by : at the start of lines or after { or ,
+      const fixed = str
+        .replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":')
+        .replace(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*:/gm, '"$1":');
+      
+      const data = JSON.parse(fixed);
+      return { success: true, data };
+    } catch {
+      // Still failed
+    }
+  }
+  
+  return { success: false, data: null };
 };
 
 /**
@@ -499,6 +526,20 @@ const SmartJsonRenderer: React.FC<{
   
   if (success) {
     return <SmartValueRenderer value={parsed} depth={0} defaultExpanded />;
+  }
+  
+  // If data looks like JSON but failed to parse, try to pretty-print it anyway
+  const trimmed = data?.trim() || '';
+  const looksLikeJson = (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+                        (trimmed.startsWith('[') && trimmed.endsWith(']'));
+  
+  if (looksLikeJson) {
+    // Show as formatted code block with word wrapping
+    return (
+      <pre className="text-sm text-gray-800 whitespace-pre-wrap break-words font-mono bg-gray-50 p-3 rounded overflow-auto max-h-[500px]">
+        {data}
+      </pre>
+    );
   }
   
   // Not JSON - check if it's markdown
