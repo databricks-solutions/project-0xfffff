@@ -1484,22 +1484,29 @@ class DatabaseService:
     )
 
     # Log ALL ratings from the ratings dict (one per rubric question)
+    logger.info(f"📊 MLflow sync: annotation has ratings={annotation_db.ratings}")
+    logger.info(f"📊 MLflow sync: question_titles_by_index={question_titles_by_index}")
+    
     if annotation_db.ratings:
       logged_count = 0
       for question_id, rating_value in annotation_db.ratings.items():
         if rating_value is None:
+          logger.debug(f"Skipping question_id={question_id} (rating is None)")
           continue
         
         # Extract index from question_id (format: "q_1", "q_2", etc. - 1-based)
         try:
           index_str = question_id.split('_')[-1]
           index = int(index_str) - 1  # Convert to 0-based index to match dictionary
-        except (ValueError, IndexError):
+          logger.debug(f"Parsed question_id={question_id} → index={index}")
+        except (ValueError, IndexError) as e:
+          logger.warning(f"Failed to parse question_id={question_id}: {e}, defaulting to index=0")
           index = 0
         
         # Get question title and derive judge name
         question_title = question_titles_by_index.get(index, f"question_{index + 1}")
         judge_name = self._derive_judge_name_from_title(question_title)
+        logger.info(f"📊 Question {question_id}: index={index} → title='{question_title}' → judge_name='{judge_name}'")
         
         try:
           mlflow.log_feedback(
