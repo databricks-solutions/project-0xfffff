@@ -111,14 +111,48 @@ const tryParseJson = (str: string): { success: boolean; data: any } => {
     // Continue to try alternatives
   }
   
-  // Try to fix common issues with object-like notation (e.g., Python dicts)
-  // This handles cases like: outputs: { "key": "value" }
   const trimmed = str.trim();
+  
+  // Handle multiple top-level objects like "outputs: {...} inputs: {...}"
+  // Convert to a single object: {"outputs": {...}, "inputs": {...}}
+  const multiObjectPattern = /^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*\{/;
+  if (multiObjectPattern.test(trimmed)) {
+    try {
+      // Split on patterns like "}\nkey:" or "} key:"
+      const sections = trimmed.split(/\}\s*(?=[a-zA-Z_][a-zA-Z0-9_]*\s*:\s*\{)/);
+      const parsed: Record<string, any> = {};
+      
+      for (const section of sections) {
+        const match = section.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(\{[\s\S]*)/);
+        if (match) {
+          const key = match[1];
+          let value = match[2];
+          // Add closing brace if missing
+          if (!value.trim().endsWith('}')) {
+            value = value + '}';
+          }
+          try {
+            parsed[key] = JSON.parse(value);
+          } catch {
+            // If parsing fails, store as string
+            parsed[key] = value;
+          }
+        }
+      }
+      
+      if (Object.keys(parsed).length > 0) {
+        return { success: true, data: parsed };
+      }
+    } catch {
+      // Continue to other methods
+    }
+  }
+  
+  // Try to fix common issues with object-like notation
   if ((trimmed.includes('{') || trimmed.includes('[')) && 
       (trimmed.includes(':') || trimmed.includes(','))) {
     try {
       // Try to convert unquoted keys to quoted keys
-      // Match unquoted keys followed by : at the start of lines or after { or ,
       const fixed = str
         .replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":')
         .replace(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*:/gm, '"$1":');
@@ -534,10 +568,24 @@ const SmartJsonRenderer: React.FC<{
                         (trimmed.startsWith('[') && trimmed.endsWith(']'));
   
   if (looksLikeJson) {
+    // Try to at least format the JSON-like string for readability
+    let formattedData = data;
+    try {
+      // Simple pretty-print: add newlines after { and , and before }
+      formattedData = data
+        .replace(/,\s*"/g, ',\n  "')
+        .replace(/\{\s*"/g, '{\n  "')
+        .replace(/"\s*\}/g, '"\n}')
+        .replace(/\[\{/g, '[\n  {')
+        .replace(/\}\]/g, '}\n]');
+    } catch {
+      // Keep original
+    }
+    
     // Show as formatted code block with word wrapping
     return (
       <pre className="text-sm text-gray-800 whitespace-pre-wrap break-words font-mono bg-gray-50 p-3 rounded overflow-auto max-h-[500px]">
-        {data}
+        {formattedData}
       </pre>
     );
   }
