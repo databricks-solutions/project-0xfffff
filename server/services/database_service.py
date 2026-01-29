@@ -1484,17 +1484,21 @@ class DatabaseService:
     )
 
     # Check existing assessments on this trace to avoid duplicates and hitting the 50 limit
-    existing_assessments = set()
+    # Track by (name, source_id) tuple so different users can have assessments with the same name
+    existing_assessments = set()  # Set of (name, source_id) tuples
+    current_user_id = annotation_db.user_id or workshop_id
     try:
       trace = mlflow.get_trace(mlflow_trace_id)
       if trace and hasattr(trace, 'info') and hasattr(trace.info, 'assessments'):
         for assessment in (trace.info.assessments or []):
-          # Track existing human assessments by name
+          # Track existing human assessments by (name, source_id) - allows multiple users
           if hasattr(assessment, 'source') and assessment.source:
             if hasattr(assessment.source, 'source_type') and assessment.source.source_type == AssessmentSourceType.HUMAN:
               if hasattr(assessment, 'name'):
-                existing_assessments.add(assessment.name)
+                source_id = getattr(assessment.source, 'source_id', None)
+                existing_assessments.add((assessment.name, source_id))
       logger.info(f"📊 Trace {mlflow_trace_id[:12]}... has existing HUMAN assessments: {existing_assessments}")
+      logger.info(f"📊 Current user: {current_user_id}")
     except Exception as e:
       logger.warning(f"Could not fetch existing assessments for trace {mlflow_trace_id}: {e}")
     
@@ -1534,9 +1538,10 @@ class DatabaseService:
         judge_name = self._derive_judge_name_from_title(question_title)
         logger.info(f"📊 Question {question_id}: index={index} → title='{question_title}' → judge_name='{judge_name}'")
         
-        # Skip if this judge already has a HUMAN assessment on this trace
-        if judge_name in existing_assessments:
-          logger.info(f"✓ Skipping {judge_name} - already exists on trace {mlflow_trace_id[:12]}...")
+        # Skip if THIS USER already has a HUMAN assessment with this judge name on this trace
+        # Different users can have their own assessments with the same judge name
+        if (judge_name, current_user_id) in existing_assessments:
+          logger.info(f"✓ Skipping {judge_name} for user {current_user_id} - already exists on trace {mlflow_trace_id[:12]}...")
           skipped_count += 1
           continue
         
@@ -1567,9 +1572,9 @@ class DatabaseService:
       workshop_db = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
       judge_name = workshop_db.judge_name if workshop_db and workshop_db.judge_name else 'workshop_judge'
       
-      # Skip if already exists
-      if judge_name in existing_assessments:
-        logger.info(f"✓ Skipping legacy {judge_name} - already exists on trace {mlflow_trace_id[:12]}...")
+      # Skip if THIS USER already has this assessment
+      if (judge_name, current_user_id) in existing_assessments:
+        logger.info(f"✓ Skipping legacy {judge_name} for user {current_user_id} - already exists on trace {mlflow_trace_id[:12]}...")
         return
       
       try:
