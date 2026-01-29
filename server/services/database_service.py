@@ -1454,8 +1454,9 @@ class DatabaseService:
     question_titles_by_index = {}
     if rubric_db and rubric_db.question:
       # Parse rubric questions to get titles
-      # Format: "title: description|||JUDGE_TYPE|||type---next question..."
-      questions = rubric_db.question.split('---')
+      # Format: "title: description|||JUDGE_TYPE|||type|||QUESTION_SEPARATOR|||next question..."
+      QUESTION_DELIMITER = '|||QUESTION_SEPARATOR|||'
+      questions = rubric_db.question.split(QUESTION_DELIMITER)
       for idx, q in enumerate(questions):
         q = q.strip()
         if not q:
@@ -1482,15 +1483,15 @@ class DatabaseService:
         if rating_value is None:
           continue
         
-        # Extract index from question_id (format: "rubric_id_index" or "q_index")
+        # Extract index from question_id (format: "q_1", "q_2", etc. - 1-based)
         try:
           index_str = question_id.split('_')[-1]
-          index = int(index_str)
+          index = int(index_str) - 1  # Convert to 0-based index to match dictionary
         except (ValueError, IndexError):
           index = 0
         
         # Get question title and derive judge name
-        question_title = question_titles_by_index.get(index, f"question_{index}")
+        question_title = question_titles_by_index.get(index, f"question_{index + 1}")
         judge_name = self._derive_judge_name_from_title(question_title)
         
         try:
@@ -1541,7 +1542,8 @@ class DatabaseService:
     rubric_db = self.db.query(RubricDB).filter(RubricDB.workshop_id == workshop_id).first()
     judge_names = []
     if rubric_db and rubric_db.question:
-      questions = rubric_db.question.split('---')
+      QUESTION_DELIMITER = '|||QUESTION_SEPARATOR|||'
+      questions = rubric_db.question.split(QUESTION_DELIMITER)
       for q in questions:
         q = q.strip()
         if not q:
