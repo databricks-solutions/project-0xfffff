@@ -1483,12 +1483,28 @@ class DatabaseService:
       source_id=annotation_db.user_id or workshop_id,
     )
 
+    # Check existing assessments on this trace to avoid duplicates and hitting the 50 limit
+    existing_assessments = set()
+    try:
+      trace = mlflow.get_trace(mlflow_trace_id)
+      if trace and hasattr(trace, 'info') and hasattr(trace.info, 'assessments'):
+        for assessment in (trace.info.assessments or []):
+          # Track existing human assessments by name
+          if hasattr(assessment, 'source') and assessment.source:
+            if hasattr(assessment.source, 'source_type') and assessment.source.source_type == AssessmentSourceType.HUMAN:
+              if hasattr(assessment, 'name'):
+                existing_assessments.add(assessment.name)
+      logger.info(f"📊 Trace {mlflow_trace_id[:12]}... has existing HUMAN assessments: {existing_assessments}")
+    except Exception as e:
+      logger.warning(f"Could not fetch existing assessments for trace {mlflow_trace_id}: {e}")
+    
     # Log ALL ratings from the ratings dict (one per rubric question)
     logger.info(f"📊 MLflow sync: annotation has ratings={annotation_db.ratings}")
     logger.info(f"📊 MLflow sync: question_titles_by_index={question_titles_by_index}")
     
     if annotation_db.ratings:
       logged_count = 0
+      skipped_count = 0
       for question_id, rating_value in annotation_db.ratings.items():
         if rating_value is None:
           logger.debug(f"Skipping question_id={question_id} (rating is None)")
@@ -1518,6 +1534,12 @@ class DatabaseService:
         judge_name = self._derive_judge_name_from_title(question_title)
         logger.info(f"📊 Question {question_id}: index={index} → title='{question_title}' → judge_name='{judge_name}'")
         
+        # Skip if this judge already has a HUMAN assessment on this trace
+        if judge_name in existing_assessments:
+          logger.info(f"✓ Skipping {judge_name} - already exists on trace {mlflow_trace_id[:12]}...")
+          skipped_count += 1
+          continue
+        
         try:
           mlflow.log_feedback(
             trace_id=mlflow_trace_id,
@@ -1529,10 +1551,14 @@ class DatabaseService:
           logged_count += 1
           logger.info(f"Logged MLflow feedback: {judge_name}={rating_value} for trace {mlflow_trace_id}")
         except Exception as exc:
-          logger.warning('Failed to log MLflow feedback %s for trace %s: %s', judge_name, mlflow_trace_id, exc)
+          # Check if it's the 50 limit error
+          if "maximum allowed assessments" in str(exc):
+            logger.warning(f"Trace {mlflow_trace_id[:12]}... hit 50 assessment limit, skipping {judge_name}")
+          else:
+            logger.warning('Failed to log MLflow feedback %s for trace %s: %s', judge_name, mlflow_trace_id, exc)
       
-      if logged_count > 0:
-        logger.info(f"Logged {logged_count} MLflow feedback entries for trace {mlflow_trace_id}")
+      if logged_count > 0 or skipped_count > 0:
+        logger.info(f"MLflow sync for trace {mlflow_trace_id[:12]}...: logged={logged_count}, skipped={skipped_count}")
         return
     
     # Fallback: log legacy single rating if no ratings dict
@@ -1540,6 +1566,11 @@ class DatabaseService:
       # Get the workshop's judge_name as fallback
       workshop_db = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
       judge_name = workshop_db.judge_name if workshop_db and workshop_db.judge_name else 'workshop_judge'
+      
+      # Skip if already exists
+      if judge_name in existing_assessments:
+        logger.info(f"✓ Skipping legacy {judge_name} - already exists on trace {mlflow_trace_id[:12]}...")
+        return
       
       try:
         mlflow.log_feedback(
@@ -1550,7 +1581,10 @@ class DatabaseService:
           rationale=rationale,
         )
       except Exception as exc:
-        logger.warning('Failed to log MLflow feedback for trace %s: %s', mlflow_trace_id, exc)
+        if "maximum allowed assessments" in str(exc):
+          logger.warning(f"Trace {mlflow_trace_id[:12]}... hit 50 assessment limit")
+        else:
+          logger.warning('Failed to log MLflow feedback for trace %s: %s', mlflow_trace_id, exc)
 
   def resync_annotations_to_mlflow(self, workshop_id: str) -> Dict[str, Any]:
     """Re-sync all annotations to MLflow with judge names derived from rubric questions.
@@ -1691,7 +1725,11 @@ class DatabaseService:
         trace_id_map[trace.id] = trace.mlflow_trace_id
 
     synced_count = 0
+    skipped_count = 0
     errors = []
+    
+    # Cache of existing assessments per trace to avoid repeated API calls
+    existing_assessments_cache: Dict[str, set] = {}
     
     for eval_result in evaluations:
       # Get MLflow trace ID from either trace_id (if it's MLflow format) or workshop_uuid
@@ -1715,6 +1753,26 @@ class DatabaseService:
         logger.debug(f"Skipping eval sync: no predicted_rating for trace {mlflow_trace_id}")
         continue
       
+      # Check for existing AI assessments to avoid duplicates and 50 limit
+      if mlflow_trace_id not in existing_assessments_cache:
+        existing_ai = set()
+        try:
+          trace = mlflow.get_trace(mlflow_trace_id)
+          if trace and hasattr(trace, 'info') and hasattr(trace.info, 'assessments'):
+            for assessment in (trace.info.assessments or []):
+              if hasattr(assessment, 'source') and assessment.source:
+                if hasattr(assessment.source, 'source_type') and assessment.source.source_type == AssessmentSourceType.AI_GENERATED:
+                  if hasattr(assessment, 'name'):
+                    existing_ai.add(assessment.name)
+        except Exception as e:
+          logger.debug(f"Could not fetch existing AI assessments for trace {mlflow_trace_id}: {e}")
+        existing_assessments_cache[mlflow_trace_id] = existing_ai
+      
+      if judge_name in existing_assessments_cache[mlflow_trace_id]:
+        logger.debug(f"Skipping AI eval: {judge_name} already exists on trace {mlflow_trace_id[:12]}...")
+        skipped_count += 1
+        continue
+      
       try:
         mlflow.log_feedback(
           trace_id=mlflow_trace_id,
@@ -1726,13 +1784,17 @@ class DatabaseService:
         synced_count += 1
         logger.info(f"Logged MLflow AI feedback: {judge_name}={predicted_rating} for trace {mlflow_trace_id}")
       except Exception as exc:
-        error_msg = f"Failed to log AI feedback for trace {mlflow_trace_id}: {exc}"
-        errors.append(error_msg)
-        logger.warning(error_msg)
+        if "maximum allowed assessments" in str(exc):
+          logger.warning(f"Trace {mlflow_trace_id[:12]}... hit 50 assessment limit for AI eval")
+        else:
+          error_msg = f"Failed to log AI feedback for trace {mlflow_trace_id}: {exc}"
+          errors.append(error_msg)
+          logger.warning(error_msg)
     
-    logger.info(f"Synced {synced_count} AI evaluations to MLflow for judge '{judge_name}'")
+    logger.info(f"Synced {synced_count} AI evaluations to MLflow for judge '{judge_name}' (skipped {skipped_count} existing)")
     return {
       'synced': synced_count,
+      'skipped': skipped_count,
       'total': len(evaluations),
       'judge_name': judge_name,
       'errors': errors if errors else None
