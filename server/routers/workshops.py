@@ -178,6 +178,7 @@ class SimpleEvaluationRequest(BaseModel):
   """Request model for simple model serving evaluation (no MLflow)."""
   judge_prompt: str
   endpoint_name: str  # Databricks model serving endpoint name
+  judge_name: Optional[str] = 'workshop_judge'  # Name for MLflow feedback entries
   prompt_id: Optional[str] = None  # Existing prompt ID to update
   judge_type: Optional[str] = None  # Explicit judge type: 'likert', 'binary', 'freeform'
 
@@ -3413,6 +3414,17 @@ async def start_simple_evaluation(
           ]
           thread_db_service.store_judge_evaluations(evaluations_to_save)
           job.add_log(f"Saved {len(evaluations_to_save)} evaluations to database")
+          
+          # Sync AI evaluations to MLflow so SIMBA can use them
+          try:
+            sync_result = thread_db_service.sync_evaluations_to_mlflow(
+              workshop_id=workshop_id,
+              judge_name=request.judge_name or 'workshop_judge',
+              evaluations=evaluations
+            )
+            job.add_log(f"Synced {sync_result.get('synced', 0)} AI evaluations to MLflow for judge '{request.judge_name}'")
+          except Exception as sync_err:
+            job.add_log(f"WARNING: Could not sync to MLflow: {sync_err}")
           
         except Exception as save_err:
           job.add_log(f"WARNING: Could not save to database: {save_err}")

@@ -831,6 +831,7 @@ The response partially meets the criteria because...`;
         ? {
             judge_prompt: normalizedPrompt,
             endpoint_name: simpleEndpointName,
+            judge_name: judgeName,  // Include judge name for MLflow sync
             prompt_id: selectedPromptId || undefined,
             judge_type: judgeType, // Pass the selected question's judge type
           }

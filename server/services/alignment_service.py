@@ -1223,6 +1223,17 @@ Now evaluate the following:
             
             yield f"Evaluation results prepared for {len(evaluations)} traces"
             
+            # Sync AI evaluations to MLflow for SIMBA alignment
+            try:
+                sync_result = self.db_service.sync_evaluations_to_mlflow(
+                    workshop_id=workshop_id,
+                    judge_name=judge_name,
+                    evaluations=evaluations
+                )
+                yield f"Synced {sync_result.get('synced', 0)} AI evaluations to MLflow for judge '{judge_name}'"
+            except Exception as sync_err:
+                yield f"WARNING: Could not sync AI evaluations to MLflow: {sync_err}"
+            
             yield evaluation_results
             
         except Exception as e:

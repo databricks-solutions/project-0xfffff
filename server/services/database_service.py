@@ -1611,6 +1611,118 @@ class DatabaseService:
       'errors': errors if errors else None
     }
 
+  def sync_evaluations_to_mlflow(self, workshop_id: str, judge_name: str, evaluations: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Sync AI evaluation results to MLflow as Feedback entries.
+    
+    This logs AI/LLM judge predictions alongside human annotations so SIMBA can use them.
+    
+    Args:
+      workshop_id: The workshop ID
+      judge_name: The judge name (e.g., 'configure_judge_judge')
+      evaluations: List of evaluation results with trace_id/workshop_uuid and predicted_rating
+    
+    Returns:
+      Dict with 'synced' count and any 'errors'
+    """
+    config = (
+      self.db.query(MLflowIntakeConfigDB)
+      .filter(MLflowIntakeConfigDB.workshop_id == workshop_id)
+      .first()
+    )
+    if not config or not config.databricks_host or not config.experiment_id:
+      logger.warning('Skipping MLflow eval sync: config missing for workshop %s', workshop_id)
+      return {'synced': 0, 'error': 'MLflow config missing'}
+
+    databricks_token = token_storage.get_token(workshop_id)
+    if not databricks_token:
+      databricks_token = self.get_databricks_token(workshop_id)
+      if databricks_token:
+        token_storage.store_token(workshop_id, databricks_token)
+    if not databricks_token:
+      logger.warning('Skipping MLflow eval sync: token missing for workshop %s', workshop_id)
+      return {'synced': 0, 'error': 'Databricks token missing'}
+
+    try:
+      import mlflow
+      from mlflow.entities import AssessmentSource, AssessmentSourceType
+    except ImportError:
+      logger.warning('MLflow is not available; cannot sync evaluation feedback.')
+      return {'synced': 0, 'error': 'MLflow not available'}
+
+    os.environ['DATABRICKS_HOST'] = config.databricks_host.rstrip('/')
+    os.environ['DATABRICKS_TOKEN'] = databricks_token
+    os.environ.pop('DATABRICKS_CLIENT_ID', None)
+    os.environ.pop('DATABRICKS_CLIENT_SECRET', None)
+
+    mlflow.set_tracking_uri('databricks')
+
+    try:
+      mlflow.set_experiment(experiment_id=config.experiment_id)
+    except Exception as exc:
+      logger.warning('Failed to set MLflow experiment %s: %s', config.experiment_id, exc)
+      return {'synced': 0, 'error': f'Failed to set experiment: {exc}'}
+
+    # Create AI/LLM assessment source
+    source = AssessmentSource(
+      source_type=AssessmentSourceType.AI_GENERATED,
+      source_id=f"llm_judge_{judge_name}",
+    )
+
+    # Build mapping from workshop_uuid to mlflow_trace_id
+    traces = self.get_traces(workshop_id)
+    trace_id_map = {}
+    for trace in traces:
+      if trace.mlflow_trace_id:
+        trace_id_map[trace.id] = trace.mlflow_trace_id
+
+    synced_count = 0
+    errors = []
+    
+    for eval_result in evaluations:
+      # Get MLflow trace ID from either trace_id (if it's MLflow format) or workshop_uuid
+      mlflow_trace_id = None
+      
+      # If trace_id starts with 'tr-', it's an MLflow trace ID
+      if eval_result.get('trace_id', '').startswith('tr-'):
+        mlflow_trace_id = eval_result['trace_id']
+      # Otherwise, use workshop_uuid to look up the MLflow trace ID
+      elif eval_result.get('workshop_uuid'):
+        mlflow_trace_id = trace_id_map.get(eval_result['workshop_uuid'])
+      elif eval_result.get('trace_id'):
+        mlflow_trace_id = trace_id_map.get(eval_result['trace_id'])
+      
+      if not mlflow_trace_id:
+        logger.debug(f"Skipping eval sync: no MLflow trace ID for {eval_result.get('trace_id') or eval_result.get('workshop_uuid')}")
+        continue
+      
+      predicted_rating = eval_result.get('predicted_rating')
+      if predicted_rating is None:
+        logger.debug(f"Skipping eval sync: no predicted_rating for trace {mlflow_trace_id}")
+        continue
+      
+      try:
+        mlflow.log_feedback(
+          trace_id=mlflow_trace_id,
+          name=judge_name,
+          value=float(predicted_rating),
+          source=source,
+          rationale=eval_result.get('reasoning'),
+        )
+        synced_count += 1
+        logger.info(f"Logged MLflow AI feedback: {judge_name}={predicted_rating} for trace {mlflow_trace_id}")
+      except Exception as exc:
+        error_msg = f"Failed to log AI feedback for trace {mlflow_trace_id}: {exc}"
+        errors.append(error_msg)
+        logger.warning(error_msg)
+    
+    logger.info(f"Synced {synced_count} AI evaluations to MLflow for judge '{judge_name}'")
+    return {
+      'synced': synced_count,
+      'total': len(evaluations),
+      'judge_name': judge_name,
+      'errors': errors if errors else None
+    }
+
   def get_annotations(self, workshop_id: str, user_id: Optional[str] = None) -> List[Annotation]:
     """Get annotations for a workshop, optionally filtered by user."""
     query = self.db.query(AnnotationDB).join(TraceDB).filter(AnnotationDB.workshop_id == workshop_id)
