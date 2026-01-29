@@ -3140,18 +3140,29 @@ async def start_simple_evaluation(
               is_binary_judge = False
               judge_type_str = 'likert'
         
+        # Log trace counts for debugging
+        job.add_log(f"📊 trace_annotations has {len(trace_annotations)} entries")
+        job.add_log(f"📊 trace_map has {len(trace_map)} entries")
+        
         for idx, (trace_id, ratings) in enumerate(trace_annotations.items()):
           trace = trace_map.get(trace_id)
           if not trace:
+            job.add_log(f"⚠️ Skipping trace {trace_id[:8]}... - not found in trace_map (annotation exists but trace missing)")
+            continue
+          
+          # Filter out None values from ratings and validate
+          valid_ratings = [r for r in ratings if r is not None]
+          if not valid_ratings:
+            job.add_log(f"⚠️ Skipping trace {trace_id[:8]}... - no valid ratings (all None)")
             continue
           
           # Get human rating based on judge type
           if is_binary_judge:
             # For binary, use majority vote (mode)
-            human_rating = 1 if sum(ratings) > len(ratings) / 2 else 0
+            human_rating = 1 if sum(valid_ratings) > len(valid_ratings) / 2 else 0
           else:
             # For Likert, use rounded average
-            human_rating = round(sum(ratings) / len(ratings))
+            human_rating = round(sum(valid_ratings) / len(valid_ratings))
           
           # Get trace input and output directly from the Trace model
           trace_input = trace.input or ''
@@ -3163,8 +3174,12 @@ async def start_simple_evaluation(
           
           # Skip only if BOTH input and output are empty
           if not has_input and not has_output:
-            job.add_log(f"Warning: Skipping trace {trace_id[:8]}... - no input/output data found")
+            job.add_log(f"⚠️ Skipping trace {trace_id[:8]}... - no input/output data found (trace idx={idx})")
             continue
+          
+          # Log progress for all traces (helpful for debugging the last trace issue)
+          if idx == len(trace_annotations) - 1:
+            job.add_log(f"📍 Processing LAST trace {trace_id[:8]}... (idx={idx})")
           
           # Log warning if output is empty (but still evaluate)
           if not has_output:
@@ -3271,6 +3286,12 @@ async def start_simple_evaluation(
               'confidence': 0.0,
               'reasoning': f"Evaluation error: {str(eval_err)}"
             })
+        
+        # Log summary of evaluation results
+        job.add_log(f"📊 Evaluation loop complete: {len(evaluations)} evaluations from {len(trace_annotations)} annotated traces")
+        if len(evaluations) < len(trace_annotations):
+          skipped = len(trace_annotations) - len(evaluations)
+          job.add_log(f"⚠️ WARNING: {skipped} trace(s) were skipped during evaluation!")
         
         if not evaluations:
           job.set_status("failed")

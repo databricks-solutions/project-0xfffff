@@ -332,10 +332,18 @@ export function JudgeTuningPage() {
     if (!traces || !annotations.length) return [];
     const annotatedTraceIds = new Set(
       annotations
-        .filter((ann) => ann.rating !== undefined && ann.rating !== null)
+        .filter((ann) => {
+          // Check legacy rating field
+          if (ann.rating !== undefined && ann.rating !== null) return true;
+          // Check new ratings dict - has at least one rating value
+          if (ann.ratings && typeof ann.ratings === 'object' && Object.keys(ann.ratings).length > 0) {
+            return Object.values(ann.ratings).some(v => v !== undefined && v !== null);
+          }
+          return false;
+        })
         .map((ann) => ann.trace_id)
     );
-    return traces.filter((trace) => annotatedTraceIds.has(trace.id));
+    return traces.filter((trace: Trace) => annotatedTraceIds.has(trace.id));
   }, [traces, annotations]);
 
   // Reset pagination when traces change
