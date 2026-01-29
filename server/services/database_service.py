@@ -1377,8 +1377,19 @@ class DatabaseService:
         logger.warning(f"Invalid Likert rating {rating_int}, clamping to {clamped}")
         return clamped
 
+  def _derive_judge_name_from_title(self, title: str) -> str:
+    """Convert a question title to a judge name (snake_case + _judge)."""
+    import re
+    # Convert to snake_case: lowercase, replace non-alphanumeric with _, remove leading/trailing _
+    snake_case = re.sub(r'[^a-z0-9]+', '_', title.lower()).strip('_')
+    return f"{snake_case}_judge" if snake_case else "workshop_judge"
+
   def _sync_annotation_with_mlflow(self, workshop_id: str, annotation_db: AnnotationDB) -> None:
-    """Ensure MLflow trace carries SME tag + feedback once an annotation is captured."""
+    """Ensure MLflow trace carries SME tag + feedback once an annotation is captured.
+    
+    Logs ALL ratings (one per rubric question) as separate MLflow feedback entries,
+    with judge names derived from the rubric question titles.
+    """
     if not annotation_db or not getattr(annotation_db, 'trace', None):
       return
 
@@ -1438,39 +1449,110 @@ class DatabaseService:
     else:
       logger.debug('mlflow.set_trace_tag not available; skip tagging for trace %s', mlflow_trace_id)
 
-    if annotation_db.rating is None:
-      return
+    # Get rubric questions to map question IDs to titles for judge names
+    rubric_db = self.db.query(RubricDB).filter(RubricDB.workshop_id == workshop_id).first()
+    question_titles_by_index = {}
+    if rubric_db and rubric_db.question:
+      # Parse rubric questions to get titles
+      # Format: "title: description|||JUDGE_TYPE|||type---next question..."
+      questions = rubric_db.question.split('---')
+      for idx, q in enumerate(questions):
+        q = q.strip()
+        if not q:
+          continue
+        # Extract title (before first colon, or before |||JUDGE_TYPE|||)
+        if '|||JUDGE_TYPE|||' in q:
+          content_part = q.split('|||JUDGE_TYPE|||')[0]
+        else:
+          content_part = q
+        colon_idx = content_part.find(':')
+        title = content_part[:colon_idx].strip() if colon_idx > 0 else content_part.strip()
+        question_titles_by_index[idx] = title
 
-    # Get the workshop's judge_name (used for MLflow feedback entries)
-    workshop_db = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
-    judge_name = workshop_db.judge_name if workshop_db and workshop_db.judge_name else 'workshop_judge'
+    rationale = annotation_db.comment.strip() if annotation_db.comment else None
+    source = AssessmentSource(
+      source_type=AssessmentSourceType.HUMAN,
+      source_id=annotation_db.user_id or workshop_id,
+    )
 
-    try:
-      rationale = annotation_db.comment.strip() if annotation_db.comment else None
-      mlflow.log_feedback(
-        trace_id=mlflow_trace_id,
-        name=judge_name,
-        value=annotation_db.rating,
-        source=AssessmentSource(
-          source_type=AssessmentSourceType.HUMAN,
-          source_id=annotation_db.user_id or workshop_id,
-        ),
-        rationale=rationale,
-      )
-    except Exception as exc:
-      logger.warning('Failed to log MLflow feedback for trace %s: %s', mlflow_trace_id, exc)
+    # Log ALL ratings from the ratings dict (one per rubric question)
+    if annotation_db.ratings:
+      logged_count = 0
+      for question_id, rating_value in annotation_db.ratings.items():
+        if rating_value is None:
+          continue
+        
+        # Extract index from question_id (format: "rubric_id_index" or "q_index")
+        try:
+          index_str = question_id.split('_')[-1]
+          index = int(index_str)
+        except (ValueError, IndexError):
+          index = 0
+        
+        # Get question title and derive judge name
+        question_title = question_titles_by_index.get(index, f"question_{index}")
+        judge_name = self._derive_judge_name_from_title(question_title)
+        
+        try:
+          mlflow.log_feedback(
+            trace_id=mlflow_trace_id,
+            name=judge_name,
+            value=rating_value,
+            source=source,
+            rationale=rationale if logged_count == 0 else None,  # Only attach rationale to first
+          )
+          logged_count += 1
+          logger.info(f"Logged MLflow feedback: {judge_name}={rating_value} for trace {mlflow_trace_id}")
+        except Exception as exc:
+          logger.warning('Failed to log MLflow feedback %s for trace %s: %s', judge_name, mlflow_trace_id, exc)
+      
+      if logged_count > 0:
+        logger.info(f"Logged {logged_count} MLflow feedback entries for trace {mlflow_trace_id}")
+        return
+    
+    # Fallback: log legacy single rating if no ratings dict
+    if annotation_db.rating is not None:
+      # Get the workshop's judge_name as fallback
+      workshop_db = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+      judge_name = workshop_db.judge_name if workshop_db and workshop_db.judge_name else 'workshop_judge'
+      
+      try:
+        mlflow.log_feedback(
+          trace_id=mlflow_trace_id,
+          name=judge_name,
+          value=annotation_db.rating,
+          source=source,
+          rationale=rationale,
+        )
+      except Exception as exc:
+        logger.warning('Failed to log MLflow feedback for trace %s: %s', mlflow_trace_id, exc)
 
   def resync_annotations_to_mlflow(self, workshop_id: str) -> Dict[str, Any]:
-    """Re-sync all annotations to MLflow with the current workshop judge_name.
+    """Re-sync all annotations to MLflow with judge names derived from rubric questions.
     
-    This is useful when the judge_name changes after annotations were created.
-    Creates new MLflow feedback entries with the correct judge_name.
+    This is useful when rubric question titles change after annotations were created.
+    Creates new MLflow feedback entries with the correct judge names (one per rubric question).
     """
     workshop_db = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
     if not workshop_db:
       return {'error': 'Workshop not found', 'synced': 0}
     
-    judge_name = workshop_db.judge_name if workshop_db.judge_name else 'workshop_judge'
+    # Get rubric questions to derive judge names
+    rubric_db = self.db.query(RubricDB).filter(RubricDB.workshop_id == workshop_id).first()
+    judge_names = []
+    if rubric_db and rubric_db.question:
+      questions = rubric_db.question.split('---')
+      for q in questions:
+        q = q.strip()
+        if not q:
+          continue
+        if '|||JUDGE_TYPE|||' in q:
+          content_part = q.split('|||JUDGE_TYPE|||')[0]
+        else:
+          content_part = q
+        colon_idx = content_part.find(':')
+        title = content_part[:colon_idx].strip() if colon_idx > 0 else content_part.strip()
+        judge_names.append(self._derive_judge_name_from_title(title))
     
     # Get all annotations
     annotations = self.get_annotations(workshop_id)
@@ -1492,7 +1574,7 @@ class DatabaseService:
     return {
       'synced': synced_count,
       'total': len(annotations),
-      'judge_name': judge_name,
+      'judge_names': judge_names,
       'errors': errors if errors else None
     }
 
