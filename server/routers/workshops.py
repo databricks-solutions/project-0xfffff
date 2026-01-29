@@ -480,24 +480,48 @@ async def get_findings_with_user_details(
 
 @router.post("/{workshop_id}/rubric")
 async def create_rubric(workshop_id: str, rubric_data: RubricCreate, db: Session = Depends(get_db)) -> Rubric:
-    """Create or update rubric for a workshop."""
+    """Create or update rubric for a workshop.
+    
+    After creating/updating, triggers an MLflow re-sync to update judge names.
+    """
     db_service = DatabaseService(db)
     workshop = db_service.get_workshop(workshop_id)
     if not workshop:
         raise HTTPException(status_code=404, detail="Workshop not found")
 
-    return db_service.create_rubric(workshop_id, rubric_data)
+    rubric = db_service.create_rubric(workshop_id, rubric_data)
+    
+    # Re-sync annotations to MLflow with the new rubric's judge names
+    try:
+        resync_result = db_service.resync_annotations_to_mlflow(workshop_id)
+        logger.info(f"MLflow re-sync after rubric create: {resync_result}")
+    except Exception as e:
+        logger.warning(f"MLflow re-sync failed after rubric create: {e}")
+    
+    return rubric
 
 
 @router.put("/{workshop_id}/rubric")
 async def update_rubric(workshop_id: str, rubric_data: RubricCreate, db: Session = Depends(get_db)) -> Rubric:
-    """Update rubric for a workshop."""
+    """Update rubric for a workshop.
+    
+    After updating, triggers an MLflow re-sync to update judge names.
+    """
     db_service = DatabaseService(db)
     workshop = db_service.get_workshop(workshop_id)
     if not workshop:
         raise HTTPException(status_code=404, detail="Workshop not found")
 
-    return db_service.create_rubric(workshop_id, rubric_data)
+    rubric = db_service.create_rubric(workshop_id, rubric_data)
+    
+    # Re-sync annotations to MLflow with the updated rubric's judge names
+    try:
+        resync_result = db_service.resync_annotations_to_mlflow(workshop_id)
+        logger.info(f"MLflow re-sync after rubric update: {resync_result}")
+    except Exception as e:
+        logger.warning(f"MLflow re-sync failed after rubric update: {e}")
+    
+    return rubric
 
 
 @router.get("/{workshop_id}/rubric")
