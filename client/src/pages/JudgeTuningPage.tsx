@@ -1949,7 +1949,7 @@ The response partially meets the criteria because...`;
                   placeholder="workshop_judge"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Set in Annotation Phase (Facilitator Dashboard)
+                  Derived from rubric question: "{selectedQuestion?.title}"
                 </p>
               </div>
             </div>
@@ -1990,7 +1990,7 @@ The response partially meets the criteria because...`;
                   placeholder="workshop_judge"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Set in Annotation Phase (Facilitator Dashboard)
+                  Derived from rubric question: "{selectedQuestion?.title}"
                 </p>
               </div>
             </div>
