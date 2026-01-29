@@ -95,6 +95,29 @@ const isJsonString = (str: string): boolean => {
 };
 
 /**
+ * Fix malformed JSON where nested objects are incorrectly quoted as strings
+ * e.g., "content": "{ "key": "value" }" should become "content": { "key": "value" }
+ */
+const fixQuotedJsonObjects = (str: string): string => {
+  // Pattern to find string values that contain JSON objects/arrays
+  // Matches: ": "{ or ": "[  followed by content and ending with }",  or ]",
+  return str.replace(
+    /:\s*"\s*(\{[\s\S]*?\}|\[[\s\S]*?\])\s*"(\s*[,}\]])/g,
+    (match, jsonContent, trailing) => {
+      // Check if the content looks like valid JSON structure
+      const trimmedContent = jsonContent.trim();
+      if ((trimmedContent.startsWith('{') && trimmedContent.endsWith('}')) ||
+          (trimmedContent.startsWith('[') && trimmedContent.endsWith(']'))) {
+        // Unescape any escaped quotes inside
+        const unescaped = trimmedContent.replace(/\\"/g, '"');
+        return `: ${unescaped}${trailing}`;
+      }
+      return match;
+    }
+  );
+};
+
+/**
  * Try to parse a string as JSON
  * Also handles some common non-JSON formats like Python dict notation
  */
@@ -109,6 +132,17 @@ const tryParseJson = (str: string): { success: boolean; data: any } => {
     return { success: true, data };
   } catch {
     // Continue to try alternatives
+  }
+  
+  // Try fixing quoted JSON objects (e.g., "content": "{ "key": "value" }")
+  try {
+    const fixed = fixQuotedJsonObjects(str);
+    if (fixed !== str) {
+      const data = JSON.parse(fixed);
+      return { success: true, data };
+    }
+  } catch {
+    // Continue to other methods
   }
   
   const trimmed = str.trim();
