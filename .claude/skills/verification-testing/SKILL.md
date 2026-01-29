@@ -5,6 +5,8 @@ description: "Code verification and testing for the Human Evaluation Workshop. U
 
 # Verification & Testing
 
+*IMPORTANT:* BEHAVIORS WHICH AREN'T YET IMPLEMENTED OR STUBBED WITH A PLACEHOLDER SHOULD NOT YIELD PASSING TESTS!
+
 ## Common Questions (Start Here)
 
 ### "How far along is SPEC_NAME implementation?"

@@ -5,7 +5,8 @@
  */
 
 import { expect, type Page } from '@playwright/test';
-import type { Workshop, WorkshopPhase } from '../types';
+import type { Workshop } from '../types';
+import { WorkshopPhase } from '../types';
 
 /**
  * Navigate to a specific phase view in the UI
@@ -14,13 +15,13 @@ import type { Workshop, WorkshopPhase } from '../types';
  */
 export async function goToPhase(page: Page, phase: WorkshopPhase): Promise<void> {
   const phaseLabels: Record<WorkshopPhase, string> = {
-    intake: 'Intake',
-    discovery: 'Discovery',
-    rubric: 'Rubric',
-    annotation: 'Annotation',
-    results: 'Results',
-    judge_tuning: 'Judge Tuning',
-    unity_volume: 'Unity Volume',
+    [WorkshopPhase.INTAKE]: 'Intake',
+    [WorkshopPhase.DISCOVERY]: 'Discovery',
+    [WorkshopPhase.RUBRIC]: 'Rubric',
+    [WorkshopPhase.ANNOTATION]: 'Annotation',
+    [WorkshopPhase.RESULTS]: 'Results',
+    [WorkshopPhase.JUDGE_TUNING]: 'Judge Tuning',
+    [WorkshopPhase.UNITY_VOLUME]: 'Unity Volume',
   };
 
   const label = phaseLabels[phase];
@@ -59,6 +60,79 @@ export async function goToTab(page: Page, tabName: string): Promise<void> {
 }
 
 /**
+ * Navigate to the facilitator dashboard (discovery monitor) via the workflow sidebar
+ *
+ * @param page - The Playwright page
+ * @param workshopId - Optional workshop ID to reload to first
+ * @param workshopName - Optional workshop name to click on from the facilitator's workshop list
+ */
+export async function goToFacilitatorDashboard(
+  page: Page,
+  workshopId?: string,
+  workshopName?: string
+): Promise<void> {
+  // If workshopId is provided, navigate to the workshop
+  if (workshopId) {
+    await page.goto(`/?workshop=${workshopId}`);
+    await page.waitForLoadState('networkidle');
+  }
+
+  // Check if we're on the facilitator workshop list (Welcome, Facilitator!)
+  const welcomeFacilitator = page.getByText('Welcome, Facilitator!');
+  if (await welcomeFacilitator.isVisible({ timeout: 2000 }).catch(() => false)) {
+    // We need to click on the specific workshop to enter it
+    // Find by workshop name if provided, otherwise try by workshop ID in the card
+    if (workshopName) {
+      const workshopCard = page.getByRole('heading', { name: new RegExp(workshopName) });
+      await expect(workshopCard).toBeVisible({ timeout: 5000 });
+      await workshopCard.click();
+    } else {
+      // Click the first workshop with Discovery status
+      const discoveryCard = page.locator('div.cursor-pointer').filter({ hasText: /Discovery/ }).first();
+      await discoveryCard.click();
+    }
+    await page.waitForURL(/\?workshop=/);
+    await page.waitForLoadState('networkidle');
+  }
+
+  // Wait for the page to stabilize before interacting with the workflow step
+  await page.waitForLoadState('networkidle');
+
+  // Now click the discovery workflow step (which shows the facilitator dashboard for facilitators)
+  const discoveryStep = page.getByTestId('workflow-step-discovery');
+  await expect(discoveryStep).toBeVisible({ timeout: 10000 });
+  // Wait a small moment for the React rehydration to complete
+  await page.waitForTimeout(500);
+  await discoveryStep.click();
+}
+
+/**
+ * Navigate to the Trace Coverage tab within the facilitator dashboard
+ */
+export async function goToTraceCoverage(page: Page): Promise<void> {
+  // First ensure we're on the facilitator dashboard
+  await expect(page.getByTestId('trace-coverage')).toBeVisible({ timeout: 10000 }).catch(async () => {
+    // Try clicking the Trace Coverage tab
+    const tab = page.getByRole('tab', { name: /Trace Coverage/i });
+    if (await tab.isVisible().catch(() => false)) {
+      await tab.click();
+    }
+  });
+  await expect(page.getByTestId('trace-coverage')).toBeVisible({ timeout: 5000 });
+}
+
+/**
+ * Click on a trace row to expand it and show the TraceDiscoveryPanel
+ */
+export async function expandTraceRow(page: Page, traceId: string): Promise<void> {
+  const traceRow = page.getByTestId(`trace-row-${traceId}`);
+  await expect(traceRow).toBeVisible({ timeout: 5000 });
+  await traceRow.click();
+  // Wait for the panel to appear
+  await expect(page.getByTestId('trace-discovery-panel')).toBeVisible({ timeout: 5000 });
+}
+
+/**
  * Advance the workshop to a specific phase via API
  *
  * This makes the actual API call to advance phases.
@@ -71,13 +145,13 @@ export async function advanceToPhase(
   apiUrl: string = 'http://127.0.0.1:8000'
 ): Promise<void> {
   const phaseEndpoints: Record<WorkshopPhase, string | null> = {
-    intake: null, // Can't advance to intake
-    discovery: 'advance-to-discovery',
-    rubric: 'advance-to-rubric',
-    annotation: 'advance-to-annotation',
-    results: 'advance-to-results',
-    judge_tuning: 'advance-to-judge-tuning',
-    unity_volume: 'advance-to-unity-volume',
+    [WorkshopPhase.INTAKE]: null, // Can't advance to intake
+    [WorkshopPhase.DISCOVERY]: 'advance-to-discovery',
+    [WorkshopPhase.RUBRIC]: 'advance-to-rubric',
+    [WorkshopPhase.ANNOTATION]: 'advance-to-annotation',
+    [WorkshopPhase.RESULTS]: 'advance-to-results',
+    [WorkshopPhase.JUDGE_TUNING]: 'advance-to-judge-tuning',
+    [WorkshopPhase.UNITY_VOLUME]: 'advance-to-unity-volume',
   };
 
   const endpoint = phaseEndpoints[phase];

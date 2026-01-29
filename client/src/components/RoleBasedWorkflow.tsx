@@ -6,7 +6,7 @@ import { useWorkshopContext } from '@/context/WorkshopContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { WorkshopsService } from '@/client';
+import { DiscoveryService } from '@/client';
 import { AlertCircle, CheckCircle, Clock, Users, UserCheck, Settings, Play, Brain, Eye, ChevronRight } from 'lucide-react';
 import { useRubric } from '@/hooks/useWorkshopApi';
 
@@ -49,7 +49,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
     try {
       setIsStartingPhase(true);
       setPhaseError(null);
-      await WorkshopsService.beginDiscoveryPhaseWorkshopsWorkshopIdBeginDiscoveryPost(
+      await DiscoveryService.beginDiscoveryPhaseWorkshopsWorkshopIdBeginDiscoveryPost(
         workshopId!
       );
       // Invalidate workshop query to trigger re-fetch of current phase

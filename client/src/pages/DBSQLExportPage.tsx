@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useWorkshop } from '@/hooks/useWorkshopApi';
+import type { DBSQLExportResponse } from '@/client';
 
 interface ExportStatus {
   workshop_id: string;
@@ -92,15 +93,17 @@ export function DBSQLExportPage() {
   const [scrollPosition, setScrollPosition] = useState(0);
 
   // Use React Query to cache export results
-  const { data: exportResult } = useQuery({
+  const { data: exportResult } = useQuery<DBSQLExportResponse | null>({
     queryKey: ['dbsql-export-result', workshopId],
     queryFn: async () => {
       // This will be populated when export is successful
       return null;
     },
     staleTime: Infinity, // Never consider stale
-    cacheTime: Infinity, // Never expire from cache
+    gcTime: Infinity, // Never expire from cache
   });
+  const tablesExported = Array.isArray(exportResult?.tables_exported) ? exportResult?.tables_exported : [];
+  const exportErrors = Array.isArray(exportResult?.errors) ? exportResult?.errors : [];
 
   // Use React Query to cache export status
   const { data: exportStatus, refetch: refetchExportStatus } = useQuery({
@@ -577,19 +580,19 @@ export function DBSQLExportPage() {
                     <div className="space-y-2">
                       <p className="font-medium">{exportResult.message}</p>
                       <div className="text-sm space-y-1">
-                        <p><strong>Total Rows:</strong> {exportResult.total_rows}</p>
-                        <p><strong>Tables Exported:</strong> {exportResult.tables_exported?.length || 0}</p>
+                        <p><strong>Total Rows:</strong> {exportResult.total_rows ?? 0}</p>
+                        <p><strong>Tables Exported:</strong> {tablesExported.length}</p>
                         <p><strong>Target Location:</strong> {catalog}.{schemaName}</p>
                       </div>
                     </div>
                   </AlertDescription>
                 </Alert>
                 
-                {exportResult.tables_exported && exportResult.tables_exported.length > 0 && (
+                {tablesExported.length > 0 && (
                   <div className="space-y-2">
                     <h4 className="text-sm font-medium">Exported Tables</h4>
                     <div className="space-y-2">
-                      {exportResult.tables_exported.map((table: any, index: number) => (
+                      {tablesExported.map((table: any, index: number) => (
                         <div key={index} className="flex items-center justify-between p-2 bg-muted rounded">
                           <div className="flex items-center gap-2">
                             <Table className="h-3 w-3" />
@@ -602,11 +605,11 @@ export function DBSQLExportPage() {
                   </div>
                 )}
                 
-                {exportResult.errors && exportResult.errors.length > 0 && (
+                {exportErrors.length > 0 && (
                   <div className="space-y-2">
                     <h4 className="text-sm font-medium text-red-600">Errors</h4>
                     <div className="space-y-1">
-                      {exportResult.errors.map((error: string, index: number) => (
+                      {exportErrors.map((error: string, index: number) => (
                         <p key={index} className="text-sm text-red-600">{error}</p>
                       ))}
                     </div>

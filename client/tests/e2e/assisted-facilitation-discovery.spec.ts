@@ -7,6 +7,7 @@
 
 import { test, expect, Page } from '@playwright/test';
 import { TestScenario } from '../lib/scenario-builder';
+import { WorkshopPhase } from '../lib/types';
 import * as discoveryActions from '../lib/actions/discovery';
 
 test.describe('Assisted Facilitation v2 - Discovery Phase', {
@@ -26,7 +27,7 @@ test.describe('Assisted Facilitation v2 - Discovery Phase', {
       .withFacilitator()
       .withParticipants(1)
       .withTraces(3)
-      .inPhase('discovery')
+      .inPhase(WorkshopPhase.DISCOVERY)
       .withRealApi()
       .build();
 
@@ -79,7 +80,7 @@ test.describe('Assisted Facilitation v2 - Discovery Phase', {
       .withFacilitator()
       .withParticipants(2)
       .withTraces(10)
-      .inPhase('discovery')
+      .inPhase(WorkshopPhase.DISCOVERY)
       .withRealApi()
       .build();
 
@@ -138,7 +139,7 @@ test.describe('Assisted Facilitation v2 - Discovery Phase', {
       .withFacilitator()
       .withParticipants(3)
       .withTraces(5)
-      .inPhase('discovery')
+      .inPhase(WorkshopPhase.DISCOVERY)
       .withRealApi()
       .build();
 
@@ -185,7 +186,7 @@ test.describe('Assisted Facilitation v2 - Discovery Phase', {
       .withFacilitator()
       .withParticipants(1)
       .withTraces(3)
-      .inPhase('discovery')
+      .inPhase(WorkshopPhase.DISCOVERY)
       .withRealApi()
       .build();
 
@@ -240,7 +241,7 @@ test.describe('Assisted Facilitation v2 - Discovery Phase', {
       .withFacilitator()
       .withParticipants(1)
       .withTraces(3)
-      .inPhase('discovery')
+      .inPhase(WorkshopPhase.DISCOVERY)
       .withRealApi()
       .build();
 
@@ -255,7 +256,7 @@ test.describe('Assisted Facilitation v2 - Discovery Phase', {
     await discoveryActions.waitForDiscoveryPhase(testPage);
 
     // Try to find complete button - should not be visible initially
-    let completeButton = testPage.getByRole('button', {
+    const completeButton = testPage.getByRole('button', {
       name: /Complete.*Discovery|finish.*discovery/i,
     });
 
@@ -292,7 +293,7 @@ test.describe('Assisted Facilitation v2 - Discovery Phase', {
       .withFacilitator()
       .withParticipants(1)
       .withTraces(2)
-      .inPhase('discovery')
+      .inPhase(WorkshopPhase.DISCOVERY)
       .withRealApi()
       .build();
 

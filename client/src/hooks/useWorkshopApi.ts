@@ -3,7 +3,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { WorkshopsService } from '@/client';
+import { DiscoveryService, WorkshopsService } from '@/client';
 import { useRoleCheck } from '@/context/UserContext';
 import type { 
   Workshop, 
@@ -229,7 +229,7 @@ export function useInvalidateTraces() {
 export function useFindings(workshopId: string, userId?: string) {
   return useQuery({
     queryKey: QUERY_KEYS.findings(workshopId, userId),
-    queryFn: () => WorkshopsService.getFindingsWorkshopsWorkshopIdFindingsGet(workshopId, userId),
+    queryFn: () => DiscoveryService.getFindingsWorkshopsWorkshopIdFindingsGet(workshopId, userId),
     enabled: !!workshopId,
   });
 }
@@ -238,7 +238,7 @@ export function useFindings(workshopId: string, userId?: string) {
 export function useUserFindings(workshopId: string, user: any) {
   return useQuery({
     queryKey: QUERY_KEYS.findings(workshopId, user?.id),
-    queryFn: () => WorkshopsService.getFindingsWorkshopsWorkshopIdFindingsGet(
+    queryFn: () => DiscoveryService.getFindingsWorkshopsWorkshopIdFindingsGet(
       workshopId, 
       user?.id  // EVERYONE (including facilitators) gets only their own findings for personal progress
     ),
@@ -255,7 +255,7 @@ export function useFacilitatorFindings(workshopId: string) {
   
   return useQuery({
     queryKey: QUERY_KEYS.findings(workshopId, 'all_findings'),
-    queryFn: () => WorkshopsService.getFindingsWorkshopsWorkshopIdFindingsGet(
+    queryFn: () => DiscoveryService.getFindingsWorkshopsWorkshopIdFindingsGet(
       workshopId, 
       undefined  // No user filter - gets ALL findings
     ),
@@ -269,7 +269,7 @@ export function useFacilitatorFindingsWithUserDetails(workshopId: string) {
   
   return useQuery({
     queryKey: [...QUERY_KEYS.findings(workshopId, 'all_findings'), 'with_user_details'],
-    queryFn: () => WorkshopsService.getFindingsWithUserDetailsWorkshopsWorkshopIdFindingsWithUsersGet(
+    queryFn: () => DiscoveryService.getFindingsWithUserDetailsWorkshopsWorkshopIdFindingsWithUsersGet(
       workshopId, 
       undefined  // No user filter - gets ALL findings with user details
     ),
@@ -282,7 +282,7 @@ export function useSubmitFinding(workshopId: string) {
   
   return useMutation({
     mutationFn: (finding: DiscoveryFindingCreate) => 
-      WorkshopsService.submitFindingWorkshopsWorkshopIdFindingsPost(workshopId, finding),
+      DiscoveryService.submitFindingWorkshopsWorkshopIdFindingsPost(workshopId, finding),
     onMutate: async (newFinding) => {
       // Cancel any outgoing refetches
       await queryClient.cancelQueries({ queryKey: ['findings', workshopId, newFinding.user_id] });

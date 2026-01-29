@@ -3,22 +3,29 @@
  *
  * Tests the facilitator view for monitoring discovery progress and managing
  * category coverage, thresholds, and disagreements.
+ *
+ * These tests verify UI elements rather than API responses.
  */
 
 import { test, expect } from '@playwright/test';
 import { TestScenario } from '../lib/scenario-builder';
+import { WorkshopPhase } from '../lib/types';
+import * as actions from '../lib/actions';
+import * as discoveryActions from '../lib/actions/discovery';
+
+const VALID_CATEGORIES = actions.DISCOVERY_CATEGORIES;
 
 test.describe('Assisted Facilitation v2 - Facilitator Dashboard', {
   tag: ['@spec:ASSISTED_FACILITATION_SPEC'],
 }, () => {
-  test('facilitator can view trace discovery state with category coverage', {
+  test('facilitator can view trace discovery state with category coverage in the UI', {
     tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Facilitators see per-trace structured view with category breakdown'],
   }, async ({
     browser,
   }) => {
     // Setup: Create workshop with findings across multiple categories
     const scenario = await TestScenario.create(browser)
-      .withWorkshop({ name: 'Category Coverage Test' })
+      .withWorkshop({ name: 'Dashboard Category Coverage Test' })
       .withFacilitator()
       .withParticipants(1)
       .withTraces(2)
@@ -34,44 +41,67 @@ test.describe('Assisted Facilitation v2 - Facilitator Dashboard', {
         insight: 'Good use of design patterns.',
         traceIndex: 1,
       })
-      .inPhase('discovery')
-      .withRealApi()
-      .build();
-
-    // Facilitator logs in - this navigates to the main app
-    await scenario.loginAs(scenario.facilitator);
-
-    // Verify we can see the workshop name in the UI (could be in header or heading)
-    await expect(scenario.page.getByText(scenario.workshop.name)).toBeVisible({ timeout: 10000 });
-
-    // Check API endpoint for trace discovery state
-    const state = await scenario.api.getTraces();
-    expect(state.length).toBe(2);
-
-    await scenario.cleanup();
-  });
-
-  test('facilitator can view and update per-trace thresholds', {
-    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Thresholds are configurable per category per trace'],
-  }, async ({
-    browser,
-  }) => {
-    // Setup: Create workshop
-    const scenario = await TestScenario.create(browser)
-      .withWorkshop({ name: 'Threshold Update Test' })
-      .withFacilitator()
-      .withParticipants(1)
-      .withTraces(3)
-      .inPhase('discovery')
+      .inPhase(WorkshopPhase.DISCOVERY)
       .withRealApi()
       .build();
 
     // Facilitator logs in
     await scenario.loginAs(scenario.facilitator);
 
-    // Mock API call to update thresholds
+    // Navigate to the facilitator dashboard
+    await actions.goToFacilitatorDashboard(scenario.page, scenario.workshop.id, scenario.workshop.name);
+
+    // Verify the dashboard header is visible
+    await expect(scenario.page.getByText('Discovery Phase Monitoring')).toBeVisible({ timeout: 10000 });
+
+    // Verify the trace coverage section is accessible
+    await actions.goToTraceCoverage(scenario.page);
+
+    // Verify we see trace rows
+    const traceCoverage = scenario.page.getByTestId('trace-coverage');
+    await expect(traceCoverage).toBeVisible();
+
+    // Verify we have trace rows for our traces
+    const traceRows = traceCoverage.locator('[data-testid^="trace-row-"]');
+    const rowCount = await traceRows.count();
+    expect(rowCount).toBeGreaterThanOrEqual(1);
+
+    await scenario.cleanup();
+  });
+
+  test('facilitator can view and update per-trace thresholds via the UI', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Thresholds are configurable per category per trace'],
+  }, async ({
+    browser,
+  }) => {
+    // Setup: Create workshop
+    const scenario = await TestScenario.create(browser)
+      .withWorkshop({ name: 'Dashboard Threshold Update Test' })
+      .withFacilitator()
+      .withParticipants(1)
+      .withTraces(3)
+      .inPhase(WorkshopPhase.DISCOVERY)
+      .withRealApi()
+      .build();
+
+    // Facilitator logs in and starts discovery
+    await scenario.loginAs(scenario.facilitator);
+    await scenario.beginDiscovery();
+
+    // Navigate to the facilitator dashboard
+    await actions.goToFacilitatorDashboard(scenario.page, scenario.workshop.id, scenario.workshop.name);
+
+    // Go to Trace Coverage and expand the first trace
+    await actions.goToTraceCoverage(scenario.page);
     const traceId = scenario.traces[0].id;
-    const newThresholds = {
+    await actions.expandTraceRow(scenario.page, traceId);
+    await actions.waitForTraceDiscoveryPanel(scenario.page);
+
+    // Verify threshold controls are visible
+    await expect(scenario.page.getByTestId('threshold-controls')).toBeVisible();
+
+    // Update a threshold
+    const newThresholds: Record<string, number> = {
       themes: 5,
       edge_cases: 3,
       boundary_conditions: 2,
@@ -79,29 +109,24 @@ test.describe('Assisted Facilitation v2 - Facilitator Dashboard', {
       missing_info: 2,
     };
 
-    // In a real implementation, this would call:
-    // PUT /workshops/{workshopId}/traces/{traceId}/thresholds
-    const response = await scenario.page.request.put(
-      `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/traces/${traceId}/thresholds`,
-      {
-        data: { thresholds: newThresholds },
-      }
-    );
+    // Update themes threshold via UI
+    await actions.updateCategoryThreshold(scenario.page, 'themes', newThresholds.themes);
 
-    // Verify the response (may 404 if endpoint not implemented yet)
-    expect([200, 404]).toContain(response.status());
+    // Verify the threshold was updated
+    const { threshold } = await actions.getCategoryCount(scenario.page, 'themes');
+    expect(threshold).toBe(newThresholds.themes);
 
     await scenario.cleanup();
   });
 
-  test('facilitator can generate targeted discovery questions', {
+  test('facilitator can see generated questions interface', {
     tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Facilitators can generate targeted questions that broadcast to all participants'],
   }, async ({
     browser,
   }) => {
     // Setup: Create workshop with some findings
     const scenario = await TestScenario.create(browser)
-      .withWorkshop({ name: 'Question Generation Test' })
+      .withWorkshop({ name: 'Dashboard Question Generation Test' })
       .withFacilitator()
       .withParticipants(2)
       .withTraces(3)
@@ -113,45 +138,46 @@ test.describe('Assisted Facilitation v2 - Facilitator Dashboard', {
         insight: 'Handles positive cases.',
         traceIndex: 0,
       })
-      .inPhase('discovery')
+      .inPhase(WorkshopPhase.DISCOVERY)
       .withRealApi()
       .build();
 
-    // Facilitator logs in
+    // Facilitator logs in and starts discovery
     await scenario.loginAs(scenario.facilitator);
+    await scenario.beginDiscovery();
 
-    // Verify we can access trace discovery state
-    const traces = await scenario.api.getTraces();
-    expect(traces.length).toBe(3);
+    // Navigate to the facilitator dashboard
+    await actions.goToFacilitatorDashboard(scenario.page, scenario.workshop.id, scenario.workshop.name);
 
-    // Verify we can query findings (at least 1 from the scenario setup)
-    const findings = await scenario.api.getFindings();
-    expect(findings.length).toBeGreaterThanOrEqual(1);
+    // Go to Trace Coverage and expand the first trace
+    await actions.goToTraceCoverage(scenario.page);
+    const traceId = scenario.traces[0].id;
+    await actions.expandTraceRow(scenario.page, traceId);
+    await actions.waitForTraceDiscoveryPanel(scenario.page);
 
-    // In real implementation, facilitator would see undercovered categories
-    // and could generate questions to guide participants
-    const undercoveredCategories = [
-      'boundary_conditions',
-      'failure_modes',
-      'missing_info',
-    ];
-    expect(undercoveredCategories.length).toBe(3);
+    // Verify the generate question button is visible
+    const generateBtn = scenario.page.getByTestId('generate-question-btn');
+    await expect(generateBtn).toBeVisible();
+    await expect(generateBtn).toBeEnabled();
+
+    // Verify the button has the correct label
+    await expect(generateBtn).toHaveText('Generate Question');
 
     await scenario.cleanup();
   });
 
-  test('facilitator dashboard shows multiple participants progress', {
+  test('facilitator dashboard shows multiple participants progress in the UI', {
     tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Facilitators see per-trace structured view with category breakdown'],
   }, async ({
     browser,
   }) => {
     // Setup: Create workshop with multiple participants
     const scenario = await TestScenario.create(browser)
-      .withWorkshop({ name: 'Multi-Participant Progress Test' })
+      .withWorkshop({ name: 'Dashboard Multi-Participant Test' })
       .withFacilitator()
       .withParticipants(3)
       .withTraces(5)
-      .inPhase('discovery')
+      .inPhase(WorkshopPhase.DISCOVERY)
       .withRealApi()
       .build();
 
@@ -161,176 +187,128 @@ test.describe('Assisted Facilitation v2 - Facilitator Dashboard', {
     await scenario.loginAs(scenario.facilitator);
     await scenario.beginDiscovery();
 
-    // Each participant submits findings
+    // Each participant submits findings via v2 API (simulate concurrent submissions)
     for (let i = 0; i < participants.length; i++) {
-      const participantPage = await scenario.newPageAs(participants[i]);
-
-      // Wait for discovery phase
-      await expect(participantPage.getByTestId('discovery-phase-title')).toBeVisible({ timeout: 15000 });
-
-      // Submit 2 findings
+      // Submit 2 findings per participant
       for (let j = 0; j < 2; j++) {
-        const textarea = participantPage.locator('textarea').first();
-        if (await textarea.isVisible().catch(() => false)) {
-          await textarea.fill(`Finding ${j + 1} from participant ${i + 1}`);
-          const nextBtn = participantPage.getByRole('button', { name: /Next/i });
-          if (j < 1 && (await nextBtn.isVisible().catch(() => false))) {
-            await nextBtn.click();
-            await participantPage.waitForTimeout(100);
+        await scenario.page.request.post(
+          `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings-v2`,
+          {
+            data: {
+              trace_id: scenario.traces[j % scenario.traces.length].id,
+              user_id: participants[i].id,
+              text: `Finding ${j + 1} from participant ${i + 1}: Good code structure.`,
+            },
           }
-        }
+        );
       }
     }
 
-    // Facilitator can query discovery completion status
-    const status = await scenario.api.getDiscoveryCompletionStatus();
-    expect(status.total_participants).toBe(3);
-    expect(status.completed_participants).toBeGreaterThanOrEqual(0);
-    expect(typeof status.all_completed).toBe('boolean');
+    // Navigate to the facilitator dashboard
+    await actions.goToFacilitatorDashboard(scenario.page, scenario.workshop.id, scenario.workshop.name);
+
+    // Verify the User Participation tab shows participant data
+    const userParticipationTab = scenario.page.getByRole('tab', { name: /User Participation/i });
+    await expect(userParticipationTab).toBeVisible();
+    await userParticipationTab.click();
+
+    // Verify participants appear in the user participation list
+    // Each participant should have a user card showing their contribution
+    await expect(scenario.page.getByText(/finding/i)).toBeVisible({ timeout: 10000 });
 
     await scenario.cleanup();
   });
 
-  test('facilitator can promote findings to draft rubric', {
+  test('facilitator can promote findings to draft rubric via the UI', {
     tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings can be promoted to draft rubric staging area'],
   }, async ({
     browser,
   }) => {
     // Setup: Create workshop with findings
     const scenario = await TestScenario.create(browser)
-      .withWorkshop({ name: 'Finding Promotion Test' })
+      .withWorkshop({ name: 'Dashboard Promotion Test' })
       .withFacilitator()
       .withParticipants(1)
       .withTraces(2)
-      .withDiscoveryFinding({
-        insight: 'Excellent use of error handling and validation.',
-        traceIndex: 0,
-      })
-      .withDiscoveryFinding({
-        insight: 'Code could be more efficient with caching.',
-        traceIndex: 0,
-      })
-      .inPhase('discovery')
+      .inPhase(WorkshopPhase.DISCOVERY)
       .withRealApi()
       .build();
 
-    // Facilitator logs in
+    const participant = scenario.users.participant[0];
+
+    // Facilitator starts discovery
     await scenario.loginAs(scenario.facilitator);
+    await scenario.beginDiscovery();
 
-    // Get findings from API (at least 1 from scenario setup)
-    const findings = await scenario.api.getFindings();
-    expect(findings.length).toBeGreaterThanOrEqual(1);
-
-    // In real implementation, facilitator would click "Promote" on a finding
-    // This would call: POST /workshops/{workshopId}/findings/{findingId}/promote
-    if (findings.length > 0) {
-      const finding = findings[0];
-      const response = await scenario.page.request.post(
-        `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings/${finding.id}/promote`,
-        {
-          data: { finding_id: finding.id, promoter_id: scenario.facilitator.id },
-        }
-      );
-
-      // May 404 if endpoint not fully implemented
-      expect([200, 404]).toContain(response.status());
-    }
-
-    await scenario.cleanup();
-  });
-
-  test('facilitator can view draft rubric staging area', {
-    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings can be promoted to draft rubric staging area'],
-  }, async ({
-    browser,
-  }) => {
-    // Setup: Create workshop
-    const scenario = await TestScenario.create(browser)
-      .withWorkshop({ name: 'Draft Rubric Test' })
-      .withFacilitator()
-      .withParticipants(1)
-      .withTraces(2)
-      .inPhase('discovery')
-      .withRealApi()
-      .build();
-
-    // Facilitator logs in
-    await scenario.loginAs(scenario.facilitator);
-
-    // Query draft rubric items via API
-    // GET /workshops/{workshopId}/draft-rubric
-    const response = await scenario.page.request.get(
-      `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/draft-rubric`
+    // Submit findings via v2 API
+    const traceId = scenario.traces[0].id;
+    await scenario.page.request.post(
+      `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings-v2`,
+      {
+        data: {
+          trace_id: traceId,
+          user_id: participant.id,
+          text: 'Excellent use of error handling and validation.',
+        },
+      }
     );
 
-    // May 404 or return empty if endpoint not fully implemented
-    if (response.ok()) {
-      const items = await response.json();
-      expect(Array.isArray(items)).toBe(true);
-    } else {
-      expect([404, 501]).toContain(response.status());
+    await scenario.page.request.post(
+      `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings-v2`,
+      {
+        data: {
+          trace_id: traceId,
+          user_id: participant.id,
+          text: 'Code could be more efficient with caching.',
+        },
+      }
+    );
+
+    // Navigate to the facilitator dashboard
+    await actions.goToFacilitatorDashboard(scenario.page, scenario.workshop.id, scenario.workshop.name);
+
+    // Go to Trace Coverage and expand the trace
+    await actions.goToTraceCoverage(scenario.page);
+    await actions.expandTraceRow(scenario.page, traceId);
+    await actions.waitForTraceDiscoveryPanel(scenario.page);
+
+    // Find a category with findings and promote one
+    let promoted = false;
+    for (const category of VALID_CATEGORIES) {
+      const { count } = await actions.getCategoryCount(scenario.page, category);
+      if (count > 0) {
+        // Check if finding is not already promoted
+        const isAlreadyPromoted = await actions.isFindingPromoted(scenario.page, category, 0);
+        if (!isAlreadyPromoted) {
+          await actions.promoteFindingInUI(scenario.page, category, 0);
+          promoted = true;
+
+          // Verify the finding is now marked as promoted
+          const isNowPromoted = await actions.isFindingPromoted(scenario.page, category, 0);
+          expect(isNowPromoted).toBe(true);
+          break;
+        }
+      }
     }
+
+    // If we had findings, we should have promoted one
+    expect(promoted).toBe(true);
 
     await scenario.cleanup();
   });
 
-  test('facilitator can access fuzzy progress via API', {
+  test('facilitator dashboard shows discovery progress metrics', {
     tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Participants see only fuzzy progress (no category bias)'],
   }, async ({
     browser,
   }) => {
     // Setup: Create workshop with participants in discovery
     const scenario = await TestScenario.create(browser)
-      .withWorkshop({ name: 'Fuzzy Progress API Test' })
+      .withWorkshop({ name: 'Dashboard Progress Metrics Test' })
       .withFacilitator()
       .withParticipants(2)
       .withTraces(10)
-      .inPhase('discovery')
-      .withRealApi()
-      .build();
-
-    // Facilitator logs in
-    await scenario.loginAs(scenario.facilitator);
-
-    // Query fuzzy progress via API
-    // GET /workshops/{workshopId}/discovery-progress
-    const response = await scenario.page.request.get(
-      `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/discovery-progress`
-    );
-
-    // Endpoint may not be implemented yet
-    if (response.ok()) {
-      const progress = await response.json();
-      expect(progress).toHaveProperty('status');
-      expect(progress).toHaveProperty('percentage');
-
-      // Status should be one of the fuzzy states
-      expect(['exploring', 'good_coverage', 'complete']).toContain(
-        progress.status
-      );
-
-      // Percentage should be between 0-100
-      expect(progress.percentage).toBeGreaterThanOrEqual(0);
-      expect(progress.percentage).toBeLessThanOrEqual(100);
-    } else {
-      expect([404, 501]).toContain(response.status());
-    }
-
-    await scenario.cleanup();
-  });
-
-  test('facilitator cannot see participant text inputs during discovery', {
-    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Participants see only fuzzy progress (no category bias)'],
-  }, async ({
-    browser,
-  }) => {
-    // Setup: Create workshop
-    const scenario = await TestScenario.create(browser)
-      .withWorkshop({ name: 'Facilitator Access Test' })
-      .withFacilitator()
-      .withParticipants(1)
-      .withTraces(3)
-      .inPhase('discovery')
+      .inPhase(WorkshopPhase.DISCOVERY)
       .withRealApi()
       .build();
 
@@ -338,25 +316,113 @@ test.describe('Assisted Facilitation v2 - Facilitator Dashboard', {
     await scenario.loginAs(scenario.facilitator);
     await scenario.beginDiscovery();
 
-    // Facilitator should see the monitoring dashboard, NOT the discovery participation view
-    // Look for indicators of the facilitator dashboard view
-    const monitoringHeading = scenario.page.locator(
-      'text=/Discovery Phase Monitoring|Monitor.*discovery/i'
-    );
+    // Navigate to the facilitator dashboard
+    await actions.goToFacilitatorDashboard(scenario.page, scenario.workshop.id, scenario.workshop.name);
 
-    // The facilitator should see the dashboard/monitoring view
-    const isMonitoringVisible = await monitoringHeading
-      .isVisible({ timeout: 5000 })
-      .catch(() => false);
+    // Verify the Discovery Phase card shows progress
+    const discoveryCard = scenario.page.locator('text=Discovery Phase').first();
+    await expect(discoveryCard).toBeVisible({ timeout: 10000 });
+
+    // Verify we can see the progress metrics (traces analyzed, etc.)
+    await expect(scenario.page.getByText(/Traces Analyzed/i)).toBeVisible();
+
+    // Verify the progress bar is visible
+    const progressBar = scenario.page.locator('[role="progressbar"]').first();
+    await expect(progressBar).toBeVisible();
+
+    await scenario.cleanup();
+  });
+
+  test('facilitator sees appropriate view (not participant discovery view)', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Participants see only fuzzy progress (no category bias)'],
+  }, async ({
+    browser,
+  }) => {
+    // Setup: Create workshop
+    const scenario = await TestScenario.create(browser)
+      .withWorkshop({ name: 'Dashboard Facilitator View Test' })
+      .withFacilitator()
+      .withParticipants(1)
+      .withTraces(3)
+      .inPhase(WorkshopPhase.DISCOVERY)
+      .withRealApi()
+      .build();
+
+    // Facilitator logs in and starts discovery
+    await scenario.loginAs(scenario.facilitator);
+    await scenario.beginDiscovery();
+
+    // Navigate to the discovery workflow step
+    await actions.goToFacilitatorDashboard(scenario.page, scenario.workshop.id, scenario.workshop.name);
+
+    // Facilitator should see the monitoring dashboard, NOT the participant discovery view
+    // Look for facilitator-specific UI elements
+    const monitoringHeading = scenario.page.getByText(/Discovery Phase Monitoring/i);
+    await expect(monitoringHeading).toBeVisible({ timeout: 10000 });
 
     // Verify facilitator does NOT see the participant discovery title
     const participantDiscoveryTitle = scenario.page.getByTestId('discovery-phase-title');
-    const isParticipantViewVisible = await participantDiscoveryTitle
-      .isVisible()
-      .catch(() => false);
+    const isParticipantViewVisible = await participantDiscoveryTitle.isVisible().catch(() => false);
+    expect(isParticipantViewVisible).toBe(false);
 
-    // Facilitator should see monitoring OR not see participant view
-    expect(isMonitoringVisible || !isParticipantViewVisible).toBe(true);
+    // Verify we see facilitator-specific elements like "Quick Actions" or "Workshop Analysis"
+    const facilityControls = scenario.page.getByText(/Quick Actions|Workshop Analysis/i);
+    await expect(facilityControls.first()).toBeVisible();
+
+    await scenario.cleanup();
+  });
+
+  test('trace coverage UI shows review status badges', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Facilitators see per-trace structured view with category breakdown'],
+  }, async ({
+    browser,
+  }) => {
+    // Setup: Create workshop with some findings
+    const scenario = await TestScenario.create(browser)
+      .withWorkshop({ name: 'Dashboard Trace Status Test' })
+      .withFacilitator()
+      .withParticipants(2)
+      .withTraces(3)
+      .inPhase(WorkshopPhase.DISCOVERY)
+      .withRealApi()
+      .build();
+
+    const participants = scenario.users.participant;
+
+    // Facilitator starts discovery
+    await scenario.loginAs(scenario.facilitator);
+    await scenario.beginDiscovery();
+
+    // Submit findings for one trace via v2 API
+    const traceId = scenario.traces[0].id;
+    for (const participant of participants) {
+      await scenario.page.request.post(
+        `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings-v2`,
+        {
+          data: {
+            trace_id: traceId,
+            user_id: participant.id,
+            text: `Finding from ${participant.name}: Code looks good.`,
+          },
+        }
+      );
+    }
+
+    // Navigate to the facilitator dashboard
+    await actions.goToFacilitatorDashboard(scenario.page, scenario.workshop.id, scenario.workshop.name);
+
+    // Go to Trace Coverage
+    await actions.goToTraceCoverage(scenario.page);
+
+    // Verify trace rows show review count badges
+    const traceCoverage = scenario.page.getByTestId('trace-coverage');
+    await expect(traceCoverage).toBeVisible();
+
+    // Verify we can see review count badges (e.g., "2 reviews", "2 reviewers")
+    await expect(traceCoverage.getByText(/review/i).first()).toBeVisible({ timeout: 10000 });
+
+    // Verify status text appears (Complete, In Progress, or Pending)
+    await expect(traceCoverage.locator('.status-text').first()).toBeVisible();
 
     await scenario.cleanup();
   });

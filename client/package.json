@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "npx vite",
-    "dev": "npx vite",
+    "dev": "concurrently -k \"npm run dev:vite\" \"npm run typecheck:watch\"",
+    "dev:vite": "npx vite",
     "build": "npx vite build",
     "preview": "npx vite preview",
     "test": "npx playwright test",
@@ -13,6 +14,8 @@
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
     "test:unit:coverage": "vitest run --coverage",
+    "typecheck": "tsc -p tsconfig.eslint.json --noEmit",
+    "typecheck:watch": "tsc -p tsconfig.eslint.json --noEmit --watch",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json,css}\"",
     "knip": "knip"
@@ -69,6 +72,7 @@
     "@vitejs/plugin-react-swc": "^3.10.2",
     "@vitest/coverage-v8": "^2.1.9",
     "autoprefixer": "^10.4.16",
+    "concurrently": "^9.2.1",
     "eslint": "^8.55.0",
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.5",

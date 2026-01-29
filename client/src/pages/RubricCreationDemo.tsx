@@ -36,8 +36,8 @@ import { useRubric, useCreateRubric, useUpdateRubric, useUserFindings, useFacili
 import { FocusedAnalysisView, ScratchPadEntry } from '@/components/FocusedAnalysisView';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useQueryClient } from '@tanstack/react-query';
-import { WorkshopsService } from '@/client';
-import type { Rubric, RubricCreate, JudgeType } from '@/client';
+import { WorkshopsService, JudgeType } from '@/client';
+import type { Rubric, RubricCreate } from '@/client';
 import { toast } from 'sonner';
 import { parseRubricQuestions, formatRubricQuestions, QUESTION_DELIMITER, type RubricQuestion } from '@/utils/rubricUtils';
 import { binaryLabelPresets } from '@/components/JudgeTypeSelector';
@@ -73,7 +73,7 @@ const useDiscoveryResponses = (findings: any[] | undefined, traces: any[] | unde
     return acc;
   }, {} as Record<string, any[]>);
   
-  return Object.entries(groupedByTrace).map(([traceId, traceFindings]) => {
+  return (Object.entries(groupedByTrace) as Array<[string, any[]]>).map(([traceId, traceFindings]) => {
     const trace = traceMap[traceId];
     
     return {
@@ -175,7 +175,7 @@ export function RubricCreationDemo() {
   const [newQuestion, setNewQuestion] = useState<Omit<RubricQuestion, 'id'>>({
     title: '',
     description: '',
-    judgeType: 'likert'
+    judgeType: JudgeType.LIKERT
   });
   const [isEditingExisting, setIsEditingExisting] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'focused'>('focused');
@@ -184,7 +184,7 @@ export function RubricCreationDemo() {
   const [lastUpdatedQuestionId, setLastUpdatedQuestionId] = useState<string | null>(null);
   
   // Judge type selection
-  const [judgeType, setJudgeType] = useState<JudgeType>('likert');
+  const [judgeType, setJudgeType] = useState<JudgeType>(JudgeType.LIKERT);
   const [binaryLabels, setBinaryLabels] = useState<Record<string, string>>({ pass: 'Pass', fail: 'Fail' });
   
   // Fetch data
@@ -301,7 +301,7 @@ export function RubricCreationDemo() {
           question: combinedQuestionText,
           created_by: 'facilitator',
           judge_type: judgeType,
-          binary_labels: judgeType === 'binary' ? binaryLabels : undefined,
+          binary_labels: judgeType === JudgeType.BINARY ? binaryLabels : undefined,
           rating_scale: 5
         };
         
@@ -317,7 +317,7 @@ export function RubricCreationDemo() {
         setNewQuestion({
           title: '',
           description: '',
-          judgeType: 'likert'
+          judgeType: JudgeType.LIKERT
         });
         setIsAddingQuestion(false);
         setIsEditingExisting(false);
@@ -681,7 +681,7 @@ export function RubricCreationDemo() {
             </div>
             
             {/* Binary label customization - shown if any questions are binary */}
-            {questions.some(q => q.judgeType === 'binary') && (
+            {questions.some(q => q.judgeType === JudgeType.BINARY) && (
               <Card className="mb-6">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base">Binary Label Settings</CardTitle>
@@ -774,23 +774,23 @@ export function RubricCreationDemo() {
                         </Label>
                         <div className="flex flex-col gap-1">
                           <Badge 
-                            variant={question.judgeType === 'likert' ? 'default' : 'outline'}
+                            variant={question.judgeType === JudgeType.LIKERT ? 'default' : 'outline'}
                             className="cursor-pointer justify-center py-1.5"
-                            onClick={() => updateQuestion(question.id, { judgeType: 'likert' })}
+                            onClick={() => updateQuestion(question.id, { judgeType: JudgeType.LIKERT })}
                           >
                             Likert Scale
                           </Badge>
                           <Badge 
-                            variant={question.judgeType === 'binary' ? 'default' : 'outline'}
+                            variant={question.judgeType === JudgeType.BINARY ? 'default' : 'outline'}
                             className="cursor-pointer justify-center py-1.5"
-                            onClick={() => updateQuestion(question.id, { judgeType: 'binary' })}
+                            onClick={() => updateQuestion(question.id, { judgeType: JudgeType.BINARY })}
                           >
                             Binary
                           </Badge>
                           <Badge 
-                            variant={question.judgeType === 'freeform' ? 'default' : 'outline'}
+                            variant={question.judgeType === JudgeType.FREEFORM ? 'default' : 'outline'}
                             className="cursor-pointer justify-center py-1.5"
-                            onClick={() => updateQuestion(question.id, { judgeType: 'freeform' })}
+                            onClick={() => updateQuestion(question.id, { judgeType: JudgeType.FREEFORM })}
                           >
                             Free-form
                           </Badge>
@@ -800,7 +800,7 @@ export function RubricCreationDemo() {
 
                     {/* Scale/Response Preview - varies by question's judge type */}
                     <div className="bg-white border border-green-200 rounded-lg p-4">
-                      {question.judgeType === 'likert' && (
+                      {question.judgeType === JudgeType.LIKERT && (
                         <>
                           <div className="flex items-center justify-between mb-3">
                             <div className="text-sm font-medium text-gray-700">Likert Scale Preview</div>
@@ -832,7 +832,7 @@ export function RubricCreationDemo() {
                         </>
                       )}
                       
-                      {question.judgeType === 'binary' && (
+                      {question.judgeType === JudgeType.BINARY && (
                         <>
                           <div className="flex items-center justify-between mb-3">
                             <div className="text-sm font-medium text-gray-700">Binary Choice Preview</div>
@@ -857,7 +857,7 @@ export function RubricCreationDemo() {
                         </>
                       )}
                       
-                      {question.judgeType === 'freeform' && (
+                      {question.judgeType === JudgeType.FREEFORM && (
                         <>
                           <div className="flex items-center justify-between mb-3">
                             <div className="text-sm font-medium text-gray-700">Free-form Feedback Preview</div>
@@ -952,23 +952,23 @@ export function RubricCreationDemo() {
                       </Label>
                       <div className="flex flex-col gap-1">
                         <Badge 
-                          variant={newQuestion.judgeType === 'likert' ? 'default' : 'outline'}
-                          className={`cursor-pointer justify-center py-1.5 ${newQuestion.judgeType !== 'likert' ? 'bg-white' : ''}`}
-                          onClick={() => setNewQuestion({ ...newQuestion, judgeType: 'likert' })}
+                          variant={newQuestion.judgeType === JudgeType.LIKERT ? 'default' : 'outline'}
+                          className={`cursor-pointer justify-center py-1.5 ${newQuestion.judgeType !== JudgeType.LIKERT ? 'bg-white' : ''}`}
+                          onClick={() => setNewQuestion({ ...newQuestion, judgeType: JudgeType.LIKERT })}
                         >
                           Likert Scale
                         </Badge>
                         <Badge 
-                          variant={newQuestion.judgeType === 'binary' ? 'default' : 'outline'}
-                          className={`cursor-pointer justify-center py-1.5 ${newQuestion.judgeType !== 'binary' ? 'bg-white' : ''}`}
-                          onClick={() => setNewQuestion({ ...newQuestion, judgeType: 'binary' })}
+                          variant={newQuestion.judgeType === JudgeType.BINARY ? 'default' : 'outline'}
+                          className={`cursor-pointer justify-center py-1.5 ${newQuestion.judgeType !== JudgeType.BINARY ? 'bg-white' : ''}`}
+                          onClick={() => setNewQuestion({ ...newQuestion, judgeType: JudgeType.BINARY })}
                         >
                           Binary
                         </Badge>
                         <Badge 
-                          variant={newQuestion.judgeType === 'freeform' ? 'default' : 'outline'}
-                          className={`cursor-pointer justify-center py-1.5 ${newQuestion.judgeType !== 'freeform' ? 'bg-white' : ''}`}
-                          onClick={() => setNewQuestion({ ...newQuestion, judgeType: 'freeform' })}
+                          variant={newQuestion.judgeType === JudgeType.FREEFORM ? 'default' : 'outline'}
+                          className={`cursor-pointer justify-center py-1.5 ${newQuestion.judgeType !== JudgeType.FREEFORM ? 'bg-white' : ''}`}
+                          onClick={() => setNewQuestion({ ...newQuestion, judgeType: JudgeType.FREEFORM })}
                         >
                           Free-form
                         </Badge>
@@ -978,7 +978,7 @@ export function RubricCreationDemo() {
                   
                   {/* Preview based on selected judge type */}
                   <div className="bg-white border border-blue-200 rounded-lg p-4">
-                    {newQuestion.judgeType === 'likert' && (
+                    {newQuestion.judgeType === JudgeType.LIKERT && (
                       <>
                         <div className="text-sm font-medium text-gray-700 mb-3">Likert Scale Preview:</div>
                         <div className="grid grid-cols-5 gap-4">
@@ -1005,7 +1005,7 @@ export function RubricCreationDemo() {
                       </>
                     )}
                     
-                    {newQuestion.judgeType === 'binary' && (
+                    {newQuestion.judgeType === JudgeType.BINARY && (
                       <>
                         <div className="text-sm font-medium text-gray-700 mb-3">Binary Choice Preview:</div>
                         <div className="flex justify-center gap-8">
@@ -1025,7 +1025,7 @@ export function RubricCreationDemo() {
                       </>
                     )}
                     
-                    {newQuestion.judgeType === 'freeform' && (
+                    {newQuestion.judgeType === JudgeType.FREEFORM && (
                       <>
                         <div className="text-sm font-medium text-gray-700 mb-3">Free-form Response Preview:</div>
                         <div className="border-2 border-dashed border-purple-200 rounded-lg p-4 bg-purple-50/30">
@@ -1066,19 +1066,19 @@ export function RubricCreationDemo() {
                 <p className="text-sm text-green-700">
                   {questions.length} criterion{questions.length !== 1 ? 's' : ''} created:
                   {' '}
-                  {questions.filter(q => q.judgeType === 'likert').length > 0 && (
+                  {questions.filter(q => q.judgeType === JudgeType.LIKERT).length > 0 && (
                     <Badge variant="outline" className="mr-1 bg-green-100">
-                      {questions.filter(q => q.judgeType === 'likert').length} Likert
+                      {questions.filter(q => q.judgeType === JudgeType.LIKERT).length} Likert
                     </Badge>
                   )}
-                  {questions.filter(q => q.judgeType === 'binary').length > 0 && (
+                  {questions.filter(q => q.judgeType === JudgeType.BINARY).length > 0 && (
                     <Badge variant="outline" className="mr-1 bg-blue-100">
-                      {questions.filter(q => q.judgeType === 'binary').length} Binary
+                      {questions.filter(q => q.judgeType === JudgeType.BINARY).length} Binary
                     </Badge>
                   )}
-                  {questions.filter(q => q.judgeType === 'freeform').length > 0 && (
+                  {questions.filter(q => q.judgeType === JudgeType.FREEFORM).length > 0 && (
                     <Badge variant="outline" className="mr-1 bg-purple-100">
-                      {questions.filter(q => q.judgeType === 'freeform').length} Free-form
+                      {questions.filter(q => q.judgeType === JudgeType.FREEFORM).length} Free-form
                     </Badge>
                   )}
                 </p>

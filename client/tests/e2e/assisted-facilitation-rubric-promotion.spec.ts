@@ -3,451 +3,512 @@
  *
  * Tests the facilitation workflow for promoting findings to rubric candidates
  * and managing the draft rubric staging area.
+ *
+ * These tests verify UI interactions and state changes rather than just API responses.
  */
 
 import { test, expect } from '@playwright/test';
 import { TestScenario } from '../lib/scenario-builder';
+import { WorkshopPhase } from '../lib/types';
+import * as actions from '../lib/actions';
+
+const VALID_CATEGORIES = actions.DISCOVERY_CATEGORIES;
 
 test.describe('Assisted Facilitation v2 - Draft Rubric Promotion', {
   tag: ['@spec:ASSISTED_FACILITATION_SPEC'],
 }, () => {
-  test('facilitator can promote individual findings to draft rubric', {
+  test('facilitator can promote individual findings via the UI promote button', {
     tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings can be promoted to draft rubric staging area'],
   }, async ({
     browser,
   }) => {
     // Setup: Create workshop with findings ready for promotion
     const scenario = await TestScenario.create(browser)
-      .withWorkshop({ name: 'Finding Promotion Workflow' })
+      .withWorkshop({ name: 'UI Finding Promotion Workflow' })
       .withFacilitator()
       .withParticipants(1)
       .withTraces(2)
-      .withDiscoveryFinding({
-        insight: 'Excellent error handling with descriptive messages.',
-        traceIndex: 0,
-      })
-      .withDiscoveryFinding({
-        insight: 'Clear variable naming and code organization.',
-        traceIndex: 0,
-      })
-      .withDiscoveryFinding({
-        insight: 'Missing null checks for input validation.',
-        traceIndex: 1,
-      })
-      .inPhase('discovery')
+      .inPhase(WorkshopPhase.DISCOVERY)
       .withRealApi()
       .build();
 
-    // Facilitator logs in
+    const participant = scenario.users.participant[0];
+
+    // Facilitator logs in and starts discovery
     await scenario.loginAs(scenario.facilitator);
+    await scenario.beginDiscovery();
 
-    // Get findings (at least 1 from setup - scenario may not create all findings)
-    const findings = await scenario.api.getFindings();
-    expect(findings.length).toBeGreaterThanOrEqual(1);
+    // Submit findings via v2 API
+    const traceId = scenario.traces[0].id;
+    await scenario.page.request.post(
+      `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings-v2`,
+      {
+        data: {
+          trace_id: traceId,
+          user_id: participant.id,
+          text: 'Excellent error handling with descriptive messages.',
+        },
+      }
+    );
 
-    // Promote first finding
-    if (findings.length > 0) {
-      const response = await scenario.page.request.post(
-        `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings/${findings[0].id}/promote`,
-        {
-          data: {
-            finding_id: findings[0].id,
-            promoter_id: scenario.facilitator.id,
-          },
+    await scenario.page.request.post(
+      `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings-v2`,
+      {
+        data: {
+          trace_id: traceId,
+          user_id: participant.id,
+          text: 'Clear variable naming and code organization.',
+        },
+      }
+    );
+
+    // Navigate to the facilitator dashboard
+    await actions.goToFacilitatorDashboard(scenario.page, scenario.workshop.id, scenario.workshop.name);
+
+    // Go to Trace Coverage and expand the trace
+    await actions.goToTraceCoverage(scenario.page);
+    await actions.expandTraceRow(scenario.page, traceId);
+    await actions.waitForTraceDiscoveryPanel(scenario.page);
+
+    // Find a category with findings and promote one via UI button
+    let promoted = false;
+    for (const category of VALID_CATEGORIES) {
+      const { count } = await actions.getCategoryCount(scenario.page, category);
+      if (count > 0) {
+        // Check if finding is not already promoted
+        const isAlreadyPromoted = await actions.isFindingPromoted(scenario.page, category, 0);
+        if (!isAlreadyPromoted) {
+          // Click the Promote button
+          await actions.promoteFindingInUI(scenario.page, category, 0);
+          promoted = true;
+
+          // SPEC REQUIREMENT: After promotion, the button should show "Promoted"
+          const isNowPromoted = await actions.isFindingPromoted(scenario.page, category, 0);
+          expect(isNowPromoted).toBe(true);
+          break;
         }
-      );
-
-      // Endpoint may return 404 if not implemented
-      expect([200, 404, 501]).toContain(response.status());
+      }
     }
+
+    expect(promoted).toBe(true);
 
     await scenario.cleanup();
   });
 
-  test('draft rubric shows promoted findings with attribution', {
+  test('promote button changes to "Promoted" state after clicking', {
     tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings can be promoted to draft rubric staging area'],
   }, async ({
     browser,
   }) => {
     // Setup: Create workshop with findings
     const scenario = await TestScenario.create(browser)
-      .withWorkshop({ name: 'Draft Rubric Attribution Test' })
+      .withWorkshop({ name: 'Promote Button State Test' })
       .withFacilitator()
       .withParticipants(2)
       .withTraces(2)
-      .withDiscoveryFinding({
-        insight: 'Response demonstrates solid understanding of the problem.',
-        traceIndex: 0,
-      })
-      .withDiscoveryFinding({
-        insight: 'Thorough exploration of edge cases.',
-        traceIndex: 1,
-      })
-      .inPhase('discovery')
+      .inPhase(WorkshopPhase.DISCOVERY)
       .withRealApi()
       .build();
 
-    // Facilitator logs in
+    const participants = scenario.users.participant;
+
+    // Facilitator logs in and starts discovery
     await scenario.loginAs(scenario.facilitator);
+    await scenario.beginDiscovery();
 
-    // Query draft rubric
-    const response = await scenario.page.request.get(
-      `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/draft-rubric`
-    );
-
-    if (response.ok()) {
-      const rubricItems = await response.json();
-      expect(Array.isArray(rubricItems)).toBe(true);
-
-      // Each item should have attribution
-      if (rubricItems.length > 0) {
-        const item = rubricItems[0];
-        expect(item).toHaveProperty('text');
-        expect(item).toHaveProperty('promoted_by');
-        expect(item).toHaveProperty('source_trace_id');
-      }
-    } else {
-      // Endpoint may not exist yet
-      expect([404, 501]).toContain(response.status());
-    }
-
-    await scenario.cleanup();
-  });
-
-  test('facilitator can remove findings from draft rubric', {
-    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings can be promoted to draft rubric staging area'],
-  }, async ({
-    browser,
-  }) => {
-    // Setup: Create workshop with findings to be managed
-    const scenario = await TestScenario.create(browser)
-      .withWorkshop({ name: 'Draft Rubric Management Test' })
-      .withFacilitator()
-      .withParticipants(1)
-      .withTraces(2)
-      .withDiscoveryFinding({
-        insight: 'Strong implementation with clear intent.',
-        traceIndex: 0,
-      })
-      .withDiscoveryFinding({
-        insight: 'Could benefit from additional error handling.',
-        traceIndex: 1,
-      })
-      .inPhase('discovery')
-      .withRealApi()
-      .build();
-
-    // Facilitator logs in
-    await scenario.loginAs(scenario.facilitator);
-
-    // Get findings
-    const findings = await scenario.api.getFindings();
-    expect(findings.length).toBeGreaterThanOrEqual(2);
-
-    // Simulate promoting both findings
-    for (const finding of findings.slice(0, 2)) {
-      const promoteResponse = await scenario.page.request.post(
-        `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings/${finding.id}/promote`,
+    // Submit findings from multiple participants
+    const traceId = scenario.traces[0].id;
+    for (const participant of participants) {
+      await scenario.page.request.post(
+        `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings-v2`,
         {
           data: {
-            finding_id: finding.id,
-            promoter_id: scenario.facilitator.id,
+            trace_id: traceId,
+            user_id: participant.id,
+            text: `Response demonstrates solid understanding of the problem from ${participant.name}.`,
           },
         }
       );
-
-      expect([200, 404, 501]).toContain(promoteResponse.status());
     }
 
-    // Get draft rubric
-    const rubricResponse = await scenario.page.request.get(
-      `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/draft-rubric`
-    );
+    // Navigate to facilitator dashboard
+    await actions.goToFacilitatorDashboard(scenario.page, scenario.workshop.id, scenario.workshop.name);
+    await actions.goToTraceCoverage(scenario.page);
+    await actions.expandTraceRow(scenario.page, traceId);
+    await actions.waitForTraceDiscoveryPanel(scenario.page);
 
-    if (rubricResponse.ok()) {
-      const rubricItems = await rubricResponse.json();
+    // Find a category with findings
+    for (const category of VALID_CATEGORIES) {
+      const { count } = await actions.getCategoryCount(scenario.page, category);
+      if (count > 0) {
+        // Get the findings container
+        const findingsContainer = scenario.page.getByTestId(`category-${category}-findings`);
+        await expect(findingsContainer).toBeVisible();
 
-      // Facilitator could remove items via DELETE endpoint
-      if (rubricItems.length > 0) {
-        const itemToRemove = rubricItems[0];
-        const deleteResponse = await scenario.page.request.delete(
-          `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/draft-rubric/${itemToRemove.id}`
-        );
+        // Get the promote button
+        const promoteBtn = findingsContainer.getByTestId('promote-finding-btn').first();
+        await expect(promoteBtn).toBeVisible();
 
-        // May not have delete endpoint yet
-        expect([200, 404, 405, 501]).toContain(deleteResponse.status());
+        // Verify button starts with "Promote" text
+        await expect(promoteBtn).toHaveText('Promote');
+
+        // Click the button
+        await promoteBtn.click();
+
+        // Verify button now shows "Promoted" text
+        await expect(promoteBtn).toHaveText('Promoted', { timeout: 5000 });
+
+        // Verify button is now disabled
+        await expect(promoteBtn).toBeDisabled();
+
+        break;
       }
     }
 
     await scenario.cleanup();
   });
 
-  test('draft rubric staging area preserves finding metadata', {
-    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings can be promoted to draft rubric staging area'],
-  }, async ({
-    browser,
-  }) => {
-    // Setup: Create workshop with metadata-rich findings
-    const scenario = await TestScenario.create(browser)
-      .withWorkshop({ name: 'Rubric Metadata Preservation' })
-      .withFacilitator()
-      .withParticipants(1)
-      .withTraces(2)
-      .withDiscoveryFinding({
-        insight:
-          'Response appropriately validates all input parameters before processing.',
-        traceIndex: 0,
-      })
-      .inPhase('discovery')
-      .withRealApi()
-      .build();
-
-    // Facilitator logs in
-    await scenario.loginAs(scenario.facilitator);
-
-    // Get findings
-    const findings = await scenario.api.getFindings();
-    expect(findings.length).toBeGreaterThanOrEqual(1);
-
-    // Promote a finding
-    const finding = findings[0];
-    const promoteResponse = await scenario.page.request.post(
-      `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings/${finding.id}/promote`,
-      {
-        data: {
-          finding_id: finding.id,
-          promoter_id: scenario.facilitator.id,
-        },
-      }
-    );
-
-    if (promoteResponse.ok()) {
-      // Get draft rubric to verify metadata preserved
-      const rubricResponse = await scenario.page.request.get(
-        `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/draft-rubric`
-      );
-
-      if (rubricResponse.ok()) {
-        const rubricItems = await rubricResponse.json();
-        if (rubricItems.length > 0) {
-          const rubricItem = rubricItems[0];
-
-          // Verify original finding data is preserved
-          expect(rubricItem.text).toBeDefined();
-          expect(rubricItem.source_trace_id).toBeDefined();
-          expect(rubricItem.promoted_by).toBe(scenario.facilitator.id);
-          expect(rubricItem.promoted_at).toBeDefined();
-        }
-      }
-    }
-
-    await scenario.cleanup();
-  });
-
-  test('multiple facilitators can collaborate on draft rubric', {
-    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings can be promoted to draft rubric staging area'],
-  }, async ({
-    browser,
-  }) => {
-    // Setup: Create workshop with two facilitators (not typical, but test multi-user promotion)
-    const scenario = await TestScenario.create(browser)
-      .withWorkshop({ name: 'Collaborative Rubric Curation' })
-      .withFacilitator()
-      .withUser('facilitator')
-      .withParticipants(1)
-      .withTraces(3)
-      .withDiscoveryFinding({
-        insight: 'Clean separation of concerns.',
-        traceIndex: 0,
-      })
-      .withDiscoveryFinding({
-        insight: 'Robust error handling patterns.',
-        traceIndex: 1,
-      })
-      .withDiscoveryFinding({
-        insight: 'Good use of type hints and documentation.',
-        traceIndex: 2,
-      })
-      .inPhase('discovery')
-      .withRealApi()
-      .build();
-
-    // First facilitator logs in
-    const facilitator1 = scenario.facilitator;
-    await scenario.loginAs(facilitator1);
-
-    // Get findings (at least 1 from setup)
-    const findings = await scenario.api.getFindings();
-    expect(findings.length).toBeGreaterThanOrEqual(1);
-
-    // First facilitator promotes available findings (up to 2)
-    for (const finding of findings.slice(0, Math.min(2, findings.length))) {
-      const response = await scenario.page.request.post(
-        `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings/${finding.id}/promote`,
-        {
-          data: {
-            finding_id: finding.id,
-            promoter_id: facilitator1.id,
-          },
-        }
-      );
-
-      expect([200, 404, 501]).toContain(response.status());
-    }
-
-    // Second facilitator promotes third finding
-    const facilitator2 = scenario.users.facilitator?.[0] || facilitator1;
-    if (facilitator2 !== facilitator1) {
-      const secondFacilitatorPage = await scenario.newPageAs(facilitator2);
-      const lastFinding = findings[2];
-
-      const response = await secondFacilitatorPage.request.post(
-        `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings/${lastFinding.id}/promote`,
-        {
-          data: {
-            finding_id: lastFinding.id,
-            promoter_id: facilitator2.id,
-          },
-        }
-      );
-
-      expect([200, 404, 501]).toContain(response.status());
-    }
-
-    // Both facilitators can view draft rubric
-    const rubricResponse = await scenario.page.request.get(
-      `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/draft-rubric`
-    );
-
-    if (rubricResponse.ok()) {
-      const rubricItems = await rubricResponse.json();
-      // Should have promoted items from both facilitators
-      expect(Array.isArray(rubricItems)).toBe(true);
-    }
-
-    await scenario.cleanup();
-  });
-
-  test('draft rubric can be edited before finalizing into rubric', {
-    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings can be promoted to draft rubric staging area'],
-  }, async ({
-    browser,
-  }) => {
-    // Setup: Create workshop in rubric phase
-    const scenario = await TestScenario.create(browser)
-      .withWorkshop({ name: 'Draft Rubric Editing' })
-      .withFacilitator()
-      .withParticipants(1)
-      .withTraces(2)
-      .withDiscoveryFinding({
-        insight: 'Response demonstrates problem understanding.',
-        traceIndex: 0,
-      })
-      .withDiscoveryComplete()
-      .inPhase('rubric')
-      .withRealApi()
-      .build();
-
-    // Facilitator logs in
-    await scenario.loginAs(scenario.facilitator);
-
-    // Access draft rubric
-    const response = await scenario.page.request.get(
-      `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/draft-rubric`
-    );
-
-    if (response.ok()) {
-      const rubricItems = await response.json();
-
-      // Facilitator could edit items before finalizing
-      // This might involve PATCH or PUT endpoints for individual items
-      if (rubricItems.length > 0) {
-        const item = rubricItems[0];
-
-        // Try to update the item
-        const updateResponse = await scenario.page.request.put(
-          `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/draft-rubric/${item.id}`,
-          {
-            data: {
-              text: 'Updated: ' + item.text,
-            },
-          }
-        );
-
-        // May not have update endpoint yet
-        expect([200, 404, 405, 501]).toContain(updateResponse.status());
-      }
-    }
-
-    await scenario.cleanup();
-  });
-
-  test('draft rubric items track source trace and participant', {
+  test('findings show user attribution badges in the category sections', {
     tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings can be promoted to draft rubric staging area'],
   }, async ({
     browser,
   }) => {
     // Setup: Create workshop with multi-trace, multi-participant setup
     const scenario = await TestScenario.create(browser)
-      .withWorkshop({ name: 'Rubric Item Traceability' })
+      .withWorkshop({ name: 'Finding Attribution Test' })
       .withFacilitator()
       .withParticipants(2)
       .withTraces(3)
-      .withDiscoveryFinding({
-        insight: 'Well-thought-out approach to the problem.',
-        traceIndex: 0,
-      })
-      .withDiscoveryFinding({
-        insight: 'Comprehensive error handling implementation.',
-        traceIndex: 1,
-      })
-      .inPhase('discovery')
+      .inPhase(WorkshopPhase.DISCOVERY)
       .withRealApi()
       .build();
 
-    // Facilitator logs in
+    const participants = scenario.users.participant;
+
+    // Facilitator starts discovery
     await scenario.loginAs(scenario.facilitator);
+    await scenario.beginDiscovery();
 
-    // Get findings with source information
-    const findings = await scenario.api.getFindings();
-    expect(findings.length).toBeGreaterThanOrEqual(2);
-
-    // Verify findings have traceability info
-    for (const finding of findings) {
-      expect(finding).toHaveProperty('trace_id');
-      expect(finding).toHaveProperty('user_id');
-    }
-
-    // Promote a finding
-    if (findings.length > 0) {
-      const finding = findings[0];
-      const promoteResponse = await scenario.page.request.post(
-        `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings/${finding.id}/promote`,
+    // Submit findings from different participants
+    const traceId = scenario.traces[0].id;
+    for (let i = 0; i < participants.length; i++) {
+      await scenario.page.request.post(
+        `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings-v2`,
         {
           data: {
-            finding_id: finding.id,
-            promoter_id: scenario.facilitator.id,
+            trace_id: traceId,
+            user_id: participants[i].id,
+            text: `Finding ${i + 1}: Well-thought-out approach to the problem.`,
           },
         }
       );
+    }
 
-      if (promoteResponse.ok()) {
-        // Get draft rubric
-        const rubricResponse = await scenario.page.request.get(
-          `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/draft-rubric`
-        );
+    // Navigate to facilitator dashboard
+    await actions.goToFacilitatorDashboard(scenario.page, scenario.workshop.id, scenario.workshop.name);
+    await actions.goToTraceCoverage(scenario.page);
+    await actions.expandTraceRow(scenario.page, traceId);
+    await actions.waitForTraceDiscoveryPanel(scenario.page);
 
-        if (rubricResponse.ok()) {
-          const rubricItems = await rubricResponse.json();
+    // SPEC REQUIREMENT: Findings show user attribution
+    // Find a category with findings and verify user ID badges are displayed
+    for (const category of VALID_CATEGORIES) {
+      const { count } = await actions.getCategoryCount(scenario.page, category);
+      if (count > 0) {
+        const findingsContainer = scenario.page.getByTestId(`category-${category}-findings`);
+        await expect(findingsContainer).toBeVisible();
 
-          // Verify traceability is preserved in rubric items
-          if (rubricItems.length > 0) {
-            const rubricItem = rubricItems[0];
-            expect(rubricItem.source_trace_id).toBe(finding.trace_id);
-          }
+        // Verify user ID badges are present
+        const userBadges = findingsContainer.getByTestId('finding-user-id');
+        const badgeCount = await userBadges.count();
+        expect(badgeCount).toBeGreaterThan(0);
+
+        // Verify at least one badge contains a user ID substring
+        const firstBadgeText = await userBadges.first().textContent();
+        expect(firstBadgeText?.length).toBeGreaterThan(0);
+
+        break;
+      }
+    }
+
+    await scenario.cleanup();
+  });
+
+  test('multiple findings can be promoted from different categories', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings can be promoted to draft rubric staging area'],
+  }, async ({
+    browser,
+  }) => {
+    // Setup: Create workshop with two facilitators (not typical, but test multi-user promotion)
+    const scenario = await TestScenario.create(browser)
+      .withWorkshop({ name: 'Multi-Finding Promotion Test' })
+      .withFacilitator()
+      .withParticipants(1)
+      .withTraces(3)
+      .inPhase(WorkshopPhase.DISCOVERY)
+      .withRealApi()
+      .build();
+
+    const participant = scenario.users.participant[0];
+
+    // Facilitator logs in and starts discovery
+    await scenario.loginAs(scenario.facilitator);
+    await scenario.beginDiscovery();
+
+    // Submit findings with different category targets
+    const traceId = scenario.traces[0].id;
+
+    // Themes-focused finding
+    await scenario.page.request.post(
+      `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings-v2`,
+      {
+        data: {
+          trace_id: traceId,
+          user_id: participant.id,
+          text: 'Clean separation of concerns and good architecture.',
+        },
+      }
+    );
+
+    // Missing info finding
+    await scenario.page.request.post(
+      `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings-v2`,
+      {
+        data: {
+          trace_id: traceId,
+          user_id: participant.id,
+          text: 'Missing documentation about the API contract.',
+        },
+      }
+    );
+
+    // Edge case finding
+    await scenario.page.request.post(
+      `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings-v2`,
+      {
+        data: {
+          trace_id: traceId,
+          user_id: participant.id,
+          text: 'Edge case handling for unicode characters is incomplete.',
+        },
+      }
+    );
+
+    // Navigate to facilitator dashboard
+    await actions.goToFacilitatorDashboard(scenario.page, scenario.workshop.id, scenario.workshop.name);
+    await actions.goToTraceCoverage(scenario.page);
+    await actions.expandTraceRow(scenario.page, traceId);
+    await actions.waitForTraceDiscoveryPanel(scenario.page);
+
+    // Promote findings from different categories
+    let promotedCount = 0;
+    for (const category of VALID_CATEGORIES) {
+      const { count } = await actions.getCategoryCount(scenario.page, category);
+      if (count > 0) {
+        const isAlreadyPromoted = await actions.isFindingPromoted(scenario.page, category, 0);
+        if (!isAlreadyPromoted) {
+          await actions.promoteFindingInUI(scenario.page, category, 0);
+          promotedCount++;
         }
       }
     }
+
+    // Should have promoted at least 2 findings
+    expect(promotedCount).toBeGreaterThanOrEqual(2);
+
+    await scenario.cleanup();
+  });
+
+  test('category sections show correct finding counts in badges', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings can be promoted to draft rubric staging area'],
+  }, async ({
+    browser,
+  }) => {
+    // Setup: Create workshop in rubric phase
+    const scenario = await TestScenario.create(browser)
+      .withWorkshop({ name: 'Finding Count Badge Test' })
+      .withFacilitator()
+      .withParticipants(1)
+      .withTraces(2)
+      .inPhase(WorkshopPhase.DISCOVERY)
+      .withRealApi()
+      .build();
+
+    const participant = scenario.users.participant[0];
+
+    // Facilitator starts discovery
+    await scenario.loginAs(scenario.facilitator);
+    await scenario.beginDiscovery();
+
+    const traceId = scenario.traces[0].id;
+
+    // Submit 3 findings
+    for (let i = 0; i < 3; i++) {
+      await scenario.page.request.post(
+        `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings-v2`,
+        {
+          data: {
+            trace_id: traceId,
+            user_id: participant.id,
+            text: `Finding ${i + 1}: Response demonstrates problem understanding.`,
+          },
+        }
+      );
+    }
+
+    // Navigate to facilitator dashboard
+    await actions.goToFacilitatorDashboard(scenario.page, scenario.workshop.id, scenario.workshop.name);
+    await actions.goToTraceCoverage(scenario.page);
+    await actions.expandTraceRow(scenario.page, traceId);
+    await actions.waitForTraceDiscoveryPanel(scenario.page);
+
+    // Verify total findings across categories matches what we submitted
+    let totalCount = 0;
+    for (const category of VALID_CATEGORIES) {
+      const { count, threshold } = await actions.getCategoryCount(scenario.page, category);
+      totalCount += count;
+
+      // Verify threshold is a positive number
+      expect(threshold).toBeGreaterThan(0);
+    }
+
+    // All 3 findings should be distributed across categories
+    expect(totalCount).toBe(3);
+
+    await scenario.cleanup();
+  });
+
+  test('promoted findings remain marked after page navigation', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings can be promoted to draft rubric staging area'],
+  }, async ({
+    browser,
+  }) => {
+    // Setup: Create workshop
+    const scenario = await TestScenario.create(browser)
+      .withWorkshop({ name: 'Promotion Persistence Test' })
+      .withFacilitator()
+      .withParticipants(1)
+      .withTraces(2)
+      .inPhase(WorkshopPhase.DISCOVERY)
+      .withRealApi()
+      .build();
+
+    const participant = scenario.users.participant[0];
+
+    // Facilitator starts discovery
+    await scenario.loginAs(scenario.facilitator);
+    await scenario.beginDiscovery();
+
+    // Submit a finding
+    const traceId = scenario.traces[0].id;
+    await scenario.page.request.post(
+      `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings-v2`,
+      {
+        data: {
+          trace_id: traceId,
+          user_id: participant.id,
+          text: 'Important finding about code quality that should be promoted.',
+        },
+      }
+    );
+
+    // Navigate to facilitator dashboard
+    await actions.goToFacilitatorDashboard(scenario.page, scenario.workshop.id, scenario.workshop.name);
+    await actions.goToTraceCoverage(scenario.page);
+    await actions.expandTraceRow(scenario.page, traceId);
+    await actions.waitForTraceDiscoveryPanel(scenario.page);
+
+    // Find and promote a finding
+    let promotedCategory: (typeof VALID_CATEGORIES)[number] | null = null;
+    for (const category of VALID_CATEGORIES) {
+      const { count } = await actions.getCategoryCount(scenario.page, category);
+      if (count > 0) {
+        await actions.promoteFindingInUI(scenario.page, category, 0);
+        promotedCategory = category;
+        break;
+      }
+    }
+
+    expect(promotedCategory).not.toBeNull();
+
+    // Collapse the trace panel
+    await scenario.page.getByTestId(`trace-row-${traceId}`).click();
+    await scenario.page.waitForTimeout(500);
+
+    // Re-expand the trace
+    await actions.expandTraceRow(scenario.page, traceId);
+    await actions.waitForTraceDiscoveryPanel(scenario.page);
+
+    // Verify the finding is still marked as promoted
+    const isStillPromoted = await actions.isFindingPromoted(scenario.page, promotedCategory!, 0);
+    expect(isStillPromoted).toBe(true);
+
+    await scenario.cleanup();
+  });
+
+  test('category progress bars update after new findings are submitted', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings can be promoted to draft rubric staging area'],
+  }, async ({
+    browser,
+  }) => {
+    // Setup: Create workshop
+    const scenario = await TestScenario.create(browser)
+      .withWorkshop({ name: 'Progress Bar Update Test' })
+      .withFacilitator()
+      .withParticipants(1)
+      .withTraces(2)
+      .inPhase(WorkshopPhase.DISCOVERY)
+      .withRealApi()
+      .build();
+
+    const participant = scenario.users.participant[0];
+
+    // Facilitator starts discovery
+    await scenario.loginAs(scenario.facilitator);
+    await scenario.beginDiscovery();
+
+    // Navigate to facilitator dashboard first to get initial state
+    await actions.goToFacilitatorDashboard(scenario.page, scenario.workshop.id, scenario.workshop.name);
+    await actions.goToTraceCoverage(scenario.page);
+
+    const traceId = scenario.traces[0].id;
+    await actions.expandTraceRow(scenario.page, traceId);
+    await actions.waitForTraceDiscoveryPanel(scenario.page);
+
+    // Get initial total count
+    let initialTotal = 0;
+    for (const category of VALID_CATEGORIES) {
+      const { count } = await actions.getCategoryCount(scenario.page, category);
+      initialTotal += count;
+    }
+
+    // Submit a new finding
+    await scenario.page.request.post(
+      `http://127.0.0.1:8000/workshops/${scenario.workshop.id}/findings-v2`,
+      {
+        data: {
+          trace_id: traceId,
+          user_id: participant.id,
+          text: 'New finding: API response time is excellent.',
+        },
+      }
+    );
+
+    // Collapse and re-expand to refresh the panel
+    await scenario.page.getByTestId(`trace-row-${traceId}`).click();
+    await scenario.page.waitForTimeout(500);
+    await actions.expandTraceRow(scenario.page, traceId);
+    await actions.waitForTraceDiscoveryPanel(scenario.page);
+
+    // Get new total count
+    let newTotal = 0;
+    for (const category of VALID_CATEGORIES) {
+      const { count } = await actions.getCategoryCount(scenario.page, category);
+      newTotal += count;
+    }
+
+    // Total should have increased by 1
+    expect(newTotal).toBe(initialTotal + 1);
 
     await scenario.cleanup();
   });

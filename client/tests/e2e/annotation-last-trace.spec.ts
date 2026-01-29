@@ -9,6 +9,7 @@
 
 import { test, expect } from '@playwright/test';
 import { TestScenario } from '../lib';
+import { WorkshopPhase } from '../lib/types';
 import { submitAnnotationViaApi, getAnnotations } from '../lib/actions/annotation';
 
 const API_URL = 'http://127.0.0.1:8000';
@@ -28,7 +29,7 @@ test.describe('Annotation - Last Trace Bug', {
       .withSMEs(2)
       .withTraces(10)
       .withRubric({ question: 'How helpful is this response?' })
-      .inPhase('annotation')
+      .inPhase(WorkshopPhase.ANNOTATION)
       .withRealApi()
       .build();
 
@@ -85,7 +86,7 @@ test.describe('Annotation - Last Trace Bug', {
       .withSMEs(1)
       .withTraces(10)
       .withRubric({ question: 'How helpful is this response?' })
-      .inPhase('annotation')
+      .inPhase(WorkshopPhase.ANNOTATION)
       .withRealApi()
       .build();
 
@@ -149,7 +150,7 @@ test.describe('Annotation - Last Trace Bug', {
       .withSMEs(3)
       .withTraces(10)
       .withRubric({ question: 'How helpful is this response?' })
-      .inPhase('annotation')
+      .inPhase(WorkshopPhase.ANNOTATION)
       .withRealApi()
       .build();
 
@@ -207,7 +208,7 @@ test.describe('Annotation - Last Trace Bug', {
       .withSMEs(1)
       .withTraces(10)
       .withRubric({ question: 'How helpful is this response?' })
-      .inPhase('annotation')
+      .inPhase(WorkshopPhase.ANNOTATION)
       .withRealApi()
       .build();
 

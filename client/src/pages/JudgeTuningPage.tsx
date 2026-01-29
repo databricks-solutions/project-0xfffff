@@ -34,6 +34,7 @@ import { Pagination } from '@/components/Pagination';
 import { TraceDataViewer } from '@/components/TraceDataViewer';
 import { toast } from 'sonner';
 
+import { JudgeType } from '@/client';
 import type { 
   JudgePrompt, 
   JudgePromptCreate, 
@@ -41,7 +42,6 @@ import type {
   JudgePerformanceMetrics,
   JudgeEvaluationResult,
   JudgeExportConfig,
-  JudgeType,
   Rubric,
   Annotation,
   Trace
@@ -79,7 +79,7 @@ export function JudgeTuningPage() {
   const selectedQuestion = parsedRubricQuestions[selectedQuestionIndex] || parsedRubricQuestions[0];
   
   // Judge type - derived from the selected rubric question
-  const judgeType: JudgeType = selectedQuestion?.judgeType || (rubric?.judge_type || 'likert');
+  const judgeType: JudgeType = selectedQuestion?.judgeType || (rubric?.judge_type || JudgeType.LIKERT);
   const binaryLabels: Record<string, string> = rubric?.binary_labels || { pass: 'Pass', fail: 'Fail' };
   
   // Track if current prompt differs from saved version
@@ -224,7 +224,7 @@ export function JudgeTuningPage() {
     
     // Only reset if question actually changed
     if (prevQuestionIndexRef.current !== selectedQuestionIndex && selectedQuestion) {
-      const questionJudgeType = selectedQuestion.judgeType || 'likert';
+      const questionJudgeType = selectedQuestion.judgeType || JudgeType.LIKERT;
       const template = defaultPromptTemplates[questionJudgeType];
       
       let customizedTemplate = template;
@@ -408,10 +408,10 @@ export function JudgeTuningPage() {
         // If rubric changed (e.g., from Likert to Binary), update prompt template
         const parsedQuestions = parseRubricQuestions(rubricData?.question || '');
         const selectedQ = parsedQuestions[selectedQuestionIndex] || parsedQuestions[0];
-        const currentRubricJudgeType = selectedQ?.judgeType || (rubricData?.judge_type || 'likert');
+        const currentRubricJudgeType = selectedQ?.judgeType || (rubricData?.judge_type || JudgeType.LIKERT);
         
         // Check both the metadata judge_type AND the actual prompt content
-        const promptMetadataJudgeType = latestPrompt.judge_type || 'likert';
+        const promptMetadataJudgeType = latestPrompt.judge_type || JudgeType.LIKERT;
         const promptContentJudgeType = detectPromptJudgeType(latestPrompt.prompt_text);
         
         // If rubric judge type doesn't match EITHER the metadata OR the actual content, regenerate
@@ -474,15 +474,15 @@ export function JudgeTuningPage() {
   // Helper to detect judge type from prompt content
   const detectPromptJudgeType = (promptText: string): JudgeType => {
     if (promptText.includes('scale of 0-1') || promptText.includes('0 or 1') || promptText.includes('(PASS)') || promptText.includes('(FAIL)')) {
-      return 'binary';
+      return JudgeType.BINARY;
     }
     if (promptText.includes('scale of 1-5') || promptText.includes('1 = Poor') || promptText.includes('5 = Excellent')) {
-      return 'likert';
+      return JudgeType.LIKERT;
     }
     if (promptText.includes('qualitative feedback') || promptText.includes('detailed feedback') || promptText.includes('Key observations')) {
-      return 'freeform';
+      return JudgeType.FREEFORM;
     }
-    return 'likert'; // default
+    return JudgeType.LIKERT; // default
   };
 
   const createDefaultPrompt = (rubricQuestion: string, questionIndex: number = 0) => {
@@ -492,10 +492,10 @@ export function JudgeTuningPage() {
     const questionText = targetQuestion 
       ? `${targetQuestion.title}: ${targetQuestion.description}` 
       : rubricQuestion;
-    const judgeType = targetQuestion?.judgeType || 'likert';
+    const judgeType = targetQuestion?.judgeType || JudgeType.LIKERT;
     
     // Return different prompt templates based on judge type
-    if (judgeType === 'binary') {
+    if (judgeType === JudgeType.BINARY) {
       return `You are an expert evaluator. Please evaluate the following response based on this criteria: "${questionText}"
 
 Rate the response on a scale of 0-1, where:
@@ -515,7 +515,7 @@ Example format:
 The response meets the criteria because...`;
     }
     
-    if (judgeType === 'freeform') {
+    if (judgeType === JudgeType.FREEFORM) {
       return `You are an expert evaluator. Please evaluate the following response based on this criteria: "${questionText}"
 
 Provide detailed qualitative feedback on how well the response addresses this criteria.
@@ -760,7 +760,7 @@ The response partially meets the criteria because...`;
     const defaultPrompt = createDefaultPrompt(rubric.question, selectedQuestionIndex);
     setCurrentPrompt(defaultPrompt);
     setIsModified(true);
-    toast.success(`Prompt reset to ${judgeType === 'likert' ? 'Likert (1-5)' : judgeType === 'binary' ? 'Binary (0-1)' : 'Free-form'} template for "${selectedQuestion?.title}"`);
+    toast.success(`Prompt reset to ${judgeType === JudgeType.LIKERT ? 'Likert (1-5)' : judgeType === JudgeType.BINARY ? 'Binary (0-1)' : 'Free-form'} template for "${selectedQuestion?.title}"`);
   };
 
   const handleEvaluatePrompt = async () => {
@@ -1229,9 +1229,9 @@ The response partially meets the criteria because...`;
                   <div className="flex items-center gap-2">
                     <span className="font-medium">{index + 1}. {question.title}</span>
                     <Badge variant="outline" className="text-xs">
-                      {question.judgeType === 'likert' && 'Likert'}
-                      {question.judgeType === 'binary' && 'Binary'}
-                      {question.judgeType === 'freeform' && 'Free-form'}
+                      {question.judgeType === JudgeType.LIKERT && 'Likert'}
+                      {question.judgeType === JudgeType.BINARY && 'Binary'}
+                      {question.judgeType === JudgeType.FREEFORM && 'Free-form'}
                     </Badge>
                   </div>
                 </SelectItem>
@@ -1600,7 +1600,7 @@ The response partially meets the criteria because...`;
                             
                             // Calculate aggregated rating for the selected question
                             if (allRatings.length > 0) {
-                              if (judgeType === 'binary') {
+                              if (judgeType === JudgeType.BINARY) {
                                 // For binary: majority vote (0 or 1)
                                 const numPasses = allRatings.filter(r => r === 1).length;
                                 humanRating = numPasses > allRatings.length / 2 ? 1 : 0;

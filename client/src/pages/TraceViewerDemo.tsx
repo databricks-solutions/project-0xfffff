@@ -20,7 +20,7 @@ import { toast } from 'sonner';
 import { useUser, useRoleCheck } from '@/context/UserContext';
 import { useTraces, useUserFindings, useSubmitFinding, refetchAllWorkshopQueries } from '@/hooks/useWorkshopApi';
 import { useQueryClient } from '@tanstack/react-query';
-import { WorkshopsService } from '@/client';
+import { DiscoveryService } from '@/client';
 import type { Trace } from '@/client';
 
 // Convert API trace to TraceData format
@@ -646,7 +646,7 @@ export function TraceViewerDemo() {
             <Button 
               onClick={async () => {
                 try {
-                  await WorkshopsService.beginDiscoveryPhaseWorkshopsWorkshopIdBeginDiscoveryPost(workshopId!);
+                  await DiscoveryService.beginDiscoveryPhaseWorkshopsWorkshopIdBeginDiscoveryPost(workshopId!);
                   // Refresh the page to show updated phase
                   window.location.reload();
                 } catch (error) {

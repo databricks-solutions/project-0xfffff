@@ -6,6 +6,7 @@
 
 import { expect, type Page } from '@playwright/test';
 import type { User } from '../types';
+import { UserRole } from '../types';
 import { DEFAULT_FACILITATOR } from '../data';
 
 /**
@@ -100,7 +101,7 @@ export async function loginAs(page: Page, user: User): Promise<void> {
   await page.locator('#email').fill(user.email);
 
   // Facilitators need password
-  if (user.role === 'facilitator') {
+  if (user.role === UserRole.FACILITATOR) {
     const passwordField = page.locator('#password');
     if (await passwordField.isVisible().catch(() => false)) {
       // Use default facilitator password if this is the default facilitator
@@ -157,7 +158,7 @@ export async function loginAs(page: Page, user: User): Promise<void> {
 
   // For facilitators with a workshop_id, we need to navigate into the workshop
   // After login, facilitators land on the "Welcome, Facilitator!" page showing workshop cards
-  if (user.role === 'facilitator' && user.workshop_id) {
+  if (user.role === UserRole.FACILITATOR && user.workshop_id) {
     // Check if we're on the workshop selection page
     const welcomeFacilitator = page.getByText('Welcome, Facilitator!');
     if (await welcomeFacilitator.isVisible({ timeout: 3000 }).catch(() => false)) {

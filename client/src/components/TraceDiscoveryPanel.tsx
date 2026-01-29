@@ -65,7 +65,7 @@ export const TraceDiscoveryPanel: React.FC<TraceDiscoveryPanelProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-testid="trace-discovery-panel">
       {/* Header */}
       <div>
         <h3 className="text-lg font-semibold mb-2">Trace Discovery: {traceId.slice(0, 12)}...</h3>
@@ -73,7 +73,7 @@ export const TraceDiscoveryPanel: React.FC<TraceDiscoveryPanelProps> = ({
       </div>
 
       {/* Category Coverage */}
-      <Card>
+      <Card data-testid="category-coverage-section">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Zap className="w-4 h-4" />
@@ -88,24 +88,36 @@ export const TraceDiscoveryPanel: React.FC<TraceDiscoveryPanelProps> = ({
               const percentage = threshold > 0 ? (findings.length / threshold) * 100 : 0;
 
               return (
-                <div key={category}>
+                <div key={category} data-testid={`category-${category}`}>
                   <div className="flex justify-between items-center mb-2">
                     <label className="text-sm font-medium capitalize">{category.replace(/_/g, ' ')}</label>
-                    <Badge variant="outline" className="text-xs">
+                    <Badge variant="outline" className="text-xs" data-testid={`category-${category}-count`}>
                       {findings.length}/{threshold}
                     </Badge>
                   </div>
                   <Progress value={Math.min(percentage, 100)} className="h-2" />
                   {findings.length > 0 && (
-                    <div className="mt-2 space-y-1">
-                      {findings.slice(0, 2).map((finding: any, idx: number) => (
-                        <div key={idx} className="text-xs text-slate-600 line-clamp-1">
-                          • {finding.text?.slice(0, 60)}...
+                    <div className="mt-2 space-y-1" data-testid={`category-${category}-findings`}>
+                      {findings.map((finding: any, idx: number) => (
+                        <div key={finding.id || idx} className="text-xs text-slate-600 flex items-center justify-between gap-2 p-1 rounded hover:bg-slate-50">
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <Badge variant="secondary" className="text-[10px] px-1 shrink-0" data-testid="finding-user-id">
+                              {finding.user_id?.slice(0, 8) || 'unknown'}
+                            </Badge>
+                            <span className="line-clamp-1">{finding.text?.slice(0, 50)}...</span>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-2 text-xs shrink-0"
+                            onClick={() => onPromote(finding.id)}
+                            disabled={finding.promoted}
+                            data-testid="promote-finding-btn"
+                          >
+                            {finding.promoted ? 'Promoted' : 'Promote'}
+                          </Button>
                         </div>
                       ))}
-                      {findings.length > 2 && (
-                        <div className="text-xs text-slate-500">+{findings.length - 2} more</div>
-                      )}
                     </div>
                   )}
                 </div>
@@ -114,7 +126,7 @@ export const TraceDiscoveryPanel: React.FC<TraceDiscoveryPanelProps> = ({
           </div>
 
           {/* Threshold Controls */}
-          <div className="mt-6 pt-6 border-t">
+          <div className="mt-6 pt-6 border-t" data-testid="threshold-controls">
             <Label className="text-sm font-medium mb-3 block">Update Thresholds</Label>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               {CATEGORIES.map((category) => (
@@ -129,6 +141,7 @@ export const TraceDiscoveryPanel: React.FC<TraceDiscoveryPanelProps> = ({
                       setThresholds({ ...thresholds, [category]: parseInt(e.target.value) || 3 })
                     }
                     className="h-8 text-xs"
+                    data-testid={`threshold-input-${category}`}
                   />
                 </div>
               ))}
@@ -138,6 +151,7 @@ export const TraceDiscoveryPanel: React.FC<TraceDiscoveryPanelProps> = ({
               disabled={isUpdatingThresholds}
               size="sm"
               className="mt-3 w-full"
+              data-testid="update-thresholds-btn"
             >
               {isUpdatingThresholds ? 'Updating...' : 'Update Thresholds'}
             </Button>
@@ -147,7 +161,7 @@ export const TraceDiscoveryPanel: React.FC<TraceDiscoveryPanelProps> = ({
 
       {/* Disagreements */}
       {disagreements.length > 0 && (
-        <Card className="border-amber-200 bg-amber-50">
+        <Card className="border-amber-200 bg-amber-50" data-testid="disagreements-section">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base text-amber-900">
               <AlertCircle className="w-4 h-4" />
@@ -157,7 +171,7 @@ export const TraceDiscoveryPanel: React.FC<TraceDiscoveryPanelProps> = ({
           <CardContent>
             <div className="space-y-3">
               {disagreements.map((disagreement: any, idx: number) => (
-                <div key={idx} className="bg-white rounded p-3">
+                <div key={disagreement.id || idx} className="bg-white rounded p-3" data-testid="disagreement-item">
                   <p className="text-sm text-slate-800 mb-2">{disagreement.summary}</p>
                   <div className="flex gap-2 flex-wrap">
                     {disagreement.user_ids?.map((userId: string) => (
@@ -215,6 +229,7 @@ export const TraceDiscoveryPanel: React.FC<TraceDiscoveryPanelProps> = ({
             onClick={handleGenerateQuestion}
             disabled={isGeneratingQuestion}
             className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+            data-testid="generate-question-btn"
           >
             {isGeneratingQuestion ? 'Generating...' : 'Generate Question'}
           </Button>

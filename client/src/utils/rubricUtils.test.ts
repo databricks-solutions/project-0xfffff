@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { JudgeType } from '@/client';
 import { formatRubricQuestions, parseRubricQuestions, QUESTION_DELIMITER } from './rubricUtils';
 
 // @spec RUBRIC_SPEC
@@ -22,8 +23,8 @@ describe('rubricUtils', () => {
   // @req Frontend and backend use same delimiter constant
   it('round-trips format -> parse', () => {
     const questions = [
-      { id: 'q_1', title: 'A', description: 'B' },
-      { id: 'q_2', title: 'C', description: 'D' },
+      { id: 'q_1', title: 'A', description: 'B', judgeType: JudgeType.LIKERT },
+      { id: 'q_2', title: 'C', description: 'D', judgeType: JudgeType.BINARY },
     ];
     const formatted = formatRubricQuestions(questions);
     expect(formatted).toContain(QUESTION_DELIMITER);

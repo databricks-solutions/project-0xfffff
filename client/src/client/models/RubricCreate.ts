@@ -2,13 +2,21 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { JudgeType } from './JudgePrompt';
-
+import type { JudgeType } from './JudgeType';
 export type RubricCreate = {
     question: string;
     created_by: string;
-    judge_type?: JudgeType;
+    /**
+     * Type of judge: likert, binary, or freeform
+     */
+    judge_type?: (JudgeType | null);
+    /**
+     * Custom labels for binary judge
+     */
     binary_labels?: (Record<string, string> | null);
-    rating_scale?: number;
+    /**
+     * Rating scale for rubric judge
+     */
+    rating_scale?: (number | null);
 };
 

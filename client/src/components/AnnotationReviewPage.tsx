@@ -198,10 +198,7 @@ export function AnnotationReviewPage({ onBack }: AnnotationReviewPageProps) {
                 </CardHeader>
                 <CardContent>
                   {currentTrace && (
-                    <TraceViewer 
-                      trace={convertTraceToTraceData(currentTrace)}
-                      readOnly={true}
-                    />
+                    <TraceViewer trace={convertTraceToTraceData(currentTrace)} />
                   )}
                 </CardContent>
               </Card>

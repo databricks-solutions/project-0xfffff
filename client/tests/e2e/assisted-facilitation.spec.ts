@@ -1,4 +1,16 @@
+/**
+ * E2E Tests for Assisted Facilitation Flow
+ *
+ * Tests the core participant and facilitator workflows for discovery phase,
+ * including finding submission, classification display, and progress tracking.
+ *
+ * These tests verify UI behavior rather than just API responses.
+ */
+
 import { test, expect } from '@playwright/test';
+import { TestScenario } from '../lib/scenario-builder';
+import { UserRole, WorkshopPhase } from '../lib/types';
+import * as actions from '../lib/actions';
 
 // This repo doesn't include Node typings in the client TS config; keep `process.env` without adding deps.
 declare const process: { env: Record<string, string | undefined> };
@@ -9,18 +21,7 @@ const FACILITATOR_PASSWORD =
   process.env.E2E_FACILITATOR_PASSWORD ?? 'facilitator123';
 const API_URL = process.env.E2E_API_URL ?? 'http://127.0.0.1:8000';
 
-async function getFacilitatorId(request: any): Promise<string> {
-  const resp = await request.post(`${API_URL}/users/auth/login`, {
-    headers: { 'Content-Type': 'application/json' },
-    data: { email: FACILITATOR_EMAIL, password: FACILITATOR_PASSWORD },
-  });
-  expect(resp.ok(), 'facilitator login should succeed').toBeTruthy();
-  const body = (await resp.json()) as { user?: { id?: string } };
-  expect(body.user?.id, 'login response should include user.id').toMatch(
-    /^[a-f0-9-]{36}$/i,
-  );
-  return body.user!.id!;
-}
+const VALID_CATEGORIES = actions.DISCOVERY_CATEGORIES;
 
 // Inline fixtures (avoid Node `fs/path` imports; repo client TS config doesn't include Node typings).
 // Keep these intentionally small but diverse: one per discovery category.
@@ -103,360 +104,370 @@ const syntheticTraces = [
 test.describe('Assisted Facilitation Flow', {
   tag: ['@spec:ASSISTED_FACILITATION_SPEC'],
 }, () => {
-  test('discovery questions API returns coverage metadata and stops appropriately', {
+  test('participants can submit findings and see discovery phase UI', {
     tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings are classified in real-time as participants submit them'],
-  }, async ({
-    page,
-    request,
-  }) => {
-    const runId = `${Date.now()}`;
-
-    // In Playwright UI mode, having a `page` makes the app preview render (even for API-heavy tests).
-    await page.goto('/');
-    await expect(page.getByText('Workshop Portal')).toBeVisible();
-
-    const facilitatorId = await getFacilitatorId(request);
-
-    // 1. Create a workshop via API (requires facilitator_id)
-    const createResp = await request.post(`${API_URL}/workshops/`, {
-      headers: { 'Content-Type': 'application/json' },
-      data: { name: `E2E Assisted Facilitation ${runId}`, facilitator_id: facilitatorId },
-    });
-    expect(createResp.ok(), 'workshop creation should succeed').toBeTruthy();
-    const workshop = (await createResp.json()) as { id: string };
-    const workshopId = workshop.id;
-
-    // 2. Upload a subset of synthetic traces (one per category for variety)
-    const selectedTraces = syntheticTraces.slice(0, 6); // First 6 traces cover all categories
-    const uploadResp = await request.post(`${API_URL}/workshops/${workshopId}/traces`, {
-      headers: { 'Content-Type': 'application/json' },
-      data: selectedTraces,
-    });
-    expect(uploadResp.ok(), 'trace upload should succeed').toBeTruthy();
-    const createdTraces = (await uploadResp.json()) as Array<{ id: string }>;
-    expect(createdTraces.length).toBe(6);
-    const traceId = createdTraces[0]!.id;
-
-    // 3. Begin discovery
-    const beginResp = await request.post(
-      `${API_URL}/workshops/${workshopId}/begin-discovery?trace_limit=3`,
-    );
-    expect(beginResp.ok(), 'begin discovery should succeed').toBeTruthy();
-
-    // 4. Create a participant
-    const participantResp = await request.post(`${API_URL}/users/`, {
-      headers: { 'Content-Type': 'application/json' },
-      data: {
-        email: `e2e-assisted-${runId}@example.com`,
-        name: `E2E Assisted Participant ${runId}`,
-        role: 'participant',
-        workshop_id: workshopId,
-      },
-    });
-    expect(participantResp.ok()).toBeTruthy();
-    const participant = (await participantResp.json()) as { id: string };
-
-    // 5. Fetch discovery questions - should return baseline question with coverage metadata
-    const questionsResp = await request.get(
-      `${API_URL}/workshops/${workshopId}/traces/${traceId}/discovery-questions?user_id=${participant.id}`,
-    );
-    expect(questionsResp.ok(), 'discovery questions should succeed').toBeTruthy();
-    const questionsData = (await questionsResp.json()) as {
-      questions: Array<{ id: string; prompt: string; category?: string }>;
-      can_generate_more: boolean;
-      stop_reason: string | null;
-      coverage: { covered: string[]; missing: string[] };
-    };
-
-    // Validate response structure
-    expect(questionsData.questions.length).toBeGreaterThanOrEqual(1);
-    expect(questionsData.questions[0]!.id).toBe('q_1'); // Baseline question
-    expect(questionsData.coverage).toBeDefined();
-    expect(questionsData.coverage.covered).toContain('themes'); // Baseline covers themes
-    expect(questionsData.coverage.missing.length).toBeGreaterThan(0); // Should have missing categories
-
-    // 6. Submit a finding to enable follow-up question generation context
-    const findingResp = await request.post(`${API_URL}/workshops/${workshopId}/findings`, {
-      headers: { 'Content-Type': 'application/json' },
-      data: {
-        trace_id: traceId,
-        user_id: participant.id,
-        insight: 'The code review suggestions are helpful but could mention edge cases for empty inputs.',
-      },
-    });
-    expect(findingResp.ok(), 'finding submit should succeed').toBeTruthy();
-  });
-
-  test('participants can submit findings and complete discovery with synthetic traces', {
-    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Findings are classified in real-time as participants submit them'],
-  }, async ({ page, request }) => {
+  }, async ({ page, browser }) => {
     const runId = `${Date.now()}`;
     const participantEmail = `e2e-assisted-participant-${runId}@example.com`;
     const participantName = `E2E Assisted Participant ${runId}`;
 
-    // Create workshop via API (stable + avoids relying on facilitator UI for this test)
-    const facilitatorId = await getFacilitatorId(request);
-    const createWorkshopResp = await request.post(`${API_URL}/workshops/`, {
-      headers: { 'Content-Type': 'application/json' },
-      data: { name: `E2E Assisted UI ${runId}`, facilitator_id: facilitatorId },
-    });
-    expect(createWorkshopResp.ok(), 'workshop creation should succeed').toBeTruthy();
-    const workshop = (await createWorkshopResp.json()) as { id: string };
-    const workshopId = workshop.id;
+    // Create scenario with real API
+    const scenario = await TestScenario.create(browser)
+      .withWorkshop({ name: `E2E Assisted UI ${runId}` })
+      .withFacilitator()
+      .withTraces(3)
+      .inPhase(WorkshopPhase.DISCOVERY)
+      .withRealApi()
+      .build();
 
-    // Upload synthetic traces (use 3 for faster test)
-    const selectedTraces = syntheticTraces.slice(0, 3);
-    const uploadResp = await request.post(`${API_URL}/workshops/${workshopId}/traces`, {
-      headers: { 'Content-Type': 'application/json' },
-      data: selectedTraces,
-    });
-    expect(uploadResp.ok()).toBeTruthy();
+    // Facilitator starts discovery
+    await scenario.loginAs(scenario.facilitator);
+    await scenario.beginDiscovery();
 
-    // Begin discovery with all 3 traces
-    const beginResp = await request.post(
-      `${API_URL}/workshops/${workshopId}/begin-discovery?trace_limit=3`,
-    );
-    expect(beginResp.ok()).toBeTruthy();
-
-    // Create participant via API (stable; the UI login flow is what we want to render)
-    const participantCreateResp = await request.post(`${API_URL}/users/`, {
+    // Create participant via API
+    const participantCreateResp = await scenario.page.request.post(`${API_URL}/users/`, {
       headers: { 'Content-Type': 'application/json' },
       data: {
         email: participantEmail,
         name: participantName,
-        role: 'participant',
-        workshop_id: workshopId,
+        role: UserRole.PARTICIPANT,
+        workshop_id: scenario.workshop.id,
       },
     });
     expect(participantCreateResp.ok(), 'participant create should succeed').toBeTruthy();
+    const participant = await participantCreateResp.json() as { id: string };
 
-    // Participant logs in via UI and completes discovery (this is what you want to watch in Playwright UI)
-    await page.goto(`/?workshop=${workshopId}`);
-    await expect(page.getByText('Workshop Portal')).toBeVisible();
-    await page.locator('#email').fill(participantEmail);
+    // Participant logs in via a new page
+    const participantPage = await scenario.newPageAs({
+      id: participant.id,
+      email: participantEmail,
+      name: participantName,
+      role: UserRole.PARTICIPANT,
+      workshop_id: scenario.workshop.id,
+    });
 
-    // Select the workshop from dropdown (URL param is cleared on login page mount)
-    await page.waitForTimeout(500); // Wait for workshops to load
-    const workshopSelect = page.locator('button[role="combobox"]').first();
-    if (await workshopSelect.isVisible().catch(() => false)) {
-      await workshopSelect.click();
-      await page.waitForSelector('[role="listbox"]', { timeout: 3000 }).catch(() => {});
-      await page.waitForTimeout(200);
-      const workshopOption = page.locator(`[role="option"][data-value="${workshopId}"]`);
-      if (await workshopOption.isVisible({ timeout: 1000 }).catch(() => false)) {
-        await workshopOption.click();
-      }
-    }
+    // Verify participant sees discovery phase UI
+    await expect(participantPage.getByTestId('discovery-phase-title')).toBeVisible({ timeout: 15000 });
 
-    await page.locator('button[type="submit"]').click();
-
-    // Should see discovery phase
-    await expect(page.getByTestId('discovery-phase-title')).toBeVisible();
-
-    // Fill in the baseline question for each trace.
-    // TraceViewerDemo uses ids like `dq-q_1` for the baseline question.
+    // Fill in the baseline question for each trace
     for (let i = 0; i < 3; i++) {
-      const q1 = page.locator('#dq-q_1');
-      await expect(q1).toBeVisible();
+      const q1 = participantPage.locator('#dq-q_1');
+      await expect(q1).toBeVisible({ timeout: 5000 });
       await q1.fill(`Insight for trace ${i + 1}: Clear structure; consider edge cases.`);
       // Trigger autosave (saving happens onBlur)
       await q1.blur();
 
       if (i < 2) {
-        await page.getByRole('button', { name: /^Next$/i }).click();
+        await participantPage.getByRole('button', { name: /^Next$/i }).click();
       } else {
-        await page.getByRole('button', { name: /^Complete$/i }).click();
+        await participantPage.getByRole('button', { name: /^Complete$/i }).click();
       }
     }
 
-    // Complete discovery phase
-    const completeButton = page.getByTestId('complete-discovery-phase-button');
-    await expect(completeButton).toBeVisible();
+    // Complete discovery phase via UI button
+    const completeButton = participantPage.getByTestId('complete-discovery-phase-button');
+    await expect(completeButton).toBeVisible({ timeout: 10000 });
     await completeButton.click();
 
-    // Verify participant completion via API
-    const usersResp = await request.get(
-      `${API_URL}/users/?workshop_id=${workshopId}&role=participant`,
-    );
-    const users = (await usersResp.json()) as Array<{ id: string; email: string }>;
-    const participant = users.find((u) => u.email === participantEmail);
-    expect(participant).toBeTruthy();
-
+    // Verify completion is reflected in UI - poll for completion status
     await expect
       .poll(async () => {
-        const statusResp = await request.get(
-          `${API_URL}/workshops/${workshopId}/discovery-completion-status`,
+        const statusResp = await scenario.page.request.get(
+          `${API_URL}/workshops/${scenario.workshop.id}/discovery-completion-status`,
         );
         if (!statusResp.ok()) return null;
         return statusResp.json();
-      })
+      }, { timeout: 15000 })
       .toMatchObject({
         total_participants: 1,
         completed_participants: 1,
         all_completed: true,
       });
+
+    await scenario.cleanup();
   });
 
-  test('discovery summaries API returns structured output with rubric candidates', {
+  test('facilitator can view classified findings in the dashboard UI', {
     tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Facilitators see per-trace structured view with category breakdown'],
-  }, async ({
-    request,
-  }) => {
+  }, async ({ browser }) => {
     const runId = `${Date.now()}`;
 
-    const facilitatorId = await getFacilitatorId(request);
+    // Create scenario
+    const scenario = await TestScenario.create(browser)
+      .withWorkshop({ name: `E2E Summaries Test ${runId}` })
+      .withFacilitator()
+      .withParticipants(3)
+      .withTraces(6)
+      .inPhase(WorkshopPhase.DISCOVERY)
+      .withRealApi()
+      .build();
 
-    // Setup: Create workshop, traces, participants, and findings via API
-    const createResp = await request.post(`${API_URL}/workshops/`, {
-      headers: { 'Content-Type': 'application/json' },
-      data: { name: `E2E Summaries Test ${runId}`, facilitator_id: facilitatorId },
-    });
-    const workshop = (await createResp.json()) as { id: string };
-    const workshopId = workshop.id;
+    const participants = scenario.users.participant;
 
-    // Upload synthetic traces
-    const selectedTraces = syntheticTraces.slice(0, 6);
-    const uploadResp = await request.post(`${API_URL}/workshops/${workshopId}/traces`, {
-      headers: { 'Content-Type': 'application/json' },
-      data: selectedTraces,
-    });
-    const createdTraces = (await uploadResp.json()) as Array<{ id: string }>;
+    // Facilitator starts discovery
+    await scenario.loginAs(scenario.facilitator);
+    await scenario.beginDiscovery();
 
-    // Begin discovery
-    await request.post(`${API_URL}/workshops/${workshopId}/begin-discovery?trace_limit=6`);
-
-    // Create multiple participants with diverse findings
-    const participants: Array<{ id: string; name: string }> = [];
+    // Create diverse findings from multiple participants via v2 API
     const findingsData = [
       'Good naming conventions but could use more error handling for edge cases.',
       'The response addresses the main issue but misses boundary conditions like empty inputs.',
       'Clear explanation but I disagree with the approach - a different pattern would be more maintainable.',
     ];
 
-    for (let i = 0; i < 3; i++) {
-      const participantResp = await request.post(`${API_URL}/users/`, {
-        headers: { 'Content-Type': 'application/json' },
-        data: {
-          email: `e2e-summary-${runId}-${i}@example.com`,
-          name: `Summary Participant ${i + 1}`,
-          role: 'participant',
-          workshop_id: workshopId,
-        },
-      });
-      const participant = (await participantResp.json()) as { id: string; name: string };
-      participants.push(participant);
-
-      // Submit findings for multiple traces
-      for (let j = 0; j < Math.min(3, createdTraces.length); j++) {
-        await request.post(`${API_URL}/workshops/${workshopId}/findings`, {
+    const traceId = scenario.traces[0].id;
+    for (let i = 0; i < participants.length; i++) {
+      const response = await scenario.page.request.post(
+        `${API_URL}/workshops/${scenario.workshop.id}/findings-v2`,
+        {
           headers: { 'Content-Type': 'application/json' },
           data: {
-            trace_id: createdTraces[j]!.id,
-            user_id: participant.id,
-            insight: `${findingsData[i]} (Trace ${j + 1})`,
+            trace_id: traceId,
+            user_id: participants[i].id,
+            text: findingsData[i % findingsData.length],
           },
-        });
+        }
+      );
+      expect(response.ok()).toBeTruthy();
+    }
+
+    // Navigate to facilitator dashboard
+    await actions.goToFacilitatorDashboard(scenario.page, scenario.workshop.id, scenario.workshop.name);
+
+    // Verify the dashboard loads with monitoring view
+    await expect(scenario.page.getByText(/Discovery Phase Monitoring/i)).toBeVisible({ timeout: 10000 });
+
+    // Go to Trace Coverage and expand the trace to view classified findings
+    await actions.goToTraceCoverage(scenario.page);
+    await actions.expandTraceRow(scenario.page, traceId);
+    await actions.waitForTraceDiscoveryPanel(scenario.page);
+
+    // SPEC REQUIREMENT: Facilitators see per-trace structured view with category breakdown
+    // Verify category coverage section is visible
+    await expect(scenario.page.getByTestId('category-coverage-section')).toBeVisible();
+
+    // Verify findings are distributed across categories
+    let totalFindingsInUI = 0;
+    for (const category of VALID_CATEGORIES) {
+      const { count } = await actions.getCategoryCount(scenario.page, category);
+      totalFindingsInUI += count;
+    }
+    expect(totalFindingsInUI).toBeGreaterThanOrEqual(3);
+
+    await scenario.cleanup();
+  });
+
+  test('findings with user details are displayed in the dashboard', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Facilitators see per-trace structured view with category breakdown'],
+  }, async ({ browser }) => {
+    const runId = `${Date.now()}`;
+
+    // Create scenario
+    const scenario = await TestScenario.create(browser)
+      .withWorkshop({ name: `E2E Findings Details ${runId}` })
+      .withFacilitator()
+      .withParticipants(1)
+      .withTraces(1)
+      .inPhase(WorkshopPhase.DISCOVERY)
+      .withRealApi()
+      .build();
+
+    const participant = scenario.users.participant[0];
+    const traceId = scenario.traces[0].id;
+
+    // Facilitator starts discovery
+    await scenario.loginAs(scenario.facilitator);
+    await scenario.beginDiscovery();
+
+    // Submit finding via v2 API
+    await scenario.page.request.post(
+      `${API_URL}/workshops/${scenario.workshop.id}/findings-v2`,
+      {
+        headers: { 'Content-Type': 'application/json' },
+        data: {
+          trace_id: traceId,
+          user_id: participant.id,
+          text: 'Test insight for findings with user details.',
+        },
+      }
+    );
+
+    // Navigate to facilitator dashboard
+    await actions.goToFacilitatorDashboard(scenario.page, scenario.workshop.id, scenario.workshop.name);
+
+    // Go to Trace Coverage and expand the trace
+    await actions.goToTraceCoverage(scenario.page);
+    await actions.expandTraceRow(scenario.page, traceId);
+    await actions.waitForTraceDiscoveryPanel(scenario.page);
+
+    // SPEC REQUIREMENT: Each finding shows user attribution
+    // Find a category with findings and verify user attribution is displayed
+    for (const category of VALID_CATEGORIES) {
+      const { count } = await actions.getCategoryCount(scenario.page, category);
+      if (count > 0) {
+        const findingsContainer = scenario.page.getByTestId(`category-${category}-findings`);
+        await expect(findingsContainer).toBeVisible();
+
+        // Verify user ID badge is present
+        const userBadge = findingsContainer.getByTestId('finding-user-id').first();
+        await expect(userBadge).toBeVisible();
+
+        // Verify badge contains part of the user ID
+        const badgeText = await userBadge.textContent();
+        expect(badgeText?.length).toBeGreaterThan(0);
+
+        break;
       }
     }
 
-    // Verify findings were created
-    const findingsResp = await request.get(`${API_URL}/workshops/${workshopId}/findings`);
-    expect(findingsResp.ok()).toBeTruthy();
-    const findings = (await findingsResp.json()) as Array<{ id: string }>;
-    expect(findings.length).toBeGreaterThanOrEqual(3);
-
-    // Get discovery summaries (cached or generate)
-    // Note: Without an LLM configured, this will return empty summaries or error
-    // This test validates the API structure and basic flow
-    const summariesResp = await request.get(`${API_URL}/workshops/${workshopId}/discovery-summaries`);
-    
-    // If summaries haven't been generated yet, we get a 404
-    if (summariesResp.status() === 404) {
-      // This is expected without LLM - the structure test passes
-      return;
-    }
-
-    if (summariesResp.ok()) {
-      const summaries = (await summariesResp.json()) as {
-        overall: Record<string, unknown>;
-        by_user: Array<Record<string, unknown>>;
-        by_trace: Array<Record<string, unknown>>;
-        candidate_rubric_questions?: string[];
-        key_disagreements?: Array<{ theme: string; viewpoints: string[] }>;
-        discussion_prompts?: Array<{ theme: string; prompt: string }>;
-        convergence?: { theme_agreement: Record<string, number>; overall_alignment_score: number };
-        ready_for_rubric?: boolean;
-      };
-
-      // Validate structure (fields may be empty without LLM)
-      expect(summaries.overall).toBeDefined();
-      expect(Array.isArray(summaries.by_user)).toBe(true);
-      expect(Array.isArray(summaries.by_trace)).toBe(true);
-    }
+    await scenario.cleanup();
   });
 
-  test('findings with user details includes participant info', {
-    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Facilitators see per-trace structured view with category breakdown'],
-  }, async ({ request }) => {
+  test('discovery progress is visible in facilitator dashboard', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Participants see only fuzzy progress (no category bias)'],
+  }, async ({ browser }) => {
     const runId = `${Date.now()}`;
 
-    const facilitatorId = await getFacilitatorId(request);
+    // Create scenario with multiple participants and traces
+    const scenario = await TestScenario.create(browser)
+      .withWorkshop({ name: `E2E Discovery Progress ${runId}` })
+      .withFacilitator()
+      .withParticipants(2)
+      .withTraces(5)
+      .inPhase(WorkshopPhase.DISCOVERY)
+      .withRealApi()
+      .build();
 
-    // Quick setup
-    const createResp = await request.post(`${API_URL}/workshops/`, {
-      headers: { 'Content-Type': 'application/json' },
-      data: { name: `E2E Findings Details ${runId}`, facilitator_id: facilitatorId },
-    });
-    const workshop = (await createResp.json()) as { id: string };
-    const workshopId = workshop.id;
+    // Facilitator logs in and starts discovery
+    await scenario.loginAs(scenario.facilitator);
+    await scenario.beginDiscovery();
 
-    // Upload one trace
-    const uploadResp = await request.post(`${API_URL}/workshops/${workshopId}/traces`, {
-      headers: { 'Content-Type': 'application/json' },
-      data: [syntheticTraces[0]],
-    });
-    const traces = (await uploadResp.json()) as Array<{ id: string }>;
+    // Navigate to facilitator dashboard
+    await actions.goToFacilitatorDashboard(scenario.page, scenario.workshop.id, scenario.workshop.name);
 
-    await request.post(`${API_URL}/workshops/${workshopId}/begin-discovery?trace_limit=1`);
+    // Verify the Discovery Phase card is visible
+    await expect(scenario.page.getByText(/Discovery Phase/i).first()).toBeVisible({ timeout: 10000 });
 
-    // Create participant
-    const participantName = `Details Tester ${runId}`;
-    const participantResp = await request.post(`${API_URL}/users/`, {
-      headers: { 'Content-Type': 'application/json' },
-      data: {
-        email: `e2e-details-${runId}@example.com`,
-        name: participantName,
-        role: 'participant',
-        workshop_id: workshopId,
-      },
-    });
-    const participant = (await participantResp.json()) as { id: string };
+    // Verify progress metrics are displayed
+    await expect(scenario.page.getByText(/Traces Analyzed/i)).toBeVisible();
 
-    // Submit finding
-    await request.post(`${API_URL}/workshops/${workshopId}/findings`, {
-      headers: { 'Content-Type': 'application/json' },
-      data: {
-        trace_id: traces[0]!.id,
-        user_id: participant.id,
-        insight: 'Test insight for findings with user details.',
-      },
-    });
+    // Verify progress percentage is shown
+    await expect(scenario.page.getByText(/%.*Complete/i)).toBeVisible();
 
-    // Get findings with user details
-    const findingsWithUsersResp = await request.get(
-      `${API_URL}/workshops/${workshopId}/findings-with-users`,
+    // Verify active users count is displayed
+    await expect(scenario.page.getByText(/Active Users/i)).toBeVisible();
+
+    await scenario.cleanup();
+  });
+
+  test('facilitator can access trace discovery panel for detailed view', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Facilitators see per-trace structured view with category breakdown'],
+  }, async ({ browser }) => {
+    const runId = `${Date.now()}`;
+
+    // Create scenario
+    const scenario = await TestScenario.create(browser)
+      .withWorkshop({ name: `E2E Trace Panel ${runId}` })
+      .withFacilitator()
+      .withParticipants(1)
+      .withTraces(3)
+      .inPhase(WorkshopPhase.DISCOVERY)
+      .withRealApi()
+      .build();
+
+    const participant = scenario.users.participant[0];
+
+    // Facilitator starts discovery
+    await scenario.loginAs(scenario.facilitator);
+    await scenario.beginDiscovery();
+
+    // Submit findings via v2 API
+    const traceId = scenario.traces[0].id;
+    await scenario.page.request.post(
+      `${API_URL}/workshops/${scenario.workshop.id}/findings-v2`,
+      {
+        data: {
+          trace_id: traceId,
+          user_id: participant.id,
+          text: 'Good code structure with clear naming.',
+        },
+      }
     );
-    expect(findingsWithUsersResp.ok()).toBeTruthy();
-    const findingsWithUsers = (await findingsWithUsersResp.json()) as Array<{
-      user_id: string;
-      user_name: string;
-      insight: string;
-    }>;
 
-    expect(findingsWithUsers.length).toBeGreaterThanOrEqual(1);
-    const finding = findingsWithUsers.find((f) => f.user_id === participant.id);
-    expect(finding).toBeTruthy();
-    expect(finding!.user_name).toBe(participantName);
-    expect(finding!.insight).toContain('Test insight');
+    // Navigate to facilitator dashboard
+    await actions.goToFacilitatorDashboard(scenario.page, scenario.workshop.id, scenario.workshop.name);
+
+    // Go to Trace Coverage
+    await actions.goToTraceCoverage(scenario.page);
+
+    // Expand the trace row
+    await actions.expandTraceRow(scenario.page, traceId);
+
+    // Verify TraceDiscoveryPanel is visible
+    await actions.waitForTraceDiscoveryPanel(scenario.page);
+
+    // Verify panel contains expected sections
+    await expect(scenario.page.getByTestId('category-coverage-section')).toBeVisible();
+    await expect(scenario.page.getByTestId('threshold-controls')).toBeVisible();
+    await expect(scenario.page.getByTestId('generate-question-btn')).toBeVisible();
+
+    // Verify all 5 categories are shown
+    for (const category of VALID_CATEGORIES) {
+      await expect(scenario.page.getByTestId(`category-${category}`)).toBeVisible();
+    }
+
+    await scenario.cleanup();
+  });
+
+  test('facilitator can interact with threshold controls', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC', '@req:Thresholds are configurable per category per trace'],
+  }, async ({ browser }) => {
+    const runId = `${Date.now()}`;
+
+    // Create scenario
+    const scenario = await TestScenario.create(browser)
+      .withWorkshop({ name: `E2E Threshold Controls ${runId}` })
+      .withFacilitator()
+      .withParticipants(1)
+      .withTraces(2)
+      .inPhase(WorkshopPhase.DISCOVERY)
+      .withRealApi()
+      .build();
+
+    // Facilitator starts discovery
+    await scenario.loginAs(scenario.facilitator);
+    await scenario.beginDiscovery();
+
+    const traceId = scenario.traces[0].id;
+
+    // Navigate to facilitator dashboard
+    await actions.goToFacilitatorDashboard(scenario.page, scenario.workshop.id, scenario.workshop.name);
+
+    // Go to Trace Coverage and expand trace
+    await actions.goToTraceCoverage(scenario.page);
+    await actions.expandTraceRow(scenario.page, traceId);
+    await actions.waitForTraceDiscoveryPanel(scenario.page);
+
+    // Verify threshold inputs are visible and interactive
+    const themesInput = scenario.page.getByTestId('threshold-input-themes');
+    await expect(themesInput).toBeVisible();
+    await expect(themesInput).toBeEditable();
+
+    // Change threshold value
+    await themesInput.fill('7');
+
+    // Click update button
+    const updateBtn = scenario.page.getByTestId('update-thresholds-btn');
+    await expect(updateBtn).toBeVisible();
+    await updateBtn.click();
+
+    // Wait for update to complete
+    await expect(updateBtn).toHaveText('Update Thresholds', { timeout: 5000 });
+
+    // Verify the count badge reflects new threshold
+    const { threshold } = await actions.getCategoryCount(scenario.page, 'themes');
+    expect(threshold).toBe(7);
+
+    await scenario.cleanup();
   });
 });

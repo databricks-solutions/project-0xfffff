@@ -281,6 +281,10 @@ ui-lint: openapi
   npm -C {{client-dir}} run lint
 
 [group('dev')]
+ui-typecheck: openapi
+  npm -C {{client-dir}} run typecheck
+
+[group('dev')]
 ui-format:
   npm -C {{client-dir}} run format
 
@@ -624,6 +628,8 @@ e2e mode="headless" workers="1" *args:
 
   # Enable JSON reporting for token-efficient output
   export PW_JSON_REPORT=1
+  # Fail fast on type errors before redirecting logs
+  just ui-typecheck
   # Suppress server logs (redirect to files in .test-results/)
   export E2E_QUIET=1
   mkdir -p .test-results

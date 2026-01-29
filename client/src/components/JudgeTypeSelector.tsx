@@ -7,7 +7,7 @@ import {
   MessageSquareText,
   CheckCircle2
 } from 'lucide-react';
-import type { JudgeType } from '@/client';
+import { JudgeType } from '@/client';
 
 interface JudgeTypeSelectorProps {
   selectedType: JudgeType;
@@ -24,7 +24,7 @@ const judgeTypes: {
   useCases: string[];
 }[] = [
   {
-    type: 'likert',
+    type: JudgeType.LIKERT,
     title: 'Likert Scale Judge',
     description: 'Rubric-based scoring with 1-5 scale ratings',
     icon: <ListChecks className="w-6 h-6" />,
@@ -41,7 +41,7 @@ const judgeTypes: {
     ]
   },
   {
-    type: 'binary',
+    type: JudgeType.BINARY,
     title: 'Binary Judge',
     description: 'Simple pass/fail or yes/no evaluation',
     icon: <ToggleLeft className="w-6 h-6" />,
@@ -58,7 +58,7 @@ const judgeTypes: {
     ]
   },
   {
-    type: 'freeform',
+    type: JudgeType.FREEFORM,
     title: 'Free-form Feedback',
     description: 'Open-ended qualitative analysis',
     icon: <MessageSquareText className="w-6 h-6" />,
@@ -138,7 +138,7 @@ export function JudgeTypeSelector({ selectedType, onTypeChange, disabled }: Judg
 
 // Default prompt templates for each judge type
 export const defaultPromptTemplates: Record<JudgeType, string> = {
-  likert: `You are an expert evaluator assessing the quality of an AI assistant's response.
+  [JudgeType.LIKERT]: `You are an expert evaluator assessing the quality of an AI assistant's response.
 
 ## Evaluation Criteria
 {rubric}
@@ -159,7 +159,7 @@ Rate the response on a scale of 1-5 where:
 
 Provide your rating as a single number (1-5) followed by a brief explanation.`,
 
-  binary: `You are an expert evaluator performing a quality check on an AI assistant's response.
+  [JudgeType.BINARY]: `You are an expert evaluator performing a quality check on an AI assistant's response.
 
 ## Evaluation Criteria
 {criteria}
@@ -184,7 +184,7 @@ Example format:
 1
 The response meets the criteria because...`,
 
-  freeform: `You are an expert evaluator providing detailed feedback on an AI assistant's response.
+  [JudgeType.FREEFORM]: `You are an expert evaluator providing detailed feedback on an AI assistant's response.
 
 ## Evaluation Focus
 {focus}

@@ -58,7 +58,32 @@ class MockDatabaseService:
         return {"id": mock_finding.id, **finding}
 
     def get_classified_findings_by_trace(self, workshop_id, trace_id):
-        return [f for f in self.findings if f.trace_id == trace_id]
+        return [
+            {
+                "id": f.id,
+                "trace_id": f.trace_id,
+                "user_id": f.user_id,
+                "text": f.insight,
+                "category": f.category,
+            }
+            for f in self.findings
+            if f.trace_id == trace_id
+        ]
+
+    def get_disagreements_by_trace(self, workshop_id, trace_id):
+        return [d for d in self.disagreements if d.get("trace_id") == trace_id]
+
+    def save_disagreement(self, workshop_id, trace_id, user_ids, finding_ids, summary):
+        disagreement = {
+            "id": f"disagreement_{len(self.disagreements)}",
+            "workshop_id": workshop_id,
+            "trace_id": trace_id,
+            "user_ids": user_ids,
+            "finding_ids": finding_ids,
+            "summary": summary,
+        }
+        self.disagreements.append(disagreement)
+        return disagreement
 
     def save_thresholds(self, workshop_id, trace_id, thresholds):
         self.thresholds[(workshop_id, trace_id)] = thresholds

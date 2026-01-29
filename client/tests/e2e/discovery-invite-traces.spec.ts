@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { loginAs, loginAsFacilitator } from '../lib/actions/auth';
+import { UserRole } from '../lib/types';
 
 // This repo doesn't include Node typings in the client TS config; keep `process.env` without adding deps.
 declare const process: { env: Record<string, string | undefined> };
@@ -101,7 +102,7 @@ test('discovery blocks until multiple participants complete; facilitator-driven 
       id: '', // ID not needed for login
       email,
       name: email.split('@')[0],
-      role: 'participant',
+      role: UserRole.PARTICIPANT,
       workshop_id: workshopId!,
     });
 
