@@ -519,7 +519,10 @@ async def get_rubric(workshop_id: str, db: Session = Depends(get_db)) -> Rubric:
 async def update_rubric_question(
     workshop_id: str, question_id: str, question_data: dict, db: Session = Depends(get_db)
 ) -> Rubric:
-    """Update a specific question in the rubric."""
+    """Update a specific question in the rubric.
+    
+    When the title changes, this triggers an MLflow re-sync to update judge names.
+    """
     db_service = DatabaseService(db)
     workshop = db_service.get_workshop(workshop_id)
     if not workshop:
@@ -536,12 +539,24 @@ async def update_rubric_question(
     if not rubric:
         raise HTTPException(status_code=404, detail="Question not found or rubric not found")
 
+    # Re-sync annotations to MLflow with updated judge names
+    # This ensures the judge names reflect the new rubric question titles
+    try:
+        resync_result = db_service.resync_annotations_to_mlflow(workshop_id)
+        logger.info(f"MLflow re-sync after rubric update: {resync_result}")
+    except Exception as e:
+        # Don't fail the rubric update if MLflow sync fails
+        logger.warning(f"MLflow re-sync failed after rubric update: {e}")
+
     return rubric
 
 
 @router.delete("/{workshop_id}/rubric/questions/{question_id}")
 async def delete_rubric_question(workshop_id: str, question_id: str, db: Session = Depends(get_db)):
-    """Delete a specific question from the rubric."""
+    """Delete a specific question from the rubric.
+    
+    After deletion, triggers an MLflow re-sync to update remaining judge names.
+    """
     db_service = DatabaseService(db)
     workshop = db_service.get_workshop(workshop_id)
     if not workshop:
@@ -552,6 +567,15 @@ async def delete_rubric_question(workshop_id: str, question_id: str, db: Session
     if rubric is None:
         # Question was deleted and no questions remain
         return {"message": "Question deleted. No questions remain in rubric."}
+
+    # Re-sync annotations to MLflow with remaining judge names
+    # This ensures MLflow reflects the current rubric structure
+    try:
+        resync_result = db_service.resync_annotations_to_mlflow(workshop_id)
+        logger.info(f"MLflow re-sync after rubric delete: {resync_result}")
+    except Exception as e:
+        # Don't fail the rubric delete if MLflow sync fails
+        logger.warning(f"MLflow re-sync failed after rubric delete: {e}")
 
     return rubric
 
