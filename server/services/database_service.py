@@ -1494,10 +1494,20 @@ class DatabaseService:
           logger.debug(f"Skipping question_id={question_id} (rating is None)")
           continue
         
-        # Extract index from question_id (format: "q_1", "q_2", etc. - 1-based)
+        # Extract index from question_id
+        # Supports two formats:
+        # - "q_1", "q_2", etc. (1-based, old format)
+        # - "{rubric_id}_0", "{rubric_id}_1", etc. (0-based, new format)
         try:
           index_str = question_id.split('_')[-1]
-          index = int(index_str) - 1  # Convert to 0-based index to match dictionary
+          index = int(index_str)
+          
+          # If format is "q_N" (1-based), convert to 0-based
+          # If format is "{uuid}_N" (0-based), use as-is
+          if question_id.startswith('q_'):
+            index = index - 1  # Convert 1-based to 0-based
+          # else: already 0-based (rubric_id_N format)
+          
           logger.debug(f"Parsed question_id={question_id} → index={index}")
         except (ValueError, IndexError) as e:
           logger.warning(f"Failed to parse question_id={question_id}: {e}, defaulting to index=0")
