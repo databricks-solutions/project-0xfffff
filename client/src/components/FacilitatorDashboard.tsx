@@ -287,59 +287,6 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
   const [isReorderingTraces, setIsReorderingTraces] = React.useState(false);
   const [isResettingDiscovery, setIsResettingDiscovery] = React.useState(false);
   const [isResettingAnnotation, setIsResettingAnnotation] = React.useState(false);
-  
-  // Judge name state - used for MLflow feedback entries
-  const [judgeName, setJudgeName] = React.useState<string>(workshop?.judge_name || 'workshop_judge');
-  const [isSavingJudgeName, setIsSavingJudgeName] = React.useState(false);
-  
-  // Derive judge name from rubric question title
-  const deriveJudgeNameFromRubric = (questionTitle: string): string => {
-    // Convert to snake_case and append _judge
-    const snakeCase = questionTitle.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
-    return `${snakeCase}_judge`;
-  };
-  
-  // Sync judge name when workshop data loads, or derive from rubric if default
-  React.useEffect(() => {
-    if (workshop?.judge_name && workshop.judge_name !== 'workshop_judge') {
-      // Use the saved judge name
-      setJudgeName(workshop.judge_name);
-    } else if (rubric?.question) {
-      // Parse rubric questions and derive from first question title
-      const questions = parseRubricQuestions(rubric.question);
-      if (questions.length > 0 && questions[0].title) {
-        const derivedName = deriveJudgeNameFromRubric(questions[0].title);
-        setJudgeName(derivedName);
-      }
-    }
-  }, [workshop?.judge_name, rubric]);
-  
-  const handleSaveJudgeName = async () => {
-    if (!judgeName.trim()) {
-      toast.error('Please enter a valid judge name');
-      return;
-    }
-    
-    setIsSavingJudgeName(true);
-    try {
-      const response = await fetch(`/workshops/${workshopId}/judge-name?judge_name=${encodeURIComponent(judgeName.trim())}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to save judge name');
-      }
-      
-      // Refresh workshop data
-      queryClient.invalidateQueries({ queryKey: ['workshop', workshopId] });
-      toast.success('Judge name saved successfully');
-    } catch (error) {
-      toast.error(`Failed to save judge name: ${error.message}`);
-    } finally {
-      setIsSavingJudgeName(false);
-    }
-  };
 
   const handleAddAdditionalTraces = async () => {
     const phase = focusPhase || currentPhase;
@@ -1058,38 +1005,6 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                         )}
                       </Button>
                     </div>
-                  </div>
-
-                  {/* Judge Name */}
-                  <div className="border rounded-lg p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Settings className="w-5 h-5 text-purple-600" />
-                      <div className="text-left">
-                        <div className="font-medium">Judge Name</div>
-                        <div className="text-xs text-muted-foreground">Used for MLflow feedback entries</div>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <Input
-                        type="text"
-                        placeholder="workshop_judge"
-                        value={judgeName}
-                        onChange={(e) => setJudgeName(e.target.value)}
-                        className="flex-1 h-8 text-xs"
-                        disabled={isSavingJudgeName || (annotations && annotations.length > 0)}
-                      />
-                      <Button
-                        onClick={handleSaveJudgeName}
-                        disabled={isSavingJudgeName || !judgeName.trim() || (annotations && annotations.length > 0)}
-                        size="sm"
-                        className="h-8 px-3"
-                      >
-                        {isSavingJudgeName ? '...' : 'Save'}
-                      </Button>
-                    </div>
-                    {annotations && annotations.length > 0 && (
-                      <p className="text-xs text-amber-600 mt-1">🔒 Locked (annotations exist)</p>
-                    )}
                   </div>
 
                   {/* Phase Control Button */}
