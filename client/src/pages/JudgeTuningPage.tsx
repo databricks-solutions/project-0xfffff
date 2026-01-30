@@ -332,10 +332,18 @@ export function JudgeTuningPage() {
     if (!traces || !annotations.length) return [];
     const annotatedTraceIds = new Set(
       annotations
-        .filter((ann) => ann.rating !== undefined && ann.rating !== null)
+        .filter((ann) => {
+          // Check legacy rating field
+          if (ann.rating !== undefined && ann.rating !== null) return true;
+          // Check new ratings dict - has at least one rating value
+          if (ann.ratings && typeof ann.ratings === 'object' && Object.keys(ann.ratings).length > 0) {
+            return Object.values(ann.ratings).some(v => v !== undefined && v !== null);
+          }
+          return false;
+        })
         .map((ann) => ann.trace_id)
     );
-    return traces.filter((trace) => annotatedTraceIds.has(trace.id));
+    return traces.filter((trace: Trace) => annotatedTraceIds.has(trace.id));
   }, [traces, annotations]);
 
   // Reset pagination when traces change
@@ -823,6 +831,7 @@ The response partially meets the criteria because...`;
         ? {
             judge_prompt: normalizedPrompt,
             endpoint_name: simpleEndpointName,
+            judge_name: judgeName,  // Include judge name for MLflow sync
             prompt_id: selectedPromptId || undefined,
             judge_type: judgeType, // Pass the selected question's judge type
           }
@@ -1949,7 +1958,7 @@ The response partially meets the criteria because...`;
                   placeholder="workshop_judge"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Set in Annotation Phase (Facilitator Dashboard)
+                  Derived from rubric question: "{selectedQuestion?.title}"
                 </p>
               </div>
             </div>
@@ -1990,7 +1999,7 @@ The response partially meets the criteria because...`;
                   placeholder="workshop_judge"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Set in Annotation Phase (Facilitator Dashboard)
+                  Derived from rubric question: "{selectedQuestion?.title}"
                 </p>
               </div>
             </div>

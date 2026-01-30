@@ -53,6 +53,9 @@ export const AnnotationStartPage: React.FC<AnnotationStartPageProps> = ({ onStar
       const result = await response.json();
       toast.success(result.message || 'Annotation phase started successfully!');
       
+      // Set fresh start flag so AnnotationDemo starts from trace 1
+      localStorage.setItem(`annotation-fresh-start-${workshopId}`, 'true');
+      
       // Add a small delay to ensure backend has processed the change
       await new Promise(resolve => setTimeout(resolve, 500));
       

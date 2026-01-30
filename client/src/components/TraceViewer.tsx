@@ -95,15 +95,171 @@ const isJsonString = (str: string): boolean => {
 };
 
 /**
+ * Fix malformed JSON where nested objects are incorrectly quoted as strings
+ * e.g., "content": "{ "key": "value" }" should become "content": { "key": "value" }
+ */
+const fixQuotedJsonObjects = (str: string): string => {
+  // Pattern to find string values that contain JSON objects/arrays
+  // Matches: ": "{ or ": "[  followed by content and ending with }",  or ]",
+  return str.replace(
+    /:\s*"\s*(\{[\s\S]*?\}|\[[\s\S]*?\])\s*"(\s*[,}\]])/g,
+    (match, jsonContent, trailing) => {
+      // Check if the content looks like valid JSON structure
+      const trimmedContent = jsonContent.trim();
+      if ((trimmedContent.startsWith('{') && trimmedContent.endsWith('}')) ||
+          (trimmedContent.startsWith('[') && trimmedContent.endsWith(']'))) {
+        // Unescape any escaped quotes inside
+        const unescaped = trimmedContent.replace(/\\"/g, '"');
+        return `: ${unescaped}${trailing}`;
+      }
+      return match;
+    }
+  );
+};
+
+/**
+ * Fix JSON strings that have unescaped newlines inside string values.
+ * JSON spec requires newlines in strings to be escaped as \n
+ */
+const fixUnescapedNewlines = (str: string): string => {
+  // This regex finds string values and escapes any literal newlines inside them
+  // It's a simplified approach that works for common cases
+  let result = '';
+  let inString = false;
+  let escapeNext = false;
+  
+  for (let i = 0; i < str.length; i++) {
+    const char = str[i];
+    
+    if (escapeNext) {
+      result += char;
+      escapeNext = false;
+      continue;
+    }
+    
+    if (char === '\\') {
+      result += char;
+      escapeNext = true;
+      continue;
+    }
+    
+    if (char === '"') {
+      inString = !inString;
+      result += char;
+      continue;
+    }
+    
+    // If we're inside a string and hit a newline, escape it
+    if (inString && (char === '\n' || char === '\r')) {
+      if (char === '\r' && str[i + 1] === '\n') {
+        // Handle \r\n as a single newline
+        result += '\\n';
+        i++; // Skip the \n
+      } else {
+        result += '\\n';
+      }
+      continue;
+    }
+    
+    result += char;
+  }
+  
+  return result;
+};
+
+/**
  * Try to parse a string as JSON
+ * Also handles some common non-JSON formats like Python dict notation
  */
 const tryParseJson = (str: string): { success: boolean; data: any } => {
+  if (!str || typeof str !== 'string') {
+    return { success: false, data: null };
+  }
+  
+  // First, try direct JSON parse
   try {
     const data = JSON.parse(str);
     return { success: true, data };
   } catch {
-    return { success: false, data: null };
+    // Continue to try alternatives
   }
+  
+  // Try fixing unescaped newlines in string values
+  try {
+    const fixedNewlines = fixUnescapedNewlines(str);
+    if (fixedNewlines !== str) {
+      const data = JSON.parse(fixedNewlines);
+      return { success: true, data };
+    }
+  } catch {
+    // Continue to other methods
+  }
+  
+  // Try fixing quoted JSON objects (e.g., "content": "{ "key": "value" }")
+  try {
+    const fixed = fixQuotedJsonObjects(str);
+    if (fixed !== str) {
+      const data = JSON.parse(fixed);
+      return { success: true, data };
+    }
+  } catch {
+    // Continue to other methods
+  }
+  
+  const trimmed = str.trim();
+  
+  // Handle multiple top-level objects like "outputs: {...} inputs: {...}"
+  // Convert to a single object: {"outputs": {...}, "inputs": {...}}
+  const multiObjectPattern = /^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*\{/;
+  if (multiObjectPattern.test(trimmed)) {
+    try {
+      // Split on patterns like "}\nkey:" or "} key:"
+      const sections = trimmed.split(/\}\s*(?=[a-zA-Z_][a-zA-Z0-9_]*\s*:\s*\{)/);
+      const parsed: Record<string, any> = {};
+      
+      for (const section of sections) {
+        const match = section.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(\{[\s\S]*)/);
+        if (match) {
+          const key = match[1];
+          let value = match[2];
+          // Add closing brace if missing
+          if (!value.trim().endsWith('}')) {
+            value = value + '}';
+          }
+          try {
+            parsed[key] = JSON.parse(value);
+          } catch {
+            // If parsing fails, store as string
+            parsed[key] = value;
+          }
+        }
+      }
+      
+      if (Object.keys(parsed).length > 0) {
+        return { success: true, data: parsed };
+      }
+    } catch {
+      // Continue to other methods
+    }
+  }
+  
+  // Try to fix common issues with object-like notation
+  if ((trimmed.includes('{') || trimmed.includes('[')) && 
+      (trimmed.includes(':') || trimmed.includes(','))) {
+    try {
+      // Try to convert unquoted keys to quoted keys
+      const fixed = str
+        .replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":')
+        .replace(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*:/gm, '"$1":');
+      
+      const data = JSON.parse(fixed);
+      return { success: true, data };
+    } catch {
+      // Still failed
+    }
+  }
+  
+  return { success: false, data: null };
 };
 
 /**
@@ -326,7 +482,7 @@ const SmartValueRenderer: React.FC<{
     );
   }
 
-  // Handle objects
+  // Handle objects - display with key as label, value in block
   if (typeof value === 'object') {
     const entries = Object.entries(value);
     
@@ -334,89 +490,51 @@ const SmartValueRenderer: React.FC<{
       return <span className="text-gray-400 italic">Empty</span>;
     }
 
-    // Check if this is a message object (has role/content pattern)
-    const isMessageObject = 'content' in value && ('role' in value || 'type' in value);
-    if (isMessageObject) {
-      const content = value.content || value.text || '';
-      const role = value.role || value.type || '';
-      const otherFields = Object.entries(value).filter(([k]) => !['content', 'text', 'role', 'type'].includes(k));
+    // Helper to determine if a value is "simple" (short string, number, boolean, null)
+    const isSimpleValue = (val: any): boolean => {
+      if (val === null || typeof val === 'boolean' || typeof val === 'number') return true;
+      if (typeof val === 'string' && val.length <= 80) return true;
+      return false;
+    };
+
+    // Helper to render a single field with label and value block
+    const renderField = (key: string, val: any) => {
+      const isSimple = isSimpleValue(val);
+      const isNestedObject = typeof val === 'object' && val !== null && !Array.isArray(val);
+      const isArray = Array.isArray(val);
       
-      return (
-        <div className="space-y-2">
-          {/* Show role/type as a small label */}
-          {role && (
-            <div className="text-xs text-gray-500 uppercase tracking-wide">{role}</div>
-          )}
-          {/* Show main content */}
-          <div className="text-gray-800">
-            <SmartValueRenderer value={content} depth={depth + 1} />
+      // For simple values, show inline: "Label: value"
+      if (isSimple) {
+        return (
+          <div key={key} className="flex items-baseline gap-2 py-1">
+            <span className="text-sm font-semibold text-gray-600 whitespace-nowrap">
+              {formatFieldName(key)}:
+            </span>
+            <span className="text-sm text-gray-800">
+              <SmartValueRenderer value={val} depth={depth + 1} />
+            </span>
           </div>
-          {/* Show any other fields inline */}
-          {otherFields.length > 0 && (
-            <div className="flex flex-wrap gap-3 text-xs text-gray-500 pt-1">
-              {otherFields.map(([key, val]) => (
-                <span key={key}>
-                  {formatFieldName(key)}: {typeof val === 'string' ? val : JSON.stringify(val)}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    // Identify "main content" fields that should be rendered prominently
-    const mainContentKeys = ['answer', 'response', 'result', 'output', 'content', 'text', 'message'];
-    const mainEntry = entries.find(([key]) => mainContentKeys.includes(key.toLowerCase()));
-    const otherEntries = entries.filter(([key]) => !mainContentKeys.includes(key.toLowerCase()));
-
-    // If we're at the top level and there's a main content field, show it prominently
-    if (depth === 0 && mainEntry) {
+        );
+      }
+      
+      // For complex values (long strings, objects, arrays), show as labeled block
       return (
-        <div className="space-y-4">
-          {/* Main content rendered prominently */}
-          <div>
-            <SmartValueRenderer value={mainEntry[1]} fieldName={mainEntry[0]} depth={depth + 1} defaultExpanded />
+        <div key={key} className="space-y-2">
+          <div className="text-sm font-semibold text-gray-700 border-b border-gray-200 pb-1">
+            {formatFieldName(key)}
+            {isArray && <span className="text-gray-400 font-normal ml-1">({val.length})</span>}
           </div>
-          
-          {/* Other fields as collapsible sections - only if there are any */}
-          {otherEntries.length > 0 && (
-            <div className="space-y-2 mt-4 pt-4 border-t border-gray-200">
-              {otherEntries.map(([key, val]) => (
-                <SmartObjectField key={key} fieldKey={key} value={val} depth={depth + 1} />
-              ))}
-            </div>
-          )}
+          <div className={`${isNestedObject || isArray ? 'pl-3 border-l-2 border-gray-100' : ''}`}>
+            <SmartValueRenderer value={val} depth={depth + 1} />
+          </div>
         </div>
       );
-    }
+    };
 
-    // Check if all values are simple (strings, numbers, booleans) - display as inline table
-    const allSimple = entries.every(([, val]) => 
-      typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean' || val === null
-    );
-    
-    if (allSimple && entries.length <= 6) {
-      return (
-        <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-          {entries.map(([key, val]) => (
-            <React.Fragment key={key}>
-              <span className="text-sm font-medium text-gray-500">{formatFieldName(key)}:</span>
-              <span className="text-sm text-gray-800">
-                <SmartValueRenderer value={val} depth={depth + 1} />
-              </span>
-            </React.Fragment>
-          ))}
-        </div>
-      );
-    }
-
-    // For nested objects, show all fields
+    // Render all fields
     return (
-      <div className="space-y-1">
-        {entries.map(([key, val]) => (
-          <SmartObjectField key={key} fieldKey={key} value={val} depth={depth + 1} />
-        ))}
+      <div className="space-y-3">
+        {entries.map(([key, val]) => renderField(key, val))}
       </div>
     );
   }
@@ -499,6 +617,34 @@ const SmartJsonRenderer: React.FC<{
   
   if (success) {
     return <SmartValueRenderer value={parsed} depth={0} defaultExpanded />;
+  }
+  
+  // If data looks like JSON but failed to parse, try to pretty-print it anyway
+  const trimmed = data?.trim() || '';
+  const looksLikeJson = (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+                        (trimmed.startsWith('[') && trimmed.endsWith(']'));
+  
+  if (looksLikeJson) {
+    // Try to at least format the JSON-like string for readability
+    let formattedData = data;
+    try {
+      // Simple pretty-print: add newlines after { and , and before }
+      formattedData = data
+        .replace(/,\s*"/g, ',\n  "')
+        .replace(/\{\s*"/g, '{\n  "')
+        .replace(/"\s*\}/g, '"\n}')
+        .replace(/\[\{/g, '[\n  {')
+        .replace(/\}\]/g, '}\n]');
+    } catch {
+      // Keep original
+    }
+    
+    // Show as formatted code block with word wrapping
+    return (
+      <pre className="text-sm text-gray-800 whitespace-pre-wrap break-words font-mono bg-gray-50 p-3 rounded overflow-auto max-h-[500px]">
+        {formattedData}
+      </pre>
+    );
   }
   
   // Not JSON - check if it's markdown

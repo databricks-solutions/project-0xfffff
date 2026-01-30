@@ -959,6 +959,10 @@ class DatabaseService:
   def delete_rubric_question(self, workshop_id: str, question_id: str) -> Optional[Rubric]:
     """Delete a specific question from the rubric.
 
+    Note: This does NOT delete any annotation data from the database.
+    Old annotation ratings remain in DB but won't be displayed in the UI
+    because they reference question IDs that no longer exist in the rubric.
+
     Args:
         workshop_id: Workshop ID
         question_id: The ID of the question to delete (e.g., "q_1", "q_2")
@@ -1377,8 +1381,19 @@ class DatabaseService:
         logger.warning(f"Invalid Likert rating {rating_int}, clamping to {clamped}")
         return clamped
 
+  def _derive_judge_name_from_title(self, title: str) -> str:
+    """Convert a question title to a judge name (snake_case + _judge)."""
+    import re
+    # Convert to snake_case: lowercase, replace non-alphanumeric with _, remove leading/trailing _
+    snake_case = re.sub(r'[^a-z0-9]+', '_', title.lower()).strip('_')
+    return f"{snake_case}_judge" if snake_case else "workshop_judge"
+
   def _sync_annotation_with_mlflow(self, workshop_id: str, annotation_db: AnnotationDB) -> None:
-    """Ensure MLflow trace carries SME tag + feedback once an annotation is captured."""
+    """Ensure MLflow trace carries SME tag + feedback once an annotation is captured.
+    
+    Logs ALL ratings (one per rubric question) as separate MLflow feedback entries,
+    with judge names derived from the rubric question titles.
+    """
     if not annotation_db or not getattr(annotation_db, 'trace', None):
       return
 
@@ -1438,39 +1453,185 @@ class DatabaseService:
     else:
       logger.debug('mlflow.set_trace_tag not available; skip tagging for trace %s', mlflow_trace_id)
 
-    if annotation_db.rating is None:
-      return
+    # Get rubric questions to map question IDs to titles for judge names
+    rubric_db = self.db.query(RubricDB).filter(RubricDB.workshop_id == workshop_id).first()
+    question_titles_by_index = {}
+    if rubric_db and rubric_db.question:
+      # Parse rubric questions to get titles
+      # Support both new delimiter (|||QUESTION_SEPARATOR|||) and legacy delimiter (---) 
+      QUESTION_DELIMITER_NEW = '|||QUESTION_SEPARATOR|||'
+      QUESTION_DELIMITER_LEGACY = '---'
+      
+      if QUESTION_DELIMITER_NEW in rubric_db.question:
+        questions = rubric_db.question.split(QUESTION_DELIMITER_NEW)
+      else:
+        questions = rubric_db.question.split(QUESTION_DELIMITER_LEGACY)
+      
+      for idx, q in enumerate(questions):
+        q = q.strip()
+        if not q:
+          continue
+        # Extract title (before first colon, or before |||JUDGE_TYPE|||)
+        if '|||JUDGE_TYPE|||' in q:
+          content_part = q.split('|||JUDGE_TYPE|||')[0]
+        else:
+          content_part = q
+        colon_idx = content_part.find(':')
+        title = content_part[:colon_idx].strip() if colon_idx > 0 else content_part.strip()
+        question_titles_by_index[idx] = title
+        logger.debug(f"Parsed rubric question {idx}: title='{title}'")
 
-    # Get the workshop's judge_name (used for MLflow feedback entries)
-    workshop_db = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
-    judge_name = workshop_db.judge_name if workshop_db and workshop_db.judge_name else 'workshop_judge'
+    rationale = annotation_db.comment.strip() if annotation_db.comment else None
+    source = AssessmentSource(
+      source_type=AssessmentSourceType.HUMAN,
+      source_id=annotation_db.user_id or workshop_id,
+    )
 
+    # Check existing assessments on this trace to avoid duplicates and hitting the 50 limit
+    # Track by (name, source_id) tuple so different users can have assessments with the same name
+    existing_assessments = set()  # Set of (name, source_id) tuples
+    current_user_id = annotation_db.user_id or workshop_id
     try:
-      rationale = annotation_db.comment.strip() if annotation_db.comment else None
-      mlflow.log_feedback(
-        trace_id=mlflow_trace_id,
-        name=judge_name,
-        value=annotation_db.rating,
-        source=AssessmentSource(
-          source_type=AssessmentSourceType.HUMAN,
-          source_id=annotation_db.user_id or workshop_id,
-        ),
-        rationale=rationale,
-      )
-    except Exception as exc:
-      logger.warning('Failed to log MLflow feedback for trace %s: %s', mlflow_trace_id, exc)
+      trace = mlflow.get_trace(mlflow_trace_id)
+      if trace and hasattr(trace, 'info') and hasattr(trace.info, 'assessments'):
+        for assessment in (trace.info.assessments or []):
+          # Track existing human assessments by (name, source_id) - allows multiple users
+          if hasattr(assessment, 'source') and assessment.source:
+            if hasattr(assessment.source, 'source_type') and assessment.source.source_type == AssessmentSourceType.HUMAN:
+              if hasattr(assessment, 'name'):
+                source_id = getattr(assessment.source, 'source_id', None)
+                existing_assessments.add((assessment.name, source_id))
+      logger.info(f"📊 Trace {mlflow_trace_id[:12]}... has existing HUMAN assessments: {existing_assessments}")
+      logger.info(f"📊 Current user: {current_user_id}")
+    except Exception as e:
+      logger.warning(f"Could not fetch existing assessments for trace {mlflow_trace_id}: {e}")
+    
+    # Log ALL ratings from the ratings dict (one per rubric question)
+    logger.info(f"📊 MLflow sync: annotation has ratings={annotation_db.ratings}")
+    logger.info(f"📊 MLflow sync: question_titles_by_index={question_titles_by_index}")
+    
+    if annotation_db.ratings:
+      logged_count = 0
+      skipped_count = 0
+      for question_id, rating_value in annotation_db.ratings.items():
+        if rating_value is None:
+          logger.debug(f"Skipping question_id={question_id} (rating is None)")
+          continue
+        
+        # Extract index from question_id
+        # Supports two formats:
+        # - "q_1", "q_2", etc. (1-based, old format)
+        # - "{rubric_id}_0", "{rubric_id}_1", etc. (0-based, new format)
+        try:
+          index_str = question_id.split('_')[-1]
+          index = int(index_str)
+          
+          # If format is "q_N" (1-based), convert to 0-based
+          # If format is "{uuid}_N" (0-based), use as-is
+          if question_id.startswith('q_'):
+            index = index - 1  # Convert 1-based to 0-based
+          # else: already 0-based (rubric_id_N format)
+          
+          logger.debug(f"Parsed question_id={question_id} → index={index}")
+        except (ValueError, IndexError) as e:
+          logger.warning(f"Failed to parse question_id={question_id}: {e}, defaulting to index=0")
+          index = 0
+        
+        # Get question title and derive judge name
+        question_title = question_titles_by_index.get(index, f"question_{index + 1}")
+        judge_name = self._derive_judge_name_from_title(question_title)
+        logger.info(f"📊 Question {question_id}: index={index} → title='{question_title}' → judge_name='{judge_name}'")
+        
+        # Skip if THIS USER already has a HUMAN assessment with this judge name on this trace
+        # Different users can have their own assessments with the same judge name
+        if (judge_name, current_user_id) in existing_assessments:
+          logger.info(f"✓ Skipping {judge_name} for user {current_user_id} - already exists on trace {mlflow_trace_id[:12]}...")
+          skipped_count += 1
+          continue
+        
+        try:
+          mlflow.log_feedback(
+            trace_id=mlflow_trace_id,
+            name=judge_name,
+            value=rating_value,
+            source=source,
+            rationale=rationale if logged_count == 0 else None,  # Only attach rationale to first
+          )
+          logged_count += 1
+          logger.info(f"Logged MLflow feedback: {judge_name}={rating_value} for trace {mlflow_trace_id}")
+        except Exception as exc:
+          # Check if it's the 50 limit error
+          if "maximum allowed assessments" in str(exc):
+            logger.warning(f"Trace {mlflow_trace_id[:12]}... hit 50 assessment limit, skipping {judge_name}")
+          else:
+            logger.warning('Failed to log MLflow feedback %s for trace %s: %s', judge_name, mlflow_trace_id, exc)
+      
+      if logged_count > 0 or skipped_count > 0:
+        logger.info(f"MLflow sync for trace {mlflow_trace_id[:12]}...: logged={logged_count}, skipped={skipped_count}")
+        return
+    
+    # Fallback: log legacy single rating if no ratings dict
+    if annotation_db.rating is not None:
+      # Get the workshop's judge_name as fallback
+      workshop_db = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+      judge_name = workshop_db.judge_name if workshop_db and workshop_db.judge_name else 'workshop_judge'
+      
+      # Skip if THIS USER already has this assessment
+      if (judge_name, current_user_id) in existing_assessments:
+        logger.info(f"✓ Skipping legacy {judge_name} for user {current_user_id} - already exists on trace {mlflow_trace_id[:12]}...")
+        return
+      
+      try:
+        mlflow.log_feedback(
+          trace_id=mlflow_trace_id,
+          name=judge_name,
+          value=annotation_db.rating,
+          source=source,
+          rationale=rationale,
+        )
+      except Exception as exc:
+        if "maximum allowed assessments" in str(exc):
+          logger.warning(f"Trace {mlflow_trace_id[:12]}... hit 50 assessment limit")
+        else:
+          logger.warning('Failed to log MLflow feedback for trace %s: %s', mlflow_trace_id, exc)
 
   def resync_annotations_to_mlflow(self, workshop_id: str) -> Dict[str, Any]:
-    """Re-sync all annotations to MLflow with the current workshop judge_name.
+    """Re-sync all annotations to MLflow with judge names derived from rubric questions.
     
-    This is useful when the judge_name changes after annotations were created.
-    Creates new MLflow feedback entries with the correct judge_name.
+    This is useful when rubric question titles change after annotations were created.
+    Creates new MLflow feedback entries with the correct judge names (one per rubric question).
     """
     workshop_db = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
     if not workshop_db:
       return {'error': 'Workshop not found', 'synced': 0}
     
-    judge_name = workshop_db.judge_name if workshop_db.judge_name else 'workshop_judge'
+    # Get rubric questions to derive judge names
+    rubric_db = self.db.query(RubricDB).filter(RubricDB.workshop_id == workshop_id).first()
+    judge_names = []
+    question_titles = []
+    if rubric_db and rubric_db.question:
+      logger.info(f"📋 Rubric raw question text (first 500 chars): {rubric_db.question[:500]}")
+      # Support both new delimiter (|||QUESTION_SEPARATOR|||) and legacy delimiter (---)
+      QUESTION_DELIMITER_NEW = '|||QUESTION_SEPARATOR|||'
+      QUESTION_DELIMITER_LEGACY = '---'
+      
+      if QUESTION_DELIMITER_NEW in rubric_db.question:
+        questions = rubric_db.question.split(QUESTION_DELIMITER_NEW)
+      else:
+        questions = rubric_db.question.split(QUESTION_DELIMITER_LEGACY)
+      
+      for q in questions:
+        q = q.strip()
+        if not q:
+          continue
+        if '|||JUDGE_TYPE|||' in q:
+          content_part = q.split('|||JUDGE_TYPE|||')[0]
+        else:
+          content_part = q
+        colon_idx = content_part.find(':')
+        title = content_part[:colon_idx].strip() if colon_idx > 0 else content_part.strip()
+        question_titles.append(title)
+        judge_names.append(self._derive_judge_name_from_title(title))
     
     # Get all annotations
     annotations = self.get_annotations(workshop_id)
@@ -1478,11 +1639,21 @@ class DatabaseService:
     synced_count = 0
     errors = []
     
+    # Log summary of what's in annotations for debugging
+    ratings_keys_found = set()
+    for annotation in annotations:
+      if annotation.ratings:
+        ratings_keys_found.update(annotation.ratings.keys())
+    logger.info(f"📊 Found rating keys across all annotations: {ratings_keys_found}")
+    logger.info(f"📊 Expected judge names: {judge_names}")
+    logger.info(f"📊 Expected question titles: {question_titles}")
+    
     for annotation in annotations:
       try:
         # Get the annotation DB record to access trace relationship
         annotation_db = self.db.query(AnnotationDB).filter(AnnotationDB.id == annotation.id).first()
         if annotation_db:
+          logger.info(f"📊 Syncing annotation: trace_id={annotation_db.trace_id[:8] if annotation_db.trace_id else 'None'}..., ratings={annotation_db.ratings}, legacy_rating={annotation_db.rating}")
           self._sync_annotation_with_mlflow(workshop_id, annotation_db)
           synced_count += 1
       except Exception as e:
@@ -1492,6 +1663,148 @@ class DatabaseService:
     return {
       'synced': synced_count,
       'total': len(annotations),
+      'judge_names': judge_names,
+      'question_titles': question_titles,
+      'ratings_keys_found': list(ratings_keys_found),
+      'errors': errors if errors else None
+    }
+
+  def sync_evaluations_to_mlflow(self, workshop_id: str, judge_name: str, evaluations: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Sync AI evaluation results to MLflow as Feedback entries.
+    
+    This logs AI/LLM judge predictions alongside human annotations so SIMBA can use them.
+    
+    Args:
+      workshop_id: The workshop ID
+      judge_name: The judge name (e.g., 'configure_judge_judge')
+      evaluations: List of evaluation results with trace_id/workshop_uuid and predicted_rating
+    
+    Returns:
+      Dict with 'synced' count and any 'errors'
+    """
+    config = (
+      self.db.query(MLflowIntakeConfigDB)
+      .filter(MLflowIntakeConfigDB.workshop_id == workshop_id)
+      .first()
+    )
+    if not config or not config.databricks_host or not config.experiment_id:
+      logger.warning('Skipping MLflow eval sync: config missing for workshop %s', workshop_id)
+      return {'synced': 0, 'error': 'MLflow config missing'}
+
+    databricks_token = token_storage.get_token(workshop_id)
+    if not databricks_token:
+      databricks_token = self.get_databricks_token(workshop_id)
+      if databricks_token:
+        token_storage.store_token(workshop_id, databricks_token)
+    if not databricks_token:
+      logger.warning('Skipping MLflow eval sync: token missing for workshop %s', workshop_id)
+      return {'synced': 0, 'error': 'Databricks token missing'}
+
+    try:
+      import mlflow
+      from mlflow.entities import AssessmentSource, AssessmentSourceType
+    except ImportError:
+      logger.warning('MLflow is not available; cannot sync evaluation feedback.')
+      return {'synced': 0, 'error': 'MLflow not available'}
+
+    os.environ['DATABRICKS_HOST'] = config.databricks_host.rstrip('/')
+    os.environ['DATABRICKS_TOKEN'] = databricks_token
+    os.environ.pop('DATABRICKS_CLIENT_ID', None)
+    os.environ.pop('DATABRICKS_CLIENT_SECRET', None)
+
+    mlflow.set_tracking_uri('databricks')
+
+    try:
+      mlflow.set_experiment(experiment_id=config.experiment_id)
+    except Exception as exc:
+      logger.warning('Failed to set MLflow experiment %s: %s', config.experiment_id, exc)
+      return {'synced': 0, 'error': f'Failed to set experiment: {exc}'}
+
+    # Create AI/LLM assessment source
+    source = AssessmentSource(
+      source_type=AssessmentSourceType.AI_GENERATED,
+      source_id=f"llm_judge_{judge_name}",
+    )
+
+    # Build mapping from workshop_uuid to mlflow_trace_id
+    traces = self.get_traces(workshop_id)
+    trace_id_map = {}
+    for trace in traces:
+      if trace.mlflow_trace_id:
+        trace_id_map[trace.id] = trace.mlflow_trace_id
+
+    synced_count = 0
+    skipped_count = 0
+    errors = []
+    
+    # Cache of existing assessments per trace to avoid repeated API calls
+    existing_assessments_cache: Dict[str, set] = {}
+    
+    for eval_result in evaluations:
+      # Get MLflow trace ID from either trace_id (if it's MLflow format) or workshop_uuid
+      mlflow_trace_id = None
+      
+      # If trace_id starts with 'tr-', it's an MLflow trace ID
+      if eval_result.get('trace_id', '').startswith('tr-'):
+        mlflow_trace_id = eval_result['trace_id']
+      # Otherwise, use workshop_uuid to look up the MLflow trace ID
+      elif eval_result.get('workshop_uuid'):
+        mlflow_trace_id = trace_id_map.get(eval_result['workshop_uuid'])
+      elif eval_result.get('trace_id'):
+        mlflow_trace_id = trace_id_map.get(eval_result['trace_id'])
+      
+      if not mlflow_trace_id:
+        logger.debug(f"Skipping eval sync: no MLflow trace ID for {eval_result.get('trace_id') or eval_result.get('workshop_uuid')}")
+        continue
+      
+      predicted_rating = eval_result.get('predicted_rating')
+      if predicted_rating is None:
+        logger.debug(f"Skipping eval sync: no predicted_rating for trace {mlflow_trace_id}")
+        continue
+      
+      # Check for existing AI assessments to avoid duplicates and 50 limit
+      if mlflow_trace_id not in existing_assessments_cache:
+        existing_ai = set()
+        try:
+          trace = mlflow.get_trace(mlflow_trace_id)
+          if trace and hasattr(trace, 'info') and hasattr(trace.info, 'assessments'):
+            for assessment in (trace.info.assessments or []):
+              if hasattr(assessment, 'source') and assessment.source:
+                if hasattr(assessment.source, 'source_type') and assessment.source.source_type == AssessmentSourceType.AI_GENERATED:
+                  if hasattr(assessment, 'name'):
+                    existing_ai.add(assessment.name)
+        except Exception as e:
+          logger.debug(f"Could not fetch existing AI assessments for trace {mlflow_trace_id}: {e}")
+        existing_assessments_cache[mlflow_trace_id] = existing_ai
+      
+      if judge_name in existing_assessments_cache[mlflow_trace_id]:
+        logger.debug(f"Skipping AI eval: {judge_name} already exists on trace {mlflow_trace_id[:12]}...")
+        skipped_count += 1
+        continue
+      
+      try:
+        mlflow.log_feedback(
+          trace_id=mlflow_trace_id,
+          name=judge_name,
+          value=float(predicted_rating),
+          source=source,
+          rationale=eval_result.get('reasoning'),
+        )
+        synced_count += 1
+        logger.info(f"Logged MLflow AI feedback: {judge_name}={predicted_rating} for trace {mlflow_trace_id}")
+      except Exception as exc:
+        if "maximum allowed assessments" in str(exc):
+          logger.warning(f"Trace {mlflow_trace_id[:12]}... hit 50 assessment limit for AI eval")
+        else:
+          error_msg = f"Failed to log AI feedback for trace {mlflow_trace_id}: {exc}"
+          errors.append(error_msg)
+          logger.warning(error_msg)
+    
+    logger.info(f"Synced {synced_count} AI evaluations to MLflow for judge '{judge_name}' (skipped {skipped_count} existing)")
+    return {
+      'synced': synced_count,
+      'skipped': skipped_count,
+      'total': len(evaluations),
       'judge_name': judge_name,
       'errors': errors if errors else None
     }

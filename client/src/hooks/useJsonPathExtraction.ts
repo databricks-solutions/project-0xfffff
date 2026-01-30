@@ -42,6 +42,8 @@ export function useJsonPathExtraction(
         .filter((r: unknown) => r !== null && r !== undefined)
         .map((r: unknown) => {
           if (typeof r === 'string') return r;
+          // For objects/arrays, properly serialize to JSON
+          if (typeof r === 'object') return JSON.stringify(r, null, 2);
           return String(r);
         })
         .filter((s: string) => s && s !== 'null' && s !== 'undefined');
@@ -100,6 +102,8 @@ export function applyJsonPathExtraction(
       .filter((r: unknown) => r !== null && r !== undefined)
       .map((r: unknown) => {
         if (typeof r === 'string') return r;
+        // For objects/arrays, properly serialize to JSON
+        if (typeof r === 'object') return JSON.stringify(r, null, 2);
         return String(r);
       })
       .filter((s: string) => s && s !== 'null' && s !== 'undefined');

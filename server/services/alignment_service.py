@@ -1170,6 +1170,17 @@ Now evaluate the following:
                         else:
                             null_prediction_rows += 1
                         
+                        # If we still couldn't parse a rating, use a sensible default
+                        if predicted_rating is None:
+                            if is_binary:
+                                # Default to PASS (1) for binary - matches simple evaluation behavior
+                                predicted_rating = 1.0
+                                yield f"⚠️ Could not parse rating for trace {trace_id[:8]}... - defaulting to 1.0 (PASS)"
+                            else:
+                                # Default to neutral (3) for Likert - matches simple evaluation behavior
+                                predicted_rating = 3.0
+                                yield f"⚠️ Could not parse rating for trace {trace_id[:8]}... - defaulting to 3.0 (neutral)"
+                        
                         evaluations.append({
                             'trace_id': trace_id,
                             'workshop_uuid': workshop_uuid,
@@ -1211,6 +1222,17 @@ Now evaluate the following:
             }
             
             yield f"Evaluation results prepared for {len(evaluations)} traces"
+            
+            # Sync AI evaluations to MLflow for SIMBA alignment
+            try:
+                sync_result = self.db_service.sync_evaluations_to_mlflow(
+                    workshop_id=workshop_id,
+                    judge_name=judge_name,
+                    evaluations=evaluations
+                )
+                yield f"Synced {sync_result.get('synced', 0)} AI evaluations to MLflow for judge '{judge_name}'"
+            except Exception as sync_err:
+                yield f"WARNING: Could not sync AI evaluations to MLflow: {sync_err}"
             
             yield evaluation_results
             
