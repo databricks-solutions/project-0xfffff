@@ -305,7 +305,7 @@ export function RubricCreationDemo() {
       };
       
       const method = rubric ? 'PUT' : 'POST';
-      const url = `http://localhost:8000/workshops/${workshopId}/rubric`;
+      const url = `/workshops/${workshopId}/rubric`;
       
       console.log('Starting fetch:', method, url);
       fetch(url, {
@@ -348,8 +348,8 @@ export function RubricCreationDemo() {
       // This provides instant UI feedback
       setQuestions(prevQuestions => prevQuestions.filter(q => q.id !== id));
       
-      // Call the delete endpoint directly (bypass slow Vite proxy)
-      const response = await fetch(`http://localhost:8000/workshops/${workshopId}/rubric/questions/${id}`, {
+      // Call the delete endpoint
+      const response = await fetch(`/workshops/${workshopId}/rubric/questions/${id}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
