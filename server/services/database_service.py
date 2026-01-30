@@ -959,6 +959,10 @@ class DatabaseService:
   def delete_rubric_question(self, workshop_id: str, question_id: str) -> Optional[Rubric]:
     """Delete a specific question from the rubric.
 
+    Note: This does NOT delete any annotation data from the database.
+    Old annotation ratings remain in DB but won't be displayed in the UI
+    because they reference question IDs that no longer exist in the rubric.
+
     Args:
         workshop_id: Workshop ID
         question_id: The ID of the question to delete (e.g., "q_1", "q_2")
