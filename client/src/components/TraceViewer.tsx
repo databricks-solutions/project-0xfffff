@@ -118,6 +118,56 @@ const fixQuotedJsonObjects = (str: string): string => {
 };
 
 /**
+ * Fix JSON strings that have unescaped newlines inside string values.
+ * JSON spec requires newlines in strings to be escaped as \n
+ */
+const fixUnescapedNewlines = (str: string): string => {
+  // This regex finds string values and escapes any literal newlines inside them
+  // It's a simplified approach that works for common cases
+  let result = '';
+  let inString = false;
+  let escapeNext = false;
+  
+  for (let i = 0; i < str.length; i++) {
+    const char = str[i];
+    
+    if (escapeNext) {
+      result += char;
+      escapeNext = false;
+      continue;
+    }
+    
+    if (char === '\\') {
+      result += char;
+      escapeNext = true;
+      continue;
+    }
+    
+    if (char === '"') {
+      inString = !inString;
+      result += char;
+      continue;
+    }
+    
+    // If we're inside a string and hit a newline, escape it
+    if (inString && (char === '\n' || char === '\r')) {
+      if (char === '\r' && str[i + 1] === '\n') {
+        // Handle \r\n as a single newline
+        result += '\\n';
+        i++; // Skip the \n
+      } else {
+        result += '\\n';
+      }
+      continue;
+    }
+    
+    result += char;
+  }
+  
+  return result;
+};
+
+/**
  * Try to parse a string as JSON
  * Also handles some common non-JSON formats like Python dict notation
  */
@@ -132,6 +182,17 @@ const tryParseJson = (str: string): { success: boolean; data: any } => {
     return { success: true, data };
   } catch {
     // Continue to try alternatives
+  }
+  
+  // Try fixing unescaped newlines in string values
+  try {
+    const fixedNewlines = fixUnescapedNewlines(str);
+    if (fixedNewlines !== str) {
+      const data = JSON.parse(fixedNewlines);
+      return { success: true, data };
+    }
+  } catch {
+    // Continue to other methods
   }
   
   // Try fixing quoted JSON objects (e.g., "content": "{ "key": "value" }")
@@ -421,7 +482,7 @@ const SmartValueRenderer: React.FC<{
     );
   }
 
-  // Handle objects
+  // Handle objects - display with key as label, value in block
   if (typeof value === 'object') {
     const entries = Object.entries(value);
     
@@ -429,89 +490,51 @@ const SmartValueRenderer: React.FC<{
       return <span className="text-gray-400 italic">Empty</span>;
     }
 
-    // Check if this is a message object (has role/content pattern)
-    const isMessageObject = 'content' in value && ('role' in value || 'type' in value);
-    if (isMessageObject) {
-      const content = value.content || value.text || '';
-      const role = value.role || value.type || '';
-      const otherFields = Object.entries(value).filter(([k]) => !['content', 'text', 'role', 'type'].includes(k));
+    // Helper to determine if a value is "simple" (short string, number, boolean, null)
+    const isSimpleValue = (val: any): boolean => {
+      if (val === null || typeof val === 'boolean' || typeof val === 'number') return true;
+      if (typeof val === 'string' && val.length <= 80) return true;
+      return false;
+    };
+
+    // Helper to render a single field with label and value block
+    const renderField = (key: string, val: any) => {
+      const isSimple = isSimpleValue(val);
+      const isNestedObject = typeof val === 'object' && val !== null && !Array.isArray(val);
+      const isArray = Array.isArray(val);
       
-      return (
-        <div className="space-y-2">
-          {/* Show role/type as a small label */}
-          {role && (
-            <div className="text-xs text-gray-500 uppercase tracking-wide">{role}</div>
-          )}
-          {/* Show main content */}
-          <div className="text-gray-800">
-            <SmartValueRenderer value={content} depth={depth + 1} />
+      // For simple values, show inline: "Label: value"
+      if (isSimple) {
+        return (
+          <div key={key} className="flex items-baseline gap-2 py-1">
+            <span className="text-sm font-semibold text-gray-600 whitespace-nowrap">
+              {formatFieldName(key)}:
+            </span>
+            <span className="text-sm text-gray-800">
+              <SmartValueRenderer value={val} depth={depth + 1} />
+            </span>
           </div>
-          {/* Show any other fields inline */}
-          {otherFields.length > 0 && (
-            <div className="flex flex-wrap gap-3 text-xs text-gray-500 pt-1">
-              {otherFields.map(([key, val]) => (
-                <span key={key}>
-                  {formatFieldName(key)}: {typeof val === 'string' ? val : JSON.stringify(val)}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    // Identify "main content" fields that should be rendered prominently
-    const mainContentKeys = ['answer', 'response', 'result', 'output', 'content', 'text', 'message'];
-    const mainEntry = entries.find(([key]) => mainContentKeys.includes(key.toLowerCase()));
-    const otherEntries = entries.filter(([key]) => !mainContentKeys.includes(key.toLowerCase()));
-
-    // If we're at the top level and there's a main content field, show it prominently
-    if (depth === 0 && mainEntry) {
+        );
+      }
+      
+      // For complex values (long strings, objects, arrays), show as labeled block
       return (
-        <div className="space-y-4">
-          {/* Main content rendered prominently */}
-          <div>
-            <SmartValueRenderer value={mainEntry[1]} fieldName={mainEntry[0]} depth={depth + 1} defaultExpanded />
+        <div key={key} className="space-y-2">
+          <div className="text-sm font-semibold text-gray-700 border-b border-gray-200 pb-1">
+            {formatFieldName(key)}
+            {isArray && <span className="text-gray-400 font-normal ml-1">({val.length})</span>}
           </div>
-          
-          {/* Other fields as collapsible sections - only if there are any */}
-          {otherEntries.length > 0 && (
-            <div className="space-y-2 mt-4 pt-4 border-t border-gray-200">
-              {otherEntries.map(([key, val]) => (
-                <SmartObjectField key={key} fieldKey={key} value={val} depth={depth + 1} />
-              ))}
-            </div>
-          )}
+          <div className={`${isNestedObject || isArray ? 'pl-3 border-l-2 border-gray-100' : ''}`}>
+            <SmartValueRenderer value={val} depth={depth + 1} />
+          </div>
         </div>
       );
-    }
+    };
 
-    // Check if all values are simple (strings, numbers, booleans) - display as inline table
-    const allSimple = entries.every(([, val]) => 
-      typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean' || val === null
-    );
-    
-    if (allSimple && entries.length <= 6) {
-      return (
-        <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-          {entries.map(([key, val]) => (
-            <React.Fragment key={key}>
-              <span className="text-sm font-medium text-gray-500">{formatFieldName(key)}:</span>
-              <span className="text-sm text-gray-800">
-                <SmartValueRenderer value={val} depth={depth + 1} />
-              </span>
-            </React.Fragment>
-          ))}
-        </div>
-      );
-    }
-
-    // For nested objects, show all fields
+    // Render all fields
     return (
-      <div className="space-y-1">
-        {entries.map(([key, val]) => (
-          <SmartObjectField key={key} fieldKey={key} value={val} depth={depth + 1} />
-        ))}
+      <div className="space-y-3">
+        {entries.map(([key, val]) => renderField(key, val))}
       </div>
     );
   }
