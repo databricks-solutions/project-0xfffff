@@ -483,7 +483,7 @@ async def get_findings_with_user_details(
 async def create_rubric(workshop_id: str, rubric_data: RubricCreate, db: Session = Depends(get_db)) -> Rubric:
     """Create or update rubric for a workshop.
     
-    After creating/updating, triggers an MLflow re-sync to update judge names.
+    After creating/updating, triggers an MLflow re-sync in the background.
     """
     db_service = DatabaseService(db)
     workshop = db_service.get_workshop(workshop_id)
@@ -492,12 +492,18 @@ async def create_rubric(workshop_id: str, rubric_data: RubricCreate, db: Session
 
     rubric = db_service.create_rubric(workshop_id, rubric_data)
     
-    # Re-sync annotations to MLflow with the new rubric's judge names
-    try:
-        resync_result = db_service.resync_annotations_to_mlflow(workshop_id)
-        logger.info(f"MLflow re-sync after rubric create: {resync_result}")
-    except Exception as e:
-        logger.warning(f"MLflow re-sync failed after rubric create: {e}")
+    # Re-sync annotations to MLflow in background (non-blocking)
+    def background_resync():
+        try:
+            from server.database import SessionLocal
+            with SessionLocal() as bg_db:
+                bg_service = DatabaseService(bg_db)
+                resync_result = bg_service.resync_annotations_to_mlflow(workshop_id)
+                logger.info(f"MLflow re-sync after rubric create: {resync_result}")
+        except Exception as e:
+            logger.warning(f"MLflow re-sync failed after rubric create: {e}")
+    
+    threading.Thread(target=background_resync, daemon=True).start()
     
     return rubric
 
@@ -506,7 +512,7 @@ async def create_rubric(workshop_id: str, rubric_data: RubricCreate, db: Session
 async def update_rubric(workshop_id: str, rubric_data: RubricCreate, db: Session = Depends(get_db)) -> Rubric:
     """Update rubric for a workshop.
     
-    After updating, triggers an MLflow re-sync to update judge names.
+    After updating, triggers an MLflow re-sync in the background.
     """
     db_service = DatabaseService(db)
     workshop = db_service.get_workshop(workshop_id)
@@ -515,12 +521,18 @@ async def update_rubric(workshop_id: str, rubric_data: RubricCreate, db: Session
 
     rubric = db_service.create_rubric(workshop_id, rubric_data)
     
-    # Re-sync annotations to MLflow with the updated rubric's judge names
-    try:
-        resync_result = db_service.resync_annotations_to_mlflow(workshop_id)
-        logger.info(f"MLflow re-sync after rubric update: {resync_result}")
-    except Exception as e:
-        logger.warning(f"MLflow re-sync failed after rubric update: {e}")
+    # Re-sync annotations to MLflow in background (non-blocking)
+    def background_resync():
+        try:
+            from server.database import SessionLocal
+            with SessionLocal() as bg_db:
+                bg_service = DatabaseService(bg_db)
+                resync_result = bg_service.resync_annotations_to_mlflow(workshop_id)
+                logger.info(f"MLflow re-sync after rubric update: {resync_result}")
+        except Exception as e:
+            logger.warning(f"MLflow re-sync failed after rubric update: {e}")
+    
+    threading.Thread(target=background_resync, daemon=True).start()
     
     return rubric
 
@@ -666,14 +678,87 @@ async def get_annotations_with_user_details(
 
 @router.get("/{workshop_id}/irr")
 async def get_irr(workshop_id: str, db: Session = Depends(get_db)) -> IRRResult:
-    """Calculate Inter-Rater Reliability for a workshop."""
+    """Calculate Inter-Rater Reliability for a workshop.
+    
+    Only considers ratings for questions that currently exist in the rubric.
+    Old ratings for deleted questions are ignored (but preserved in DB).
+    """
     db_service = DatabaseService(db)
     workshop = db_service.get_workshop(workshop_id)
     if not workshop:
         raise HTTPException(status_code=404, detail="Workshop not found")
 
     annotations = db_service.get_annotations(workshop_id)
+    
+    # Get current rubric to filter ratings to only current questions
+    rubric = db_service.get_rubric(workshop_id)
+    if rubric:
+        # Get the valid question IDs from the current rubric
+        valid_question_ids = _get_valid_rubric_question_ids(rubric)
+        
+        # Filter annotation ratings to only include current rubric questions
+        annotations = _filter_annotations_to_current_rubric(annotations, valid_question_ids)
+    
     return calculate_irr_for_workshop(workshop_id, annotations, db)
+
+
+def _get_valid_rubric_question_ids(rubric) -> set:
+    """Extract all valid question IDs from the current rubric.
+    
+    Returns both backend format (q_1, q_2) and frontend format (rubric_id_0, rubric_id_1).
+    """
+    valid_ids = set()
+    
+    QUESTION_DELIMITER = "|||QUESTION_SEPARATOR|||"
+    question_parts = rubric.question.split(QUESTION_DELIMITER) if rubric.question else []
+    
+    for index in range(len(question_parts)):
+        if question_parts[index].strip():
+            # Backend format: q_1, q_2, etc. (1-based)
+            valid_ids.add(f"q_{index + 1}")
+            # Frontend format: {rubric_id}_{index} (0-based)
+            valid_ids.add(f"{rubric.id}_{index}")
+    
+    return valid_ids
+
+
+def _filter_annotations_to_current_rubric(annotations, valid_question_ids: set):
+    """Filter annotation ratings to only include ratings for current rubric questions.
+    
+    This ensures that old ratings for deleted questions are not included in IRR calculations.
+    The original annotation objects are not modified - new Annotation objects are created.
+    """
+    from server.models import Annotation
+    
+    filtered_annotations = []
+    for annotation in annotations:
+        if not annotation.ratings:
+            # No ratings dict, keep as-is (uses legacy 'rating' field)
+            filtered_annotations.append(annotation)
+            continue
+        
+        # Filter ratings to only include current rubric questions
+        filtered_ratings = {
+            key: value 
+            for key, value in annotation.ratings.items() 
+            if key in valid_question_ids
+        }
+        
+        # Create a new Annotation with filtered ratings (don't modify original)
+        filtered_annotation = Annotation(
+            id=annotation.id,
+            workshop_id=annotation.workshop_id,
+            trace_id=annotation.trace_id,
+            user_id=annotation.user_id,
+            rating=annotation.rating,
+            ratings=filtered_ratings if filtered_ratings else None,
+            comment=annotation.comment,
+            mlflow_trace_id=annotation.mlflow_trace_id,
+            created_at=annotation.created_at,
+        )
+        filtered_annotations.append(filtered_annotation)
+    
+    return filtered_annotations
 
 
 @router.delete("/{workshop_id}/findings")

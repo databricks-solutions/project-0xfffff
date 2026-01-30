@@ -869,6 +869,19 @@ export function AnnotationDemo() {
     }
     lastNavigationTimeRef.current = now;
     
+    // Validate that all required questions have been answered
+    const unansweredQuestions = rubricQuestions.filter(q => {
+      // Freeform questions are optional for navigation
+      if (q.judgeType === 'freeform') return false;
+      // Likert and binary questions must have a rating
+      return currentRatings[q.id] === undefined;
+    });
+    
+    if (unansweredQuestions.length > 0) {
+      toast.error(`Please rate all criteria before proceeding. Missing: ${unansweredQuestions.map(q => q.title).join(', ')}`);
+      return;
+    }
+    
     // Store current trace data for save
     const currentTraceId = currentTrace.id;
     const ratingsToSave = { ...currentRatings };

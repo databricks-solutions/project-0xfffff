@@ -182,6 +182,7 @@ export function RubricCreationDemo() {
   const [scratchPad, setScratchPadState] = useState<ScratchPadEntry[]>([]);
   const [updatingQuestionId, setUpdatingQuestionId] = useState<string | null>(null);
   const [lastUpdatedQuestionId, setLastUpdatedQuestionId] = useState<string | null>(null);
+  const [isSavingQuestion, setIsSavingQuestion] = useState(false);
   
   // Judge type selection
   const [judgeType, setJudgeType] = useState<JudgeType>('likert');
@@ -278,59 +279,77 @@ export function RubricCreationDemo() {
     }
   }, [rubric, isEditingExisting]);
 
-  const addQuestion = async () => {
+  const addQuestion = () => {
+    console.log('addQuestion called, isSavingQuestion:', isSavingQuestion, 'rubric:', rubric);
     if (newQuestion.title.trim() && newQuestion.description.trim()) {
-      try {
-        // Create the new question
-        const newQuestionWithId = {
-          ...newQuestion,
-          id: Date.now().toString()
-        };
-        
-        // Add the new question to the local questions array
-        const updatedQuestions = [...questions, newQuestionWithId];
-        setQuestions(updatedQuestions);
-        
-        // Combine all questions into a single rubric string using the utility
-        const combinedQuestionText = formatRubricQuestions(updatedQuestions);
-        
-        const apiRubric: RubricCreate = {
-          question: combinedQuestionText,
-          created_by: 'facilitator',
-          judge_type: judgeType,
-          binary_labels: judgeType === 'binary' ? binaryLabels : undefined,
-          rating_scale: 5
-        };
-        
-        if (rubric) {
-          // Update existing rubric with all questions
-          await updateRubric.mutateAsync(apiRubric);
-        } else {
-          // Create new rubric with all questions
-          await createRubric.mutateAsync(apiRubric);
-        }
-        
-        // Reset form
-        setNewQuestion({
-          title: '',
-          description: '',
-          judgeType: 'likert'
-        });
-        setIsAddingQuestion(false);
-        setIsEditingExisting(false);
-        
-        // Invalidate queries to refresh the UI
-        queryClient.invalidateQueries({ queryKey: ['rubric', workshopId] });
-      } catch (error) {
-        
+      if (isSavingQuestion) {
+        console.log('Already saving, skipping');
+        return;
       }
+      setIsSavingQuestion(true);
+      setIsEditingExisting(true);
+      
+      const newQuestionForRubric = {
+        ...newQuestion,
+        id: 'temp'
+      };
+      const updatedQuestions = [...questions, newQuestionForRubric];
+      const combinedQuestionText = formatRubricQuestions(updatedQuestions);
+      
+      const apiRubric = {
+        question: combinedQuestionText,
+        created_by: 'facilitator',
+        judge_type: judgeType,
+        binary_labels: judgeType === 'binary' ? binaryLabels : undefined,
+        rating_scale: 5
+      };
+      
+      const method = rubric ? 'PUT' : 'POST';
+      const url = `http://localhost:8000/workshops/${workshopId}/rubric`;
+      
+      console.log('Starting fetch:', method, url);
+      fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(apiRubric),
+      })
+        .then(response => {
+          console.log('Fetch response received:', response.status);
+          if (!response.ok) throw new Error('Failed');
+          return response.json();
+        })
+        .then(savedRubric => {
+          console.log('Rubric saved:', savedRubric);
+          setNewQuestion({ title: '', description: '', judgeType: 'likert' });
+          setIsAddingQuestion(false);
+          if (savedRubric && savedRubric.id) {
+            queryClient.setQueryData(['rubric', workshopId], savedRubric);
+            setQuestions(convertApiRubricToQuestions(savedRubric));
+          }
+          toast.success('Question added successfully');
+        })
+        .catch(error => {
+          console.error('Error:', error);
+          toast.error('Failed to add question');
+        })
+        .finally(() => {
+          setIsSavingQuestion(false);
+          setIsEditingExisting(false);
+        });
     }
   };
 
   const deleteQuestion = async (id: string) => {
     try {
-      // Call the new delete endpoint for individual questions
-      const response = await fetch(`/workshops/${workshopId}/rubric/questions/${id}`, {
+      // Prevent useEffect from overwriting our state changes
+      setIsEditingExisting(true);
+      
+      // Immediately update local state to remove the deleted question
+      // This provides instant UI feedback
+      setQuestions(prevQuestions => prevQuestions.filter(q => q.id !== id));
+      
+      // Call the delete endpoint directly (bypass slow Vite proxy)
+      const response = await fetch(`http://localhost:8000/workshops/${workshopId}/rubric/questions/${id}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -338,26 +357,35 @@ export function RubricCreationDemo() {
       });
       
       if (!response.ok) {
+        // Revert on error - refetch to get current state
+        setIsEditingExisting(false);
+        queryClient.invalidateQueries({ queryKey: ['rubric', workshopId] });
         throw new Error('Failed to delete question');
       }
       
-      // Immediately update local state to remove the deleted question
-      setQuestions(prevQuestions => prevQuestions.filter(q => q.id !== id));
+      // Get the updated rubric from the response
+      const updatedRubric = await response.json();
       
-      // Set editing flag to prevent useEffect from overwriting our local state
-      // when the query is invalidated and refetched
-      setIsEditingExisting(true);
+      // Update the rubric cache directly with the server response
+      if (updatedRubric && updatedRubric.id) {
+        // Rubric still exists with remaining questions
+        queryClient.setQueryData(['rubric', workshopId], updatedRubric);
+        // Sync local state with the server response
+        setQuestions(convertApiRubricToQuestions(updatedRubric));
+      } else {
+        // All questions deleted - rubric no longer exists
+        queryClient.setQueryData(['rubric', workshopId], null);
+        setQuestions([]);
+      }
       
-      // Invalidate queries to ensure backend is in sync
-      queryClient.invalidateQueries({ queryKey: ['rubric', workshopId] });
-      
-      // Reset editing flag after a short delay to allow future syncs
-      setTimeout(() => setIsEditingExisting(false), 1000);
+      // Re-enable useEffect sync
+      setIsEditingExisting(false);
       
       toast.success('Question deleted successfully');
     } catch (error) {
       console.error('Error deleting question:', error);
       toast.error('Failed to delete question. Please try again.');
+      setIsEditingExisting(false);
     }
   };
 
@@ -1052,10 +1080,10 @@ export function RubricCreationDemo() {
                     <Button 
                       onClick={addQuestion} 
                       className="flex items-center gap-2"
-                      disabled={!newQuestion.title.trim() || !newQuestion.description.trim() || createRubric.isPending || updateRubric.isPending}
+                      disabled={!newQuestion.title.trim() || !newQuestion.description.trim() || isSavingQuestion}
                     >
                       <Plus className="h-4 w-4" />
-                      {createRubric.isPending || updateRubric.isPending ? 'Saving...' : 'Save'}
+                      {isSavingQuestion ? 'Saving...' : 'Save'}
                     </Button>
                     <Button 
                       variant="outline" 
