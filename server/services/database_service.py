@@ -105,20 +105,8 @@ class DatabaseService:
     self.db.commit()
     self.db.refresh(db_workshop)
 
-    return Workshop(
-      id=db_workshop.id,
-      name=db_workshop.name,
-      description=db_workshop.description,
-      facilitator_id=db_workshop.facilitator_id,
-      status=db_workshop.status,
-      current_phase=db_workshop.current_phase,
-      completed_phases=db_workshop.completed_phases or [],
-      discovery_started=db_workshop.discovery_started or False,
-      annotation_started=db_workshop.annotation_started or False,
-      active_discovery_trace_ids=db_workshop.active_discovery_trace_ids or [],
-      active_annotation_trace_ids=db_workshop.active_annotation_trace_ids or [],
-      created_at=db_workshop.created_at,
-    )
+    # Use _workshop_from_db to ensure all fields are properly populated
+    return self._workshop_from_db(db_workshop)
 
   def _workshop_from_db(self, db_workshop: WorkshopDB) -> Workshop:
     """Convert a database workshop object to a Workshop model."""
@@ -139,6 +127,9 @@ class DatabaseService:
       judge_name=db_workshop.judge_name or 'workshop_judge',
       input_jsonpath=getattr(db_workshop, 'input_jsonpath', None),
       output_jsonpath=getattr(db_workshop, 'output_jsonpath', None),
+      auto_evaluation_job_id=getattr(db_workshop, 'auto_evaluation_job_id', None),
+      auto_evaluation_prompt=getattr(db_workshop, 'auto_evaluation_prompt', None),
+      auto_evaluation_model=getattr(db_workshop, 'auto_evaluation_model', None),
       created_at=db_workshop.created_at,
     )
 
@@ -374,6 +365,42 @@ class DatabaseService:
     self.db.refresh(db_workshop)
 
     return self._workshop_from_db(db_workshop)
+
+  def update_auto_evaluation_job(self, workshop_id: str, job_id: str, prompt: str, model: Optional[str] = None) -> Optional[Workshop]:
+    """Update the auto-evaluation job ID, derived prompt, and model for a workshop."""
+    db_workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if not db_workshop:
+      return None
+
+    db_workshop.auto_evaluation_job_id = job_id
+    db_workshop.auto_evaluation_prompt = prompt
+    if model:
+      db_workshop.auto_evaluation_model = model
+    self.db.commit()
+    self.db.refresh(db_workshop)
+
+    return self._workshop_from_db(db_workshop)
+
+  def get_auto_evaluation_job_id(self, workshop_id: str) -> Optional[str]:
+    """Get the auto-evaluation job ID for a workshop."""
+    db_workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if not db_workshop:
+      return None
+    return db_workshop.auto_evaluation_job_id
+
+  def get_auto_evaluation_prompt(self, workshop_id: str) -> Optional[str]:
+    """Get the auto-evaluation derived prompt for a workshop."""
+    db_workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if not db_workshop:
+      return None
+    return db_workshop.auto_evaluation_prompt
+
+  def get_auto_evaluation_model(self, workshop_id: str) -> Optional[str]:
+    """Get the auto-evaluation model for a workshop."""
+    db_workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if not db_workshop:
+      return None
+    return getattr(db_workshop, 'auto_evaluation_model', None)
 
   # Trace operations
   def add_traces(self, workshop_id: str, traces: List[TraceUpload]) -> List[Trace]:
@@ -1076,6 +1103,80 @@ class DatabaseService:
       rating_scale=db_rubric.rating_scale or 5,
     )
 
+  def derive_judge_prompt_from_rubric(self, workshop_id: str) -> Optional[str]:
+    """Generate a judge prompt based on rubric questions and criteria.
+    
+    This auto-derives a complete judge prompt from the rubric that can be used
+    for automatic LLM evaluation when annotation begins.
+    
+    Returns:
+        A judge prompt string, or None if no rubric exists.
+    """
+    rubric = self.get_rubric(workshop_id)
+    if not rubric:
+      return None
+    
+    # Parse rubric questions
+    questions = self._parse_rubric_questions(rubric.question)
+    if not questions:
+      # Single question rubric (legacy format)
+      questions = [{
+        'id': 'q_1',
+        'title': rubric.question.split(':')[0].strip() if ':' in rubric.question else 'Response Quality',
+        'description': rubric.question,
+        'judge_type': rubric.judge_type or 'likert',
+      }]
+    
+    # Build the prompt based on judge type
+    prompt_parts = []
+    prompt_parts.append("You are an expert evaluator. Your task is to evaluate the quality of AI-generated responses based on specific criteria.")
+    prompt_parts.append("")
+    prompt_parts.append("## Input")
+    prompt_parts.append("Request: {{ inputs }}")
+    prompt_parts.append("Response: {{ outputs }}")
+    prompt_parts.append("")
+    prompt_parts.append("## Evaluation Criteria")
+    
+    # Add each rubric question as evaluation criteria
+    for i, question in enumerate(questions, 1):
+      title = question.get('title', f'Criterion {i}')
+      description = question.get('description', '')
+      judge_type = question.get('judge_type', 'likert')
+      
+      prompt_parts.append(f"### {i}. {title}")
+      if description:
+        prompt_parts.append(description)
+      prompt_parts.append("")
+    
+    # Add rating instructions based on judge type
+    # Use the first question's judge type as the primary type
+    primary_judge_type = questions[0].get('judge_type', rubric.judge_type or 'likert')
+    
+    if primary_judge_type == 'binary':
+      binary_labels = rubric.binary_labels or {'pass': 'Pass', 'fail': 'Fail'}
+      pass_label = binary_labels.get('pass', 'Pass')
+      fail_label = binary_labels.get('fail', 'Fail')
+      prompt_parts.append("## Rating Instructions")
+      prompt_parts.append(f"Provide a binary rating:")
+      prompt_parts.append(f"- 1 ({pass_label}): The response meets the criteria")
+      prompt_parts.append(f"- 0 ({fail_label}): The response does not meet the criteria")
+      prompt_parts.append("")
+      prompt_parts.append("IMPORTANT: Your response MUST start with a single integer rating (0 or 1) on its own line, followed by your reasoning.")
+    else:
+      # Likert scale
+      rating_scale = rubric.rating_scale or 5
+      prompt_parts.append("## Rating Instructions")
+      prompt_parts.append(f"Rate the response on a scale of 1 to {rating_scale}:")
+      prompt_parts.append(f"- 1: Very poor - Does not meet criteria at all")
+      prompt_parts.append(f"- 2: Poor - Meets few criteria")
+      prompt_parts.append(f"- 3: Acceptable - Meets some criteria")
+      prompt_parts.append(f"- 4: Good - Meets most criteria")
+      prompt_parts.append(f"- 5: Excellent - Fully meets all criteria")
+      prompt_parts.append("")
+      prompt_parts.append(f"IMPORTANT: Your response MUST start with a single integer rating (1-{rating_scale}) on its own line, followed by your reasoning.")
+    
+    return "\n".join(prompt_parts)
+
   # Annotation operations
   def add_annotation(self, workshop_id: str, annotation_data: AnnotationCreate) -> Annotation:
     """Add an annotation. If a duplicate exists, update the existing one."""
@@ -1377,6 +1478,97 @@ class DatabaseService:
         logger.warning(f"Invalid Likert rating {rating_int}, clamping to {clamped}")
         return clamped
 
+  def tag_traces_for_evaluation(self, workshop_id: str, trace_ids: List[str], tag_type: str = 'eval') -> Dict[str, Any]:
+    """Tag MLflow traces for evaluation or alignment.
+    
+    This applies tags so that search_traces can find the appropriate traces:
+    - 'eval' tag: Applied when annotation starts, used by evaluate() for auto-evaluation
+    - 'align' tag: Applied when human annotations are saved, used by align()
+    
+    Args:
+        workshop_id: The workshop ID
+        trace_ids: List of trace IDs to tag
+        tag_type: Either 'eval' (for auto-evaluation) or 'align' (for alignment after human annotation)
+        
+    Returns:
+        Dict with counts of tagged/failed traces
+    """
+    if tag_type not in ('eval', 'align'):
+      logger.warning('Invalid tag_type %s, must be "eval" or "align"', tag_type)
+      return {'tagged': 0, 'failed': len(trace_ids), 'error': f'Invalid tag_type: {tag_type}'}
+    
+    config = (
+      self.db.query(MLflowIntakeConfigDB)
+      .filter(MLflowIntakeConfigDB.workshop_id == workshop_id)
+      .first()
+    )
+    if not config or not config.databricks_host or not config.experiment_id:
+      logger.warning('Cannot tag traces: MLflow config missing for workshop %s', workshop_id)
+      return {'tagged': 0, 'failed': len(trace_ids), 'error': 'MLflow config missing'}
+
+    databricks_token = token_storage.get_token(workshop_id)
+    if not databricks_token:
+      databricks_token = self.get_databricks_token(workshop_id)
+      if databricks_token:
+        token_storage.store_token(workshop_id, databricks_token)
+    if not databricks_token:
+      logger.warning('Cannot tag traces: Databricks token missing for workshop %s', workshop_id)
+      return {'tagged': 0, 'failed': len(trace_ids), 'error': 'Databricks token missing'}
+
+    try:
+      import mlflow
+    except ImportError:
+      logger.warning('MLflow is not available; cannot tag traces.')
+      return {'tagged': 0, 'failed': len(trace_ids), 'error': 'MLflow not available'}
+
+    os.environ['DATABRICKS_HOST'] = config.databricks_host.rstrip('/')
+    os.environ['DATABRICKS_TOKEN'] = databricks_token
+    os.environ.pop('DATABRICKS_CLIENT_ID', None)
+    os.environ.pop('DATABRICKS_CLIENT_SECRET', None)
+
+    mlflow.set_tracking_uri('databricks')
+
+    try:
+      mlflow.set_experiment(experiment_id=config.experiment_id)
+    except Exception as exc:
+      logger.warning('Failed to set MLflow experiment %s: %s', config.experiment_id, exc)
+      return {'tagged': 0, 'failed': len(trace_ids), 'error': f'Failed to set experiment: {exc}'}
+
+    set_trace_tag = getattr(mlflow, 'set_trace_tag', None)
+    if not set_trace_tag:
+      logger.warning('mlflow.set_trace_tag not available; cannot tag traces')
+      return {'tagged': 0, 'failed': len(trace_ids), 'error': 'mlflow.set_trace_tag not available'}
+
+    # Get mlflow_trace_id for each trace_id
+    traces = self.db.query(TraceDB).filter(TraceDB.id.in_(trace_ids)).all()
+    trace_map = {t.id: t.mlflow_trace_id for t in traces if t.mlflow_trace_id}
+    
+    tagged = 0
+    failed = 0
+    tags = {
+      'label': tag_type,  # 'eval' for auto-evaluation, 'align' for alignment
+      'workshop_id': workshop_id,
+    }
+    
+    for trace_id in trace_ids:
+      mlflow_trace_id = trace_map.get(trace_id)
+      if not mlflow_trace_id:
+        logger.warning('No mlflow_trace_id for trace %s, skipping', trace_id)
+        failed += 1
+        continue
+        
+      try:
+        for key, value in tags.items():
+          set_trace_tag(trace_id=mlflow_trace_id, key=key, value=value)
+        tagged += 1
+        logger.debug('Tagged trace %s (%s) with %s label', trace_id, mlflow_trace_id, tag_type)
+      except Exception as exc:
+        logger.warning('Failed to tag trace %s: %s', mlflow_trace_id, exc)
+        failed += 1
+    
+    logger.info('Tagged %d/%d traces with "%s" label for workshop %s', tagged, len(trace_ids), tag_type, workshop_id)
+    return {'tagged': tagged, 'failed': failed}
+
   def _sync_annotation_with_mlflow(self, workshop_id: str, annotation_db: AnnotationDB) -> None:
     """Ensure MLflow trace carries SME tag + feedback once an annotation is captured."""
     if not annotation_db or not getattr(annotation_db, 'trace', None):
@@ -1425,8 +1617,9 @@ class DatabaseService:
       return
 
     set_trace_tag = getattr(mlflow, 'set_trace_tag', None)
+    # Tag with 'align' label for alignment after human annotation
     tags = {
-      'label': 'jbws',
+      'label': 'align',
       'workshop_id': workshop_id,
     }
     if set_trace_tag:
@@ -1438,25 +1631,100 @@ class DatabaseService:
     else:
       logger.debug('mlflow.set_trace_tag not available; skip tagging for trace %s', mlflow_trace_id)
 
-    if annotation_db.rating is None:
-      return
-
     # Get the workshop's judge_name (used for MLflow feedback entries)
     workshop_db = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
     judge_name = workshop_db.judge_name if workshop_db and workshop_db.judge_name else 'workshop_judge'
+
+    # Determine the correct rating to log based on rubric type
+    # IMPORTANT: Judge type can be per-question (embedded in question text), not just at rubric level
+    feedback_value = None
+    
+    # Get rubric to determine judge type
+    rubric_db = self.db.query(RubricDB).filter(RubricDB.workshop_id == workshop_id).first()
+    rubric_level_judge_type = rubric_db.judge_type if rubric_db and hasattr(rubric_db, 'judge_type') else 'likert'
+    
+    # Parse rubric questions to get per-question judge types
+    # The per-question judge type takes precedence over rubric-level judge_type
+    effective_judge_type = rubric_level_judge_type
+    question_judge_types = {}
+    
+    if rubric_db and rubric_db.question:
+      questions = self._parse_rubric_questions(rubric_db.question)
+      for i, q in enumerate(questions):
+        q_judge_type = q.get('judge_type', rubric_level_judge_type)
+        q_id = q.get('id', f'q_{i+1}')
+        question_judge_types[q_id] = q_judge_type
+        # Also map by rubric_id_index format (frontend format)
+        frontend_id = f"{rubric_db.id}_{i}"
+        question_judge_types[frontend_id] = q_judge_type
+      
+      # Use the first question's judge type as the effective type
+      if questions:
+        effective_judge_type = questions[0].get('judge_type', rubric_level_judge_type)
+      
+      logger.info(f"MLflow sync: rubric_level={rubric_level_judge_type}, effective={effective_judge_type}, question_types={question_judge_types}")
+    
+    # Get the rating value based on judge type
+    if annotation_db.ratings and isinstance(annotation_db.ratings, dict) and annotation_db.ratings:
+      # Use per-question ratings if available
+      for key, value in annotation_db.ratings.items():
+        if value is None:
+          continue
+        
+        # Get the judge type for this specific question
+        q_judge_type = question_judge_types.get(key, effective_judge_type)
+        
+        # Check if index-based key
+        if q_judge_type == effective_judge_type and '_' in key:
+          try:
+            idx = int(key.split('_')[-1])
+            q_judge_type = list(question_judge_types.values())[idx] if idx < len(question_judge_types) else effective_judge_type
+          except (ValueError, IndexError):
+            pass
+        
+        logger.info(f"MLflow sync: checking ratings[{key}]={value}, q_judge_type={q_judge_type}")
+        
+        if q_judge_type == 'binary':
+          # For binary, accept 0 or 1
+          if isinstance(value, (int, float)) and value in [0, 1, 0.0, 1.0]:
+            feedback_value = float(value)
+            logger.info(f"MLflow sync: Binary rating found: {feedback_value} from ratings[{key}]")
+            break
+        else:
+          # For likert, accept 1-5
+          if isinstance(value, (int, float)) and 1 <= value <= 5:
+            feedback_value = float(value)
+            logger.info(f"MLflow sync: Likert rating found: {feedback_value} from ratings[{key}]")
+            break
+    
+    # Fallback to legacy rating field
+    if feedback_value is None and annotation_db.rating is not None:
+      if effective_judge_type == 'binary':
+        if annotation_db.rating in [0, 1]:
+          feedback_value = float(annotation_db.rating)
+          logger.info(f"MLflow sync: Using legacy binary rating: {feedback_value}")
+      else:
+        if 1 <= annotation_db.rating <= 5:
+          feedback_value = float(annotation_db.rating)
+          logger.info(f"MLflow sync: Using legacy likert rating: {feedback_value}")
+    
+    if feedback_value is None:
+      logger.warning(f"MLflow sync: No valid feedback value found. effective_type={effective_judge_type}, ratings={annotation_db.ratings}, rating={annotation_db.rating}")
+      return
 
     try:
       rationale = annotation_db.comment.strip() if annotation_db.comment else None
       mlflow.log_feedback(
         trace_id=mlflow_trace_id,
         name=judge_name,
-        value=annotation_db.rating,
+        value=feedback_value,
         source=AssessmentSource(
           source_type=AssessmentSourceType.HUMAN,
           source_id=annotation_db.user_id or workshop_id,
         ),
         rationale=rationale,
       )
+      logger.info(f"Logged MLflow feedback: trace={mlflow_trace_id[:8]}..., judge={judge_name}, value={feedback_value}")
     except Exception as exc:
       logger.warning('Failed to log MLflow feedback for trace %s: %s', mlflow_trace_id, exc)
 
@@ -1539,6 +1807,7 @@ class DatabaseService:
         'user_id': annotation.user_id,
         'user_name': user.name,
         'user_email': user.email,
+        'user_role': user.role,  # Include user role for SME/participant distinction
         'rating': annotation.rating,
         'ratings': annotation.ratings,  # Include per-metric ratings dictionary
         'comment': annotation.comment,
@@ -2377,6 +2646,47 @@ class DatabaseService:
     """Clear all evaluation results for a specific judge prompt."""
     self.db.query(JudgeEvaluationDB).filter(and_(JudgeEvaluationDB.workshop_id == workshop_id, JudgeEvaluationDB.prompt_id == prompt_id)).delete()
     self.db.commit()
+
+  def get_latest_evaluations(self, workshop_id: str) -> List[JudgeEvaluation]:
+    """Get the most recent evaluation results for a workshop (from any prompt).
+    
+    This returns evaluations from the most recently created prompt that has evaluations.
+    Useful for getting auto-evaluation results without knowing the prompt ID.
+    """
+    # Get the latest prompt with evaluations
+    latest_prompt = (
+      self.db.query(JudgePromptDB)
+      .filter(JudgePromptDB.workshop_id == workshop_id)
+      .order_by(JudgePromptDB.created_at.desc())
+      .first()
+    )
+    
+    if not latest_prompt:
+      return []
+    
+    # Get evaluations for this prompt
+    db_evaluations = (
+      self.db.query(JudgeEvaluationDB)
+      .filter(and_(
+        JudgeEvaluationDB.workshop_id == workshop_id,
+        JudgeEvaluationDB.prompt_id == latest_prompt.id
+      ))
+      .all()
+    )
+    
+    return [
+      JudgeEvaluation(
+        id=db_eval.id,
+        workshop_id=db_eval.workshop_id,
+        prompt_id=db_eval.prompt_id,
+        trace_id=db_eval.trace_id,
+        predicted_rating=db_eval.predicted_rating,
+        human_rating=db_eval.human_rating,
+        confidence=db_eval.confidence,
+        reasoning=db_eval.reasoning,
+      )
+      for db_eval in db_evaluations
+    ]
 
   # User trace order operations
   def get_user_trace_order(self, workshop_id: str, user_id: str) -> Optional[UserTraceOrder]:

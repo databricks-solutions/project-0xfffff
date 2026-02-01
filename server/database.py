@@ -166,6 +166,9 @@ class WorkshopDB(Base):
     judge_name = Column(String, default="workshop_judge")  # Name used for feedback entries
     input_jsonpath = Column(Text, nullable=True)  # JSONPath query for extracting trace input display
     output_jsonpath = Column(Text, nullable=True)  # JSONPath query for extracting trace output display
+    auto_evaluation_job_id = Column(String, nullable=True)  # Job ID for auto-evaluation on annotation start
+    auto_evaluation_prompt = Column(Text, nullable=True)  # Derived judge prompt used for auto-evaluation
+    auto_evaluation_model = Column(String, nullable=True)  # Model used for auto-evaluation
     created_at = Column(DateTime, default=func.now())
 
     # Relationships

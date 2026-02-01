@@ -5,14 +5,16 @@ import { Badge } from '@/components/ui/badge';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useQueryClient } from '@tanstack/react-query';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useRubric, useAllTraces } from '@/hooks/useWorkshopApi';
 import { WorkshopsService } from '@/client';
-import { Play, Users, Star, ClipboardList, ChevronRight, CheckCircle, Settings, Database, Scale, Binary, MessageSquareText, Shuffle } from 'lucide-react';
+import { Play, Users, Star, ClipboardList, ChevronRight, CheckCircle, Settings, Database, Scale, Binary, MessageSquareText, Shuffle, Brain, Zap } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 import { parseRubricQuestions } from '@/utils/rubricUtils';
+import { MODEL_MAPPING } from '@/utils/modelMapping';
 
 interface AnnotationStartPageProps {
   onStartAnnotation?: () => void;
@@ -25,6 +27,8 @@ export const AnnotationStartPage: React.FC<AnnotationStartPageProps> = ({ onStar
   const [traceOption, setTraceOption] = React.useState<'limited' | 'all'>('limited');
   const [customTraceCount, setCustomTraceCount] = React.useState<string>('10');
   const [randomizeTraces, setRandomizeTraces] = React.useState<boolean>(false);
+  const [evaluationModel, setEvaluationModel] = React.useState<string>('databricks-claude-sonnet-4-5');
+  const [autoEvaluateEnabled, setAutoEvaluateEnabled] = React.useState<boolean>(true);
   const { data: rubric } = useRubric(workshopId!);
   const { data: traces } = useAllTraces(workshopId!);
   
@@ -37,12 +41,19 @@ export const AnnotationStartPage: React.FC<AnnotationStartPageProps> = ({ onStar
       // Determine trace limit based on user selection
       const traceLimit = traceOption === 'all' ? -1 : parseInt(customTraceCount) || 10;
       
+      const requestBody = { 
+        trace_limit: traceLimit, 
+        randomize: randomizeTraces,
+        evaluation_model_name: autoEvaluateEnabled ? evaluationModel : null,
+      };
+      console.log('[AnnotationStartPage] Starting annotation with:', requestBody);
+      
       const response = await fetch(`/workshops/${workshopId}/begin-annotation`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ trace_limit: traceLimit, randomize: randomizeTraces })
+        body: JSON.stringify(requestBody)
       });
       
       if (!response.ok) {
@@ -51,7 +62,18 @@ export const AnnotationStartPage: React.FC<AnnotationStartPageProps> = ({ onStar
       }
       
       const result = await response.json();
-      toast.success(result.message || 'Annotation phase started successfully!');
+      console.log('[AnnotationStartPage] Response:', result);
+      
+      // Show success message with auto-evaluation status
+      if (result.auto_evaluation_started) {
+        toast.success(`${result.message} Auto-evaluation started with ${evaluationModel}.`);
+      } else if (autoEvaluateEnabled) {
+        // User wanted auto-eval but it didn't start - show warning
+        toast.warning(`${result.message} Auto-evaluation could not start - check MLflow/Databricks configuration.`);
+        console.warn('[AnnotationStartPage] Auto-evaluation requested but did not start:', result);
+      } else {
+        toast.success(result.message || 'Annotation phase started successfully!');
+      }
       
       // Add a small delay to ensure backend has processed the change
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -235,6 +257,73 @@ export const AnnotationStartPage: React.FC<AnnotationStartPageProps> = ({ onStar
               {randomizeTraces && ' (randomized per SME)'}
             </p>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Auto-Evaluation Configuration */}
+      <Card className="border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Brain className="w-5 h-5 text-blue-600" />
+            Auto-Evaluation (LLM Judge)
+          </CardTitle>
+          <CardDescription>
+            Automatically run LLM evaluation on traces when annotation begins
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Auto-Evaluate Toggle */}
+          <div className="flex items-center justify-between">
+            <Label htmlFor="auto-evaluate-toggle" className="text-sm text-slate-700 cursor-pointer flex items-center gap-2">
+              <Zap className="w-4 h-4 text-blue-600" />
+              Enable auto-evaluation
+            </Label>
+            <Switch
+              id="auto-evaluate-toggle"
+              checked={autoEvaluateEnabled}
+              onCheckedChange={setAutoEvaluateEnabled}
+            />
+          </div>
+          
+          {autoEvaluateEnabled && (
+            <div className="space-y-3 pt-3 border-t border-blue-200">
+              <div>
+                <Label htmlFor="evaluation-model" className="text-sm font-medium text-slate-700 mb-2 block">
+                  Evaluation Model
+                </Label>
+                <Select value={evaluationModel} onValueChange={setEvaluationModel}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select a model" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(MODEL_MAPPING).map(([displayName, endpointName]) => (
+                      <SelectItem key={endpointName} value={endpointName}>
+                        {displayName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-slate-500 mt-1">
+                  The LLM model used to automatically evaluate traces
+                </p>
+              </div>
+              
+              <div className="p-3 bg-blue-100 rounded-lg">
+                <p className="text-sm text-blue-800">
+                  <strong>How it works:</strong> When annotation begins, the LLM judge will automatically 
+                  evaluate all selected traces in the background. Results will appear in the Results page.
+                </p>
+              </div>
+            </div>
+          )}
+          
+          {!autoEvaluateEnabled && (
+            <div className="p-3 bg-slate-100 rounded-lg">
+              <p className="text-sm text-slate-600">
+                Auto-evaluation disabled. You can manually run evaluation from the Results page.
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 

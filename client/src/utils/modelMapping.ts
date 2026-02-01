@@ -15,11 +15,13 @@ export interface ModelOption {
  * Mapping of frontend display names to backend model names
  */
 export const MODEL_MAPPING: Record<string, string> = {
+  'GPT-5.2': 'databricks-gpt-5-2',
   'GPT-5.1': 'databricks-gpt-5-1',
-  'Gemini 3 Pro': 'databricks-gemini-3-pro',
-  'Gemini 2.5 Flash': 'databricks-gemini-2-5-flash',
+  'Claude Opus 4.5': 'databricks-claude-opus-4-5',
   'Claude Sonnet 4.5': 'databricks-claude-sonnet-4-5',
   'Claude Sonnet 4': 'databricks-claude-sonnet-4',
+  'Gemini 3 Pro': 'databricks-gemini-3-pro',
+  'Gemini 2.5 Flash': 'databricks-gemini-2-5-flash',
   'Llama 4 Maverick': 'databricks-llama-4-maverick',
   'Llama 3.3 70B Instruct': 'databricks-meta-llama-3-3-70b-instruct'
 };
@@ -51,6 +53,13 @@ export function getFrontendModelName(backendName: string): string {
 export function getModelOptions(hasMlflowConfig: boolean = false): ModelOption[] {
   return [
     {
+      value: 'GPT-5.2',
+      label: 'GPT-5.2',
+      description: 'OpenAI GPT-5.2 model',
+      disabled: !hasMlflowConfig,
+      requiresDatabricks: true,
+    },
+    {
       value: 'GPT-5.1',
       label: 'GPT-5.1',
       description: 'OpenAI GPT-5.1 model',
@@ -58,16 +67,9 @@ export function getModelOptions(hasMlflowConfig: boolean = false): ModelOption[]
       requiresDatabricks: true,
     },
     {
-      value: 'Gemini 3 Pro',
-      label: 'Gemini 3 Pro',
-      description: 'Google Gemini 3 Pro model',
-      disabled: !hasMlflowConfig,
-      requiresDatabricks: true,
-    },
-    {
-      value: 'Gemini 2.5 Flash',
-      label: 'Gemini 2.5 Flash',
-      description: 'Google Gemini 2.5 Flash model',
+      value: 'Claude Opus 4.5',
+      label: 'Claude Opus 4.5',
+      description: 'Anthropic Claude Opus 4.5 model',
       disabled: !hasMlflowConfig,
       requiresDatabricks: true,
     },
@@ -82,6 +84,20 @@ export function getModelOptions(hasMlflowConfig: boolean = false): ModelOption[]
       value: 'Claude Sonnet 4',
       label: 'Claude Sonnet 4',
       description: 'Anthropic Claude Sonnet 4 model',
+      disabled: !hasMlflowConfig,
+      requiresDatabricks: true,
+    },
+    {
+      value: 'Gemini 3 Pro',
+      label: 'Gemini 3 Pro',
+      description: 'Google Gemini 3 Pro model',
+      disabled: !hasMlflowConfig,
+      requiresDatabricks: true,
+    },
+    {
+      value: 'Gemini 2.5 Flash',
+      label: 'Gemini 2.5 Flash',
+      description: 'Google Gemini 2.5 Flash model',
       disabled: !hasMlflowConfig,
       requiresDatabricks: true,
     },

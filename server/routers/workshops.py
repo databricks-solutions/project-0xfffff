@@ -737,7 +737,12 @@ async def begin_discovery_phase(
 
 @router.post("/{workshop_id}/add-traces")
 async def add_traces(workshop_id: str, request: dict, db: Session = Depends(get_db)):
-    """Add additional traces to the current active phase (discovery or annotation)."""
+    """Add additional traces to the current active phase (discovery or annotation).
+    
+    When adding traces to annotation phase, automatically triggers LLM evaluation
+    for the newly added traces in the background.
+    """
+    import threading
 
     additional_count = request.get("additional_count", 0)
     if not additional_count or additional_count <= 0:
@@ -747,6 +752,9 @@ async def add_traces(workshop_id: str, request: dict, db: Session = Depends(get_
     target_phase = request.get("phase")
 
     db_service = DatabaseService(db)
+    
+    # Retrieve the stored evaluation model from initial auto-evaluation (don't use a hardcoded default)
+    evaluation_model_name = db_service.get_auto_evaluation_model(workshop_id) or "databricks-meta-llama-3-3-70b-instruct"
     workshop = db_service.get_workshop(workshop_id)
     if not workshop:
         raise HTTPException(status_code=404, detail="Workshop not found")
@@ -807,12 +815,169 @@ async def add_traces(workshop_id: str, request: dict, db: Session = Depends(get_
     else:
         message = f"Added {traces_to_add} additional traces to {phase_name} phase"
 
+    # === AUTO-EVALUATION for annotation phase ===
+    auto_eval_job_id = None
+    auto_eval_started = False
+    
+    logger.info("Add traces - phase: %s, checking for auto-evaluation", phase_name)
+    
+    if phase_name == "annotation":
+        # Tag the newly added traces with 'eval' label for auto-evaluation
+        tag_result = db_service.tag_traces_for_evaluation(workshop_id, additional_trace_ids, tag_type='eval')
+        logger.info("Add traces - tagged %d new traces for auto-evaluation: %s", len(additional_trace_ids), tag_result)
+        
+        # Get MLflow config for auto-evaluation
+        mlflow_config = db_service.get_mlflow_config(workshop_id)
+        logger.info("Add traces - MLflow config available: %s", mlflow_config is not None)
+        
+        if mlflow_config:
+            # Only run auto-evaluation if it was previously enabled (i.e., a prompt was stored)
+            derived_prompt = db_service.get_auto_evaluation_prompt(workshop_id)
+            logger.info("Add traces - stored prompt available: %s (length: %s)", 
+                       derived_prompt is not None, len(derived_prompt) if derived_prompt else 0)
+            if not derived_prompt:
+                logger.info("No auto-evaluation prompt stored - skipping auto-evaluation for added traces")
+            
+            if derived_prompt:
+                # Get Databricks token
+                from server.services.token_storage_service import token_storage
+                databricks_token = token_storage.get_token(workshop_id)
+                if not databricks_token:
+                    databricks_token = db_service.get_databricks_token(workshop_id)
+                    if databricks_token:
+                        token_storage.store_token(workshop_id, databricks_token)
+                
+                logger.info("Add traces - Databricks token available: %s", databricks_token is not None)
+                if databricks_token:
+                    mlflow_config.databricks_token = databricks_token
+                    
+                    # Create auto-evaluation job for the new traces
+                    auto_eval_job_id = str(uuid.uuid4())
+                    logger.info("Add traces - Creating auto-evaluation job: %s", auto_eval_job_id)
+                    job = create_job(auto_eval_job_id, workshop_id)
+                    job.set_status("running")
+                    job.add_log(f"Auto-evaluation started for {traces_to_add} newly added traces")
+                    
+                    # Update job ID in workshop
+                    db_service.update_auto_evaluation_job(workshop_id, auto_eval_job_id, derived_prompt)
+                    
+                    # Get judge type from rubric - parse questions to get per-question judge type
+                    rubric = db_service.get_rubric(workshop_id)
+                    judge_type = 'likert'  # default
+                    if rubric and rubric.question:
+                        parsed_questions = db_service._parse_rubric_questions(rubric.question)
+                        if parsed_questions:
+                            judge_type = parsed_questions[0].get('judge_type', 'likert')
+                    
+                    # Run evaluation in background thread
+                    def run_auto_evaluation_for_new_traces():
+                        try:
+                            from server.services.alignment_service import AlignmentService
+                            from server.database import SessionLocal
+                            
+                            thread_db = SessionLocal()
+                            try:
+                                thread_db_service = DatabaseService(thread_db)
+                                alignment_service = AlignmentService(thread_db_service)
+                                
+                                job.add_log("Initializing auto-evaluation service for new traces...")
+                                job.add_log(f"Evaluating {traces_to_add} newly added traces")
+                                
+                                # Run evaluation - evaluates all active annotation traces
+                                # (includes previously evaluated + new ones)
+                                result = None
+                                for msg in alignment_service.run_evaluation_with_answer_sheet(
+                                    workshop_id=workshop_id,
+                                    judge_name=workshop.judge_name or "workshop_judge",
+                                    judge_prompt=derived_prompt,
+                                    evaluation_model_name=evaluation_model_name,
+                                    mlflow_config=mlflow_config,
+                                    judge_type=judge_type,
+                                    require_human_ratings=False,  # Auto-eval mode
+                                ):
+                                    if isinstance(msg, dict):
+                                        result = msg
+                                        job.result = result
+                                        job.save()
+                                    elif isinstance(msg, str):
+                                        job.add_log(msg)
+                                
+                                if result and result.get("success"):
+                                    try:
+                                        from server.models import JudgePromptCreate, JudgeEvaluation
+                                        
+                                        # Use existing prompt if available
+                                        # Note: get_judge_prompts returns prompts ordered by version DESC, so [0] is the latest
+                                        existing_prompts = thread_db_service.get_judge_prompts(workshop_id)
+                                        if existing_prompts:
+                                            new_prompt = existing_prompts[0]  # [0] is latest (version DESC order)
+                                            job.add_log(f"Using existing prompt v{new_prompt.version} for evaluation results")
+                                        else:
+                                            new_prompt_data = JudgePromptCreate(
+                                                prompt_text=derived_prompt,
+                                                few_shot_examples=[],
+                                                model_name=evaluation_model_name,
+                                                model_parameters={},
+                                            )
+                                            new_prompt = thread_db_service.create_judge_prompt(workshop_id, new_prompt_data)
+                                            job.add_log(f"Created initial prompt v{new_prompt.version}")
+                                        
+                                        if "evaluations" in result:
+                                            evals_to_store = []
+                                            for eval_data in result["evaluations"]:
+                                                try:
+                                                    pred = eval_data.get("predicted_rating")
+                                                    pred_val = int(round(float(pred))) if pred is not None else 0
+                                                    trace_id_for_db = eval_data.get("workshop_uuid") or eval_data["trace_id"]
+                                                    evals_to_store.append(
+                                                        JudgeEvaluation(
+                                                            id=str(uuid.uuid4()),
+                                                            workshop_id=workshop_id,
+                                                            prompt_id=new_prompt.id,
+                                                            trace_id=trace_id_for_db,
+                                                            predicted_rating=pred_val,
+                                                            human_rating=int(eval_data["human_rating"]) if eval_data.get("human_rating") is not None else 0,
+                                                            confidence=eval_data.get("confidence"),
+                                                            reasoning=eval_data.get("reasoning"),
+                                                        )
+                                                    )
+                                                except Exception as inner_err:
+                                                    logger.error(f"Error parsing evaluation: {inner_err}")
+                                            
+                                            if evals_to_store:
+                                                thread_db_service.store_judge_evaluations(evals_to_store)
+                                                job.add_log(f"Stored {len(evals_to_store)} evaluation results")
+                                        
+                                        job.set_status("completed")
+                                        job.add_log("Auto-evaluation for new traces completed")
+                                    except Exception as save_err:
+                                        job.add_log(f"Warning: Could not save results: {save_err}")
+                                        job.set_status("completed")
+                                else:
+                                    job.set_status("failed")
+                                    job.add_log(f"Auto-evaluation failed: {result.get('error', 'Unknown error') if result else 'No result'}")
+                            finally:
+                                thread_db.close()
+                        except Exception as e:
+                            logger.exception("Auto-evaluation error for new traces: %s", e)
+                            job.set_status("failed")
+                            job.add_log(f"Error: {str(e)}")
+                    
+                    # Start background thread
+                    eval_thread = threading.Thread(target=run_auto_evaluation_for_new_traces, daemon=True)
+                    eval_thread.start()
+                    auto_eval_started = True
+                    logger.info("Started auto-evaluation job %s for %d new traces in workshop %s", 
+                               auto_eval_job_id, traces_to_add, workshop_id)
+
     return {
         "message": message,
         "traces_added": traces_to_add,
         "total_active_traces": len(new_active_trace_ids),
         "available_traces_remaining": len(available_traces) - traces_to_add,
         "phase": phase_name,
+        "auto_evaluation_started": auto_eval_started,
+        "auto_evaluation_job_id": auto_eval_job_id,
     }
 
 
@@ -884,16 +1049,33 @@ async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Sessi
         request: JSON body with optional fields:
             - trace_limit: Number of traces to use (default: 10, -1 for all)
             - randomize: Whether to randomize trace order per user (default: False)
+            - evaluation_model_name: Model to use for auto-evaluation (null to disable)
     
     When randomize=False (default): All SMEs see traces in the same chronological order.
     When randomize=True: All SMEs see the same set of traces but in different random orders.
+    
+    This also triggers automatic LLM evaluation in the background using a judge prompt
+    derived from the rubric. Results are available immediately in the Results UI.
     """
     import random
+    import threading
+
+    logger.info("begin_annotation_phase called with request: %s", request)
 
     # Get the optional trace limit from request (default to 10)
     trace_limit = request.get("trace_limit", 10)
     # Get the optional randomize flag (default to False - same order for all users)
     randomize = request.get("randomize", False)
+    # Get the optional evaluation model name (None = skip auto-evaluation)
+    evaluation_model_name = request.get("evaluation_model_name")
+    # Default to a model if enabled but not specified
+    if evaluation_model_name is None:
+        # Auto-evaluation disabled by frontend
+        auto_evaluate_enabled = False
+    else:
+        auto_evaluate_enabled = True
+        if not evaluation_model_name:  # Empty string
+            evaluation_model_name = "databricks-meta-llama-3-3-70b-instruct"
 
     db_service = DatabaseService(db)
     workshop = db_service.get_workshop(workshop_id)
@@ -935,6 +1117,173 @@ async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Sessi
     db_service.update_workshop_phase(workshop_id, WorkshopPhase.ANNOTATION)
     db_service.update_phase_started(workshop_id, annotation_started=True)
 
+    # === TAG TRACES FOR EVALUATION ===
+    # Tag the selected traces in MLflow with 'eval' label for auto-evaluation
+    if auto_evaluate_enabled:
+        tag_result = db_service.tag_traces_for_evaluation(workshop_id, trace_ids_to_use, tag_type='eval')
+        logger.info("Tagged traces for auto-evaluation: %s", tag_result)
+
+    # === AUTO-EVALUATION: Derive judge prompt and start background evaluation ===
+    auto_eval_job_id = None
+    auto_eval_started = False
+    
+    # Only run auto-evaluation if enabled by frontend
+    logger.info("Auto-evaluation enabled: %s, model: %s", auto_evaluate_enabled, evaluation_model_name)
+    if not auto_evaluate_enabled:
+        logger.info("Auto-evaluation disabled by user for workshop %s", workshop_id)
+    
+    # Get MLflow config for auto-evaluation
+    mlflow_config = db_service.get_mlflow_config(workshop_id)
+    logger.info("MLflow config available: %s", mlflow_config is not None)
+    
+    if auto_evaluate_enabled and mlflow_config:
+        # Derive judge prompt from rubric
+        derived_prompt = db_service.derive_judge_prompt_from_rubric(workshop_id)
+        logger.info("Derived prompt length: %s", len(derived_prompt) if derived_prompt else 0)
+        
+        if derived_prompt:
+            # Get Databricks token
+            from server.services.token_storage_service import token_storage
+            databricks_token = token_storage.get_token(workshop_id)
+            if not databricks_token:
+                databricks_token = db_service.get_databricks_token(workshop_id)
+                if databricks_token:
+                    token_storage.store_token(workshop_id, databricks_token)
+            
+            logger.info("Databricks token available: %s", databricks_token is not None)
+            if databricks_token:
+                mlflow_config.databricks_token = databricks_token
+                
+                # Create auto-evaluation job
+                auto_eval_job_id = str(uuid.uuid4())
+                logger.info("Creating auto-evaluation job: %s", auto_eval_job_id)
+                job = create_job(auto_eval_job_id, workshop_id)
+                job.set_status("running")
+                job.add_log("Auto-evaluation started on annotation begin")
+                
+                # Store job ID, derived prompt, and model in workshop
+                db_service.update_auto_evaluation_job(workshop_id, auto_eval_job_id, derived_prompt, evaluation_model_name)
+                
+                # Get judge type from rubric - parse questions to get per-question judge type
+                judge_type = 'likert'  # default
+                if rubric and rubric.question:
+                    parsed_questions = db_service._parse_rubric_questions(rubric.question)
+                    if parsed_questions:
+                        judge_type = parsed_questions[0].get('judge_type', 'likert')
+                
+                # Run evaluation in background thread
+                def run_auto_evaluation_background():
+                    try:
+                        from server.services.alignment_service import AlignmentService
+                        from server.database import SessionLocal
+                        
+                        thread_db = SessionLocal()
+                        try:
+                            thread_db_service = DatabaseService(thread_db)
+                            alignment_service = AlignmentService(thread_db_service)
+                            
+                            job.add_log("Initializing auto-evaluation service...")
+                            job.add_log(f"Using derived prompt ({len(derived_prompt)} chars)")
+                            
+                            # Run evaluation - auto-eval mode doesn't require human ratings
+                            result = None
+                            for message in alignment_service.run_evaluation_with_answer_sheet(
+                                workshop_id=workshop_id,
+                                judge_name=workshop.judge_name or "workshop_judge",
+                                judge_prompt=derived_prompt,
+                                evaluation_model_name=evaluation_model_name,
+                                mlflow_config=mlflow_config,
+                                judge_type=judge_type,
+                                require_human_ratings=False,  # Auto-eval mode
+                            ):
+                                if isinstance(message, dict):
+                                    result = message
+                                    job.result = result
+                                    job.save()
+                                    logger.info("Auto-evaluation completed")
+                                elif isinstance(message, str):
+                                    job.add_log(message)
+                            
+                            if result and result.get("success"):
+                                # Save evaluation results
+                                try:
+                                    from server.models import JudgePromptCreate, JudgeEvaluation
+                                    
+                                    # Use existing prompt if available, only create if none exists
+                                    # This prevents auto-evaluation from creating new versions
+                                    # Note: get_judge_prompts returns prompts ordered by version DESC, so [0] is the latest
+                                    existing_prompts = thread_db_service.get_judge_prompts(workshop_id)
+                                    if existing_prompts:
+                                        # Use the most recent prompt
+                                        new_prompt = existing_prompts[0]  # [0] is latest (version DESC order)
+                                        job.add_log(f"Using existing prompt v{new_prompt.version} for evaluation results")
+                                    else:
+                                        # No prompts exist - create the first one
+                                        new_prompt_data = JudgePromptCreate(
+                                            prompt_text=derived_prompt,
+                                            few_shot_examples=[],
+                                            model_name=evaluation_model_name,
+                                            model_parameters={},
+                                        )
+                                        new_prompt = thread_db_service.create_judge_prompt(workshop_id, new_prompt_data)
+                                        job.add_log(f"Created initial prompt v{new_prompt.version}")
+                                    
+                                    # Store evaluations - properly construct JudgeEvaluation objects
+                                    if "evaluations" in result:
+                                        evals_to_store = []
+                                        for eval_data in result["evaluations"]:
+                                            try:
+                                                pred = eval_data.get("predicted_rating")
+                                                pred_val = int(round(float(pred))) if pred is not None else 0
+                                                trace_id_for_db = eval_data.get("workshop_uuid") or eval_data["trace_id"]
+                                                evals_to_store.append(
+                                                    JudgeEvaluation(
+                                                        id=str(uuid.uuid4()),
+                                                        workshop_id=workshop_id,
+                                                        prompt_id=new_prompt.id,
+                                                        trace_id=trace_id_for_db,
+                                                        predicted_rating=pred_val,
+                                                        human_rating=int(eval_data["human_rating"]) if eval_data.get("human_rating") is not None else 0,
+                                                        confidence=eval_data.get("confidence"),
+                                                        reasoning=eval_data.get("reasoning"),
+                                                    )
+                                                )
+                                            except Exception as inner_err:
+                                                logger.error(f"Error parsing evaluation: {inner_err}")
+                                        
+                                        if evals_to_store:
+                                            thread_db_service.store_judge_evaluations(evals_to_store)
+                                            job.add_log(f"Stored {len(evals_to_store)} evaluation results")
+                                    
+                                    job.set_status("completed")
+                                    job.add_log("Auto-evaluation completed successfully")
+                                except Exception as save_err:
+                                    job.add_log(f"Warning: Could not save results: {save_err}")
+                                    job.set_status("completed")
+                            else:
+                                job.set_status("failed")
+                                job.add_log(f"Auto-evaluation failed: {result.get('error', 'Unknown error') if result else 'No result'}")
+                        finally:
+                            thread_db.close()
+                    except Exception as e:
+                        logger.exception("Auto-evaluation error: %s", e)
+                        job.set_status("failed")
+                        job.add_log(f"Error: {str(e)}")
+                
+                # Start background thread
+                eval_thread = threading.Thread(target=run_auto_evaluation_background, daemon=True)
+                eval_thread.start()
+                auto_eval_started = True
+                logger.info("Started auto-evaluation job %s for workshop %s", auto_eval_job_id, workshop_id)
+            else:
+                logger.warning("No Databricks token available for auto-evaluation")
+        else:
+            logger.warning("Could not derive judge prompt from rubric")
+    elif not auto_evaluate_enabled:
+        logger.info("Auto-evaluation skipped - disabled by user")
+    else:
+        logger.warning("No MLflow config available for auto-evaluation")
+
     randomize_msg = "randomized per SME" if randomize else "in chronological order"
     return {
         "message": f"Annotation phase started with {traces_used} traces from {total_traces} total ({randomize_msg})",
@@ -943,6 +1292,8 @@ async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Sessi
         "traces_used": traces_used,
         "trace_limit": trace_limit,
         "randomize": randomize,
+        "auto_evaluation_started": auto_eval_started,
+        "auto_evaluation_job_id": auto_eval_job_id,
     }
 
 
@@ -3408,6 +3759,304 @@ async def get_evaluation_job_status(
         response["error"] = job.error
 
     return response
+
+
+# ============================================================================
+# Auto-evaluation endpoints (triggered on annotation start)
+# ============================================================================
+
+
+@router.get("/{workshop_id}/auto-evaluation-status")
+async def get_auto_evaluation_status(
+    workshop_id: str,
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Get the status of the auto-evaluation job that runs when annotation begins.
+    
+    Returns:
+        - status: pending, running, completed, failed, or not_started
+        - job_id: the job ID if auto-evaluation was started
+        - derived_prompt: the judge prompt derived from the rubric
+        - logs: job logs (if available)
+        - result: evaluation result (if completed)
+    """
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+    
+    job_id = db_service.get_auto_evaluation_job_id(workshop_id)
+    derived_prompt = db_service.get_auto_evaluation_prompt(workshop_id)
+    
+    if not job_id:
+        return {
+            "status": "not_started",
+            "job_id": None,
+            "derived_prompt": derived_prompt,
+            "message": "Auto-evaluation has not been started for this workshop",
+        }
+    
+    job = get_job(job_id)
+    if not job:
+        return {
+            "status": "not_found",
+            "job_id": job_id,
+            "derived_prompt": derived_prompt,
+            "message": "Job record not found - may have expired",
+        }
+    
+    response = {
+        "status": job.status,
+        "job_id": job_id,
+        "derived_prompt": derived_prompt,
+        "logs": job.logs[-20:] if job.logs else [],  # Last 20 logs
+        "log_count": len(job.logs) if job.logs else 0,
+        "updated_at": job.updated_at,
+    }
+    
+    if job.result:
+        response["result"] = job.result
+    
+    if job.error:
+        response["error"] = job.error
+    
+    return response
+
+
+@router.get("/{workshop_id}/auto-evaluation-results")
+async def get_auto_evaluation_results(
+    workshop_id: str,
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Get the auto-evaluation LLM judge scores for traces.
+    
+    Returns the evaluation results from the auto-evaluation job that ran
+    when annotation began. This includes LLM judge scores for each trace.
+    """
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+    
+    # Get the auto-evaluation job status first
+    job_id = db_service.get_auto_evaluation_job_id(workshop_id)
+    derived_prompt = db_service.get_auto_evaluation_prompt(workshop_id)
+    
+    job_status = "not_started"
+    if job_id:
+        job = get_job(job_id)
+        if job:
+            job_status = job.status
+    
+    # Get the latest evaluations from the database
+    # These are stored when the auto-evaluation job completes
+    evaluations = db_service.get_latest_evaluations(workshop_id)
+    
+    # Get metrics if available
+    metrics = None
+    if evaluations:
+        # Get the prompt that was used for evaluation
+        # Note: get_judge_prompts returns prompts ordered by version DESC, so [0] is the latest
+        prompts = db_service.get_judge_prompts(workshop_id)
+        if prompts:
+            latest_prompt = prompts[0]  # [0] is latest (version DESC order)
+            if latest_prompt.performance_metrics:
+                metrics = latest_prompt.performance_metrics
+    
+    return {
+        "status": job_status,
+        "job_id": job_id,
+        "derived_prompt": derived_prompt,
+        "evaluations": [
+            {
+                "trace_id": e.trace_id,
+                "predicted_rating": e.predicted_rating,
+                "human_rating": e.human_rating,
+                "confidence": e.confidence,
+                "reasoning": e.reasoning,
+            }
+            for e in evaluations
+        ] if evaluations else [],
+        "evaluation_count": len(evaluations) if evaluations else 0,
+        "metrics": metrics,
+    }
+
+
+@router.post("/{workshop_id}/re-evaluate")
+async def re_evaluate(
+    workshop_id: str,
+    request: dict = {},
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Manually trigger re-evaluation with the derived or custom prompt.
+    
+    This is the "Re-evaluate" button functionality for when the user wants
+    to run evaluation again (e.g., after modifying the prompt).
+    
+    Args:
+        request: Optional JSON body with:
+            - judge_prompt: Custom judge prompt (if not provided, uses derived prompt)
+            - evaluation_model_name: Model to use (default: "databricks-meta-llama-3-3-70b-instruct")
+    """
+    import threading
+    
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+    
+    # Get prompt - use custom if provided, otherwise use derived
+    judge_prompt = request.get("judge_prompt")
+    if not judge_prompt:
+        judge_prompt = db_service.get_auto_evaluation_prompt(workshop_id)
+    if not judge_prompt:
+        # Try to derive from rubric
+        judge_prompt = db_service.derive_judge_prompt_from_rubric(workshop_id)
+    if not judge_prompt:
+        raise HTTPException(status_code=400, detail="No judge prompt available. Create a rubric first.")
+    
+    # Use the stored model from initial auto-evaluation
+    evaluation_model_name = db_service.get_auto_evaluation_model(workshop_id) or "databricks-meta-llama-3-3-70b-instruct"
+    
+    # Get MLflow config
+    mlflow_config = db_service.get_mlflow_config(workshop_id)
+    if not mlflow_config:
+        raise HTTPException(status_code=400, detail="MLflow configuration not found")
+    
+    # Get Databricks token
+    from server.services.token_storage_service import token_storage
+    databricks_token = token_storage.get_token(workshop_id)
+    if not databricks_token:
+        databricks_token = db_service.get_databricks_token(workshop_id)
+        if databricks_token:
+            token_storage.store_token(workshop_id, databricks_token)
+    if not databricks_token:
+        raise HTTPException(status_code=400, detail="Databricks token not found")
+    
+    mlflow_config.databricks_token = databricks_token
+    
+    # Get judge type from rubric - parse questions to get per-question judge type
+    rubric = db_service.get_rubric(workshop_id)
+    judge_type = 'likert'  # default
+    if rubric and rubric.question:
+        # Parse rubric questions to extract judge type from first question
+        parsed_questions = db_service._parse_rubric_questions(rubric.question)
+        if parsed_questions:
+            judge_type = parsed_questions[0].get('judge_type', 'likert')
+    
+    # Create new evaluation job
+    job_id = str(uuid.uuid4())
+    job = create_job(job_id, workshop_id)
+    job.set_status("running")
+    job.add_log("Re-evaluation started")
+    
+    # Update the auto-evaluation job ID
+    db_service.update_auto_evaluation_job(workshop_id, job_id, judge_prompt)
+    
+    # Run evaluation in background thread
+    def run_re_evaluation_background():
+        try:
+            from server.services.alignment_service import AlignmentService
+            from server.database import SessionLocal
+            
+            thread_db = SessionLocal()
+            try:
+                thread_db_service = DatabaseService(thread_db)
+                alignment_service = AlignmentService(thread_db_service)
+                
+                job.add_log("Initializing re-evaluation service...")
+                
+                result = None
+                for message in alignment_service.run_evaluation_with_answer_sheet(
+                    workshop_id=workshop_id,
+                    judge_name=workshop.judge_name or "workshop_judge",
+                    judge_prompt=judge_prompt,
+                    evaluation_model_name=evaluation_model_name,
+                    mlflow_config=mlflow_config,
+                    judge_type=judge_type,
+                    require_human_ratings=True,  # Re-evaluation compares against human ratings
+                    tag_type='align',  # Use 'align' tag (traces with human annotations)
+                    use_registered_judge=True,  # Load the aligned judge with episodic/semantic memory
+                ):
+                    if isinstance(message, dict):
+                        result = message
+                        job.result = result
+                        job.save()
+                    elif isinstance(message, str):
+                        job.add_log(message)
+                
+                if result and result.get("success"):
+                    try:
+                        from server.models import JudgePromptCreate, JudgeEvaluation
+                        
+                        # Use existing prompt - re-evaluate doesn't create new versions
+                        # Note: get_judge_prompts returns prompts ordered by version DESC, so [0] is the latest
+                        existing_prompts = thread_db_service.get_judge_prompts(workshop_id)
+                        if existing_prompts:
+                            new_prompt = existing_prompts[0]  # [0] is latest (version DESC order)
+                            job.add_log(f"Updating evaluations for prompt v{new_prompt.version}")
+                        else:
+                            # No prompts exist - create one
+                            new_prompt_data = JudgePromptCreate(
+                                prompt_text=judge_prompt,
+                                few_shot_examples=[],
+                                model_name=evaluation_model_name,
+                                model_parameters={},
+                            )
+                            new_prompt = thread_db_service.create_judge_prompt(workshop_id, new_prompt_data)
+                            job.add_log(f"Created prompt v{new_prompt.version}")
+                        
+                        # Store evaluations - properly construct JudgeEvaluation objects
+                        if "evaluations" in result:
+                            evals_to_store = []
+                            for eval_data in result["evaluations"]:
+                                try:
+                                    pred = eval_data.get("predicted_rating")
+                                    pred_val = int(round(float(pred))) if pred is not None else 0
+                                    trace_id_for_db = eval_data.get("workshop_uuid") or eval_data["trace_id"]
+                                    evals_to_store.append(
+                                        JudgeEvaluation(
+                                            id=str(uuid.uuid4()),
+                                            workshop_id=workshop_id,
+                                            prompt_id=new_prompt.id,
+                                            trace_id=trace_id_for_db,
+                                            predicted_rating=pred_val,
+                                            human_rating=int(eval_data["human_rating"]) if eval_data.get("human_rating") is not None else 0,
+                                            confidence=eval_data.get("confidence"),
+                                            reasoning=eval_data.get("reasoning"),
+                                        )
+                                    )
+                                except Exception as inner_err:
+                                    logger.error(f"Error parsing evaluation: {inner_err}")
+                            
+                            if evals_to_store:
+                                thread_db_service.store_judge_evaluations(evals_to_store)
+                                job.add_log(f"Stored {len(evals_to_store)} evaluation results")
+                        
+                        job.set_status("completed")
+                        job.add_log("Re-evaluation completed successfully")
+                    except Exception as save_err:
+                        job.add_log(f"Warning: Could not save results: {save_err}")
+                        job.set_status("completed")
+                else:
+                    job.set_status("failed")
+                    job.add_log(f"Re-evaluation failed: {result.get('error', 'Unknown error') if result else 'No result'}")
+            finally:
+                thread_db.close()
+        except Exception as e:
+            logger.exception("Re-evaluation error: %s", e)
+            job.set_status("failed")
+            job.add_log(f"Error: {str(e)}")
+    
+    # Start background thread
+    eval_thread = threading.Thread(target=run_re_evaluation_background, daemon=True)
+    eval_thread.start()
+    
+    return {
+        "message": "Re-evaluation started",
+        "job_id": job_id,
+        "status": "running",
+    }
 
 
 @router.get("/{workshop_id}/alignment-status")

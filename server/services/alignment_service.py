@@ -1,8 +1,12 @@
-"""Service for judge alignment using MLflow and LikertSIMBAAlignmentOptimizer.
+"""Service for judge alignment using MLflow and MemAlignOptimizer.
 
-Supports both Likert scale (1-5) and Binary (Pass/Fail) judge types.
-- Likert judges use LikertSIMBAAlignmentOptimizer with custom agreement metric
-- Binary judges use the default SIMBAAlignmentOptimizer from MLflow
+Supports all judge types (Likert, Binary, etc.) using MemAlign's dual memory system.
+MemAlign distills general guidelines from human feedback (semantic memory) and
+incorporates them into the judge's instructions.
+
+Note: Episodic memory (example retrieval) is available during alignment but is not
+persisted when registering the judge. Future MLflow versions may support native
+MemoryAugmentedJudge registration with full memory preservation.
 """
 
 import logging
@@ -11,8 +15,8 @@ import os
 import threading
 import time
 from collections import Counter
-from statistics import mean
-from typing import Any, Callable, Dict, Generator, List, Optional
+from typing import Any, Dict, Generator, List, Optional
+
 from sklearn.metrics import accuracy_score, cohen_kappa_score, confusion_matrix
 
 import pandas as pd
@@ -29,160 +33,6 @@ LIKERT_MAX = 5
 # Binary judge configuration
 BINARY_PASS_VALUE = 1.0
 BINARY_FAIL_VALUE = 0.0
-
-
-def _to_float_maybe(x: Any) -> Optional[float]:
-    """Convert a value to float if possible, otherwise return None."""
-    try:
-        return float(x)
-    except Exception:
-        return None
-
-
-def likert_agreement_metric(example: Any, prediction: Any) -> float:
-    """
-    Likert agreement metric:
-        score = 1 - |llm - human| / (LIKERT_MAX - LIKERT_MIN)
-
-    Reads from:
-      - Human label: example._store["result"]
-      - LLM/judge score: prediction._store["result"]
-    """
-    metric_logger = logging.getLogger("dspy.teleprompt.simba")
-
-    human = None
-    llm = None
-
-    # Primary: read from example._store / prediction._store
-    ex_store = getattr(example, "_store", None)
-    if isinstance(ex_store, dict) and "result" in ex_store:
-        human = _to_float_maybe(ex_store["result"])
-
-    pred_store = getattr(prediction, "_store", None)
-    if isinstance(pred_store, dict) and "result" in pred_store:
-        llm = _to_float_maybe(pred_store["result"])
-
-    # Fallbacks
-    if human is None:
-        for key in ("human_score", "human_value", "label", "target", "score", "y"):
-            if hasattr(example, key):
-                human = _to_float_maybe(getattr(example, key))
-                if human is not None:
-                    break
-            if isinstance(example, dict) and key in example:
-                human = _to_float_maybe(example[key])
-                if human is not None:
-                    break
-
-    if llm is None:
-        if isinstance(prediction, dict):
-            for k in ("llm_score", "value", "score", "rating", "label", "y_hat"):
-                if k in prediction:
-                    llm = _to_float_maybe(prediction[k])
-                    if llm is not None:
-                        break
-        if llm is None:
-            llm = _to_float_maybe(prediction)
-
-    if human is None or llm is None:
-        metric_logger.info(
-            "LIKERT: missing scores (human=%r, llm=%r) -> 0.0",
-            human,
-            llm,
-        )
-        return 0.0
-
-    # Clamp to configured Likert range
-    human = max(LIKERT_MIN, min(LIKERT_MAX, human))
-    llm = max(LIKERT_MIN, min(LIKERT_MAX, llm))
-
-    score = max(0.0, 1.0 - abs(llm - human) / (LIKERT_MAX - LIKERT_MIN))
-    return score
-
-
-def binary_agreement_metric(example: Any, prediction: Any) -> float:
-    """
-    Binary agreement metric for Pass/Fail judges.
-    Returns 1.0 if both agree, 0.0 if they disagree.
-
-    For binary judges, values are typically:
-      - Pass/Yes/Safe = 1.0
-      - Fail/No/Unsafe = 0.0
-    
-    Or string labels like "PASS"/"FAIL" which get converted.
-    """
-    metric_logger = logging.getLogger("dspy.teleprompt.simba")
-
-    human = None
-    llm = None
-
-    def _to_binary(val: Any) -> Optional[float]:
-        """Convert various representations to binary 0/1."""
-        if val is None:
-            return None
-        if isinstance(val, (int, float)):
-            # Treat >= 0.5 as pass (1), < 0.5 as fail (0)
-            return 1.0 if val >= 0.5 else 0.0
-        if isinstance(val, str):
-            val_lower = val.lower().strip()
-            if val_lower in ('pass', 'yes', 'safe', 'good', 'true', '1'):
-                return 1.0
-            if val_lower in ('fail', 'no', 'unsafe', 'bad', 'false', '0'):
-                return 0.0
-            # Try to parse as number
-            try:
-                num = float(val)
-                return 1.0 if num >= 0.5 else 0.0
-            except ValueError:
-                return None
-        if isinstance(val, bool):
-            return 1.0 if val else 0.0
-        return None
-
-    # Primary: read from example._store / prediction._store
-    ex_store = getattr(example, "_store", None)
-    if isinstance(ex_store, dict) and "result" in ex_store:
-        human = _to_binary(ex_store["result"])
-
-    pred_store = getattr(prediction, "_store", None)
-    if isinstance(pred_store, dict) and "result" in pred_store:
-        llm = _to_binary(pred_store["result"])
-
-    # Fallbacks for human value
-    if human is None:
-        for key in ("human_score", "human_value", "label", "target", "score", "y", "pass", "verdict"):
-            if hasattr(example, key):
-                human = _to_binary(getattr(example, key))
-                if human is not None:
-                    break
-            if isinstance(example, dict) and key in example:
-                human = _to_binary(example[key])
-                if human is not None:
-                    break
-
-    # Fallbacks for LLM prediction
-    if llm is None:
-        if isinstance(prediction, dict):
-            for k in ("llm_score", "value", "score", "rating", "label", "y_hat", "pass", "verdict"):
-                if k in prediction:
-                    llm = _to_binary(prediction[k])
-                    if llm is not None:
-                        break
-        if llm is None:
-            llm = _to_binary(prediction)
-
-    if human is None or llm is None:
-        metric_logger.info(
-            "BINARY: missing values (human=%r, llm=%r) -> 0.0",
-            human,
-            llm,
-        )
-        return 0.0
-
-    # Binary agreement: 1.0 if same, 0.0 if different
-    agreement = 1.0 if human == llm else 0.0
-    metric_logger.debug("BINARY: human=%s, llm=%s -> agreement=%s", human, llm, agreement)
-    return agreement
 
 
 def get_judge_type_from_rubric(db_service: DatabaseService, workshop_id: str) -> str:
@@ -235,163 +85,6 @@ def get_judge_type_from_rubric(db_service: DatabaseService, workshop_id: str) ->
     return 'likert'  # Default
 
 
-class LikertSIMBAAlignmentOptimizer:
-    """Unified optimizer: injects Likert metric, batch size, max_demos, and optional verbose logging.
-
-    Uses configuration parameters from the config cell above.
-    """
-
-    def __init__(
-        self,
-        model: str,
-        batch_size: int = 6,
-        max_demos: int = 0,
-        metric_fn: Optional[Callable[[Any, Any], float]] = None,
-        verbose: bool = False,
-    ):
-        self.model = model
-        self.batch_size = batch_size
-        self.max_demos = max_demos
-        self.metric_fn = metric_fn
-        self.verbose = verbose
-
-    # ---- Internal helpers for verbose logging ----
-    class _BatchScoreAggregator:
-        def __init__(self):
-            self.all_batches: List[List[float]] = []
-            self.current: List[float] = []
-            self.batch_idx: int = 0
-
-        def start_batch(self):
-            if self.current:
-                self._log_current_summary()
-                self.all_batches.append(self.current)
-            self.current = []
-            self.batch_idx += 1
-
-        def add(self, score: float):
-            if isinstance(score, (int, float)):
-                self.current.append(float(score))
-
-        def end(self):
-            if self.current:
-                self._log_current_summary()
-                self.all_batches.append(self.current)
-                self.current = []
-            all_flat = [s for batch in self.all_batches for s in batch]
-            if all_flat:
-                best = max(all_flat)
-                batches_n = len(self.all_batches)
-                logging.getLogger("dspy.teleprompt.simba").info(
-                    "Scores after %d batches: %s, Best: %s",
-                    batches_n,
-                    [round(mean(b), 3) if b else 0.0 for b in self.all_batches],
-                    round(best, 3),
-                )
-
-        def _log_current_summary(self):
-            lg = logging.getLogger("dspy.teleprompt.simba")
-            if not self.current:
-                return
-            mx = max(self.current)
-            mn = min(self.current)
-            avg = mean(self.current)
-            lg.info(
-                "Processing bucket #%d, with max score %s, max-to-min gap %s, and max-to-avg gap %s.",
-                self.batch_idx if self.batch_idx else 1,
-                round(mx, 3),
-                round(mx - mn, 3),
-                round(mx - avg, 3),
-            )
-
-    class _SIMBABatchLogHandler(logging.Handler):
-        def __init__(self, aggregator: "LikertSIMBAAlignmentOptimizer._BatchScoreAggregator"):
-            super().__init__()
-            self.aggregator = aggregator
-
-        def emit(self, record: logging.LogRecord):
-            msg = record.getMessage()
-            if "Starting batch" in msg and "of" in msg:
-                self.aggregator.start_batch()
-
-    def _wrap_metric_for_logging(self, metric_fn: Callable[[Any, Any], float]):
-        aggregator = self._BatchScoreAggregator()
-
-        def logged_metric(example, prediction):  
-            score = metric_fn(example, prediction)
-            aggregator.add(score)
-            return score
-
-        batch_handler = self._SIMBABatchLogHandler(aggregator)
-        simba_logger = logging.getLogger("dspy.teleprompt.simba")
-        simba_utils_logger = logging.getLogger("dspy.teleprompt.simba_utils")
-        simba_logger.setLevel(logging.INFO)
-        simba_utils_logger.setLevel(logging.INFO)
-        if all(not isinstance(h, LikertSIMBAAlignmentOptimizer._SIMBABatchLogHandler) for h in simba_logger.handlers):
-            simba_logger.addHandler(batch_handler)
-        return logged_metric, aggregator, simba_logger, batch_handler
-
-    def align(self, judge: Any, traces: list) -> Any:
-        """Run alignment on the given judge with the provided traces."""
-        try:
-            import dspy.teleprompt.simba as dsimba
-            from mlflow.genai.judges.optimizers import SIMBAAlignmentOptimizer as _BaseSIMBA
-        except ImportError as e:
-            raise ImportError(
-                f"Required packages not available: {e}. "
-                "Make sure mlflow[genai] and dspy are installed."
-            )
-
-        # Choose metric function
-        metric_fn = self.metric_fn if self.metric_fn is not None else likert_agreement_metric
-        logging.getLogger("dspy.teleprompt.simba").info(
-            "Using SIMBA metric_fn=%s",
-            getattr(metric_fn, "__name__", repr(metric_fn)),
-        )
-        
-        # Optionally wrap metric for verbose logging
-        aggregator = None
-        simba_logger = None
-        batch_handler = None
-        if self.verbose:
-            metric_fn, aggregator, simba_logger, batch_handler = self._wrap_metric_for_logging(metric_fn)
-
-        # Patch DSPy SIMBA init to inject our parameters
-        original_init = dsimba.SIMBA.__init__
-        batch_size = self.batch_size
-        max_demos = self.max_demos
-
-        def patched_init(self_, *args, **kwargs): 
-            # Force our settings
-            logging.getLogger("dspy.teleprompt.simba").info(
-                "Patched SIMBA.__init__: forcing metric_fn=%s, bsize=%s, max_demos=%s",
-                getattr(metric_fn, "__name__", repr(metric_fn)),
-                batch_size,
-                max_demos,
-            )
-
-            kwargs["metric"] = metric_fn
-            kwargs["bsize"] = batch_size
-            kwargs["max_demos"] = max_demos
-
-            return original_init(self_, *args, **kwargs)
-
-        dsimba.SIMBA.__init__ = patched_init
-        try:
-            base = _BaseSIMBA(model=self.model)
-            result = base.align(judge=judge, traces=traces)
-        finally:
-            dsimba.SIMBA.__init__ = original_init
-            if aggregator is not None:
-                aggregator.end()
-            if simba_logger is not None and batch_handler is not None:
-                try:
-                    simba_logger.removeHandler(batch_handler)
-                except Exception:
-                    pass
-        return result
-
-
 class AlignmentService:
     """Service for running judge alignment with MLflow."""
 
@@ -419,15 +112,27 @@ class AlignmentService:
         mlflow_config: Any,
         workshop_id: str,
         return_type: str = "pandas",
+        tag_type: str = "eval",
     ):
-        """Fetch traces labeled for this workshop via mlflow.search_traces."""
+        """Fetch traces labeled for this workshop via mlflow.search_traces.
+        
+        Args:
+            mlflow_config: MLflow configuration with experiment_id
+            workshop_id: Workshop ID to filter by
+            return_type: Either "pandas" or "list"
+            tag_type: Tag label to search for:
+                     - 'eval': Traces tagged for auto-evaluation (applied when annotation starts)
+                     - 'align': Traces tagged for alignment (applied after human annotation)
+        """
         import mlflow
 
         filter_parts = [
-            "tags.label = 'jbws'",
+            f"tags.label = '{tag_type}'",
             f"tags.workshop_id = '{workshop_id}'",
         ]
         filter_string = " AND ".join(filter_parts)
+        
+        logger.info("Searching for traces with tag_type='%s' in workshop '%s'", tag_type, workshop_id)
 
         return mlflow.search_traces(
             experiment_ids=[mlflow_config.experiment_id],
@@ -680,6 +385,10 @@ class AlignmentService:
         evaluation_model_name: str,
         mlflow_config: Any,
         judge_type: str = None,  # Explicit judge type from selected rubric question
+        require_human_ratings: bool = True,  # Set to False for auto-evaluation without human ratings
+        trace_ids_override: List[str] = None,  # Optional list of specific trace IDs to evaluate
+        tag_type: str = "eval",  # Tag to search for: 'eval' for auto-evaluation, 'align' for re-evaluation
+        use_registered_judge: bool = False,  # If True, loads the registered judge from MLflow (with memory)
     ) -> Generator[str, None, Dict[str, Any]]:
         """Run evaluation using mlflow.genai.evaluate() with answer sheet approach.
         
@@ -691,6 +400,16 @@ class AlignmentService:
         Args:
             judge_type: Explicit judge type ('likert', 'binary', 'freeform'). If not provided,
                        falls back to detecting from rubric (legacy behavior).
+            require_human_ratings: If True (default), only evaluates traces with human ratings.
+                                  If False, evaluates all tagged traces (for auto-evaluation).
+            trace_ids_override: Optional list of specific trace IDs to evaluate. If provided,
+                               uses these instead of searching for tagged traces.
+            tag_type: Tag to search for when finding traces. Use 'eval' for auto-evaluation
+                     (traces tagged when annotation starts), 'align' for re-evaluation
+                     (traces that have been human-annotated).
+            use_registered_judge: If True, loads the registered judge from MLflow instead of
+                                 creating a new one from the prompt. This uses the aligned
+                                 judge with episodic/semantic memory from memalign.
         """
         # Stream connection is established by router's immediate "Establishing Connection" message
         logger.info("Evaluation generator started for judge '%s'", judge_name)
@@ -703,6 +422,17 @@ class AlignmentService:
             yield {"error": str(e), "success": False}
         
         yield f"Starting evaluation for judge: {judge_name}"
+        yield f"Mode: {'require human ratings' if require_human_ratings else 'auto-evaluation (no human ratings required)'}"
+        
+        # Build mapping from MLflow trace IDs to workshop trace IDs for auto-eval mode
+        mlflow_to_workshop_trace_map: Dict[str, str] = {}
+        if not require_human_ratings:
+            # Query database to get mapping
+            traces = self.db_service.get_traces(workshop_id)
+            for trace in traces:
+                if hasattr(trace, 'mlflow_trace_id') and trace.mlflow_trace_id:
+                    mlflow_to_workshop_trace_map[trace.mlflow_trace_id] = trace.id
+            yield f"Built MLflow-to-workshop trace mapping ({len(mlflow_to_workshop_trace_map)} traces)"
         
         # Set up MLflow environment based on available credentials
         os.environ['DATABRICKS_HOST'] = mlflow_config.databricks_host.rstrip('/')
@@ -717,57 +447,86 @@ class AlignmentService:
         mlflow.set_tracking_uri('databricks')
         
         # Prepare the evaluation data
-        alignment_data = self.prepare_alignment_data(workshop_id, judge_name)
-        traces_for_eval = alignment_data['traces']
-        
-        if not traces_for_eval:
-            yield "ERROR: No traces available for evaluation"
-            yield {"error": "No traces available for evaluation", "success": False}
-        
         human_feedback_map: Dict[str, Dict[str, Any]] = {}
-        for trace in traces_for_eval:
-            trace_id = str(trace['trace_id']).strip()
-            human_rating = trace.get('human_rating')
-            if trace_id and human_rating is not None:
-                human_feedback_map[trace_id] = trace
         
-        if not human_feedback_map:
-            yield "ERROR: Annotated traces are missing human ratings"
-            yield {"error": "Annotated traces missing ratings", "success": False}
+        if require_human_ratings:
+            # Original behavior: require human ratings
+            alignment_data = self.prepare_alignment_data(workshop_id, judge_name)
+            traces_for_eval = alignment_data['traces']
+            
+            if not traces_for_eval:
+                yield "ERROR: No traces available for evaluation"
+                yield {"error": "No traces available for evaluation", "success": False}
+                return
+            
+            for trace in traces_for_eval:
+                trace_id = str(trace['trace_id']).strip()
+                human_rating = trace.get('human_rating')
+                if trace_id and human_rating is not None:
+                    human_feedback_map[trace_id] = trace
+            
+            if not human_feedback_map:
+                yield "ERROR: Annotated traces are missing human ratings"
+                yield {"error": "Annotated traces missing ratings", "success": False}
+                return
+        else:
+            # Auto-evaluation mode: no human ratings required
+            yield "Auto-evaluation mode: will evaluate all tagged traces without human ratings"
         
         try:
-            trace_df = self._search_tagged_traces(mlflow_config, workshop_id, return_type="pandas")
+            # Use specified tag_type: 'eval' for auto-evaluation, 'align' for re-evaluation
+            trace_df = self._search_tagged_traces(mlflow_config, workshop_id, return_type="pandas", tag_type=tag_type)
         except Exception as exc:
             yield f"ERROR: Failed to query MLflow traces: {exc}"
             yield {"error": f"Failed to query MLflow traces: {exc}", "success": False}
+            return
         
         if trace_df is None or trace_df.empty:
-            yield "ERROR: No MLflow traces found with label 'jbws'"
+            yield f"ERROR: No MLflow traces found with label '{tag_type}'"
             yield {"error": "No tagged MLflow traces found", "success": False}
+            return
         
         if 'trace_id' not in trace_df.columns:
             yield "ERROR: MLflow traces result is missing 'trace_id'"
             yield {"error": "search_traces missing trace_id", "success": False}
+            return
         
         trace_df = trace_df.copy()
         trace_df['trace_id'] = trace_df['trace_id'].astype(str).str.strip()
         
-        filtered_df = trace_df[trace_df['trace_id'].isin(human_feedback_map.keys())]
+        # Filter traces based on mode
+        if require_human_ratings:
+            # Only include traces with human ratings
+            filtered_df = trace_df[trace_df['trace_id'].isin(human_feedback_map.keys())]
+        elif trace_ids_override:
+            # Use specific trace IDs if provided
+            filtered_df = trace_df[trace_df['trace_id'].isin(trace_ids_override)]
+            yield f"Filtering to {len(trace_ids_override)} specific trace IDs"
+        else:
+            # Auto-evaluation: use all tagged traces
+            filtered_df = trace_df
         if filtered_df.empty:
-            yield "ERROR: MLflow trace_ids do not match annotated traces"
-            yield {"error": "No overlap between MLflow traces and annotations", "success": False}
+            if require_human_ratings:
+                yield "ERROR: MLflow trace_ids do not match annotated traces"
+                yield {"error": "No overlap between MLflow traces and annotations", "success": False}
+            else:
+                yield "ERROR: No tagged traces found for evaluation"
+                yield {"error": "No tagged traces found", "success": False}
+            return
         
         trace_ids_for_eval = filtered_df['trace_id'].tolist()
         yield f"Prepared {len(trace_ids_for_eval)} traces for evaluation"
         
-        missing_ids = sorted(set(human_feedback_map.keys()) - set(trace_ids_for_eval))
-        if missing_ids:
-            preview = missing_ids[:5]
-            suffix = "..." if len(missing_ids) > 5 else ""
-            yield (
-                f"WARNING: {len(missing_ids)} annotated traces lacked MLflow tags and were skipped "
-                f"(sample: {preview}{suffix})"
-            )
+        # Only check for missing IDs when human ratings are required
+        if require_human_ratings and human_feedback_map:
+            missing_ids = sorted(set(human_feedback_map.keys()) - set(trace_ids_for_eval))
+            if missing_ids:
+                preview = missing_ids[:5]
+                suffix = "..." if len(missing_ids) > 5 else ""
+                yield (
+                    f"WARNING: {len(missing_ids)} annotated traces lacked MLflow tags and were skipped "
+                    f"(sample: {preview}{suffix})"
+                )
         
         eval_df = filtered_df
         yield f"search_traces returned {len(trace_df)} tagged rows; evaluating {len(eval_df)} traces"
@@ -807,21 +566,47 @@ class AlignmentService:
             effective_judge_type = judge_type if judge_type else get_judge_type_from_rubric(self.db_service, workshop_id)
             yield f"Using judge type: {effective_judge_type}" + (f" (explicitly set)" if judge_type else " (detected from rubric)")
             
-            # The prompt template with placeholders for judge instructions
-            mlflow_prompt_template = self._normalize_judge_prompt(judge_prompt)
+            # Try to load registered judge if requested (for re-evaluation after alignment)
+            judge = None
+            if use_registered_judge:
+                try:
+                    from mlflow.genai.scorers import get_scorer
+                    experiment_id = mlflow_config.experiment_id
+                    
+                    yield f"Attempting to load registered judge '{judge_name}' from MLflow..."
+                    
+                    # get_scorer loads the judge with all its aligned properties including memory
+                    judge = get_scorer(name=judge_name, experiment_id=experiment_id)
+                    
+                    if judge is not None:
+                        yield f"✓ Loaded registered judge '{judge_name}' (with episodic/semantic memory from alignment)"
+                        # Check if the judge has aligned instructions
+                        if hasattr(judge, 'instructions') and judge.instructions:
+                            yield f"Judge has {len(judge.instructions)} chars of instructions"
+                    else:
+                        yield f"WARNING: get_scorer returned None for '{judge_name}' - will create from prompt"
+                except Exception as load_err:
+                    yield f"WARNING: Could not load registered judge: {load_err}"
+                    yield f"Falling back to creating judge from prompt text"
+                    judge = None
             
-            # For binary rubrics, enhance the prompt to explicitly require 0/1 numeric values
-            if effective_judge_type == 'binary':
-                # Check if prompt already has 0/1 numeric instructions
-                prompt_lower = mlflow_prompt_template.lower()
-                has_numeric_instructions = any(phrase in prompt_lower for phrase in [
-                    '0 or 1', '0/1', 'integer rating (0 or 1)', 'single integer rating (0 or 1)',
-                    'rating (0 or 1)', 'must start with a single integer rating', 'critical output format'
-                ])
+            # If we didn't load a registered judge, create one from the prompt
+            if judge is None:
+                # The prompt template with placeholders for judge instructions
+                mlflow_prompt_template = self._normalize_judge_prompt(judge_prompt)
                 
-                if not has_numeric_instructions:
-                    # PREPEND strong binary instructions - models pay more attention to the start
-                    binary_prefix = """## CRITICAL OUTPUT FORMAT REQUIREMENT
+                # For binary rubrics, enhance the prompt to explicitly require 0/1 numeric values
+                if effective_judge_type == 'binary':
+                    # Check if prompt already has 0/1 numeric instructions
+                    prompt_lower = mlflow_prompt_template.lower()
+                    has_numeric_instructions = any(phrase in prompt_lower for phrase in [
+                        '0 or 1', '0/1', 'integer rating (0 or 1)', 'single integer rating (0 or 1)',
+                        'rating (0 or 1)', 'must start with a single integer rating', 'critical output format'
+                    ])
+                    
+                    if not has_numeric_instructions:
+                        # PREPEND strong binary instructions - models pay more attention to the start
+                        binary_prefix = """## CRITICAL OUTPUT FORMAT REQUIREMENT
 You are a BINARY judge. You MUST output EXACTLY one of these two values:
 - Output "0" if the response FAILS to meet the criteria
 - Output "1" if the response PASSES and meets the criteria
@@ -843,30 +628,32 @@ The response correctly and helpfully answers the question.
 Now evaluate the following:
 
 """
-                    mlflow_prompt_template = binary_prefix + mlflow_prompt_template
-                    yield f"Enhanced prompt with STRONG binary 0/1 instructions (prepended)"
+                        mlflow_prompt_template = binary_prefix + mlflow_prompt_template
+                        yield f"Enhanced prompt with STRONG binary 0/1 instructions (prepended)"
+                
+                # Set feedback_value_type based on judge type
+                # - Binary judges: use float for 0/1 numeric ratings (NOT bool - bool is unreliable)
+                # - Likert judges: use float for 1-5 scale
+                # NOTE: feedback_value_type only affects parsing, not model output. Strong prompt instructions are critical.
+                if effective_judge_type == 'binary':
+                    feedback_type = float  # Use float, not bool - more reliable for 0/1 parsing
+                    yield f"Binary judge - creating with feedback_value_type=float (expecting 0 or 1)"
+                else:
+                    feedback_type = float
+                    yield f"Likert judge - creating with feedback_value_type=float (expecting 1-5)"
+                
+                # Create judge with the judge name - this name is critical for alignment
+                # The judge can be used as a scorer in evaluate()
+                judge = make_judge(
+                    name=judge_name,  # Critical: must match for alignment
+                    instructions=mlflow_prompt_template,
+                    feedback_value_type=feedback_type,
+                    model=model_uri,
+                )
+                
+                yield f"Created new judge from prompt: {judge_name}"
             
-            # Set feedback_value_type based on judge type
-            # - Binary judges: use float for 0/1 numeric ratings (NOT bool - bool is unreliable)
-            # - Likert judges: use float for 1-5 scale
-            # NOTE: feedback_value_type only affects parsing, not model output. Strong prompt instructions are critical.
-            if effective_judge_type == 'binary':
-                feedback_type = float  # Use float, not bool - more reliable for 0/1 parsing
-                yield f"Binary judge - creating with feedback_value_type=float (expecting 0 or 1)"
-            else:
-                feedback_type = float
-                yield f"Likert judge - creating with feedback_value_type=float (expecting 1-5)"
-            
-            # Create judge with the judge name - this name is critical for alignment
-            # The judge can be used as a scorer in evaluate()
-            judge = make_judge(
-                name=judge_name,  # Critical: must match for alignment
-                instructions=mlflow_prompt_template,
-                feedback_value_type=feedback_type,
-                model=model_uri,
-            )
-            
-            yield f"Created judge: {judge_name}"
+            yield f"Judge ready for evaluation: {judge_name}"
             
             # Ensure eval_df has 'inputs' and 'outputs' columns required by MLflow evaluate()
             # MLflow's search_traces returns traces, but we need to fetch full trace data to get inputs/outputs
@@ -983,10 +770,23 @@ Now evaluate the following:
                         
                         trace_id = str(raw_trace_id).strip()
                         trace_data = human_feedback_map.get(trace_id)
+                        
+                        # In auto-evaluation mode (require_human_ratings=False), 
+                        # we don't skip traces without human ratings
                         if trace_data is None:
-                            skipped_unknown_traces += 1
-                            continue
-                        workshop_uuid = trace_data.get('workshop_id')
+                            if require_human_ratings:
+                                skipped_unknown_traces += 1
+                                continue
+                            else:
+                                # Auto-eval mode: create minimal trace data with workshop trace ID
+                                workshop_trace_id = mlflow_to_workshop_trace_map.get(trace_id, trace_id)
+                                trace_data = {
+                                    'trace_id': trace_id, 
+                                    'workshop_id': workshop_trace_id,
+                                    'human_rating': None
+                                }
+                        
+                        workshop_uuid = trace_data.get('workshop_id', trace_id)
                         
                         predicted_value = row.get(judge_value_col)
                         # Also try to get raw text response from reasoning column if available
@@ -996,15 +796,6 @@ Now evaluate the following:
                         
                         predicted_rating = None
                         
-                        # Log raw value for debugging (first few traces or when we have issues)
-                        should_log = idx < 3 or (is_binary and predicted_value is not None and not pd.isna(predicted_value) and not isinstance(predicted_value, bool))
-                        if should_log and is_binary:
-                            yield f"🔍 Raw MLflow response for trace {trace_id[:8]}...: type={type(predicted_value)}, value={predicted_value}"
-                            if raw_text_response:
-                                yield f"🔍 Raw text response: {str(raw_text_response)[:300]}"
-                            else:
-                                yield f"⚠️ No raw text response available for trace {trace_id[:8]}..."
-                        
                         # For binary judges, prioritize parsing numeric 0/1 values first
                         # We now request 0/1 numeric format, so MLflow should return float values
                         if is_binary and predicted_value is not None and not pd.isna(predicted_value):
@@ -1013,160 +804,99 @@ Now evaluate the following:
                                 numeric_value = float(predicted_value)
                                 if numeric_value == 0 or numeric_value == 0.0:
                                     predicted_rating = 0.0
-                                    if should_log:
-                                        yield f"✅ Binary judge: Parsed 0 from numeric response for trace {trace_id[:8]}... - using 0.0"
                                 elif numeric_value == 1 or numeric_value == 1.0:
                                     predicted_rating = 1.0
-                                    if should_log:
-                                        yield f"✅ Binary judge: Parsed 1 from numeric response for trace {trace_id[:8]}... - using 1.0"
                                 else:
                                     # Invalid numeric value (not 0 or 1) - try to parse from text
                                     if raw_text_response:
                                         text_lower = str(raw_text_response).lower()
-                                        # Look for 0 or 1 at the start of the response
                                         text_trimmed = text_lower.strip()
                                         if text_trimmed.startswith('0') and (len(text_trimmed) == 1 or text_trimmed[1] in [' ', '\n', '.', ',', ':', ';']):
                                             predicted_rating = 0.0
-                                            if should_log:
-                                                yield f"✅ Binary judge: Parsed 0 from text response for trace {trace_id[:8]}... - using 0.0 (MLflow parsed as: {predicted_value})"
                                         elif text_trimmed.startswith('1') and (len(text_trimmed) == 1 or text_trimmed[1] in [' ', '\n', '.', ',', ':', ';']):
                                             predicted_rating = 1.0
-                                            if should_log:
-                                                yield f"✅ Binary judge: Parsed 1 from text response for trace {trace_id[:8]}... - using 1.0 (MLflow parsed as: {predicted_value})"
                         
                         # If we didn't parse from numeric value, try parsing from raw text response
                         if predicted_rating is None and is_binary and raw_text_response:
                             text_lower = str(raw_text_response).lower()
-                            # First check for 0/1 at the start of the response
                             text_trimmed = text_lower.strip()
                             if text_trimmed.startswith('0') and (len(text_trimmed) == 1 or text_trimmed[1] in [' ', '\n', '.', ',', ':', ';']):
                                 predicted_rating = 0.0
-                                if should_log:
-                                    yield f"✅ Binary judge: Parsed 0 from text response for trace {trace_id[:8]}... - using 0.0"
                             elif text_trimmed.startswith('1') and (len(text_trimmed) == 1 or text_trimmed[1] in [' ', '\n', '.', ',', ':', ';']):
                                 predicted_rating = 1.0
-                                if should_log:
-                                    yield f"✅ Binary judge: Parsed 1 from text response for trace {trace_id[:8]}... - using 1.0"
                             else:
                                 # Fallback to PASS/FAIL text parsing (for backward compatibility)
                                 if 'pass' in text_lower and 'fail' not in text_lower[:text_lower.find('pass')+10]:
                                     predicted_rating = 1.0
-                                    if should_log:
-                                        yield f"✅ Binary judge: Parsed PASS from text response for trace {trace_id[:8]}... - using 1.0"
                                 elif 'fail' in text_lower and 'pass' not in text_lower[:text_lower.find('fail')+10]:
                                     predicted_rating = 0.0
-                                    if should_log:
-                                        yield f"✅ Binary judge: Parsed FAIL from text response for trace {trace_id[:8]}... - using 0.0"
                         
                         # If we still didn't parse, try the parsed value as fallback
                         if predicted_rating is None and predicted_value is not None and not pd.isna(predicted_value):
                             # Handle boolean values (backward compatibility)
                             if isinstance(predicted_value, bool):
                                 predicted_rating = 1.0 if predicted_value else 0.0
-                                if should_log:
-                                    yield f"✅ Binary judge returned boolean: {predicted_value} -> {predicted_rating}"
                             else:
                                 # Try to convert strings to 0/1 for binary rubrics
-                                # Prioritize 0/1 numeric strings (our new standard format)
                                 str_value = str(predicted_value).strip().upper()
                                 if str_value in ('0', '0.0', '0.', '0!', '0:', '0;'):
                                     predicted_rating = 0.0
-                                    if should_log:
-                                        yield f"✅ Converted string '{str_value}' to 0.0 (FAIL)"
                                 elif str_value in ('1', '1.0', '1.', '1!', '1:', '1;'):
                                     predicted_rating = 1.0
-                                    if should_log:
-                                        yield f"✅ Converted string '{str_value}' to 1.0 (PASS)"
-                                # Fallback to PASS/FAIL for backward compatibility
                                 elif str_value in ('PASS', 'PASS.', 'PASS!', 'PASS:', 'PASS;'):
                                     predicted_rating = 1.0
-                                    if should_log:
-                                        yield f"✅ Converted string '{str_value}' to 1.0 (PASS)"
                                 elif str_value in ('FAIL', 'FAIL.', 'FAIL!', 'FAIL:', 'FAIL;'):
                                     predicted_rating = 0.0
-                                    if should_log:
-                                        yield f"✅ Converted string '{str_value}' to 0.0 (FAIL)"
-                                # Fallback to TRUE/FALSE for backward compatibility
                                 elif str_value in ('TRUE', 'TRUE.', 'TRUE!', 'TRUE:', 'TRUE;'):
                                     predicted_rating = 1.0
-                                    if should_log:
-                                        yield f"✅ Converted string '{str_value}' to 1.0 (TRUE)"
                                 elif str_value in ('FALSE', 'FALSE.', 'FALSE!', 'FALSE:', 'FALSE;'):
                                     predicted_rating = 0.0
-                                    if should_log:
-                                        yield f"✅ Converted string '{str_value}' to 0.0 (FALSE)"
-                                # Other positive/negative keywords
                                 elif str_value in ('YES', 'CORRECT', 'GOOD', 'ACCEPTABLE'):
                                     predicted_rating = 1.0
-                                    if should_log:
-                                        yield f"✅ Converted string '{str_value}' to 1.0 (positive)"
                                 elif str_value in ('NO', 'INCORRECT', 'BAD', 'UNACCEPTABLE'):
                                     predicted_rating = 0.0
-                                    if should_log:
-                                        yield f"✅ Converted string '{str_value}' to 0.0 (negative)"
                                 else:
                                     # Try numeric conversion
                                     try:
                                         numeric_value = float(predicted_value)
-                                        # Validate and normalize for binary rubrics
                                         if is_binary:
-                                            # Strict validation: only 0 or 1 are valid for binary
                                             if numeric_value == 0 or numeric_value == 0.0:
                                                 predicted_rating = 0.0
-                                                if should_log:
-                                                    yield f"✅ Converted numeric {numeric_value} to 0.0 (FAIL)"
                                             elif numeric_value == 1 or numeric_value == 1.0:
                                                 predicted_rating = 1.0
-                                                if should_log:
-                                                    yield f"✅ Converted numeric {numeric_value} to 1.0 (PASS)"
                                             else:
                                                 # Invalid binary value - try to parse from raw text response if available
                                                 if raw_text_response:
                                                     text_lower = str(raw_text_response).lower()
-                                                    # Look for PASS/FAIL keywords first (our standard format)
                                                     if 'pass' in text_lower and 'fail' not in text_lower[:text_lower.find('pass')+10]:
                                                         predicted_rating = 1.0
-                                                        yield f"⚠️ MLflow returned {numeric_value} but parsed PASS from text response for trace {trace_id[:8]}... - using 1.0"
                                                     elif 'fail' in text_lower and 'pass' not in text_lower[:text_lower.find('fail')+10]:
                                                         predicted_rating = 0.0
-                                                        yield f"⚠️ MLflow returned {numeric_value} but parsed FAIL from text response for trace {trace_id[:8]}... - using 0.0"
-                                                    # Fallback to other keywords
                                                     elif any(word in text_lower for word in ['true', 'yes', 'correct', 'meets', 'acceptable']):
                                                         predicted_rating = 1.0
-                                                        yield f"⚠️ MLflow returned {numeric_value} but parsed positive from text response for trace {trace_id[:8]}... - using 1.0"
                                                     elif any(word in text_lower for word in ['false', 'no', 'incorrect', 'does not meet', 'unacceptable']):
                                                         predicted_rating = 0.0
-                                                        yield f"⚠️ MLflow returned {numeric_value} but parsed negative from text response for trace {trace_id[:8]}... - using 0.0"
-                                                    else:
+                                                    elif 1 <= numeric_value <= 5:
                                                         # Fallback: convert Likert-style response to binary using threshold
-                                                        # If model returns 1-5 scale, treat >= 3 as PASS (1), < 3 as FAIL (0)
-                                                        if 1 <= numeric_value <= 5:
-                                                            predicted_rating = 1.0 if numeric_value >= 3 else 0.0
-                                                            yield f"⚠️ FALLBACK: Model returned Likert-style {numeric_value} for binary judge on trace {trace_id[:8]}... - converting to {predicted_rating} using threshold (>=3 = PASS)"
-                                                        else:
-                                                            predicted_rating = None
-                                                            yield f"ERROR: Invalid binary rating {numeric_value} for trace {trace_id[:8]}... - must be 0, 1, or 1-5 scale, rejecting."
+                                                        predicted_rating = 1.0 if numeric_value >= 3 else 0.0
+                                                    else:
+                                                        predicted_rating = None
                                                 else:
                                                     # No raw text available - try threshold conversion as last resort
                                                     if 1 <= numeric_value <= 5:
                                                         predicted_rating = 1.0 if numeric_value >= 3 else 0.0
-                                                        yield f"⚠️ FALLBACK: Model returned Likert-style {numeric_value} for binary judge on trace {trace_id[:8]}... - converting to {predicted_rating} using threshold (>=3 = PASS)"
                                                     else:
                                                         predicted_rating = None
-                                                        yield f"ERROR: Invalid binary rating {numeric_value} for trace {trace_id[:8]}... - must be 0, 1, or 1-5 scale, rejecting."
                                         else:
                                             # Likert scale: allow 1-5, clamp if out of range
-                                            # But double-check: if we see 0, might be misclassified binary
                                             if numeric_value == 0:
-                                                yield f"WARNING: Likert judge returned 0 for trace {trace_id[:8]}... - this might be a binary rubric misclassified as likert"
                                                 predicted_rating = None  # Reject 0 for Likert
                                             elif 1 <= numeric_value <= 5:
                                                 predicted_rating = numeric_value
                                             else:
                                                 predicted_rating = max(1.0, min(5.0, numeric_value))
-                                                yield f"WARNING: Likert rating {numeric_value} out of range for trace {trace_id[:8]}... - clamped to {predicted_rating}"
                                     except (ValueError, TypeError):
-                                        yield f"WARNING: Could not convert '{predicted_value}' to rating for trace {trace_id[:8]}..."
+                                        pass  # Could not convert to rating
                         else:
                             null_prediction_rows += 1
                         
@@ -1225,16 +955,23 @@ Now evaluate the following:
         judge_name: str,
         judge_prompt: str,
         evaluation_model_name: str,  # Model for judge creation
-        alignment_model_name: str,  # Model for SIMBA optimizer
+        alignment_model_name: str,  # Model for MemAlign optimizer (reflection/distillation)
         mlflow_config: Any,
     ) -> Generator[str, None, Dict[str, Any]]:
-        """Run judge alignment using LikertSIMBAAlignmentOptimizer.
+        """Run judge alignment using MemAlignOptimizer.
+        
+        MemAlign uses dual memory systems to align judges with human feedback:
+        - Semantic Memory: Distills general guidelines from feedback patterns
+        - Episodic Memory: Retrieves similar past examples during evaluation
         
         This generator yields log messages and finally returns the aligned judge.
         
         Prerequisites:
         - evaluate() must have been run first to create LLM assessments
         - Human feedback must exist on the traces with the same judge_name
+        
+        Note: MemAlign works universally across all judge types (binary, likert, etc.)
+        without requiring type-specific configuration.
         """
         logger.info("run_alignment() started for judge '%s'", judge_name)
         
@@ -1260,8 +997,8 @@ Now evaluate the following:
                 os.environ.pop('DATABRICKS_CLIENT_SECRET', None)
             mlflow.set_tracking_uri('databricks')
             
-            # Enable SIMBA debug logging
-            logging.getLogger("mlflow.genai.judges.optimizers.simba").setLevel(logging.DEBUG)
+            # Enable MemAlign debug logging
+            logging.getLogger("mlflow.genai.judges.optimizers.memalign").setLevel(logging.DEBUG)
             
             experiment_id = mlflow_config.experiment_id
             if not experiment_id:
@@ -1275,15 +1012,15 @@ Now evaluate the following:
                 yield {"error": f"Failed to set experiment {experiment_id}: {e}", "success": False}
                 return
             
-            # Fetch labeled traces
+            # Fetch labeled traces - use 'align' tag for traces with human annotations
             try:
-                mlflow_traces = self._search_tagged_traces(mlflow_config, workshop_id, return_type="list")
+                mlflow_traces = self._search_tagged_traces(mlflow_config, workshop_id, return_type="list", tag_type="align")
             except Exception as exc:
                 yield f"ERROR: Failed to search MLflow traces: {exc}"
                 yield {"error": f"Failed to search MLflow traces: {exc}", "success": False}
                 return
 
-            logger.info("Found %d tagged traces for alignment", len(mlflow_traces))
+            logger.info("Found %d tagged traces with 'align' label for alignment", len(mlflow_traces))
             if not mlflow_traces:
                 yield "ERROR: No labeled traces available for alignment"
                 yield {"error": "No labeled traces available", "success": False}
@@ -1337,6 +1074,28 @@ Now evaluate the following:
             logger.info("Judge '%s' created using model '%s' (type=%s)", judge.name, judge_model_uri, judge_type)
             yield f"Initial Judge Text:\n{judge.instructions}"
             
+            # Register or update the judge BEFORE alignment so it exists in MLflow
+            try:
+                # Try to register first
+                judge.register(
+                    experiment_id=experiment_id,
+                    name=judge_name,
+                )
+                yield f"Registered initial judge '{judge_name}' before alignment"
+            except Exception as pre_register_err:
+                # If already registered, try to update instead
+                if "already been registered" in str(pre_register_err):
+                    try:
+                        judge.update(
+                            experiment_id=experiment_id,
+                            name=judge_name,
+                        )
+                        yield f"Updated existing judge '{judge_name}' before alignment"
+                    except Exception as update_err:
+                        yield f"WARNING: Could not update existing judge: {update_err}"
+                else:
+                    yield f"WARNING: Could not pre-register judge: {pre_register_err}"
+            
             # Determine model URI for the optimizer
             alignment_model = alignment_model_name or evaluation_model_name
             if alignment_model.startswith('databricks-'):
@@ -1346,16 +1105,16 @@ Now evaluate the following:
             else:
                 optimizer_model_uri = f'databricks:/{alignment_model}'
             
-            # Set up log capture for SIMBA loggers
+            # Set up log capture for MemAlign loggers
             log_handler = SimpleLogHandler()
             log_handler.setLevel(logging.DEBUG)
             formatter = logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s', datefmt='%Y/%m/%d %H:%M:%S')
             log_handler.setFormatter(formatter)
             
             target_loggers = [
-                logging.getLogger("dspy.teleprompt.simba"),
-                logging.getLogger("dspy.teleprompt.simba_utils"),
-                logging.getLogger("mlflow.genai.judges.optimizers.simba"),
+                logging.getLogger("mlflow.genai.judges.optimizers.memalign"),
+                logging.getLogger("mlflow.genai.judges.optimizers.memalign.optimizer"),
+                logging.getLogger("mlflow.genai.judges.optimizers.memalign.utils"),
             ]
             for lg in target_loggers:
                 lg.handlers.clear()
@@ -1363,45 +1122,34 @@ Now evaluate the following:
                 lg.propagate = False
                 lg.addHandler(log_handler)
             
-            # Check judge type from rubric to determine which optimizer to use
+            # Get judge type for informational purposes (MemAlign works with all types)
             judge_type = get_judge_type_from_rubric(self.db_service, workshop_id)
             logger.info("Detected judge type from rubric: %s", judge_type)
             yield f"Detected judge type: {judge_type}"
             
-            # Create the appropriate optimizer based on judge type
-            if judge_type == 'binary':
-                # For binary judges, use MLflow's default SIMBAAlignmentOptimizer
-                # This is optimized for Pass/Fail classification
-                yield "Creating Binary SIMBA optimizer (using MLflow default)..."
-                
-                try:
-                    from mlflow.genai.judges.optimizers import SIMBAAlignmentOptimizer
-                    
-                    optimizer = SIMBAAlignmentOptimizer(
-                        model=optimizer_model_uri,
-                    )
-                    yield f"Binary optimizer created with model={optimizer_model_uri}"
-                    yield "Using MLflow's default SIMBA for binary Pass/Fail optimization"
-                except ImportError as e:
-                    error_msg = f"MLflow SIMBA optimizer not available: {e}"
-                    yield f"ERROR: {error_msg}"
-                    yield {"error": error_msg, "success": False}
-                    return
-            else:
-                # For Likert scale judges (default), use custom LikertSIMBAAlignmentOptimizer
-                # This uses a custom agreement metric for 1-5 scale
-                yield "Creating Likert SIMBA optimizer..."
-                
-                optimizer = LikertSIMBAAlignmentOptimizer(
-                    model=optimizer_model_uri,
-                    batch_size=6,
-                    max_demos=0,
-                    verbose=True,
-                )
-                yield f"Likert optimizer created with model={optimizer_model_uri}, batch_size=6"
-                yield "Using custom Likert agreement metric for 1-5 scale optimization"
+            # Create MemAlignOptimizer - works universally for all judge types
+            # MemAlign uses dual memory systems:
+            # - Semantic Memory: Distills general guidelines from feedback
+            # - Episodic Memory: Retrieves similar past examples during evaluation
+            yield "Creating MemAlign optimizer..."
             
-            yield f"Running alignment with {len(mlflow_traces)} traces... (this may take 20+ minutes)"
+            try:
+                from mlflow.genai.judges.optimizers import MemAlignOptimizer
+                
+                optimizer = MemAlignOptimizer(
+                    reflection_lm=optimizer_model_uri,  # Model for distilling guidelines
+                    retrieval_k=5,  # Number of similar examples to retrieve
+                    embedding_model="databricks:/databricks-gte-large-en",  # Databricks embedding model
+                )
+                yield f"MemAlign optimizer created with reflection_lm={optimizer_model_uri}, retrieval_k=5, embedding_model=databricks-gte-large-en"
+                yield "Using MemAlign dual memory system (semantic + episodic memory)"
+            except ImportError as e:
+                error_msg = f"MemAlign optimizer not available: {e}. Ensure mlflow>=3.9 is installed."
+                yield f"ERROR: {error_msg}"
+                yield {"error": error_msg, "success": False}
+                return
+            
+            yield f"Running alignment with {len(mlflow_traces)} traces..."
             
             # Run alignment in background thread so we can yield logs periodically
             aligned_judge_container: Dict[str, Any] = {}
@@ -1418,11 +1166,11 @@ Now evaluate the following:
 
             worker = threading.Thread(target=_alignment_worker, daemon=True)
             worker.start()
-            yield "SIMBA optimization in progress..."
+            yield "MemAlign optimization in progress (distilling guidelines and building memory)..."
 
             try:
                 while worker.is_alive():
-                    # Drain captured SIMBA logs
+                    # Drain captured MemAlign logs
                     new_logs = log_handler.get_new_messages()
                     if new_logs:
                         last_status_emit = time.time()
@@ -1431,7 +1179,7 @@ Now evaluate the following:
                     
                     # Yield heartbeat if no activity
                     if not new_logs and time.time() - last_status_emit >= 5:
-                        yield "SIMBA still optimizing..."
+                        yield "MemAlign still optimizing..."
                         last_status_emit = time.time()
                     
                     worker.join(timeout=0.5)
@@ -1456,7 +1204,43 @@ Now evaluate the following:
             aligned_judge = aligned_judge_container["judge"]
             logger.info("Alignment complete for judge '%s' (%d traces)", aligned_judge.name, len(mlflow_traces))
             yield "Alignment complete!"
-            yield f"Aligned judge instructions length: {len(aligned_judge.instructions)} chars"
+            
+            # Extract the aligned instructions (original prompt + distilled guidelines)
+            aligned_instructions = aligned_judge.instructions
+            
+            # Extract memory statistics for logging
+            semantic_memory = getattr(aligned_judge, '_semantic_memory', [])
+            episodic_memory = getattr(aligned_judge, '_episodic_memory', [])
+            guideline_count = len(semantic_memory)
+            example_count = len(episodic_memory)
+            
+            yield f"Aligned judge instructions length: {len(aligned_instructions)} chars"
+            yield f"Semantic memory: {guideline_count} distilled guidelines"
+            yield f"Episodic memory: {example_count} examples (not persisted to registered judge)"
+            
+            # Log the distilled guidelines
+            if semantic_memory:
+                yield "--- Distilled Guidelines (Semantic Memory) ---"
+                for i, guideline in enumerate(semantic_memory, 1):
+                    guideline_text = getattr(guideline, 'guideline_text', str(guideline))
+                    # Truncate long guidelines for display
+                    if len(guideline_text) > 200:
+                        guideline_text = guideline_text[:200] + "..."
+                    yield f"  {i}. {guideline_text}"
+            
+            # Log sample episodic memory examples
+            if episodic_memory:
+                yield "--- Sample Episodic Memory Examples ---"
+                for i, example in enumerate(episodic_memory[:3], 1):  # Show first 3
+                    ex_dict = dict(example) if hasattr(example, '__iter__') else {}
+                    trace_id = getattr(example, '_trace_id', 'N/A')
+                    # Get a preview of inputs/outputs
+                    inputs_preview = str(ex_dict.get('inputs', ''))[:80]
+                    if len(str(ex_dict.get('inputs', ''))) > 80:
+                        inputs_preview += "..."
+                    yield f"  Example {i} (trace: {trace_id}): {inputs_preview}"
+                if len(episodic_memory) > 3:
+                    yield f"  ... and {len(episodic_memory) - 3} more examples"
 
             # Log to MLflow
             mlflow_run = mlflow.active_run()
@@ -1476,24 +1260,62 @@ Now evaluate the following:
 
                 try:
                     mlflow.log_text(
-                        aligned_judge.instructions or "",
+                        aligned_instructions or "",
                         artifact_file=f"aligned_judge_{judge_name}.txt",
                     )
                     yield "Logged aligned instructions as MLflow artifact"
                 except Exception as artifact_err:
                     logger.warning("Failed to log artifact: %s", artifact_err)
 
+                # Update the existing registered judge with aligned instructions
+                # The aligned_instructions contain the original prompt + distilled guidelines (semantic memory)
+                # Note: Episodic memory (example retrieval) is not preserved - waiting for native MLflow support
                 registered_judge_name: Optional[str] = None
                 try:
-                    registered_judge_name = f"{judge_name}_aligned"
-                    aligned_judge.register(
-                        experiment_id=experiment_id,
+                    from mlflow.genai.scorers import ScorerSamplingConfig
+                    
+                    # Create judge with aligned instructions using the SAME name
+                    registered_judge_name = judge_name  # Use original name, not _aligned suffix
+                    aligned_judge_for_registration = make_judge(
                         name=registered_judge_name,
+                        instructions=aligned_instructions,
+                        feedback_value_type=feedback_type,
+                        model=judge_model_uri,
                     )
-                    yield f"Registered aligned judge as '{registered_judge_name}'"
+                    
+                    # Try to update existing scorer first, fall back to register if it doesn't exist
+                    try:
+                        # Use update() for existing scorers - this creates a new version
+                        aligned_judge_for_registration.update(
+                            experiment_id=experiment_id,
+                            name=registered_judge_name,
+                            sampling_config=ScorerSamplingConfig(sample_rate=0.0),
+                        )
+                        yield f"Updated existing judge '{registered_judge_name}' with aligned instructions"
+                    except Exception as update_err:
+                        # If update fails (scorer doesn't exist), try register
+                        if "not found" in str(update_err).lower() or "does not exist" in str(update_err).lower():
+                            aligned_judge_for_registration.register(
+                                experiment_id=experiment_id,
+                                name=registered_judge_name,
+                            )
+                            yield f"Registered new judge '{registered_judge_name}' with aligned instructions"
+                            # Set sampling config after registration
+                            try:
+                                aligned_judge_for_registration.update(
+                                    experiment_id=experiment_id,
+                                    name=registered_judge_name,
+                                    sampling_config=ScorerSamplingConfig(sample_rate=0.0),
+                                )
+                                yield f"Set sample_rate=0 for judge '{registered_judge_name}'"
+                            except Exception as config_err:
+                                yield f"WARNING: Could not update sampling config: {config_err}"
+                        else:
+                            yield f"WARNING: Could not update judge: {update_err}"
+                        
                 except Exception as register_err:
                     registered_judge_name = None
-                    yield f"WARNING: Failed to register aligned judge: {register_err}"
+                    yield f"WARNING: Failed to update/register aligned judge: {register_err}"
 
             finally:
                 if started_run:
@@ -1504,11 +1326,13 @@ Now evaluate the following:
 
             yield {
                 'success': True,
-                'judge_name': aligned_judge.name,
-                'aligned_instructions': aligned_judge.instructions,
+                'judge_name': judge_name,
+                'aligned_instructions': aligned_instructions,
                 'trace_count': len(mlflow_traces),
                 'mlflow_run_id': mlflow_run.info.run_id if mlflow_run else None,
                 'registered_judge_name': registered_judge_name,
+                'guideline_count': guideline_count,  # Semantic memory - persisted in instructions
+                'example_count': example_count,  # Episodic memory - not persisted
             }
         except Exception as e:
             import traceback
