@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.7.3 (February 2, 2026)
+
+### New Features
+- **Time-based SQLite Backup**: Changed SQLite UC volume backup from write-count-based (every 50 writes) to time-based (every 10 minutes by default)
+  - New environment variable: `SQLITE_BACKUP_INTERVAL_MINUTES` (default: 10, set to 0 to disable)
+  - Background timer runs in daemon thread, starts on app startup, stops gracefully on shutdown
+  - Replaced deprecated `SQLITE_BACKUP_AFTER_OPS` environment variable
+
+### Improvements
+- **TraceViewer UI Improvements**: Enhanced trace viewing experience
+- **Concurrent Annotation Tests**: Added comprehensive test suite for concurrent annotation scenarios
+- **E2E Tests**: Added annotation last trace e2e test scenarios
+
+### Technical Changes
+- Added `start_backup_timer()` and `stop_backup_timer()` functions to sqlite_rescue module
+- `record_write_operation()` is now a no-op (kept for backward compatibility)
+- Updated `get_rescue_status()` to return `backup_interval_minutes` and `backup_timer_running`
+
+---
+
 ## v1.3.0 (January 13, 2026)
 
 ### New Features
