@@ -1924,6 +1924,89 @@ class DatabaseService:
       'errors': errors if errors else None
     }
 
+  def tag_traces_for_evaluation(self, workshop_id: str, trace_ids: List[str], tag_type: str = 'eval') -> Dict[str, Any]:
+    """Tag MLflow traces with a label for auto-evaluation.
+
+    Args:
+        workshop_id: The workshop ID
+        trace_ids: List of workshop trace IDs to tag
+        tag_type: The tag value (default 'eval')
+
+    Returns:
+        Dict with 'tagged' count and 'failed' list
+    """
+    # Get MLflow config
+    config = (
+      self.db.query(MLflowIntakeConfigDB)
+      .filter(MLflowIntakeConfigDB.workshop_id == workshop_id)
+      .first()
+    )
+    if not config:
+      logger.warning('Skipping MLflow tagging: config missing for workshop %s', workshop_id)
+      return {'tagged': 0, 'failed': trace_ids, 'error': 'MLflow config missing'}
+
+    # Get token from token storage
+    databricks_token = token_storage.get_token(workshop_id)
+    if not databricks_token:
+      logger.warning('Skipping MLflow tagging: token missing for workshop %s', workshop_id)
+      return {'tagged': 0, 'failed': trace_ids, 'error': 'Databricks token missing'}
+
+    try:
+      import mlflow
+    except ImportError:
+      logger.warning('MLflow is not available; cannot tag traces.')
+      return {'tagged': 0, 'failed': trace_ids, 'error': 'MLflow not available'}
+
+    # Set up MLflow credentials
+    os.environ['DATABRICKS_HOST'] = config.databricks_host.rstrip('/')
+    os.environ['DATABRICKS_TOKEN'] = databricks_token
+    os.environ.pop('DATABRICKS_CLIENT_ID', None)
+    os.environ.pop('DATABRICKS_CLIENT_SECRET', None)
+
+    mlflow.set_tracking_uri('databricks')
+
+    try:
+      mlflow.set_experiment(experiment_id=config.experiment_id)
+    except Exception as exc:
+      logger.warning('Failed to set MLflow experiment %s: %s', config.experiment_id, exc)
+      return {'tagged': 0, 'failed': trace_ids, 'error': f'Failed to set experiment: {exc}'}
+
+    # Get set_trace_tag function
+    set_trace_tag = getattr(mlflow, 'set_trace_tag', None)
+    if not set_trace_tag:
+      logger.warning('mlflow.set_trace_tag not available')
+      return {'tagged': 0, 'failed': trace_ids, 'error': 'set_trace_tag not available'}
+
+    # Get traces from database to get their MLflow trace IDs
+    db_traces = self.db.query(TraceDB).filter(
+      TraceDB.workshop_id == workshop_id,
+      TraceDB.id.in_(trace_ids)
+    ).all()
+
+    trace_id_map = {t.id: t.mlflow_trace_id for t in db_traces if t.mlflow_trace_id}
+
+    tagged = []
+    failed = []
+
+    for trace_id in trace_ids:
+      mlflow_trace_id = trace_id_map.get(trace_id)
+      if not mlflow_trace_id:
+        logger.debug(f"No MLflow trace ID for workshop trace {trace_id}")
+        failed.append(trace_id)
+        continue
+
+      try:
+        set_trace_tag(trace_id=mlflow_trace_id, key='label', value=tag_type)
+        set_trace_tag(trace_id=mlflow_trace_id, key='workshop_id', value=workshop_id)
+        tagged.append(trace_id)
+        logger.debug(f"Tagged trace {mlflow_trace_id} with label={tag_type}")
+      except Exception as exc:
+        logger.warning(f"Failed to tag trace {mlflow_trace_id}: {exc}")
+        failed.append(trace_id)
+
+    logger.info(f"Tagged {len(tagged)} traces for {tag_type}, {len(failed)} failed")
+    return {'tagged': len(tagged), 'failed': failed}
+
   def get_annotations(self, workshop_id: str, user_id: Optional[str] = None) -> List[Annotation]:
     """Get annotations for a workshop, optionally filtered by user."""
     query = self.db.query(AnnotationDB).join(TraceDB).filter(AnnotationDB.workshop_id == workshop_id)
