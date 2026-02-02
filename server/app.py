@@ -19,6 +19,8 @@ from server.sqlite_rescue import (
     get_rescue_status,
     install_shutdown_handlers,
     restore_from_volume,
+    start_backup_timer,
+    stop_backup_timer,
 )
 
 
@@ -39,6 +41,11 @@ async def lifespan(app: FastAPI):
 
         # Install signal handlers for graceful shutdown backup
         install_shutdown_handlers()
+
+        # Start periodic background backup timer (every 10 minutes by default)
+        start_backup_timer()
+        backup_interval = rescue_status.get("backup_interval_minutes", 10)
+        print(f"⏰ Periodic backup timer started (every {backup_interval} minutes)")
     else:
         print("⚠️  SQLITE_VOLUME_BACKUP_PATH not configured - database will NOT persist across container restarts")
 
@@ -53,6 +60,10 @@ async def lifespan(app: FastAPI):
     # SQLite Rescue: Backup to Unity Catalog Volume on shutdown
     print("🔄 Application shutting down...")
     if rescue_status["configured"]:
+        # Stop the periodic backup timer first
+        stop_backup_timer()
+        print("⏰ Periodic backup timer stopped")
+
         print("💾 Backing up database to Unity Catalog Volume...")
         if backup_to_volume(force=True):
             print("✅ Database backed up successfully")

@@ -178,6 +178,7 @@ class SimpleEvaluationRequest(BaseModel):
   """Request model for simple model serving evaluation (no MLflow)."""
   judge_prompt: str
   endpoint_name: str  # Databricks model serving endpoint name
+  judge_name: Optional[str] = 'workshop_judge'  # Name for MLflow feedback entries
   prompt_id: Optional[str] = None  # Existing prompt ID to update
   judge_type: Optional[str] = None  # Explicit judge type: 'likert', 'binary', 'freeform'
 
@@ -480,24 +481,60 @@ async def get_findings_with_user_details(
 
 @router.post("/{workshop_id}/rubric")
 async def create_rubric(workshop_id: str, rubric_data: RubricCreate, db: Session = Depends(get_db)) -> Rubric:
-    """Create or update rubric for a workshop."""
+    """Create or update rubric for a workshop.
+    
+    After creating/updating, triggers an MLflow re-sync in the background.
+    """
     db_service = DatabaseService(db)
     workshop = db_service.get_workshop(workshop_id)
     if not workshop:
         raise HTTPException(status_code=404, detail="Workshop not found")
 
-    return db_service.create_rubric(workshop_id, rubric_data)
+    rubric = db_service.create_rubric(workshop_id, rubric_data)
+    
+    # Re-sync annotations to MLflow in background (non-blocking)
+    def background_resync():
+        try:
+            from server.database import SessionLocal
+            with SessionLocal() as bg_db:
+                bg_service = DatabaseService(bg_db)
+                resync_result = bg_service.resync_annotations_to_mlflow(workshop_id)
+                logger.info(f"MLflow re-sync after rubric create: {resync_result}")
+        except Exception as e:
+            logger.warning(f"MLflow re-sync failed after rubric create: {e}")
+    
+    threading.Thread(target=background_resync, daemon=True).start()
+    
+    return rubric
 
 
 @router.put("/{workshop_id}/rubric")
 async def update_rubric(workshop_id: str, rubric_data: RubricCreate, db: Session = Depends(get_db)) -> Rubric:
-    """Update rubric for a workshop."""
+    """Update rubric for a workshop.
+    
+    After updating, triggers an MLflow re-sync in the background.
+    """
     db_service = DatabaseService(db)
     workshop = db_service.get_workshop(workshop_id)
     if not workshop:
         raise HTTPException(status_code=404, detail="Workshop not found")
 
-    return db_service.create_rubric(workshop_id, rubric_data)
+    rubric = db_service.create_rubric(workshop_id, rubric_data)
+    
+    # Re-sync annotations to MLflow in background (non-blocking)
+    def background_resync():
+        try:
+            from server.database import SessionLocal
+            with SessionLocal() as bg_db:
+                bg_service = DatabaseService(bg_db)
+                resync_result = bg_service.resync_annotations_to_mlflow(workshop_id)
+                logger.info(f"MLflow re-sync after rubric update: {resync_result}")
+        except Exception as e:
+            logger.warning(f"MLflow re-sync failed after rubric update: {e}")
+    
+    threading.Thread(target=background_resync, daemon=True).start()
+    
+    return rubric
 
 
 @router.get("/{workshop_id}/rubric")
@@ -519,7 +556,10 @@ async def get_rubric(workshop_id: str, db: Session = Depends(get_db)) -> Rubric:
 async def update_rubric_question(
     workshop_id: str, question_id: str, question_data: dict, db: Session = Depends(get_db)
 ) -> Rubric:
-    """Update a specific question in the rubric."""
+    """Update a specific question in the rubric.
+    
+    When the title changes, this triggers an MLflow re-sync to update judge names.
+    """
     db_service = DatabaseService(db)
     workshop = db_service.get_workshop(workshop_id)
     if not workshop:
@@ -536,12 +576,24 @@ async def update_rubric_question(
     if not rubric:
         raise HTTPException(status_code=404, detail="Question not found or rubric not found")
 
+    # Re-sync annotations to MLflow with updated judge names
+    # This ensures the judge names reflect the new rubric question titles
+    try:
+        resync_result = db_service.resync_annotations_to_mlflow(workshop_id)
+        logger.info(f"MLflow re-sync after rubric update: {resync_result}")
+    except Exception as e:
+        # Don't fail the rubric update if MLflow sync fails
+        logger.warning(f"MLflow re-sync failed after rubric update: {e}")
+
     return rubric
 
 
 @router.delete("/{workshop_id}/rubric/questions/{question_id}")
 async def delete_rubric_question(workshop_id: str, question_id: str, db: Session = Depends(get_db)):
-    """Delete a specific question from the rubric."""
+    """Delete a specific question from the rubric.
+    
+    After deletion, triggers an MLflow re-sync to update remaining judge names.
+    """
     db_service = DatabaseService(db)
     workshop = db_service.get_workshop(workshop_id)
     if not workshop:
@@ -552,6 +604,15 @@ async def delete_rubric_question(workshop_id: str, question_id: str, db: Session
     if rubric is None:
         # Question was deleted and no questions remain
         return {"message": "Question deleted. No questions remain in rubric."}
+
+    # Re-sync annotations to MLflow with remaining judge names
+    # This ensures MLflow reflects the current rubric structure
+    try:
+        resync_result = db_service.resync_annotations_to_mlflow(workshop_id)
+        logger.info(f"MLflow re-sync after rubric delete: {resync_result}")
+    except Exception as e:
+        # Don't fail the rubric delete if MLflow sync fails
+        logger.warning(f"MLflow re-sync failed after rubric delete: {e}")
 
     return rubric
 
@@ -617,14 +678,87 @@ async def get_annotations_with_user_details(
 
 @router.get("/{workshop_id}/irr")
 async def get_irr(workshop_id: str, db: Session = Depends(get_db)) -> IRRResult:
-    """Calculate Inter-Rater Reliability for a workshop."""
+    """Calculate Inter-Rater Reliability for a workshop.
+    
+    Only considers ratings for questions that currently exist in the rubric.
+    Old ratings for deleted questions are ignored (but preserved in DB).
+    """
     db_service = DatabaseService(db)
     workshop = db_service.get_workshop(workshop_id)
     if not workshop:
         raise HTTPException(status_code=404, detail="Workshop not found")
 
     annotations = db_service.get_annotations(workshop_id)
+    
+    # Get current rubric to filter ratings to only current questions
+    rubric = db_service.get_rubric(workshop_id)
+    if rubric:
+        # Get the valid question IDs from the current rubric
+        valid_question_ids = _get_valid_rubric_question_ids(rubric)
+        
+        # Filter annotation ratings to only include current rubric questions
+        annotations = _filter_annotations_to_current_rubric(annotations, valid_question_ids)
+    
     return calculate_irr_for_workshop(workshop_id, annotations, db)
+
+
+def _get_valid_rubric_question_ids(rubric) -> set:
+    """Extract all valid question IDs from the current rubric.
+    
+    Returns both backend format (q_1, q_2) and frontend format (rubric_id_0, rubric_id_1).
+    """
+    valid_ids = set()
+    
+    QUESTION_DELIMITER = "|||QUESTION_SEPARATOR|||"
+    question_parts = rubric.question.split(QUESTION_DELIMITER) if rubric.question else []
+    
+    for index in range(len(question_parts)):
+        if question_parts[index].strip():
+            # Backend format: q_1, q_2, etc. (1-based)
+            valid_ids.add(f"q_{index + 1}")
+            # Frontend format: {rubric_id}_{index} (0-based)
+            valid_ids.add(f"{rubric.id}_{index}")
+    
+    return valid_ids
+
+
+def _filter_annotations_to_current_rubric(annotations, valid_question_ids: set):
+    """Filter annotation ratings to only include ratings for current rubric questions.
+    
+    This ensures that old ratings for deleted questions are not included in IRR calculations.
+    The original annotation objects are not modified - new Annotation objects are created.
+    """
+    from server.models import Annotation
+    
+    filtered_annotations = []
+    for annotation in annotations:
+        if not annotation.ratings:
+            # No ratings dict, keep as-is (uses legacy 'rating' field)
+            filtered_annotations.append(annotation)
+            continue
+        
+        # Filter ratings to only include current rubric questions
+        filtered_ratings = {
+            key: value 
+            for key, value in annotation.ratings.items() 
+            if key in valid_question_ids
+        }
+        
+        # Create a new Annotation with filtered ratings (don't modify original)
+        filtered_annotation = Annotation(
+            id=annotation.id,
+            workshop_id=annotation.workshop_id,
+            trace_id=annotation.trace_id,
+            user_id=annotation.user_id,
+            rating=annotation.rating,
+            ratings=filtered_ratings if filtered_ratings else None,
+            comment=annotation.comment,
+            mlflow_trace_id=annotation.mlflow_trace_id,
+            created_at=annotation.created_at,
+        )
+        filtered_annotations.append(filtered_annotation)
+    
+    return filtered_annotations
 
 
 @router.delete("/{workshop_id}/findings")
@@ -2925,11 +3059,27 @@ async def start_alignment_job(
 
     mlflow_config.databricks_token = databricks_token
 
-    # Create job
+    # Create job first so we can log to it
     job_id = str(uuid.uuid4())
     job = create_job(job_id, workshop_id)
     job.set_status("running")
     job.add_log("Alignment job started")
+
+    # IMPORTANT: Re-sync annotations to MLflow before alignment
+    # This ensures MLflow has the correct Feedback entries with the judge name
+    job.add_log(f"Re-syncing annotations to MLflow for judge '{request.judge_name}'...")
+    logger.info("Re-syncing annotations to MLflow before alignment...")
+    try:
+        resync_result = db_service.resync_annotations_to_mlflow(workshop_id)
+        logger.info(f"MLflow re-sync before alignment: {resync_result}")
+        job.add_log(f"MLflow re-sync result: synced={resync_result.get('synced', 0)}, total={resync_result.get('total', 0)}")
+        job.add_log(f"Judge names from rubric: {resync_result.get('judge_names', [])}")
+        if resync_result.get('errors'):
+            job.add_log(f"Sync errors: {resync_result.get('errors')}")
+    except Exception as e:
+        logger.warning(f"MLflow re-sync failed before alignment: {e}")
+        job.add_log(f"WARNING: MLflow re-sync failed: {e}")
+        # Don't fail - alignment might still work if feedback already exists
 
     # Run alignment in background thread
     def run_alignment_background():
@@ -3443,18 +3593,29 @@ async def start_simple_evaluation(
               is_binary_judge = False
               judge_type_str = 'likert'
         
+        # Log trace counts for debugging
+        job.add_log(f"📊 trace_annotations has {len(trace_annotations)} entries")
+        job.add_log(f"📊 trace_map has {len(trace_map)} entries")
+        
         for idx, (trace_id, ratings) in enumerate(trace_annotations.items()):
           trace = trace_map.get(trace_id)
           if not trace:
+            job.add_log(f"⚠️ Skipping trace {trace_id[:8]}... - not found in trace_map (annotation exists but trace missing)")
+            continue
+          
+          # Filter out None values from ratings and validate
+          valid_ratings = [r for r in ratings if r is not None]
+          if not valid_ratings:
+            job.add_log(f"⚠️ Skipping trace {trace_id[:8]}... - no valid ratings (all None)")
             continue
           
           # Get human rating based on judge type
           if is_binary_judge:
             # For binary, use majority vote (mode)
-            human_rating = 1 if sum(ratings) > len(ratings) / 2 else 0
+            human_rating = 1 if sum(valid_ratings) > len(valid_ratings) / 2 else 0
           else:
             # For Likert, use rounded average
-            human_rating = round(sum(ratings) / len(ratings))
+            human_rating = round(sum(valid_ratings) / len(valid_ratings))
           
           # Get trace input and output directly from the Trace model
           trace_input = trace.input or ''
@@ -3466,8 +3627,12 @@ async def start_simple_evaluation(
           
           # Skip only if BOTH input and output are empty
           if not has_input and not has_output:
-            job.add_log(f"Warning: Skipping trace {trace_id[:8]}... - no input/output data found")
+            job.add_log(f"⚠️ Skipping trace {trace_id[:8]}... - no input/output data found (trace idx={idx})")
             continue
+          
+          # Log progress for all traces (helpful for debugging the last trace issue)
+          if idx == len(trace_annotations) - 1:
+            job.add_log(f"📍 Processing LAST trace {trace_id[:8]}... (idx={idx})")
           
           # Log warning if output is empty (but still evaluate)
           if not has_output:
@@ -3574,6 +3739,12 @@ async def start_simple_evaluation(
               'confidence': 0.0,
               'reasoning': f"Evaluation error: {str(eval_err)}"
             })
+        
+        # Log summary of evaluation results
+        job.add_log(f"📊 Evaluation loop complete: {len(evaluations)} evaluations from {len(trace_annotations)} annotated traces")
+        if len(evaluations) < len(trace_annotations):
+          skipped = len(trace_annotations) - len(evaluations)
+          job.add_log(f"⚠️ WARNING: {skipped} trace(s) were skipped during evaluation!")
         
         if not evaluations:
           job.set_status("failed")
@@ -3684,6 +3855,17 @@ async def start_simple_evaluation(
           ]
           thread_db_service.store_judge_evaluations(evaluations_to_save)
           job.add_log(f"Saved {len(evaluations_to_save)} evaluations to database")
+          
+          # Sync AI evaluations to MLflow so SIMBA can use them
+          try:
+            sync_result = thread_db_service.sync_evaluations_to_mlflow(
+              workshop_id=workshop_id,
+              judge_name=request.judge_name or 'workshop_judge',
+              evaluations=evaluations
+            )
+            job.add_log(f"Synced {sync_result.get('synced', 0)} AI evaluations to MLflow for judge '{request.judge_name}'")
+          except Exception as sync_err:
+            job.add_log(f"WARNING: Could not sync to MLflow: {sync_err}")
           
         except Exception as save_err:
           job.add_log(f"WARNING: Could not save to database: {save_err}")

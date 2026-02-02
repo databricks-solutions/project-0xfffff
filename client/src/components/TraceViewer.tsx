@@ -95,19 +95,204 @@ const isJsonString = (str: string): boolean => {
 };
 
 /**
- * Try to parse a string as JSON
+ * Fix malformed JSON where nested objects are incorrectly quoted as strings
+ * e.g., "content": "{ "key": "value" }" should become "content": { "key": "value" }
  */
-const tryParseJson = (str: string): { success: boolean; data: any } => {
-  try {
-    const data = JSON.parse(str);
-    return { success: true, data };
-  } catch {
-    return { success: false, data: null };
-  }
+const fixQuotedJsonObjects = (str: string): string => {
+  // Pattern to find string values that contain JSON objects/arrays
+  // Matches: ": "{ or ": "[  followed by content and ending with }",  or ]",
+  return str.replace(
+    /:\s*"\s*(\{[\s\S]*?\}|\[[\s\S]*?\])\s*"(\s*[,}\]])/g,
+    (match, jsonContent, trailing) => {
+      // Check if the content looks like valid JSON structure
+      const trimmedContent = jsonContent.trim();
+      if ((trimmedContent.startsWith('{') && trimmedContent.endsWith('}')) ||
+          (trimmedContent.startsWith('[') && trimmedContent.endsWith(']'))) {
+        // Unescape any escaped quotes inside
+        const unescaped = trimmedContent.replace(/\\"/g, '"');
+        return `: ${unescaped}${trailing}`;
+      }
+      return match;
+    }
+  );
 };
 
 /**
- * Format a field name for display (convert camelCase/snake_case to readable text)
+ * Fix JSON strings that have unescaped newlines inside string values.
+ * JSON spec requires newlines in strings to be escaped as \n
+ */
+const fixUnescapedNewlines = (str: string): string => {
+  // This regex finds string values and escapes any literal newlines inside them
+  // It's a simplified approach that works for common cases
+  let result = '';
+  let inString = false;
+  let escapeNext = false;
+  
+  for (let i = 0; i < str.length; i++) {
+    const char = str[i];
+    
+    if (escapeNext) {
+      result += char;
+      escapeNext = false;
+      continue;
+    }
+    
+    if (char === '\\') {
+      result += char;
+      escapeNext = true;
+      continue;
+    }
+    
+    if (char === '"') {
+      inString = !inString;
+      result += char;
+      continue;
+    }
+    
+    // If we're inside a string and hit a newline, escape it
+    if (inString && (char === '\n' || char === '\r')) {
+      if (char === '\r' && str[i + 1] === '\n') {
+        // Handle \r\n as a single newline
+        result += '\\n';
+        i++; // Skip the \n
+      } else {
+        result += '\\n';
+      }
+      continue;
+    }
+    
+    result += char;
+  }
+  
+  return result;
+};
+
+/**
+ * Try to parse a string as JSON
+ * Also handles some common non-JSON formats like Python dict notation
+ */
+const tryParseJson = (str: string): { success: boolean; data: any } => {
+  if (!str || typeof str !== 'string') {
+    return { success: false, data: null };
+  }
+
+  // Clean the string - remove BOM and trim
+  let cleanStr = str.replace(/^\uFEFF/, '').trim();
+
+  // First, try direct JSON parse
+  try {
+    const data = JSON.parse(cleanStr);
+    return { success: true, data };
+  } catch {
+    // Continue to try alternatives
+  }
+
+  // Try fixing unescaped newlines in string values
+  try {
+    const fixedNewlines = fixUnescapedNewlines(cleanStr);
+    // Always try to parse the fixed version (even if it looks the same)
+    const data = JSON.parse(fixedNewlines);
+    return { success: true, data };
+  } catch {
+    // Continue to other methods
+  }
+
+  // Try fixing quoted JSON objects (e.g., "content": "{ "key": "value" }")
+  try {
+    const fixed = fixQuotedJsonObjects(cleanStr);
+    if (fixed !== cleanStr) {
+      const data = JSON.parse(fixed);
+      return { success: true, data };
+    }
+  } catch {
+    // Continue to other methods
+  }
+
+  // Try combining fixes: first fix newlines, then quoted objects
+  try {
+    const fixedNewlines = fixUnescapedNewlines(cleanStr);
+    const fixedBoth = fixQuotedJsonObjects(fixedNewlines);
+    if (fixedBoth !== cleanStr) {
+      const data = JSON.parse(fixedBoth);
+      return { success: true, data };
+    }
+  } catch {
+    // Continue to other methods
+  }
+
+  const trimmed = cleanStr;
+
+  // Handle multiple top-level objects like "outputs: {...} inputs: {...}"
+  // Convert to a single object: {"outputs": {...}, "inputs": {...}}
+  const multiObjectPattern = /^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*\{/;
+  if (multiObjectPattern.test(trimmed)) {
+    try {
+      // Split on patterns like "}\nkey:" or "} key:"
+      const sections = trimmed.split(/\}\s*(?=[a-zA-Z_][a-zA-Z0-9_]*\s*:\s*\{)/);
+      const parsed: Record<string, any> = {};
+
+      for (const section of sections) {
+        const match = section.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(\{[\s\S]*)/);
+        if (match) {
+          const key = match[1];
+          let value = match[2];
+          // Add closing brace if missing
+          if (!value.trim().endsWith('}')) {
+            value = value + '}';
+          }
+          try {
+            parsed[key] = JSON.parse(value);
+          } catch {
+            // If parsing fails, store as string
+            parsed[key] = value;
+          }
+        }
+      }
+
+      if (Object.keys(parsed).length > 0) {
+        return { success: true, data: parsed };
+      }
+    } catch {
+      // Continue to other methods
+    }
+  }
+
+  // Try to fix common issues with object-like notation
+  if ((trimmed.includes('{') || trimmed.includes('[')) &&
+      (trimmed.includes(':') || trimmed.includes(','))) {
+    try {
+      // Try to convert unquoted keys to quoted keys
+      const fixed = cleanStr
+        .replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":')
+        .replace(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*:/gm, '"$1":');
+
+      const data = JSON.parse(fixed);
+      return { success: true, data };
+    } catch {
+      // Still failed
+    }
+  }
+
+  // Last resort: try to extract content from JSON-like structure manually
+  // This handles cases where the JSON has issues but we can still extract the main content
+  const simpleObjectMatch = trimmed.match(/^\{\s*"([^"]+)"\s*:\s*"([\s\S]*)"\s*\}$/);
+  if (simpleObjectMatch) {
+    const key = simpleObjectMatch[1];
+    // Unescape common escape sequences in the value
+    const value = simpleObjectMatch[2]
+      .replace(/\\n/g, '\n')
+      .replace(/\\r/g, '\r')
+      .replace(/\\t/g, '\t')
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, '\\');
+    return { success: true, data: { [key]: value } };
+  }
+
+  return { success: false, data: null };
+};
+
+/**
+ * Format a field name for display (convert camelCase/snake_case/dotted to readable text)
  */
 const formatFieldName = (name: string): string => {
   // Common technical field name mappings to friendly names
@@ -130,17 +315,60 @@ const formatFieldName = (name: string): string => {
     'messages': 'Messages',
     'role': 'Role',
     'type': 'Type',
+    'answer': 'Answer',
+    'request_id': 'Request ID',
+    'trace_id': 'Trace ID',
+    'span_id': 'Span ID',
+    'user_id': 'User ID',
+    'workspace_id': 'Workspace ID',
+    'parent_span_id': 'Parent Span ID',
   };
-  
+
   const lowerName = name.toLowerCase();
   if (friendlyNames[lowerName]) {
     return friendlyNames[lowerName];
   }
-  
+
+  // Handle dotted names like "mlflow.trace.inputs" - extract the last meaningful part
+  if (name.includes('.')) {
+    const parts = name.split('.');
+    // Skip common prefixes like "mlflow", "trace", "span", "databricks"
+    const skipPrefixes = ['mlflow', 'trace', 'span', 'databricks', 'source'];
+    let meaningfulParts = parts.filter(p => !skipPrefixes.includes(p.toLowerCase()));
+
+    // If all parts were prefixes, use the last 1-2 parts
+    if (meaningfulParts.length === 0) {
+      meaningfulParts = parts.slice(-2);
+    }
+
+    // Format the meaningful parts
+    return meaningfulParts
+      .map(part => part
+        .replace(/_/g, ' ')
+        .replace(/([a-z])([A-Z])/g, '$1 $2')
+        .replace(/\b\w/g, c => c.toUpperCase())
+      )
+      .join(' ');
+  }
+
   return name
     .replace(/_/g, ' ')
     .replace(/([a-z])([A-Z])/g, '$1 $2')
     .replace(/\b\w/g, c => c.toUpperCase());
+};
+
+/**
+ * Check if a value looks like a broken/partial JSON fragment
+ */
+const isBrokenValue = (value: any): boolean => {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  // Check for partial JSON fragments
+  if (trimmed === '{' || trimmed === '[' || trimmed === '{\\' || trimmed === '[\\') return true;
+  if (trimmed === '\\' || trimmed === '{}' || trimmed === '[]') return true;
+  // Check for values that are just escape sequences
+  if (/^\\+$/.test(trimmed)) return true;
+  return false;
 };
 
 /**
@@ -326,96 +554,24 @@ const SmartValueRenderer: React.FC<{
     );
   }
 
-  // Handle objects
+  // Handle objects - display with key as label, value in collapsible block
   if (typeof value === 'object') {
     const entries = Object.entries(value);
-    
-    if (entries.length === 0) {
+
+    // Filter out broken/empty values
+    const validEntries = entries.filter(([_, val]) =>
+      !isBrokenValue(val) && val !== '' && val !== null && val !== undefined
+    );
+
+    if (validEntries.length === 0) {
       return <span className="text-gray-400 italic">Empty</span>;
     }
 
-    // Check if this is a message object (has role/content pattern)
-    const isMessageObject = 'content' in value && ('role' in value || 'type' in value);
-    if (isMessageObject) {
-      const content = value.content || value.text || '';
-      const role = value.role || value.type || '';
-      const otherFields = Object.entries(value).filter(([k]) => !['content', 'text', 'role', 'type'].includes(k));
-      
-      return (
-        <div className="space-y-2">
-          {/* Show role/type as a small label */}
-          {role && (
-            <div className="text-xs text-gray-500 uppercase tracking-wide">{role}</div>
-          )}
-          {/* Show main content */}
-          <div className="text-gray-800">
-            <SmartValueRenderer value={content} depth={depth + 1} />
-          </div>
-          {/* Show any other fields inline */}
-          {otherFields.length > 0 && (
-            <div className="flex flex-wrap gap-3 text-xs text-gray-500 pt-1">
-              {otherFields.map(([key, val]) => (
-                <span key={key}>
-                  {formatFieldName(key)}: {typeof val === 'string' ? val : JSON.stringify(val)}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    // Identify "main content" fields that should be rendered prominently
-    const mainContentKeys = ['answer', 'response', 'result', 'output', 'content', 'text', 'message'];
-    const mainEntry = entries.find(([key]) => mainContentKeys.includes(key.toLowerCase()));
-    const otherEntries = entries.filter(([key]) => !mainContentKeys.includes(key.toLowerCase()));
-
-    // If we're at the top level and there's a main content field, show it prominently
-    if (depth === 0 && mainEntry) {
-      return (
-        <div className="space-y-4">
-          {/* Main content rendered prominently */}
-          <div>
-            <SmartValueRenderer value={mainEntry[1]} fieldName={mainEntry[0]} depth={depth + 1} defaultExpanded />
-          </div>
-          
-          {/* Other fields as collapsible sections - only if there are any */}
-          {otherEntries.length > 0 && (
-            <div className="space-y-2 mt-4 pt-4 border-t border-gray-200">
-              {otherEntries.map(([key, val]) => (
-                <SmartObjectField key={key} fieldKey={key} value={val} depth={depth + 1} />
-              ))}
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    // Check if all values are simple (strings, numbers, booleans) - display as inline table
-    const allSimple = entries.every(([, val]) => 
-      typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean' || val === null
-    );
-    
-    if (allSimple && entries.length <= 6) {
-      return (
-        <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-          {entries.map(([key, val]) => (
-            <React.Fragment key={key}>
-              <span className="text-sm font-medium text-gray-500">{formatFieldName(key)}:</span>
-              <span className="text-sm text-gray-800">
-                <SmartValueRenderer value={val} depth={depth + 1} />
-              </span>
-            </React.Fragment>
-          ))}
-        </div>
-      );
-    }
-
-    // For nested objects, show all fields
+    // Use SmartObjectField for each entry to enable collapsible behavior
     return (
-      <div className="space-y-1">
-        {entries.map(([key, val]) => (
-          <SmartObjectField key={key} fieldKey={key} value={val} depth={depth + 1} />
+      <div className="space-y-3">
+        {validEntries.map(([key, val]) => (
+          <SmartObjectField key={key} fieldKey={key} value={val} depth={depth} />
         ))}
       </div>
     );
@@ -433,19 +589,29 @@ const SmartObjectField: React.FC<{
   value: any;
   depth: number;
 }> = ({ fieldKey, value, depth }) => {
+  // Skip rendering broken/partial values entirely
+  if (isBrokenValue(value)) {
+    return null;
+  }
+
+  // Skip empty strings
+  if (value === '' || value === null || value === undefined) {
+    return null;
+  }
+
   // Determine if this field should be collapsible
   const isComplexValue = typeof value === 'object' && value !== null;
   const isLongString = typeof value === 'string' && value.length > 200;
   const shouldCollapse = isComplexValue || isLongString;
-  
+
   // Top-level fields (depth 0-1) start expanded so users see content immediately
   const [expanded, setExpanded] = useState(depth <= 1);
 
   // Get count for display
-  const itemCount = Array.isArray(value) 
-    ? value.length 
+  const itemCount = Array.isArray(value)
+    ? value.length
     : typeof value === 'object' && value !== null
-      ? Object.keys(value).length 
+      ? Object.keys(value).length
       : undefined;
 
   if (shouldCollapse) {
@@ -488,6 +654,34 @@ const SmartObjectField: React.FC<{
 };
 
 /**
+ * Extract string content from JSON-like data when full parsing fails
+ * Returns an object with extracted key-value pairs
+ */
+const extractContentFromJsonLike = (str: string): { success: boolean; data: Record<string, string> } => {
+  const result: Record<string, string> = {};
+
+  // Pattern to match "key": "value" pairs where value might contain newlines
+  // This is more lenient than JSON parsing
+  const keyValuePattern = /"([^"]+)"\s*:\s*"((?:[^"\\]|\\.|[\r\n])*)"/g;
+
+  let match;
+  while ((match = keyValuePattern.exec(str)) !== null) {
+    const key = match[1];
+    let value = match[2];
+    // Unescape common escape sequences
+    value = value
+      .replace(/\\n/g, '\n')
+      .replace(/\\r/g, '\r')
+      .replace(/\\t/g, '\t')
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, '\\');
+    result[key] = value;
+  }
+
+  return { success: Object.keys(result).length > 0, data: result };
+};
+
+/**
  * Main smart JSON renderer - entry point for rendering any JSON data
  */
 const SmartJsonRenderer: React.FC<{
@@ -496,11 +690,53 @@ const SmartJsonRenderer: React.FC<{
 }> = ({ data, fallbackRenderer }) => {
   // Try to parse as JSON
   const { success, data: parsed } = tryParseJson(data);
-  
+
   if (success) {
     return <SmartValueRenderer value={parsed} depth={0} defaultExpanded />;
   }
-  
+
+  // If data looks like JSON but failed to parse
+  const trimmed = data?.trim() || '';
+  const looksLikeJson = (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+                        (trimmed.startsWith('[') && trimmed.endsWith(']'));
+
+  if (looksLikeJson) {
+    // Try to extract content from the JSON-like structure
+    const { success: extractSuccess, data: extracted } = extractContentFromJsonLike(trimmed);
+
+    if (extractSuccess) {
+      // We extracted content - render it nicely
+      return (
+        <div className="space-y-3">
+          {Object.entries(extracted).map(([key, value]) => (
+            <SmartObjectField key={key} fieldKey={key} value={value} depth={0} />
+          ))}
+        </div>
+      );
+    }
+
+    // Couldn't extract content - show as formatted code block
+    let formattedData = data;
+    try {
+      // Simple pretty-print: add newlines after { and , and before }
+      formattedData = data
+        .replace(/,\s*"/g, ',\n  "')
+        .replace(/\{\s*"/g, '{\n  "')
+        .replace(/"\s*\}/g, '"\n}')
+        .replace(/\[\{/g, '[\n  {')
+        .replace(/\}\]/g, '}\n]');
+    } catch {
+      // Keep original
+    }
+
+    // Show as formatted code block with word wrapping
+    return (
+      <pre className="text-sm text-gray-800 whitespace-pre-wrap break-words font-mono bg-gray-50 p-3 rounded overflow-auto max-h-[500px]">
+        {formattedData}
+      </pre>
+    );
+  }
+
   // Not JSON - check if it's markdown
   if (isMarkdownContent(data)) {
     return (
@@ -511,12 +747,12 @@ const SmartJsonRenderer: React.FC<{
       </div>
     );
   }
-  
+
   // Use fallback or show as plain text
   if (fallbackRenderer) {
     return <>{fallbackRenderer(data)}</>;
   }
-  
+
   return <span className="text-gray-800 whitespace-pre-wrap">{data}</span>;
 };
 

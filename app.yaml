@@ -26,8 +26,8 @@ command:
 # env:
 #   - name: SQLITE_VOLUME_PATH
 #     valueFrom: db_backup_volume  # Resource key from Apps UI
-#   - name: SQLITE_BACKUP_AFTER_OPS
-#     value: "50"  # Backup after every 50 write operations (default: 50, 0 to disable)
+#   - name: SQLITE_BACKUP_INTERVAL_MINUTES
+#     value: "10"  # Backup every 10 minutes (default: 10, 0 to disable)
 #
 # Alternative: Specify the full path directly (works but less portable):
 # env:

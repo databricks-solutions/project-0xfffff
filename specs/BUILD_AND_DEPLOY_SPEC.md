@@ -411,8 +411,8 @@ Recommended: Use `valueFrom` to reference an App resource (the volume path is in
 env:
   - name: SQLITE_VOLUME_PATH
     valueFrom: db_backup_volume  # Resource key from Apps UI
-  - name: SQLITE_BACKUP_AFTER_OPS
-    value: "50"  # Backup every 50 write operations (default: 50, 0 to disable)
+  - name: SQLITE_BACKUP_INTERVAL_MINUTES
+    value: "10"  # Backup every 10 minutes (default: 10, 0 to disable)
 ```
 
 Alternative: Hardcode the full path (less portable):
@@ -423,15 +423,15 @@ env:
 ```
 
 Environment Variables:
-┌───────────────────────────┬──────────────────────────────────────────────────┬──────────────────────────┐
-│         Variable          │               Purpose                            │         Default          │
-├───────────────────────────┼──────────────────────────────────────────────────┼──────────────────────────┤
-│ SQLITE_VOLUME_PATH        │ Base volume path (appends /workshop.db)          │ (none - rescue disabled) │
-├───────────────────────────┼──────────────────────────────────────────────────┼──────────────────────────┤
-│ SQLITE_VOLUME_BACKUP_PATH │ Full path including filename (overrides above)   │ (none - rescue disabled) │
-├───────────────────────────┼──────────────────────────────────────────────────┼──────────────────────────┤
-│ SQLITE_BACKUP_AFTER_OPS   │ Write operations before auto-backup              │ 50                       │
-└───────────────────────────┴──────────────────────────────────────────────────┴──────────────────────────┘
+┌─────────────────────────────────┬──────────────────────────────────────────────────┬──────────────────────────┐
+│            Variable             │               Purpose                            │         Default          │
+├─────────────────────────────────┼──────────────────────────────────────────────────┼──────────────────────────┤
+│ SQLITE_VOLUME_PATH              │ Base volume path (appends /workshop.db)          │ (none - rescue disabled) │
+├─────────────────────────────────┼──────────────────────────────────────────────────┼──────────────────────────┤
+│ SQLITE_VOLUME_BACKUP_PATH       │ Full path including filename (overrides above)   │ (none - rescue disabled) │
+├─────────────────────────────────┼──────────────────────────────────────────────────┼──────────────────────────┤
+│ SQLITE_BACKUP_INTERVAL_MINUTES  │ Minutes between automatic backups                │ 10                       │
+└─────────────────────────────────┴──────────────────────────────────────────────────┴──────────────────────────┘
 
 Key Files:
 ┌─────────────────────────┬─────────────────────────────────────────────────────────┐
@@ -440,14 +440,13 @@ Key Files:
 │ server/sqlite_rescue.py │ Core backup/restore logic (uses Databricks SDK)         │
 ├─────────────────────────┼─────────────────────────────────────────────────────────┤
 │ server/app.py           │ Lifespan integration (startup restore, shutdown backup) │
-├─────────────────────────┼─────────────────────────────────────────────────────────┤
-│ server/database.py      │ SQLAlchemy commit listener for operation counting       │
 └─────────────────────────┴─────────────────────────────────────────────────────────┘
 
 API:
 - restore_from_volume() - Called on startup before DB bootstrap
 - backup_to_volume(force=True) - Called on shutdown
-- record_write_operation() - Called after each SQLAlchemy commit
+- start_backup_timer() - Starts periodic background backup (every N minutes)
+- stop_backup_timer() - Stops the background backup timer
 - get_rescue_status() - Returns current config and status (exposed in /health/detailed)
 
 Prerequisites:
@@ -464,11 +463,11 @@ The /health/detailed endpoint includes sqlite_rescue status:
   "sqlite_rescue": {
     "configured": true,
     "volume_backup_path": "/Volumes/catalog/schema/volume/workshop.db",
-    "backup_after_ops": 50,
+    "backup_interval_minutes": 10,
     "local_exists": true,
     "volume_backup_exists": true,
     "sdk_available": true,
-    "write_op_count": 23,
+    "backup_timer_running": true,
     "shutdown_handlers_installed": true
   }
 }
@@ -477,5 +476,5 @@ The /health/detailed endpoint includes sqlite_rescue status:
 Limitations:
 - Uses Databricks SDK Files API (FUSE mounts NOT supported in Apps)
 - The rescue module copies the entire DB file; not suitable for very large databases
-- Brief data loss possible if container crashes between backups (up to SQLITE_BACKUP_AFTER_OPS writes)
+- Brief data loss possible if container crashes between backups (up to backup interval worth of writes)
 

@@ -65,11 +65,11 @@ export function IntakePage() {
       // Ignore localStorage errors
     }
     return {
-      databricks_host: '',
-      databricks_token: '',
-      experiment_id: '',
-      max_traces: 100,
-      filter_string: ''
+    databricks_host: '',
+    databricks_token: '',
+    experiment_id: '',
+    max_traces: 100,
+    filter_string: ''
     };
   };
 
