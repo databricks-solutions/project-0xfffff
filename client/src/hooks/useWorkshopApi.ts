@@ -456,10 +456,25 @@ export function useAnnotations(workshopId: string) {
 
 export function useSubmitAnnotation(workshopId: string) {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
-    mutationFn: (annotation: AnnotationCreate) => 
+    mutationFn: (annotation: AnnotationCreate) =>
       WorkshopsService.submitAnnotationWorkshopsWorkshopIdAnnotationsPost(workshopId, annotation),
+    // Retry on server errors (503 Service Unavailable due to SQLite lock contention)
+    retry: (failureCount, error: any) => {
+      // Retry up to 5 times on 503 (database busy) or 500 errors
+      if (error?.status === 503 || error?.status === 500) {
+        return failureCount < 5;
+      }
+      // Don't retry on other errors (400, 401, 404, etc.)
+      return false;
+    },
+    retryDelay: (attemptIndex) => {
+      // Exponential backoff with jitter: 1s, 2s, 4s, 8s, 16s (max)
+      const baseDelay = Math.min(1000 * Math.pow(2, attemptIndex), 16000);
+      const jitter = Math.random() * 1000; // Add 0-1s random jitter
+      return baseDelay + jitter;
+    },
     onMutate: async (newAnnotation) => {
       // Cancel any outgoing refetches
       await queryClient.cancelQueries({ queryKey: ['annotations', workshopId, newAnnotation.user_id] });

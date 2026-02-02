@@ -1175,9 +1175,13 @@ class DatabaseService:
     # Retries are automatic and invisible to the frontend
     from sqlalchemy.exc import IntegrityError, OperationalError
     import time
-    
-    max_retries = 3
-    base_delay = 0.2  # Base delay in seconds
+    import random
+
+    # Increased retry parameters for better handling of concurrent writes
+    # With 10+ users annotating simultaneously, SQLite needs more time to serialize writes
+    max_retries = 7  # Increased from 3 to handle more concurrent users
+    base_delay = 0.3  # Base delay in seconds (increased from 0.2)
+    max_delay = 5.0  # Maximum delay between retries
     annotation_id = str(uuid.uuid4())
     
     last_error = None
@@ -1267,9 +1271,12 @@ class DatabaseService:
         last_error = e
         logger.warning(f"⚠️ IntegrityError on annotation save (attempt {attempt + 1}/{max_retries}): {e}")
         self.db.rollback()
+        # Expire all objects to ensure clean state for retry
+        self.db.expire_all()
         if attempt < max_retries - 1:
-          delay = base_delay * (2 ** attempt)  # Exponential backoff: 0.2, 0.4, 0.8s
-          logger.info(f"🔄 Retrying in {delay:.1f}s...")
+          # Exponential backoff with jitter to prevent thundering herd
+          delay = min(base_delay * (2 ** attempt) + random.uniform(0, 0.5), max_delay)
+          logger.info(f"🔄 Retrying in {delay:.2f}s...")
           time.sleep(delay)
           continue
         else:
@@ -1315,9 +1322,12 @@ class DatabaseService:
         else:
           logger.warning(f"⚠️ OperationalError on annotation save (attempt {attempt + 1}/{max_retries}): {e}")
         self.db.rollback()
+        # Expire all objects to ensure clean state for retry
+        self.db.expire_all()
         if attempt < max_retries - 1:
-          delay = base_delay * (2 ** attempt) + 0.5  # Extra delay for database contention
-          logger.info(f"🔄 Retrying in {delay:.1f}s...")
+          # Extra delay for database contention with jitter to prevent thundering herd
+          delay = min(base_delay * (2 ** attempt) + 0.5 + random.uniform(0, 1.0), max_delay)
+          logger.info(f"🔄 Retrying in {delay:.2f}s...")
           time.sleep(delay)
           continue
         raise e
@@ -1326,9 +1336,12 @@ class DatabaseService:
         last_error = e
         logger.error(f"❌ Error saving annotation (attempt {attempt + 1}/{max_retries}): {e}")
         self.db.rollback()
+        # Expire all objects to ensure clean state for retry
+        self.db.expire_all()
         if attempt < max_retries - 1:
-          delay = base_delay * (2 ** attempt)
-          logger.info(f"🔄 Retrying in {delay:.1f}s...")
+          # Exponential backoff with jitter
+          delay = min(base_delay * (2 ** attempt) + random.uniform(0, 0.5), max_delay)
+          logger.info(f"🔄 Retrying in {delay:.2f}s...")
           time.sleep(delay)
           continue
         raise e
