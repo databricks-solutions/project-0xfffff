@@ -1340,105 +1340,99 @@ async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Sessi
                 except Exception as job_update_err:
                     logger.warning(f"Failed to update auto-evaluation job (non-critical): {job_update_err}")
 
-                # Get judge type from rubric - parse questions to get per-question judge type
-                judge_type = 'likert'  # default
-                if rubric and rubric.question:
-                    parsed_questions = db_service._parse_rubric_questions(rubric.question)
-                    if parsed_questions:
-                        judge_type = parsed_questions[0].get('judge_type', 'likert')
-                
-                # Run evaluation in background thread
+                # Get all rubric questions for multi-judge evaluation
+                rubric_questions = db_service.get_rubric_questions_for_evaluation(workshop_id)
+                num_judges = len(rubric_questions) if rubric_questions else 1
+                job.add_log(f"Found {num_judges} rubric question(s) for evaluation")
+
+                # Run evaluation in background thread - evaluate EACH rubric question separately
                 def run_auto_evaluation_background():
                     try:
                         from server.services.alignment_service import AlignmentService
                         from server.database import SessionLocal
-                        
+
                         thread_db = SessionLocal()
                         try:
                             thread_db_service = DatabaseService(thread_db)
                             alignment_service = AlignmentService(thread_db_service)
-                            
+
                             job.add_log("Initializing auto-evaluation service...")
-                            job.add_log(f"Using derived prompt ({len(derived_prompt)} chars)")
-                            
-                            # Run evaluation - auto-eval mode doesn't require human ratings
-                            result = None
-                            for message in alignment_service.run_evaluation_with_answer_sheet(
-                                workshop_id=workshop_id,
-                                judge_name=workshop.judge_name or "workshop_judge",
-                                judge_prompt=derived_prompt,
-                                evaluation_model_name=evaluation_model_name,
-                                mlflow_config=mlflow_config,
-                                judge_type=judge_type,
-                                require_human_ratings=False,  # Auto-eval mode
-                            ):
-                                if isinstance(message, dict):
-                                    result = message
-                                    job.result = result
-                                    job.save()
-                                    logger.info("Auto-evaluation completed")
-                                elif isinstance(message, str):
-                                    job.add_log(message)
-                            
-                            if result and result.get("success"):
-                                # Save evaluation results
-                                try:
-                                    from server.models import JudgePromptCreate, JudgeEvaluation
-                                    
-                                    # Use existing prompt if available, only create if none exists
-                                    # This prevents auto-evaluation from creating new versions
-                                    # Note: get_judge_prompts returns prompts ordered by version DESC, so [0] is the latest
-                                    existing_prompts = thread_db_service.get_judge_prompts(workshop_id)
-                                    if existing_prompts:
-                                        # Use the most recent prompt
-                                        new_prompt = existing_prompts[0]  # [0] is latest (version DESC order)
-                                        job.add_log(f"Using existing prompt v{new_prompt.version} for evaluation results")
-                                    else:
-                                        # No prompts exist - create the first one
-                                        new_prompt_data = JudgePromptCreate(
-                                            prompt_text=derived_prompt,
-                                            few_shot_examples=[],
-                                            model_name=evaluation_model_name,
-                                            model_parameters={},
-                                        )
-                                        new_prompt = thread_db_service.create_judge_prompt(workshop_id, new_prompt_data)
-                                        job.add_log(f"Created initial prompt v{new_prompt.version}")
-                                    
-                                    # Store evaluations - properly construct JudgeEvaluation objects
-                                    if "evaluations" in result:
-                                        evals_to_store = []
-                                        for eval_data in result["evaluations"]:
-                                            try:
-                                                pred = eval_data.get("predicted_rating")
-                                                pred_val = int(round(float(pred))) if pred is not None else 0
-                                                trace_id_for_db = eval_data.get("workshop_uuid") or eval_data["trace_id"]
-                                                evals_to_store.append(
-                                                    JudgeEvaluation(
-                                                        id=str(uuid.uuid4()),
-                                                        workshop_id=workshop_id,
-                                                        prompt_id=new_prompt.id,
-                                                        trace_id=trace_id_for_db,
-                                                        predicted_rating=pred_val,
-                                                        human_rating=int(eval_data["human_rating"]) if eval_data.get("human_rating") is not None else 0,
-                                                        confidence=eval_data.get("confidence"),
-                                                        reasoning=eval_data.get("reasoning"),
-                                                    )
-                                                )
-                                            except Exception as inner_err:
-                                                logger.error(f"Error parsing evaluation: {inner_err}")
-                                        
-                                        if evals_to_store:
-                                            thread_db_service.store_judge_evaluations(evals_to_store)
-                                            job.add_log(f"Stored {len(evals_to_store)} evaluation results")
-                                    
-                                    job.set_status("completed")
-                                    job.add_log("Auto-evaluation completed successfully")
-                                except Exception as save_err:
-                                    job.add_log(f"Warning: Could not save results: {save_err}")
-                                    job.set_status("completed")
+
+                            # Get rubric questions again in thread context
+                            questions_to_eval = thread_db_service.get_rubric_questions_for_evaluation(workshop_id)
+                            if not questions_to_eval:
+                                # Fallback: use derived prompt with single judge
+                                questions_to_eval = [{
+                                    'judge_name': workshop.judge_name or "workshop_judge",
+                                    'judge_prompt': derived_prompt,
+                                    'judge_type': 'likert',
+                                    'title': 'Response Quality',
+                                }]
+
+                            all_results = []
+                            total_evaluated = 0
+
+                            # Evaluate each rubric question with its own judge
+                            for i, question in enumerate(questions_to_eval):
+                                judge_name = question['judge_name']
+                                judge_prompt = question['judge_prompt']
+                                judge_type = question['judge_type']
+                                title = question['title']
+
+                                job.add_log(f"\n=== Evaluating criterion {i+1}/{len(questions_to_eval)}: {title} ===")
+                                job.add_log(f"Judge: {judge_name} (type: {judge_type})")
+
+                                result = None
+                                for message in alignment_service.run_evaluation_with_answer_sheet(
+                                    workshop_id=workshop_id,
+                                    judge_name=judge_name,
+                                    judge_prompt=judge_prompt,
+                                    evaluation_model_name=evaluation_model_name,
+                                    mlflow_config=mlflow_config,
+                                    judge_type=judge_type,
+                                    require_human_ratings=False,  # Auto-eval mode
+                                ):
+                                    if isinstance(message, dict):
+                                        result = message
+                                        all_results.append({
+                                            'judge_name': judge_name,
+                                            'title': title,
+                                            'result': result
+                                        })
+                                        if result.get('success'):
+                                            eval_count = result.get('trace_count', 0)
+                                            total_evaluated += eval_count
+                                            job.add_log(f"✓ {judge_name}: Evaluated {eval_count} traces")
+                                        else:
+                                            job.add_log(f"✗ {judge_name}: {result.get('error', 'Unknown error')}")
+                                    elif isinstance(message, str):
+                                        job.add_log(message)
+
+                            # Summarize results
+                            successful = [r for r in all_results if r['result'].get('success')]
+                            failed = [r for r in all_results if not r['result'].get('success')]
+
+                            job.result = {
+                                'success': len(failed) == 0,
+                                'total_judges': len(questions_to_eval),
+                                'successful_judges': len(successful),
+                                'failed_judges': len(failed),
+                                'total_evaluated': total_evaluated,
+                                'results_by_judge': all_results,
+                            }
+                            job.save()
+
+                            if len(failed) == 0:
+                                job.set_status("completed")
+                                job.add_log(f"\n✓ All {len(questions_to_eval)} judges completed successfully!")
+                                job.add_log(f"Total evaluations: {total_evaluated}")
+                            elif len(successful) > 0:
+                                job.set_status("completed")  # Partial success
+                                job.add_log(f"\n⚠ {len(successful)}/{len(questions_to_eval)} judges succeeded")
                             else:
                                 job.set_status("failed")
-                                job.add_log(f"Auto-evaluation failed: {result.get('error', 'Unknown error') if result else 'No result'}")
+                                job.add_log(f"\n✗ All judges failed")
+
                         finally:
                             thread_db.close()
                     except Exception as e:
@@ -4058,7 +4052,7 @@ async def restart_auto_evaluation(
     Use this when auto-evaluation failed because traces weren't tagged.
     This endpoint will:
     1. Tag all active annotation traces with 'eval' label
-    2. Start a new auto-evaluation job
+    2. Start auto-evaluation jobs for EACH rubric question (multiple judges)
 
     Args:
         request: Optional JSON body with:
@@ -4100,37 +4094,29 @@ async def restart_auto_evaluation(
     tag_result = db_service.tag_traces_for_evaluation(workshop_id, trace_ids, tag_type='eval')
     logger.info("Restart auto-eval: Tagged %d traces: %s", tag_result.get('tagged', 0), tag_result)
 
-    # Get or derive judge prompt
-    judge_prompt = db_service.get_auto_evaluation_prompt(workshop_id)
-    if not judge_prompt:
-        judge_prompt = db_service.derive_judge_prompt_from_rubric(workshop_id)
-    if not judge_prompt:
-        raise HTTPException(status_code=400, detail="No judge prompt available. Create a rubric first.")
+    # Get all rubric questions for multi-judge evaluation
+    rubric_questions = db_service.get_rubric_questions_for_evaluation(workshop_id)
+    if not rubric_questions:
+        raise HTTPException(status_code=400, detail="No rubric questions found. Create a rubric first.")
 
     # Get evaluation model
     evaluation_model_name = request.get("evaluation_model_name")
     if not evaluation_model_name:
         evaluation_model_name = db_service.get_auto_evaluation_model(workshop_id) or "databricks-meta-llama-3-3-70b-instruct"
 
-    # Get judge type from rubric
-    rubric = db_service.get_rubric(workshop_id)
-    judge_type = 'likert'
-    if rubric and rubric.question:
-        parsed_questions = db_service._parse_rubric_questions(rubric.question)
-        if parsed_questions:
-            judge_type = parsed_questions[0].get('judge_type', 'likert')
-
     # Create new evaluation job
     job_id = str(uuid.uuid4())
     job = create_job(job_id, workshop_id)
     job.set_status("running")
-    job.add_log("Auto-evaluation restarted")
+    job.add_log("Auto-evaluation restarted (multi-judge mode)")
     job.add_log(f"Tagged {tag_result.get('tagged', 0)} traces with 'eval' label")
+    job.add_log(f"Found {len(rubric_questions)} rubric questions to evaluate")
 
-    # Update the auto-evaluation job ID
-    db_service.update_auto_evaluation_job(workshop_id, job_id, judge_prompt)
+    # Store combined prompt for display
+    combined_prompt = db_service.derive_judge_prompt_from_rubric(workshop_id) or ""
+    db_service.update_auto_evaluation_job(workshop_id, job_id, combined_prompt)
 
-    # Run evaluation in background thread
+    # Run evaluation in background thread - evaluate each rubric question separately
     def run_restart_evaluation_background():
         try:
             from server.services.alignment_service import AlignmentService
@@ -4142,34 +4128,70 @@ async def restart_auto_evaluation(
                 alignment_service = AlignmentService(thread_db_service)
 
                 job.add_log("Initializing auto-evaluation service...")
-                job.add_log(f"Using derived prompt ({len(judge_prompt)} chars)")
 
-                result = None
-                for message in alignment_service.run_evaluation_with_answer_sheet(
-                    workshop_id=workshop_id,
-                    judge_name=workshop.judge_name or "workshop_judge",
-                    judge_prompt=judge_prompt,
-                    evaluation_model_name=evaluation_model_name,
-                    mlflow_config=mlflow_config,
-                    judge_type=judge_type,
-                    require_human_ratings=False,  # Auto-eval mode
-                    tag_type='eval',  # Use 'eval' tag
-                ):
-                    if isinstance(message, dict):
-                        result = message
-                        job.result = result
-                        job.save()
-                    elif isinstance(message, str):
-                        job.add_log(message)
+                all_results = []
+                total_evaluated = 0
 
-                if result and result.get("success"):
+                # Evaluate each rubric question with its own judge
+                for i, question in enumerate(rubric_questions):
+                    judge_name = question['judge_name']
+                    judge_prompt = question['judge_prompt']
+                    judge_type = question['judge_type']
+                    title = question['title']
+
+                    job.add_log(f"\n=== Evaluating criterion {i+1}/{len(rubric_questions)}: {title} ===")
+                    job.add_log(f"Judge: {judge_name} (type: {judge_type})")
+
+                    result = None
+                    for message in alignment_service.run_evaluation_with_answer_sheet(
+                        workshop_id=workshop_id,
+                        judge_name=judge_name,
+                        judge_prompt=judge_prompt,
+                        evaluation_model_name=evaluation_model_name,
+                        mlflow_config=mlflow_config,
+                        judge_type=judge_type,
+                        require_human_ratings=False,  # Auto-eval mode
+                        tag_type='eval',  # Use 'eval' tag
+                    ):
+                        if isinstance(message, dict):
+                            result = message
+                            all_results.append({
+                                'judge_name': judge_name,
+                                'title': title,
+                                'result': result
+                            })
+                            if result.get('success'):
+                                eval_count = result.get('trace_count', 0)
+                                total_evaluated += eval_count
+                                job.add_log(f"✓ {judge_name}: Evaluated {eval_count} traces")
+                            else:
+                                job.add_log(f"✗ {judge_name}: {result.get('error', 'Unknown error')}")
+                        elif isinstance(message, str):
+                            job.add_log(message)
+
+                # Summarize results
+                successful = [r for r in all_results if r['result'].get('success')]
+                failed = [r for r in all_results if not r['result'].get('success')]
+
+                job.result = {
+                    'success': len(failed) == 0,
+                    'total_judges': len(rubric_questions),
+                    'successful_judges': len(successful),
+                    'failed_judges': len(failed),
+                    'total_evaluated': total_evaluated,
+                    'results_by_judge': all_results,
+                }
+                job.save()
+
+                if len(failed) == 0:
                     job.set_status("completed")
-                    job.add_log("Auto-evaluation completed successfully")
+                    job.add_log(f"\n✓ All {len(rubric_questions)} judges completed successfully!")
+                    job.add_log(f"Total evaluations: {total_evaluated}")
                 else:
-                    job.set_status("failed")
-                    error_msg = result.get("error", "Unknown error") if result else "No result returned"
-                    job.add_log(f"Auto-evaluation failed: {error_msg}")
-                    job.error = error_msg
+                    job.set_status("completed")  # Partial success
+                    job.add_log(f"\n⚠ {len(successful)}/{len(rubric_questions)} judges succeeded")
+                    for f in failed:
+                        job.add_log(f"  Failed: {f['judge_name']}")
 
             finally:
                 thread_db.close()
@@ -4187,8 +4209,9 @@ async def restart_auto_evaluation(
     return {
         "success": True,
         "job_id": job_id,
-        "message": f"Auto-evaluation restarted. Tagged {tag_result.get('tagged', 0)} traces.",
+        "message": f"Auto-evaluation restarted for {len(rubric_questions)} judges. Tagged {tag_result.get('tagged', 0)} traces.",
         "tag_result": tag_result,
+        "judges": [q['judge_name'] for q in rubric_questions],
     }
 
 

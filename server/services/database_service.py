@@ -1178,8 +1178,92 @@ class DatabaseService:
       prompt_parts.append(f"- 5: Excellent - Fully meets all criteria")
       prompt_parts.append("")
       prompt_parts.append(f"IMPORTANT: Your response MUST start with a single integer rating (1-{rating_scale}) on its own line, followed by your reasoning.")
-    
+
     return "\n".join(prompt_parts)
+
+  def get_rubric_questions_for_evaluation(self, workshop_id: str) -> List[Dict[str, Any]]:
+    """Get all rubric questions with their judge prompts for multi-judge evaluation.
+
+    Returns a list of dicts, each containing:
+    - judge_name: The derived judge name (e.g., "helpful_judge")
+    - judge_prompt: The prompt for this specific criterion
+    - judge_type: 'likert', 'binary', or 'freeform'
+    - question_id: The question ID (e.g., "q_1")
+    - title: The question title
+    """
+    rubric = self.get_rubric(workshop_id)
+    if not rubric:
+      return []
+
+    questions = self._parse_rubric_questions(rubric.question)
+    if not questions:
+      # Single question rubric (legacy format)
+      questions = [{
+        'id': 'q_1',
+        'title': rubric.question.split(':')[0].strip() if ':' in rubric.question else 'Response Quality',
+        'description': rubric.question,
+        'judge_type': rubric.judge_type or 'likert',
+      }]
+
+    result = []
+    for question in questions:
+      title = question.get('title', 'Response Quality')
+      description = question.get('description', '')
+      judge_type = question.get('judge_type', 'likert')
+      question_id = question.get('id', 'q_1')
+
+      # Derive judge name from title
+      import re
+      snake_case = re.sub(r'[^a-z0-9]+', '_', title.lower()).strip('_')
+      judge_name = f"{snake_case}_judge"
+
+      # Build prompt for this single criterion
+      prompt_parts = []
+      prompt_parts.append("You are an expert evaluator. Your task is to evaluate the quality of AI-generated responses based on a specific criterion.")
+      prompt_parts.append("")
+      prompt_parts.append("## Input")
+      prompt_parts.append("Request: {{ inputs }}")
+      prompt_parts.append("Response: {{ outputs }}")
+      prompt_parts.append("")
+      prompt_parts.append("## Evaluation Criterion")
+      prompt_parts.append(f"**{title}**")
+      if description:
+        prompt_parts.append(description)
+      prompt_parts.append("")
+
+      # Add rating instructions based on judge type
+      if judge_type == 'binary':
+        binary_labels = rubric.binary_labels or {'pass': 'Pass', 'fail': 'Fail'}
+        pass_label = binary_labels.get('pass', 'Pass')
+        fail_label = binary_labels.get('fail', 'Fail')
+        prompt_parts.append("## Rating Instructions")
+        prompt_parts.append("Provide a binary rating:")
+        prompt_parts.append(f"- 1 ({pass_label}): The response meets the criterion")
+        prompt_parts.append(f"- 0 ({fail_label}): The response does not meet the criterion")
+        prompt_parts.append("")
+        prompt_parts.append("IMPORTANT: Your response MUST start with a single integer rating (0 or 1) on its own line, followed by your reasoning.")
+      else:
+        # Likert scale
+        rating_scale = rubric.rating_scale or 5
+        prompt_parts.append("## Rating Instructions")
+        prompt_parts.append(f"Rate the response on a scale of 1 to {rating_scale}:")
+        prompt_parts.append("- 1: Very poor - Does not meet the criterion at all")
+        prompt_parts.append("- 2: Poor - Barely meets the criterion")
+        prompt_parts.append("- 3: Acceptable - Partially meets the criterion")
+        prompt_parts.append("- 4: Good - Mostly meets the criterion")
+        prompt_parts.append("- 5: Excellent - Fully meets the criterion")
+        prompt_parts.append("")
+        prompt_parts.append(f"IMPORTANT: Your response MUST start with a single integer rating (1-{rating_scale}) on its own line, followed by your reasoning.")
+
+      result.append({
+        'judge_name': judge_name,
+        'judge_prompt': "\n".join(prompt_parts),
+        'judge_type': judge_type,
+        'question_id': question_id,
+        'title': title,
+      })
+
+    return result
 
   # Annotation operations
   def add_annotation(self, workshop_id: str, annotation_data: AnnotationCreate) -> Annotation:
