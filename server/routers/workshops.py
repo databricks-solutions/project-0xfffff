@@ -159,6 +159,42 @@ from server.models import (
 )
 from server.services.database_service import DatabaseService
 from server.services.irr_service import calculate_irr_for_workshop
+from sqlalchemy.exc import OperationalError
+import random
+
+
+def _retry_db_operations(operations_fn, db_session, max_retries=5, base_delay=0.5):
+    """Execute database operations with retry logic for SQLite locking.
+
+    Args:
+        operations_fn: A callable that performs the database operations
+        db_session: The SQLAlchemy session to rollback on failures
+        max_retries: Maximum number of retry attempts
+        base_delay: Base delay in seconds for exponential backoff
+
+    Returns:
+        The result of operations_fn if successful
+
+    Raises:
+        HTTPException: If all retries are exhausted
+    """
+    for attempt in range(max_retries):
+        try:
+            return operations_fn()
+        except OperationalError as e:
+            if "locked" in str(e).lower() and attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
+                logging.getLogger(__name__).warning(
+                    f"Database locked, retry {attempt + 1}/{max_retries} in {delay:.2f}s"
+                )
+                db_session.rollback()
+                time.sleep(delay)
+            else:
+                logging.getLogger(__name__).error(f"Database error after {attempt + 1} attempts: {e}")
+                raise HTTPException(
+                    status_code=503,
+                    detail="Database temporarily unavailable. Please try again."
+                )
 
 
 # Request models for alignment
@@ -1241,21 +1277,24 @@ async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Sessi
         traces_used = min(trace_limit, total_traces)
         trace_ids_to_use = [trace.id for trace in traces[:traces_used]]
 
-    # Store the active annotation trace IDs in the workshop
-    db_service.update_active_annotation_traces(workshop_id, trace_ids_to_use)
-    
-    # Store the randomization setting
-    db_service.update_annotation_randomize_setting(workshop_id, randomize)
+    # Store the active annotation trace IDs and update workshop phase
+    # Use retry logic for SQLite concurrency (handles "database is locked" errors)
+    def _do_phase_updates():
+        db_service.update_active_annotation_traces(workshop_id, trace_ids_to_use)
+        db_service.update_annotation_randomize_setting(workshop_id, randomize)
+        db_service.update_workshop_phase(workshop_id, WorkshopPhase.ANNOTATION)
+        db_service.update_phase_started(workshop_id, annotation_started=True)
 
-    # Update workshop phase to annotation and mark annotation as started
-    db_service.update_workshop_phase(workshop_id, WorkshopPhase.ANNOTATION)
-    db_service.update_phase_started(workshop_id, annotation_started=True)
+    _retry_db_operations(_do_phase_updates, db)
 
     # === TAG TRACES FOR EVALUATION ===
-    # Tag the selected traces in MLflow with 'eval' label for auto-evaluation
+    # Tag traces in MLflow (non-critical - don't let this crash the endpoint)
     if auto_evaluate_enabled:
-        tag_result = db_service.tag_traces_for_evaluation(workshop_id, trace_ids_to_use, tag_type='eval')
-        logger.info("Tagged traces for auto-evaluation: %s", tag_result)
+        try:
+            tag_result = db_service.tag_traces_for_evaluation(workshop_id, trace_ids_to_use, tag_type='eval')
+            logger.info("Tagged traces for auto-evaluation: %s", tag_result)
+        except Exception as tag_err:
+            logger.warning(f"Failed to tag traces for evaluation (non-critical): {tag_err}")
 
     # === AUTO-EVALUATION: Derive judge prompt and start background evaluation ===
     auto_eval_job_id = None
@@ -1295,9 +1334,12 @@ async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Sessi
                 job.set_status("running")
                 job.add_log("Auto-evaluation started on annotation begin")
                 
-                # Store job ID, derived prompt, and model in workshop
-                db_service.update_auto_evaluation_job(workshop_id, auto_eval_job_id, derived_prompt, evaluation_model_name)
-                
+                # Store job ID, derived prompt, and model in workshop (non-critical)
+                try:
+                    db_service.update_auto_evaluation_job(workshop_id, auto_eval_job_id, derived_prompt, evaluation_model_name)
+                except Exception as job_update_err:
+                    logger.warning(f"Failed to update auto-evaluation job (non-critical): {job_update_err}")
+
                 # Get judge type from rubric - parse questions to get per-question judge type
                 judge_type = 'likert'  # default
                 if rubric and rubric.question:
