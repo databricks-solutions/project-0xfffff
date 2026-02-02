@@ -3,7 +3,7 @@
 Databricks Apps containers are ephemeral. This module provides:
 1. Restore from Volume on startup (if backup exists)
 2. Backup to Volume on shutdown (SIGTERM/SIGINT)
-3. Backup after N write operations (optional)
+3. Periodic background backup every N minutes (default: 10 minutes)
 
 IMPORTANT: Databricks Apps do NOT support FUSE mounts for UC volumes.
 This module uses the Databricks SDK Files API for all volume operations.
@@ -13,7 +13,7 @@ Configuration via environment variables:
   Use this with valueFrom in app.yaml - the module appends "/workshop.db" automatically.
 - SQLITE_VOLUME_BACKUP_PATH: Full path including filename (e.g., /Volumes/catalog/schema/volume/workshop.db)
   Use this if you want to specify the complete path directly.
-- SQLITE_BACKUP_AFTER_OPS: Number of write operations before auto-backup (default: 50, 0 to disable)
+- SQLITE_BACKUP_INTERVAL_MINUTES: Minutes between automatic backups (default: 10, 0 to disable)
 
 Recommended app.yaml configuration using valueFrom:
   env:
@@ -32,11 +32,12 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Global state for operation counting and backup coordination
-_write_op_count = 0
-_write_op_lock = threading.Lock()
+# Global state for backup coordination
 _backup_in_progress = threading.Lock()
 _shutdown_handlers_installed = False
+_backup_timer: threading.Timer | None = None
+_backup_timer_lock = threading.Lock()
+_backup_timer_running = False
 
 # Cached WorkspaceClient instance
 _workspace_client = None
@@ -74,7 +75,7 @@ def _get_config() -> tuple[str | None, str | None, int]:
     """Get SQLite rescue configuration from environment.
 
     Returns:
-        Tuple of (local_db_path, volume_backup_path, backup_after_ops)
+        Tuple of (local_db_path, volume_backup_path, backup_interval_minutes)
     """
     database_url = os.getenv("DATABASE_URL", "sqlite:///./workshop.db")
 
@@ -95,9 +96,10 @@ def _get_config() -> tuple[str | None, str | None, int]:
             # Remove trailing slash if present, then append filename
             volume_backup_path = volume_base_path.rstrip("/") + "/workshop.db"
 
-    backup_after_ops = int(os.getenv("SQLITE_BACKUP_AFTER_OPS", "50"))
+    # Time-based backup interval in minutes (default: 10 minutes)
+    backup_interval_minutes = int(os.getenv("SQLITE_BACKUP_INTERVAL_MINUTES", "10"))
 
-    return local_db_path, volume_backup_path, backup_after_ops
+    return local_db_path, volume_backup_path, backup_interval_minutes
 
 
 def _validate_volume_path(path: str) -> tuple[bool, str]:
@@ -375,31 +377,86 @@ def _checkpoint_sqlite(db_path: str) -> None:
         logger.warning(f"WAL checkpoint failed (non-fatal): {e}")
 
 
-def record_write_operation() -> None:
-    """Record a write operation and trigger backup if threshold reached.
+def _run_periodic_backup() -> None:
+    """Run backup and reschedule the next one. Called by the timer."""
+    global _backup_timer, _backup_timer_running
 
-    Call this after successful database write operations.
-    """
-    global _write_op_count
-
-    _, volume_backup_path, backup_after_ops = _get_config()
-
-    if not volume_backup_path or backup_after_ops <= 0:
+    if not _backup_timer_running:
         return
 
-    with _write_op_lock:
-        _write_op_count += 1
-        count = _write_op_count
+    _, volume_backup_path, backup_interval_minutes = _get_config()
 
-    if count >= backup_after_ops:
-        # Reset counter and trigger backup in background
-        with _write_op_lock:
-            _write_op_count = 0
+    if volume_backup_path:
+        logger.info(f"Periodic backup triggered (every {backup_interval_minutes} minutes)")
+        # Run the actual backup
+        backup_to_volume(force=False)
 
-        logger.info(f"Triggering backup after {count} write operations")
-        # Run backup in background thread to not block the request
-        thread = threading.Thread(target=backup_to_volume, kwargs={"force": False}, daemon=True)
-        thread.start()
+    # Schedule the next backup
+    with _backup_timer_lock:
+        if _backup_timer_running:
+            interval_seconds = backup_interval_minutes * 60
+            _backup_timer = threading.Timer(interval_seconds, _run_periodic_backup)
+            _backup_timer.daemon = True
+            _backup_timer.start()
+
+
+def start_backup_timer() -> None:
+    """Start the periodic background backup timer.
+
+    Call this during application startup after restore_from_volume().
+    The timer runs in a background thread and backs up every N minutes.
+    """
+    global _backup_timer, _backup_timer_running
+
+    _, volume_backup_path, backup_interval_minutes = _get_config()
+
+    if not volume_backup_path:
+        logger.info("SQLITE_VOLUME_BACKUP_PATH not configured - periodic backup disabled")
+        return
+
+    if backup_interval_minutes <= 0:
+        logger.info("SQLITE_BACKUP_INTERVAL_MINUTES is 0 - periodic backup disabled")
+        return
+
+    with _backup_timer_lock:
+        if _backup_timer_running:
+            logger.warning("Backup timer already running")
+            return
+
+        _backup_timer_running = True
+        interval_seconds = backup_interval_minutes * 60
+        _backup_timer = threading.Timer(interval_seconds, _run_periodic_backup)
+        _backup_timer.daemon = True
+        _backup_timer.start()
+
+    logger.info(
+        f"Periodic backup timer started - backing up to {volume_backup_path} "
+        f"every {backup_interval_minutes} minutes"
+    )
+
+
+def stop_backup_timer() -> None:
+    """Stop the periodic background backup timer.
+
+    Call this during application shutdown before the final backup.
+    """
+    global _backup_timer, _backup_timer_running
+
+    with _backup_timer_lock:
+        _backup_timer_running = False
+        if _backup_timer is not None:
+            _backup_timer.cancel()
+            _backup_timer = None
+
+    logger.info("Periodic backup timer stopped")
+
+
+def record_write_operation() -> None:
+    """Legacy function - now a no-op since backups are time-based.
+
+    Kept for backward compatibility with database.py commit listener.
+    """
+    pass
 
 
 def _shutdown_signal_handler(signum: int, frame) -> None:
@@ -480,7 +537,7 @@ def get_rescue_status() -> dict:
 
     Useful for health checks and debugging.
     """
-    local_db_path, volume_backup_path, backup_after_ops = _get_config()
+    local_db_path, volume_backup_path, backup_interval_minutes = _get_config()
 
     local_exists = Path(local_db_path).exists() if local_db_path else False
 
@@ -504,12 +561,12 @@ def get_rescue_status() -> dict:
         "configured": volume_backup_path is not None,
         "local_db_path": local_db_path,
         "volume_backup_path": volume_backup_path,
-        "backup_after_ops": backup_after_ops if volume_backup_path else None,
+        "backup_interval_minutes": backup_interval_minutes if volume_backup_path else None,
         "local_exists": local_exists,
         "volume_backup_exists": volume_exists,
         "path_valid": path_valid,
         "path_error": path_error,
         "sdk_available": sdk_available,
-        "write_op_count": _write_op_count,
+        "backup_timer_running": _backup_timer_running,
         "shutdown_handlers_installed": _shutdown_handlers_installed,
     }
