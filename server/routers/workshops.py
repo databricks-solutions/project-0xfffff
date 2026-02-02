@@ -4040,11 +4040,156 @@ async def get_auto_evaluation_status(
     
     if job.result:
         response["result"] = job.result
-    
+
     if job.error:
         response["error"] = job.error
-    
+
     return response
+
+
+@router.post("/{workshop_id}/restart-auto-evaluation")
+async def restart_auto_evaluation(
+    workshop_id: str,
+    request: dict = {},
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Restart auto-evaluation by first tagging traces and then running evaluation.
+
+    Use this when auto-evaluation failed because traces weren't tagged.
+    This endpoint will:
+    1. Tag all active annotation traces with 'eval' label
+    2. Start a new auto-evaluation job
+
+    Args:
+        request: Optional JSON body with:
+            - evaluation_model_name: Model to use (if not provided, uses stored model)
+    """
+    import threading
+
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    if workshop.current_phase != "annotation":
+        raise HTTPException(status_code=400, detail="Workshop must be in annotation phase")
+
+    # Get active annotation trace IDs
+    trace_ids = workshop.active_annotation_trace_ids or []
+    if not trace_ids:
+        raise HTTPException(status_code=400, detail="No traces selected for annotation")
+
+    # Get MLflow config
+    mlflow_config = db_service.get_mlflow_config(workshop_id)
+    if not mlflow_config:
+        raise HTTPException(status_code=400, detail="MLflow configuration not found")
+
+    # Get Databricks token
+    from server.services.token_storage_service import token_storage
+    databricks_token = token_storage.get_token(workshop_id)
+    if not databricks_token:
+        databricks_token = db_service.get_databricks_token(workshop_id)
+        if databricks_token:
+            token_storage.store_token(workshop_id, databricks_token)
+    if not databricks_token:
+        raise HTTPException(status_code=400, detail="Databricks token not found")
+
+    mlflow_config.databricks_token = databricks_token
+
+    # Tag traces with 'eval' label
+    tag_result = db_service.tag_traces_for_evaluation(workshop_id, trace_ids, tag_type='eval')
+    logger.info("Restart auto-eval: Tagged %d traces: %s", tag_result.get('tagged', 0), tag_result)
+
+    # Get or derive judge prompt
+    judge_prompt = db_service.get_auto_evaluation_prompt(workshop_id)
+    if not judge_prompt:
+        judge_prompt = db_service.derive_judge_prompt_from_rubric(workshop_id)
+    if not judge_prompt:
+        raise HTTPException(status_code=400, detail="No judge prompt available. Create a rubric first.")
+
+    # Get evaluation model
+    evaluation_model_name = request.get("evaluation_model_name")
+    if not evaluation_model_name:
+        evaluation_model_name = db_service.get_auto_evaluation_model(workshop_id) or "databricks-meta-llama-3-3-70b-instruct"
+
+    # Get judge type from rubric
+    rubric = db_service.get_rubric(workshop_id)
+    judge_type = 'likert'
+    if rubric and rubric.question:
+        parsed_questions = db_service._parse_rubric_questions(rubric.question)
+        if parsed_questions:
+            judge_type = parsed_questions[0].get('judge_type', 'likert')
+
+    # Create new evaluation job
+    job_id = str(uuid.uuid4())
+    job = create_job(job_id, workshop_id)
+    job.set_status("running")
+    job.add_log("Auto-evaluation restarted")
+    job.add_log(f"Tagged {tag_result.get('tagged', 0)} traces with 'eval' label")
+
+    # Update the auto-evaluation job ID
+    db_service.update_auto_evaluation_job(workshop_id, job_id, judge_prompt)
+
+    # Run evaluation in background thread
+    def run_restart_evaluation_background():
+        try:
+            from server.services.alignment_service import AlignmentService
+            from server.database import SessionLocal
+
+            thread_db = SessionLocal()
+            try:
+                thread_db_service = DatabaseService(thread_db)
+                alignment_service = AlignmentService(thread_db_service)
+
+                job.add_log("Initializing auto-evaluation service...")
+                job.add_log(f"Using derived prompt ({len(judge_prompt)} chars)")
+
+                result = None
+                for message in alignment_service.run_evaluation_with_answer_sheet(
+                    workshop_id=workshop_id,
+                    judge_name=workshop.judge_name or "workshop_judge",
+                    judge_prompt=judge_prompt,
+                    evaluation_model_name=evaluation_model_name,
+                    mlflow_config=mlflow_config,
+                    judge_type=judge_type,
+                    require_human_ratings=False,  # Auto-eval mode
+                    tag_type='eval',  # Use 'eval' tag
+                ):
+                    if isinstance(message, dict):
+                        result = message
+                        job.result = result
+                        job.save()
+                    elif isinstance(message, str):
+                        job.add_log(message)
+
+                if result and result.get("success"):
+                    job.set_status("completed")
+                    job.add_log("Auto-evaluation completed successfully")
+                else:
+                    job.set_status("failed")
+                    error_msg = result.get("error", "Unknown error") if result else "No result returned"
+                    job.add_log(f"Auto-evaluation failed: {error_msg}")
+                    job.error = error_msg
+
+            finally:
+                thread_db.close()
+
+        except Exception as e:
+            logger.error("Restart auto-evaluation background error: %s", str(e), exc_info=True)
+            job.set_status("failed")
+            job.add_log(f"ERROR: {str(e)}")
+            job.error = str(e)
+
+    # Start background thread
+    thread = threading.Thread(target=run_restart_evaluation_background, daemon=True)
+    thread.start()
+
+    return {
+        "success": True,
+        "job_id": job_id,
+        "message": f"Auto-evaluation restarted. Tagged {tag_result.get('tagged', 0)} traces.",
+        "tag_result": tag_result,
+    }
 
 
 @router.get("/{workshop_id}/auto-evaluation-results")
