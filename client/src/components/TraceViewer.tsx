@@ -168,6 +168,76 @@ const fixUnescapedNewlines = (str: string): string => {
 };
 
 /**
+ * Extract judge result (result + rationale) from malformed JSON string
+ * This handles the case where judge output was stored with improper escaping
+ */
+const extractJudgeResultFromMalformed = (str: string): { result?: number; rationale?: string } | null => {
+  // Look for the pattern: "content": "{"result":X.X,"rationale":"..."}"
+  // where the inner quotes are not properly escaped
+
+  // First, check if this looks like a malformed judge output
+  if (!str.includes('"content": "{"result"') && !str.includes('"content":"{"result"')) {
+    return null;
+  }
+
+  // Extract result value
+  const resultMatch = str.match(/"result"\s*:\s*([\d.]+)/);
+  const result = resultMatch ? parseFloat(resultMatch[1]) : undefined;
+
+  // Extract rationale - find the start after "rationale":"
+  const rationaleStart = str.indexOf('"rationale":"');
+  if (rationaleStart === -1) {
+    return result !== undefined ? { result } : null;
+  }
+
+  const valueStart = rationaleStart + '"rationale":"'.length;
+
+  // Find the end of the rationale - look for the closing pattern
+  // The rationale ends with "}" followed by ", "role" or similar
+  // But we need to handle escaped quotes inside the rationale
+
+  // Find potential end markers
+  let valueEnd = -1;
+  const endPatterns = ['}", "role"', '}","role"', '}"}, "role"', '}"},"role"'];
+  for (const pattern of endPatterns) {
+    const idx = str.indexOf(pattern, valueStart);
+    if (idx !== -1 && (valueEnd === -1 || idx < valueEnd)) {
+      valueEnd = idx;
+    }
+  }
+
+  if (valueEnd === -1) {
+    // Try to find just the closing "}
+    const closeIdx = str.lastIndexOf('"}');
+    if (closeIdx > valueStart) {
+      valueEnd = closeIdx;
+    }
+  }
+
+  if (valueEnd === -1) {
+    return result !== undefined ? { result } : null;
+  }
+
+  // Extract the rationale value
+  let rationale = str.substring(valueStart, valueEnd);
+
+  // Clean up escape sequences - handle various malformed patterns
+  rationale = rationale
+    .replace(/\\\n/g, '\n')    // backslash followed by actual newline -> just newline
+    .replace(/\\\\"/g, '"')    // \\" -> "
+    .replace(/\\"/g, '"')      // \" -> " (single escaped quote)
+    .replace(/\\\\n/g, '\n')   // \\n -> newline
+    .replace(/\\n/g, '\n')     // \n -> newline
+    .replace(/\\\\r/g, '\r')   // \\r -> carriage return
+    .replace(/\\r/g, '\r')     // \r -> carriage return
+    .replace(/\\\\t/g, '\t')   // \\t -> tab
+    .replace(/\\t/g, '\t')     // \t -> tab
+    .replace(/\\\\/g, '\\');   // \\\\ -> \
+
+  return { result, rationale };
+};
+
+/**
  * Try to parse a string as JSON
  * Also handles some common non-JSON formats like Python dict notation
  */
@@ -181,10 +251,28 @@ const tryParseJson = (str: string): { success: boolean; data: any } => {
 
   // First, try direct JSON parse
   try {
-    const data = JSON.parse(cleanStr);
+    let data = JSON.parse(cleanStr);
+    // Handle double-stringified JSON (string containing JSON string)
+    if (typeof data === 'string') {
+      try {
+        data = JSON.parse(data);
+      } catch {
+        // It was a regular string, not double-encoded
+      }
+    }
     return { success: true, data };
   } catch {
-    // Continue to try alternatives
+    // Try fixing malformed content JSON (common issue with judge outputs)
+    try {
+      const fixed = fixMalformedContentJson(cleanStr);
+      if (fixed !== cleanStr) {
+        const data = JSON.parse(fixed);
+        return { success: true, data };
+      }
+    } catch {
+      // Still failed after fix attempt
+    }
+    // Continue to try other alternatives
   }
 
   // Try fixing unescaped newlines in string values
@@ -682,6 +770,344 @@ const extractContentFromJsonLike = (str: string): { success: boolean; data: Reco
 };
 
 /**
+ * Extract actual content from LLM response formats (OpenAI/ChatCompletion, Anthropic, etc.)
+ * Returns the extracted content if found, null otherwise
+ */
+const extractLLMResponseContent = (output: any): { content: string | null; metadata: Record<string, any> | null } => {
+  if (!output || typeof output !== 'object') {
+    return { content: null, metadata: null };
+  }
+
+  // Helper to extract content from a string that might be JSON-encoded
+  const extractContentFromString = (str: string): string => {
+    const trimmed = str.trim();
+    if (trimmed.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed.rationale && typeof parsed.rationale === 'string') {
+          const resultLabel = parsed.result !== undefined ? `**Rating: ${parsed.result}**\n\n` : '';
+          return resultLabel + parsed.rationale;
+        }
+        if (parsed.content && typeof parsed.content === 'string') {
+          return parsed.content;
+        }
+      } catch {
+        // Not valid JSON
+      }
+    }
+    return str;
+  };
+
+  // Handle FLATTENED format where choices have been unwrapped:
+  // { id, model, object, finish_reason, role, content }
+  // This happens when the ChatCompletion response gets flattened during storage
+  if (output.object === 'chat.completion' && output.role === 'assistant' && !output.choices) {
+    // Look for content in various places
+    let content: string | null = null;
+
+    if (typeof output.content === 'string') {
+      content = extractContentFromString(output.content);
+    } else if (output.message?.content) {
+      if (typeof output.message.content === 'string') {
+        content = extractContentFromString(output.message.content);
+      }
+    }
+
+    if (content) {
+      const metadata: Record<string, any> = {};
+      if (output.id) metadata.id = output.id;
+      if (output.model) metadata.model = output.model;
+      if (output.object) metadata.object = output.object;
+      if (output.finish_reason) metadata.finish_reason = output.finish_reason;
+      if (output.usage) metadata.usage = output.usage;
+      return { content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+    }
+  }
+
+  // Handle OpenAI/ChatCompletion format: { choices: [{ message: { content: "..." } }] }
+  if (output.choices && Array.isArray(output.choices) && output.choices.length > 0) {
+    const firstChoice = output.choices[0];
+    let content: string | null = null;
+
+    // Check message.content - handle both string and array formats
+    if (firstChoice.message?.content !== undefined && firstChoice.message?.content !== null) {
+      const msgContent = firstChoice.message.content;
+
+      if (typeof msgContent === 'string') {
+        const trimmedContent = msgContent.trim();
+        // Check if the content is a JSON-encoded judge result
+        if (trimmedContent.startsWith('{')) {
+          try {
+            const parsed = JSON.parse(trimmedContent);
+            if (parsed.rationale && typeof parsed.rationale === 'string') {
+              const resultLabel = parsed.result !== undefined ? `**Rating: ${parsed.result}**\n\n` : '';
+              content = resultLabel + parsed.rationale;
+            } else if (parsed.content && typeof parsed.content === 'string') {
+              // Handle nested content field
+              content = parsed.content;
+            } else {
+              // It's JSON but not a judge result - just use the original message content
+              content = msgContent;
+            }
+          } catch {
+            // Not valid JSON, use as-is
+            content = msgContent;
+          }
+        } else {
+          // Regular string content
+          content = msgContent;
+        }
+      } else if (typeof msgContent === 'object' && msgContent !== null) {
+        // Handle content that's already parsed as an object (e.g., judge result)
+        if (msgContent.rationale && typeof msgContent.rationale === 'string') {
+          const resultLabel = msgContent.result !== undefined ? `**Rating: ${msgContent.result}**\n\n` : '';
+          content = resultLabel + msgContent.rationale;
+        } else if (Array.isArray(msgContent)) {
+          // Handle content as array of blocks (Anthropic/Databricks style)
+          const textParts = msgContent
+            .filter((c: any) => c.type === 'text' || c.type === 'output_text')
+            .map((c: any) => c.text)
+            .filter(Boolean);
+          if (textParts.length > 0) {
+            content = textParts.join('\n');
+          }
+        }
+      }
+    }
+    // Handle judge output format: { choices: [{ result: ..., rationale: "..." }] }
+    else if (firstChoice.rationale && typeof firstChoice.rationale === 'string') {
+      // This is a judge evaluation output - show rationale as main content
+      const resultLabel = firstChoice.result !== undefined ? `**Rating: ${firstChoice.result}**\n\n` : '';
+      content = resultLabel + firstChoice.rationale;
+    }
+    // Alternative format with direct content on choice
+    else if (typeof firstChoice.content === 'string') {
+      content = firstChoice.content;
+    }
+    // Text completion format
+    else if (typeof firstChoice.text === 'string') {
+      content = firstChoice.text;
+    }
+
+    if (content) {
+      // Extract metadata (everything except the actual content)
+      const metadata: Record<string, any> = {};
+      if (output.id) metadata.id = output.id;
+      if (output.model) metadata.model = output.model;
+      if (output.object) metadata.object = output.object;
+      if (output.usage) metadata.usage = output.usage;
+      if (firstChoice.finish_reason) metadata.finish_reason = firstChoice.finish_reason;
+      if (output.finish_reason) metadata.finish_reason = output.finish_reason;
+
+      return { content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+    }
+  }
+
+  // Handle Anthropic/Claude format: { content: [{ type: "text", text: "..." }] }
+  if (output.content && Array.isArray(output.content)) {
+    // Try type: "text" format
+    let textContent = output.content
+      .filter((c: any) => c.type === 'text' && c.text)
+      .map((c: any) => c.text)
+      .join('\n');
+
+    // Also try type: "output_text" format (Databricks/MLflow style)
+    if (!textContent) {
+      textContent = output.content
+        .filter((c: any) => c.type === 'output_text' && c.text)
+        .map((c: any) => c.text)
+        .join('\n');
+    }
+
+    if (textContent) {
+      const metadata: Record<string, any> = {};
+      if (output.id) metadata.id = output.id;
+      if (output.model) metadata.model = output.model;
+      if (output.type) metadata.type = output.type;
+      if (output.object) metadata.object = output.object;
+      if (output.role) metadata.role = output.role;
+      if (output.usage) metadata.usage = output.usage;
+      if (output.stop_reason) metadata.stop_reason = output.stop_reason;
+      if (output.finish_reason) metadata.finish_reason = output.finish_reason;
+
+      return { content: textContent, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+    }
+  }
+
+  // Handle messages array format: { messages: [{ role: "assistant", content: "..." }] }
+  if (output.messages && Array.isArray(output.messages)) {
+    // Find assistant message
+    const assistantMsg = output.messages.find((m: any) => m.role === 'assistant');
+    if (assistantMsg) {
+      let content: string | null = null;
+      if (typeof assistantMsg.content === 'string') {
+        content = assistantMsg.content;
+      } else if (Array.isArray(assistantMsg.content)) {
+        content = assistantMsg.content
+          .filter((c: any) => (c.type === 'text' || c.type === 'output_text') && c.text)
+          .map((c: any) => c.text)
+          .join('\n');
+      }
+      if (content) {
+        const metadata: Record<string, any> = {};
+        if (output.id) metadata.id = output.id;
+        if (output.model) metadata.model = output.model;
+        return { content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+      }
+    }
+  }
+
+  // Handle direct content string
+  if (output.content && typeof output.content === 'string') {
+    const metadata: Record<string, any> = {};
+    if (output.id) metadata.id = output.id;
+    if (output.model) metadata.model = output.model;
+    if (output.role) metadata.role = output.role;
+
+    return { content: output.content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+  }
+
+  // Handle response with text field directly
+  if (output.text && typeof output.text === 'string') {
+    return { content: output.text, metadata: null };
+  }
+
+  // Handle Databricks agent response format: { output: [{ type: "message", content: [...] }] }
+  if (output.output && Array.isArray(output.output)) {
+    for (const item of output.output) {
+      if (item.type === 'message' && item.role === 'assistant' && item.content) {
+        let content: string | null = null;
+        if (typeof item.content === 'string') {
+          content = item.content;
+        } else if (Array.isArray(item.content)) {
+          content = item.content
+            .filter((c: any) => (c.type === 'text' || c.type === 'output_text') && c.text)
+            .map((c: any) => c.text)
+            .join('\n');
+        }
+        if (content) {
+          const metadata: Record<string, any> = {};
+          if (output.id) metadata.id = output.id;
+          if (output.model) metadata.model = output.model;
+          return { content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+        }
+      }
+    }
+  }
+
+  // LAST RESORT: Recursively search for content/rationale fields anywhere in the structure
+  // This handles deeply nested or unusual data formats
+  const findContentRecursively = (obj: any, depth: number = 0): string | null => {
+    if (depth > 5 || !obj || typeof obj !== 'object') return null;
+
+    // Check for rationale (judge output)
+    if (obj.rationale && typeof obj.rationale === 'string') {
+      const resultLabel = obj.result !== undefined ? `**Rating: ${obj.result}**\n\n` : '';
+      return resultLabel + obj.rationale;
+    }
+
+    // Check for content field
+    if (obj.content !== undefined && obj.content !== null) {
+      if (typeof obj.content === 'string') {
+        const trimmed = obj.content.trim();
+        // Try to parse as JSON (for judge results)
+        if (trimmed.startsWith('{')) {
+          try {
+            const parsed = JSON.parse(trimmed);
+            if (parsed.rationale && typeof parsed.rationale === 'string') {
+              const resultLabel = parsed.result !== undefined ? `**Rating: ${parsed.result}**\n\n` : '';
+              return resultLabel + parsed.rationale;
+            }
+          } catch {
+            // Not JSON
+          }
+        }
+        // Return content if it's substantial (not just metadata)
+        if (trimmed.length > 50) {
+          return trimmed;
+        }
+      }
+    }
+
+    // Check arrays
+    if (Array.isArray(obj)) {
+      for (const item of obj) {
+        const found = findContentRecursively(item, depth + 1);
+        if (found) return found;
+      }
+    }
+
+    // Check object properties
+    for (const key of Object.keys(obj)) {
+      if (['id', 'model', 'object', 'usage', 'created'].includes(key)) continue; // Skip metadata
+      const found = findContentRecursively(obj[key], depth + 1);
+      if (found) return found;
+    }
+
+    return null;
+  };
+
+  const foundContent = findContentRecursively(output);
+  if (foundContent) {
+    const metadata: Record<string, any> = {};
+    if (output.id) metadata.id = output.id;
+    if (output.model) metadata.model = output.model;
+    if (output.object) metadata.object = output.object;
+    if (output.finish_reason) metadata.finish_reason = output.finish_reason;
+    return { content: foundContent, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+  }
+
+  return { content: null, metadata: null };
+};
+
+/**
+ * Render extracted LLM content prominently with collapsible metadata
+ */
+const LLMContentRenderer: React.FC<{
+  content: string;
+  metadata: Record<string, any> | null;
+}> = ({ content, metadata }) => {
+  const [showMetadata, setShowMetadata] = useState(false);
+
+  return (
+    <div className="space-y-3">
+      {/* Main response content - prominently displayed */}
+      <div className="text-gray-800 whitespace-pre-wrap leading-relaxed">
+        {isMarkdownContent(content) ? (
+          <div className="prose prose-sm max-w-none">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {content}
+            </ReactMarkdown>
+          </div>
+        ) : (
+          content
+        )}
+      </div>
+
+      {/* Collapsible metadata section */}
+      {metadata && (
+        <div className="border-t border-gray-200 pt-2 mt-3">
+          <button
+            onClick={() => setShowMetadata(!showMetadata)}
+            className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-700"
+          >
+            <ChevronDown className={`h-3 w-3 transition-transform ${showMetadata ? 'rotate-180' : ''}`} />
+            Response Metadata
+          </button>
+          {showMetadata && (
+            <div className="mt-2 bg-gray-50 p-2 rounded text-xs text-gray-600">
+              <pre className="whitespace-pre-wrap">
+                {JSON.stringify(metadata, null, 2)}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/**
  * Main smart JSON renderer - entry point for rendering any JSON data
  */
 const SmartJsonRenderer: React.FC<{
@@ -692,6 +1118,13 @@ const SmartJsonRenderer: React.FC<{
   const { success, data: parsed } = tryParseJson(data);
 
   if (success) {
+    // Check if this is an LLM response format and extract content
+    const llmResponse = extractLLMResponseContent(parsed);
+    if (llmResponse.content) {
+      return <LLMContentRenderer content={llmResponse.content} metadata={llmResponse.metadata} />;
+    }
+
+    // Not an LLM response format, render normally
     return <SmartValueRenderer value={parsed} depth={0} defaultExpanded />;
   }
 
@@ -810,6 +1243,72 @@ const CitationsDisplay: React.FC<{
   );
 };
 
+/**
+ * OutputRenderer - Smart component for displaying trace outputs
+ *
+ * This component first tries to extract LLM content from the RAW output
+ * (before JSONPath transformation), which is important for detecting
+ * ChatCompletion and other LLM response formats. Only if that fails
+ * does it fall back to the JSONPath-transformed displayOutput.
+ */
+const OutputRenderer: React.FC<{
+  rawOutput: string | object;
+  displayOutput: string;
+}> = ({ rawOutput, displayOutput }) => {
+  // Try to extract LLM content from the raw output first
+  const llmExtraction = useMemo(() => {
+    // First, try to extract judge result from malformed JSON string
+    if (typeof rawOutput === 'string') {
+      const judgeResult = extractJudgeResultFromMalformed(rawOutput);
+      if (judgeResult && judgeResult.rationale) {
+        const resultLabel = judgeResult.result !== undefined ? `**Rating: ${judgeResult.result}**\n\n` : '';
+        const content = resultLabel + judgeResult.rationale;
+
+        // Extract basic metadata from the raw string
+        const idMatch = rawOutput.match(/"id":\s*"([^"]+)"/);
+        const modelMatch = rawOutput.match(/"model":\s*"([^"]+)"/);
+        const metadata: Record<string, any> = {};
+        if (idMatch) metadata.id = idMatch[1];
+        if (modelMatch) metadata.model = modelMatch[1];
+
+        return { content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+      }
+    }
+
+    try {
+      // Handle both string and already-parsed object
+      let parsed: any;
+      if (typeof rawOutput === 'string') {
+        parsed = JSON.parse(rawOutput);
+        // Handle double-stringified JSON (string containing JSON string)
+        if (typeof parsed === 'string') {
+          try {
+            parsed = JSON.parse(parsed);
+          } catch {
+            // It was a regular string, not double-encoded
+          }
+        }
+      } else if (typeof rawOutput === 'object' && rawOutput !== null) {
+        parsed = rawOutput;
+      } else {
+        return { content: null, metadata: null };
+      }
+
+      return extractLLMResponseContent(parsed);
+    } catch {
+      return { content: null, metadata: null };
+    }
+  }, [rawOutput]);
+
+  // If we found LLM content in raw output, render it prominently
+  if (llmExtraction.content) {
+    return <LLMContentRenderer content={llmExtraction.content} metadata={llmExtraction.metadata} />;
+  }
+
+  // Otherwise fall back to SmartJsonRenderer with the (possibly JSONPath-transformed) displayOutput
+  return <SmartJsonRenderer data={displayOutput} />;
+};
+
 // ============================================================================
 // TRACE VIEWER COMPONENT
 // ============================================================================
@@ -847,6 +1346,7 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({
 }) => {
   const [showRetrievedContent, setShowRetrievedContent] = useState(false);
   const [showConversationHistory, setShowConversationHistory] = useState(false);
+  const [showRawOutput, setShowRawOutput] = useState(false);
   const invalidateTraces = useInvalidateTraces();
   const { workshopId } = useWorkshopContext();
   const { data: mlflowConfig } = useMLflowConfig(workshopId!);
@@ -1036,17 +1536,42 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({
 
         {/* Output */}
         <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Bot className="h-4 w-4 text-green-600" />
-            <span className="font-medium text-green-800">Output</span>
-            {isOutputJson && (
-              <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
-                Structured
-              </span>
-            )}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Bot className="h-4 w-4 text-green-600" />
+              <span className="font-medium text-green-800">Output</span>
+              {isOutputJson && (
+                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
+                  Structured
+                </span>
+              )}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowRawOutput(!showRawOutput)}
+              className="text-xs text-gray-500 hover:text-gray-700"
+            >
+              {showRawOutput ? 'Show Formatted' : 'Show Raw JSON'}
+            </Button>
           </div>
           <div className="bg-green-50 border-l-4 border-green-400 p-4 rounded-r-lg">
-            <SmartJsonRenderer data={displayOutput} />
+            {showRawOutput ? (
+              <pre className="text-sm text-gray-800 whitespace-pre-wrap overflow-x-auto font-mono">
+                {typeof trace.output === 'string'
+                  ? (() => {
+                      try {
+                        return JSON.stringify(JSON.parse(trace.output), null, 2);
+                      } catch {
+                        return trace.output;
+                      }
+                    })()
+                  : JSON.stringify(trace.output, null, 2)
+                }
+              </pre>
+            ) : (
+              <OutputRenderer rawOutput={trace.output} displayOutput={displayOutput} />
+            )}
           </div>
         </div>
       </CardContent>

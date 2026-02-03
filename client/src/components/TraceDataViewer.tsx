@@ -38,22 +38,314 @@ interface ParsedOutput {
   [key: string]: any;
 }
 
+// Helper to extract actual content from various LLM response formats
+function extractLLMContent(output: any): { content: string | null; metadata: Record<string, any> | null } {
+  if (!output || typeof output !== 'object') {
+    return { content: null, metadata: null };
+  }
+
+  // Helper to extract content from a string that might be JSON-encoded
+  const extractContentFromString = (str: string): string => {
+    const trimmed = str.trim();
+    if (trimmed.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed.rationale && typeof parsed.rationale === 'string') {
+          const resultLabel = parsed.result !== undefined ? `**Rating: ${parsed.result}**\n\n` : '';
+          return resultLabel + parsed.rationale;
+        }
+        if (parsed.content && typeof parsed.content === 'string') {
+          return parsed.content;
+        }
+      } catch {
+        // Not valid JSON
+      }
+    }
+    return str;
+  };
+
+  // Handle FLATTENED format where choices have been unwrapped:
+  // { id, model, object, finish_reason, role, content }
+  if (output.object === 'chat.completion' && output.role === 'assistant' && !output.choices) {
+    let content: string | null = null;
+
+    if (typeof output.content === 'string') {
+      content = extractContentFromString(output.content);
+    } else if (output.message?.content) {
+      if (typeof output.message.content === 'string') {
+        content = extractContentFromString(output.message.content);
+      }
+    }
+
+    if (content) {
+      const metadata: Record<string, any> = {};
+      if (output.id) metadata.id = output.id;
+      if (output.model) metadata.model = output.model;
+      if (output.object) metadata.object = output.object;
+      if (output.finish_reason) metadata.finish_reason = output.finish_reason;
+      if (output.usage) metadata.usage = output.usage;
+      return { content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+    }
+  }
+
+  // Handle OpenAI/ChatCompletion format: { choices: [{ message: { content: "..." } }] }
+  if (output.choices && Array.isArray(output.choices) && output.choices.length > 0) {
+    const firstChoice = output.choices[0];
+    let content: string | null = null;
+
+    // Check message.content - handle both string and array formats
+    if (firstChoice.message?.content !== undefined && firstChoice.message?.content !== null) {
+      const msgContent = firstChoice.message.content;
+
+      if (typeof msgContent === 'string') {
+        const trimmedContent = msgContent.trim();
+        // Check if the content is a JSON-encoded judge result
+        if (trimmedContent.startsWith('{')) {
+          try {
+            const parsed = JSON.parse(trimmedContent);
+            if (parsed.rationale && typeof parsed.rationale === 'string') {
+              const resultLabel = parsed.result !== undefined ? `**Rating: ${parsed.result}**\n\n` : '';
+              content = resultLabel + parsed.rationale;
+            } else if (parsed.content && typeof parsed.content === 'string') {
+              // Handle nested content field
+              content = parsed.content;
+            } else {
+              // It's JSON but not a judge result - just use the original message content
+              content = msgContent;
+            }
+          } catch {
+            // Not valid JSON, use as-is
+            content = msgContent;
+          }
+        } else {
+          // Regular string content
+          content = msgContent;
+        }
+      } else if (typeof msgContent === 'object' && msgContent !== null) {
+        // Handle content that's already parsed as an object (e.g., judge result)
+        if (msgContent.rationale && typeof msgContent.rationale === 'string') {
+          const resultLabel = msgContent.result !== undefined ? `**Rating: ${msgContent.result}**\n\n` : '';
+          content = resultLabel + msgContent.rationale;
+        } else if (Array.isArray(msgContent)) {
+          // Handle content as array of blocks (Anthropic/Databricks style)
+          const textParts = msgContent
+            .filter((c: any) => c.type === 'text' || c.type === 'output_text')
+            .map((c: any) => c.text)
+            .filter(Boolean);
+          if (textParts.length > 0) {
+            content = textParts.join('\n');
+          }
+        }
+      }
+    }
+    // Handle judge output format: { choices: [{ result: ..., rationale: "..." }] }
+    else if (firstChoice.rationale && typeof firstChoice.rationale === 'string') {
+      // This is a judge evaluation output - show rationale as main content
+      const resultLabel = firstChoice.result !== undefined ? `**Rating: ${firstChoice.result}**\n\n` : '';
+      content = resultLabel + firstChoice.rationale;
+    }
+    // Alternative format with direct content on choice
+    else if (typeof firstChoice.content === 'string') {
+      content = firstChoice.content;
+    }
+    // Text completion format
+    else if (typeof firstChoice.text === 'string') {
+      content = firstChoice.text;
+    }
+
+    if (content) {
+      // Extract metadata (everything except the actual content)
+      const metadata: Record<string, any> = {};
+      if (output.id) metadata.id = output.id;
+      if (output.model) metadata.model = output.model;
+      if (output.object) metadata.object = output.object;
+      if (output.usage) metadata.usage = output.usage;
+      if (firstChoice.finish_reason) metadata.finish_reason = firstChoice.finish_reason;
+      if (output.finish_reason) metadata.finish_reason = output.finish_reason;
+
+      return { content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+    }
+  }
+
+  // Handle Anthropic/Claude format: { content: [{ type: "text", text: "..." }] }
+  if (output.content && Array.isArray(output.content)) {
+    // Try type: "text" format
+    let textContent = output.content
+      .filter((c: any) => c.type === 'text' && c.text)
+      .map((c: any) => c.text)
+      .join('\n');
+
+    // Also try type: "output_text" format (Databricks/MLflow style)
+    if (!textContent) {
+      textContent = output.content
+        .filter((c: any) => c.type === 'output_text' && c.text)
+        .map((c: any) => c.text)
+        .join('\n');
+    }
+
+    if (textContent) {
+      const metadata: Record<string, any> = {};
+      if (output.id) metadata.id = output.id;
+      if (output.model) metadata.model = output.model;
+      if (output.type) metadata.type = output.type;
+      if (output.object) metadata.object = output.object;
+      if (output.role) metadata.role = output.role;
+      if (output.usage) metadata.usage = output.usage;
+      if (output.stop_reason) metadata.stop_reason = output.stop_reason;
+      if (output.finish_reason) metadata.finish_reason = output.finish_reason;
+
+      return { content: textContent, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+    }
+  }
+
+  // Handle messages array format: { messages: [{ role: "assistant", content: "..." }] }
+  if (output.messages && Array.isArray(output.messages)) {
+    // Find assistant message
+    const assistantMsg = output.messages.find((m: any) => m.role === 'assistant');
+    if (assistantMsg) {
+      let content: string | null = null;
+      if (typeof assistantMsg.content === 'string') {
+        content = assistantMsg.content;
+      } else if (Array.isArray(assistantMsg.content)) {
+        content = assistantMsg.content
+          .filter((c: any) => (c.type === 'text' || c.type === 'output_text') && c.text)
+          .map((c: any) => c.text)
+          .join('\n');
+      }
+      if (content) {
+        const metadata: Record<string, any> = {};
+        if (output.id) metadata.id = output.id;
+        if (output.model) metadata.model = output.model;
+        return { content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+      }
+    }
+  }
+
+  // Handle direct content string
+  if (output.content && typeof output.content === 'string') {
+    const metadata: Record<string, any> = {};
+    if (output.id) metadata.id = output.id;
+    if (output.model) metadata.model = output.model;
+    if (output.role) metadata.role = output.role;
+
+    return { content: output.content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+  }
+
+  // Handle response with text field directly
+  if (output.text && typeof output.text === 'string') {
+    return { content: output.text, metadata: null };
+  }
+
+  // Handle Databricks agent response format: { output: [{ type: "message", content: [...] }] }
+  if (output.output && Array.isArray(output.output)) {
+    for (const item of output.output) {
+      if (item.type === 'message' && item.role === 'assistant' && item.content) {
+        let content: string | null = null;
+        if (typeof item.content === 'string') {
+          content = item.content;
+        } else if (Array.isArray(item.content)) {
+          content = item.content
+            .filter((c: any) => (c.type === 'text' || c.type === 'output_text') && c.text)
+            .map((c: any) => c.text)
+            .join('\n');
+        }
+        if (content) {
+          const metadata: Record<string, any> = {};
+          if (output.id) metadata.id = output.id;
+          if (output.model) metadata.model = output.model;
+          return { content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+        }
+      }
+    }
+  }
+
+  // LAST RESORT: Recursively search for content/rationale fields anywhere in the structure
+  const findContentRecursively = (obj: any, depth: number = 0): string | null => {
+    if (depth > 5 || !obj || typeof obj !== 'object') return null;
+
+    // Check for rationale (judge output)
+    if (obj.rationale && typeof obj.rationale === 'string') {
+      const resultLabel = obj.result !== undefined ? `**Rating: ${obj.result}**\n\n` : '';
+      return resultLabel + obj.rationale;
+    }
+
+    // Check for content field
+    if (obj.content !== undefined && obj.content !== null) {
+      if (typeof obj.content === 'string') {
+        const trimmed = obj.content.trim();
+        if (trimmed.startsWith('{')) {
+          try {
+            const parsed = JSON.parse(trimmed);
+            if (parsed.rationale && typeof parsed.rationale === 'string') {
+              const resultLabel = parsed.result !== undefined ? `**Rating: ${parsed.result}**\n\n` : '';
+              return resultLabel + parsed.rationale;
+            }
+          } catch {
+            // Not JSON
+          }
+        }
+        if (trimmed.length > 50) {
+          return trimmed;
+        }
+      }
+    }
+
+    // Check arrays
+    if (Array.isArray(obj)) {
+      for (const item of obj) {
+        const found = findContentRecursively(item, depth + 1);
+        if (found) return found;
+      }
+    }
+
+    // Check object properties
+    for (const key of Object.keys(obj)) {
+      if (['id', 'model', 'object', 'usage', 'created'].includes(key)) continue;
+      const found = findContentRecursively(obj[key], depth + 1);
+      if (found) return found;
+    }
+
+    return null;
+  };
+
+  const foundContent = findContentRecursively(output);
+  if (foundContent) {
+    const metadata: Record<string, any> = {};
+    if (output.id) metadata.id = output.id;
+    if (output.model) metadata.model = output.model;
+    if (output.object) metadata.object = output.object;
+    if (output.finish_reason) metadata.finish_reason = output.finish_reason;
+    return { content: foundContent, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+  }
+
+  return { content: null, metadata: null };
+}
+
 export function TraceDataViewer({
   trace,
   className = '',
   showContext = false
 }: TraceDataViewerProps) {
-  const [activeTab, setActiveTab] = useState('table');
+  const [activeTab, setActiveTab] = useState('content');
 
   // Parse the output JSON
   const parsedOutput: ParsedOutput | null = useMemo(() => {
     try {
       if (typeof trace.output === 'string') {
-        return JSON.parse(trace.output);
+        let parsed = JSON.parse(trace.output);
+        // Handle double-stringified JSON (string containing JSON string)
+        if (typeof parsed === 'string') {
+          try {
+            parsed = JSON.parse(parsed);
+          } catch {
+            // It was a regular string, not double-encoded
+          }
+        }
+        return parsed;
       }
       return trace.output;
     } catch (error) {
-      
+
       return null;
     }
   }, [trace.output]);
@@ -74,6 +366,14 @@ export function TraceDataViewer({
   // Check if output contains result data
   const hasResultData = parsedOutput && Array.isArray(parsedOutput.result);
   const hasQueryText = parsedOutput && parsedOutput.query_text;
+
+  // Extract LLM content if this is a chat completion response
+  const llmContent = useMemo(() => {
+    if (!parsedOutput) return { content: null, metadata: null };
+    return extractLLMContent(parsedOutput);
+  }, [parsedOutput]);
+
+  const hasLLMContent = llmContent.content !== null;
 
   // Generate table headers from the first result item
   const tableHeaders = useMemo(() => {
@@ -206,8 +506,76 @@ export function TraceDataViewer({
         {/* Output Section */}
         <div>
           <h4 className="font-medium text-sm text-gray-700 mb-2">Output</h4>
-          
-          {hasResultData && (
+
+          {/* LLM Response Content - Display prominently when available */}
+          {hasLLMContent && (
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="content" className="flex items-center gap-2">
+                  <FileText className="h-4 w-4" />
+                  Response
+                </TabsTrigger>
+                <TabsTrigger value="json" className="flex items-center gap-2">
+                  <Database className="h-4 w-4" />
+                  Raw JSON
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="content" className="mt-4">
+                <div className="space-y-3">
+                  {/* Main response content */}
+                  <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                    <pre className="text-sm text-gray-800 whitespace-pre-wrap font-sans leading-relaxed">
+                      {llmContent.content}
+                    </pre>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="mt-3 h-6 px-2 text-xs"
+                      onClick={() => llmContent.content && copyToClipboard(llmContent.content, 'Response content')}
+                    >
+                      <Copy className="h-3 w-3 mr-1" />
+                      Copy Response
+                    </Button>
+                  </div>
+
+                  {/* Metadata (collapsed by default) */}
+                  {llmContent.metadata && (
+                    <details className="text-xs">
+                      <summary className="cursor-pointer text-gray-500 hover:text-gray-700 py-1">
+                        Response Metadata
+                      </summary>
+                      <div className="bg-gray-50 p-2 rounded border mt-1">
+                        <pre className="text-gray-600 whitespace-pre-wrap">
+                          {JSON.stringify(llmContent.metadata, null, 2)}
+                        </pre>
+                      </div>
+                    </details>
+                  )}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="json" className="mt-4">
+                <div className="bg-gray-50 p-3 rounded border">
+                  <pre className="text-sm text-gray-800 whitespace-pre-wrap overflow-x-auto">
+                    {JSON.stringify(parsedOutput, null, 2)}
+                  </pre>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-2 h-6 px-2 text-xs"
+                    onClick={() => copyToClipboard(JSON.stringify(parsedOutput, null, 2), 'Output')}
+                  >
+                    <Copy className="h-3 w-3 mr-1" />
+                    Copy
+                  </Button>
+                </div>
+              </TabsContent>
+            </Tabs>
+          )}
+
+          {/* Data table format (for SQL results etc.) */}
+          {!hasLLMContent && hasResultData && (
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="table" className="flex items-center gap-2">
@@ -294,7 +662,8 @@ export function TraceDataViewer({
             </Tabs>
           )}
 
-          {!hasResultData && (
+          {/* Fallback: Raw JSON display */}
+          {!hasLLMContent && !hasResultData && (
             <div className="bg-gray-50 p-3 rounded border">
               <pre className="text-sm text-gray-800 whitespace-pre-wrap">
                 {JSON.stringify(parsedOutput, null, 2)}
