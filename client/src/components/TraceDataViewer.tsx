@@ -52,7 +52,23 @@ function extractLLMContent(output: any): { content: string | null; metadata: Rec
     // Check message.content - handle both string and array formats
     if (firstChoice.message?.content) {
       if (typeof firstChoice.message.content === 'string') {
-        content = firstChoice.message.content;
+        const msgContent = firstChoice.message.content;
+        // Check if the content is a JSON-encoded judge result
+        if (msgContent.trim().startsWith('{') && msgContent.includes('rationale')) {
+          try {
+            const parsed = JSON.parse(msgContent);
+            if (parsed.rationale && typeof parsed.rationale === 'string') {
+              const resultLabel = parsed.result !== undefined ? `**Rating: ${parsed.result}**\n\n` : '';
+              content = resultLabel + parsed.rationale;
+            } else {
+              content = msgContent;
+            }
+          } catch {
+            content = msgContent;
+          }
+        } else {
+          content = msgContent;
+        }
       } else if (Array.isArray(firstChoice.message.content)) {
         // Handle content as array of blocks (Anthropic/Databricks style)
         const textParts = firstChoice.message.content
