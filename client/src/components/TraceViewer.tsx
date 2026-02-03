@@ -1164,13 +1164,21 @@ const CitationsDisplay: React.FC<{
  * does it fall back to the JSONPath-transformed displayOutput.
  */
 const OutputRenderer: React.FC<{
-  rawOutput: string;
+  rawOutput: string | object;
   displayOutput: string;
 }> = ({ rawOutput, displayOutput }) => {
   // Try to extract LLM content from the raw output first
   const llmExtraction = useMemo(() => {
     try {
-      const parsed = JSON.parse(rawOutput);
+      // Handle both string and already-parsed object
+      let parsed: any;
+      if (typeof rawOutput === 'string') {
+        parsed = JSON.parse(rawOutput);
+      } else if (typeof rawOutput === 'object' && rawOutput !== null) {
+        parsed = rawOutput;
+      } else {
+        return { content: null, metadata: null };
+      }
       return extractLLMResponseContent(parsed);
     } catch {
       return { content: null, metadata: null };
