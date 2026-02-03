@@ -682,6 +682,129 @@ const extractContentFromJsonLike = (str: string): { success: boolean; data: Reco
 };
 
 /**
+ * Extract actual content from LLM response formats (OpenAI/ChatCompletion, Anthropic, etc.)
+ * Returns the extracted content if found, null otherwise
+ */
+const extractLLMResponseContent = (output: any): { content: string | null; metadata: Record<string, any> | null } => {
+  if (!output || typeof output !== 'object') {
+    return { content: null, metadata: null };
+  }
+
+  // Handle OpenAI/ChatCompletion format: { choices: [{ message: { content: "..." } }] }
+  if (output.choices && Array.isArray(output.choices) && output.choices.length > 0) {
+    const firstChoice = output.choices[0];
+    let content: string | null = null;
+
+    // Standard OpenAI format
+    if (firstChoice.message?.content) {
+      content = firstChoice.message.content;
+    }
+    // Alternative format with direct content
+    else if (firstChoice.content) {
+      content = firstChoice.content;
+    }
+    // Text completion format
+    else if (firstChoice.text) {
+      content = firstChoice.text;
+    }
+
+    // Extract metadata (everything except the actual content)
+    const metadata: Record<string, any> = {};
+    if (output.id) metadata.id = output.id;
+    if (output.model) metadata.model = output.model;
+    if (output.object) metadata.object = output.object;
+    if (output.usage) metadata.usage = output.usage;
+    if (firstChoice.finish_reason) metadata.finish_reason = firstChoice.finish_reason;
+
+    return { content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+  }
+
+  // Handle Anthropic/Claude format: { content: [{ type: "text", text: "..." }] }
+  if (output.content && Array.isArray(output.content)) {
+    const textContent = output.content
+      .filter((c: any) => c.type === 'text' && c.text)
+      .map((c: any) => c.text)
+      .join('\n');
+
+    if (textContent) {
+      const metadata: Record<string, any> = {};
+      if (output.id) metadata.id = output.id;
+      if (output.model) metadata.model = output.model;
+      if (output.type) metadata.type = output.type;
+      if (output.role) metadata.role = output.role;
+      if (output.usage) metadata.usage = output.usage;
+      if (output.stop_reason) metadata.stop_reason = output.stop_reason;
+
+      return { content: textContent, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+    }
+  }
+
+  // Handle direct content string
+  if (output.content && typeof output.content === 'string') {
+    const metadata: Record<string, any> = {};
+    if (output.id) metadata.id = output.id;
+    if (output.model) metadata.model = output.model;
+    if (output.role) metadata.role = output.role;
+
+    return { content: output.content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+  }
+
+  // Handle response with text field directly
+  if (output.text && typeof output.text === 'string') {
+    return { content: output.text, metadata: null };
+  }
+
+  return { content: null, metadata: null };
+};
+
+/**
+ * Render extracted LLM content prominently with collapsible metadata
+ */
+const LLMContentRenderer: React.FC<{
+  content: string;
+  metadata: Record<string, any> | null;
+}> = ({ content, metadata }) => {
+  const [showMetadata, setShowMetadata] = useState(false);
+
+  return (
+    <div className="space-y-3">
+      {/* Main response content - prominently displayed */}
+      <div className="text-gray-800 whitespace-pre-wrap leading-relaxed">
+        {isMarkdownContent(content) ? (
+          <div className="prose prose-sm max-w-none">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {content}
+            </ReactMarkdown>
+          </div>
+        ) : (
+          content
+        )}
+      </div>
+
+      {/* Collapsible metadata section */}
+      {metadata && (
+        <div className="border-t border-gray-200 pt-2 mt-3">
+          <button
+            onClick={() => setShowMetadata(!showMetadata)}
+            className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-700"
+          >
+            <ChevronDown className={`h-3 w-3 transition-transform ${showMetadata ? 'rotate-180' : ''}`} />
+            Response Metadata
+          </button>
+          {showMetadata && (
+            <div className="mt-2 bg-gray-50 p-2 rounded text-xs text-gray-600">
+              <pre className="whitespace-pre-wrap">
+                {JSON.stringify(metadata, null, 2)}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/**
  * Main smart JSON renderer - entry point for rendering any JSON data
  */
 const SmartJsonRenderer: React.FC<{
@@ -692,6 +815,13 @@ const SmartJsonRenderer: React.FC<{
   const { success, data: parsed } = tryParseJson(data);
 
   if (success) {
+    // Check if this is an LLM response format and extract content
+    const llmResponse = extractLLMResponseContent(parsed);
+    if (llmResponse.content) {
+      return <LLMContentRenderer content={llmResponse.content} metadata={llmResponse.metadata} />;
+    }
+
+    // Not an LLM response format, render normally
     return <SmartValueRenderer value={parsed} depth={0} defaultExpanded />;
   }
 

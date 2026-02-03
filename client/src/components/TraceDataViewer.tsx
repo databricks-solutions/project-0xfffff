@@ -38,12 +38,85 @@ interface ParsedOutput {
   [key: string]: any;
 }
 
+// Helper to extract actual content from various LLM response formats
+function extractLLMContent(output: any): { content: string | null; metadata: Record<string, any> | null } {
+  if (!output || typeof output !== 'object') {
+    return { content: null, metadata: null };
+  }
+
+  // Handle OpenAI/ChatCompletion format: { choices: [{ message: { content: "..." } }] }
+  if (output.choices && Array.isArray(output.choices) && output.choices.length > 0) {
+    const firstChoice = output.choices[0];
+    let content: string | null = null;
+
+    // Standard OpenAI format
+    if (firstChoice.message?.content) {
+      content = firstChoice.message.content;
+    }
+    // Alternative format with direct content
+    else if (firstChoice.content) {
+      content = firstChoice.content;
+    }
+    // Text completion format
+    else if (firstChoice.text) {
+      content = firstChoice.text;
+    }
+
+    // Extract metadata (everything except choices content)
+    const metadata: Record<string, any> = {};
+    if (output.id) metadata.id = output.id;
+    if (output.model) metadata.model = output.model;
+    if (output.object) metadata.object = output.object;
+    if (output.usage) metadata.usage = output.usage;
+    if (firstChoice.finish_reason) metadata.finish_reason = firstChoice.finish_reason;
+
+    return { content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+  }
+
+  // Handle Anthropic/Claude format: { content: [{ type: "text", text: "..." }] }
+  if (output.content && Array.isArray(output.content)) {
+    const textContent = output.content
+      .filter((c: any) => c.type === 'text' && c.text)
+      .map((c: any) => c.text)
+      .join('\n');
+
+    if (textContent) {
+      const metadata: Record<string, any> = {};
+      if (output.id) metadata.id = output.id;
+      if (output.model) metadata.model = output.model;
+      if (output.type) metadata.type = output.type;
+      if (output.role) metadata.role = output.role;
+      if (output.usage) metadata.usage = output.usage;
+      if (output.stop_reason) metadata.stop_reason = output.stop_reason;
+
+      return { content: textContent, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+    }
+  }
+
+  // Handle direct content string
+  if (output.content && typeof output.content === 'string') {
+    const metadata: Record<string, any> = {};
+    if (output.id) metadata.id = output.id;
+    if (output.model) metadata.model = output.model;
+    if (output.role) metadata.role = output.role;
+
+    return { content: output.content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+  }
+
+  // Handle response with text field directly
+  if (output.text && typeof output.text === 'string') {
+    return { content: output.text, metadata: null };
+  }
+
+  return { content: null, metadata: null };
+}
+
 export function TraceDataViewer({
   trace,
   className = '',
   showContext = false
 }: TraceDataViewerProps) {
-  const [activeTab, setActiveTab] = useState('table');
+  const [activeTab, setActiveTab] = useState('content');
 
   // Parse the output JSON
   const parsedOutput: ParsedOutput | null = useMemo(() => {
@@ -74,6 +147,14 @@ export function TraceDataViewer({
   // Check if output contains result data
   const hasResultData = parsedOutput && Array.isArray(parsedOutput.result);
   const hasQueryText = parsedOutput && parsedOutput.query_text;
+
+  // Extract LLM content if this is a chat completion response
+  const llmContent = useMemo(() => {
+    if (!parsedOutput) return { content: null, metadata: null };
+    return extractLLMContent(parsedOutput);
+  }, [parsedOutput]);
+
+  const hasLLMContent = llmContent.content !== null;
 
   // Generate table headers from the first result item
   const tableHeaders = useMemo(() => {
@@ -206,8 +287,76 @@ export function TraceDataViewer({
         {/* Output Section */}
         <div>
           <h4 className="font-medium text-sm text-gray-700 mb-2">Output</h4>
-          
-          {hasResultData && (
+
+          {/* LLM Response Content - Display prominently when available */}
+          {hasLLMContent && (
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="content" className="flex items-center gap-2">
+                  <FileText className="h-4 w-4" />
+                  Response
+                </TabsTrigger>
+                <TabsTrigger value="json" className="flex items-center gap-2">
+                  <Database className="h-4 w-4" />
+                  Raw JSON
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="content" className="mt-4">
+                <div className="space-y-3">
+                  {/* Main response content */}
+                  <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                    <pre className="text-sm text-gray-800 whitespace-pre-wrap font-sans leading-relaxed">
+                      {llmContent.content}
+                    </pre>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="mt-3 h-6 px-2 text-xs"
+                      onClick={() => llmContent.content && copyToClipboard(llmContent.content, 'Response content')}
+                    >
+                      <Copy className="h-3 w-3 mr-1" />
+                      Copy Response
+                    </Button>
+                  </div>
+
+                  {/* Metadata (collapsed by default) */}
+                  {llmContent.metadata && (
+                    <details className="text-xs">
+                      <summary className="cursor-pointer text-gray-500 hover:text-gray-700 py-1">
+                        Response Metadata
+                      </summary>
+                      <div className="bg-gray-50 p-2 rounded border mt-1">
+                        <pre className="text-gray-600 whitespace-pre-wrap">
+                          {JSON.stringify(llmContent.metadata, null, 2)}
+                        </pre>
+                      </div>
+                    </details>
+                  )}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="json" className="mt-4">
+                <div className="bg-gray-50 p-3 rounded border">
+                  <pre className="text-sm text-gray-800 whitespace-pre-wrap overflow-x-auto">
+                    {JSON.stringify(parsedOutput, null, 2)}
+                  </pre>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-2 h-6 px-2 text-xs"
+                    onClick={() => copyToClipboard(JSON.stringify(parsedOutput, null, 2), 'Output')}
+                  >
+                    <Copy className="h-3 w-3 mr-1" />
+                    Copy
+                  </Button>
+                </div>
+              </TabsContent>
+            </Tabs>
+          )}
+
+          {/* Data table format (for SQL results etc.) */}
+          {!hasLLMContent && hasResultData && (
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="table" className="flex items-center gap-2">
@@ -294,7 +443,8 @@ export function TraceDataViewer({
             </Tabs>
           )}
 
-          {!hasResultData && (
+          {/* Fallback: Raw JSON display */}
+          {!hasLLMContent && !hasResultData && (
             <div className="bg-gray-50 p-3 rounded border">
               <pre className="text-sm text-gray-800 whitespace-pre-wrap">
                 {JSON.stringify(parsedOutput, null, 2)}
