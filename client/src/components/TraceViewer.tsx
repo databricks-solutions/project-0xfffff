@@ -1054,6 +1054,7 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({
 }) => {
   const [showRetrievedContent, setShowRetrievedContent] = useState(false);
   const [showConversationHistory, setShowConversationHistory] = useState(false);
+  const [showRawOutput, setShowRawOutput] = useState(false);
   const invalidateTraces = useInvalidateTraces();
   const { workshopId } = useWorkshopContext();
   const { data: mlflowConfig } = useMLflowConfig(workshopId!);
@@ -1243,17 +1244,42 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({
 
         {/* Output */}
         <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Bot className="h-4 w-4 text-green-600" />
-            <span className="font-medium text-green-800">Output</span>
-            {isOutputJson && (
-              <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
-                Structured
-              </span>
-            )}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Bot className="h-4 w-4 text-green-600" />
+              <span className="font-medium text-green-800">Output</span>
+              {isOutputJson && (
+                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
+                  Structured
+                </span>
+              )}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowRawOutput(!showRawOutput)}
+              className="text-xs text-gray-500 hover:text-gray-700"
+            >
+              {showRawOutput ? 'Show Formatted' : 'Show Raw JSON'}
+            </Button>
           </div>
           <div className="bg-green-50 border-l-4 border-green-400 p-4 rounded-r-lg">
-            <SmartJsonRenderer data={displayOutput} />
+            {showRawOutput ? (
+              <pre className="text-sm text-gray-800 whitespace-pre-wrap overflow-x-auto font-mono">
+                {typeof trace.output === 'string'
+                  ? (() => {
+                      try {
+                        return JSON.stringify(JSON.parse(trace.output), null, 2);
+                      } catch {
+                        return trace.output;
+                      }
+                    })()
+                  : JSON.stringify(trace.output, null, 2)
+                }
+              </pre>
+            ) : (
+              <SmartJsonRenderer data={displayOutput} />
+            )}
           </div>
         </div>
       </CardContent>
