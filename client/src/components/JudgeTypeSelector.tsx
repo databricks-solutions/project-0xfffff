@@ -140,16 +140,16 @@ export function JudgeTypeSelector({ selectedType, onTypeChange, disabled }: Judg
 export const defaultPromptTemplates: Record<JudgeType, string> = {
   likert: `You are an expert evaluator assessing the quality of an AI assistant's response.
 
-## Evaluation Criteria
+## Evaluation Criterion
 {rubric}
 
 ## Task
 Rate the response on a scale of 1-5 where:
-- 1 = Poor: Does not meet the criteria
-- 2 = Below Average: Partially meets criteria with significant issues
-- 3 = Average: Meets basic criteria but has room for improvement
-- 4 = Good: Meets criteria well with minor issues
-- 5 = Excellent: Fully meets or exceeds all criteria
+- 1 = Poor: Does not meet the criterion
+- 2 = Below Average: Partially meets criterion with significant issues
+- 3 = Average: Meets basic criterion but has room for improvement
+- 4 = Good: Meets criterion well with minor issues
+- 5 = Excellent: Fully meets or exceeds all expectations
 
 ## Input
 {input}
@@ -161,14 +161,14 @@ Provide your rating as a single number (1-5) followed by a brief explanation.`,
 
   binary: `You are an expert evaluator performing a quality check on an AI assistant's response.
 
-## Evaluation Criteria
+## Evaluation Criterion
 {criteria}
 
 ## Task
-Determine if the response meets the evaluation criteria.
+Determine if the response meets the evaluation criterion.
 
-- 1: The response meets the required criteria (PASS)
-- 0: The response does not meet the required criteria (FAIL)
+- 1: The response meets the required criterion (PASS)
+- 0: The response does not meet the required criterion (FAIL)
 
 ## Input
 {input}
@@ -176,13 +176,13 @@ Determine if the response meets the evaluation criteria.
 ## Output to Evaluate
 {output}
 
-Think step by step about whether the output meets the criteria, then provide your rating.
+Think step by step about whether the output meets the criterion, then provide your rating.
 
 Your response MUST start with a single integer rating (0 or 1) on its own line, followed by your reasoning.
 
 Example format:
 1
-The response meets the criteria because...`,
+The response meets the criterion because...`,
 
   freeform: `You are an expert evaluator providing detailed feedback on an AI assistant's response.
 

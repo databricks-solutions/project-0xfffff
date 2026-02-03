@@ -160,6 +160,9 @@ class Workshop(BaseModel):
   judge_name: str = 'workshop_judge'  # Name used for MLflow feedback entries
   input_jsonpath: Optional[str] = None  # JSONPath query for extracting trace input display
   output_jsonpath: Optional[str] = None  # JSONPath query for extracting trace output display
+  auto_evaluation_job_id: Optional[str] = None  # Job ID for auto-evaluation on annotation start
+  auto_evaluation_prompt: Optional[str] = None  # Derived judge prompt used for auto-evaluation
+  auto_evaluation_model: Optional[str] = None  # Model used for auto-evaluation
   created_at: datetime = Field(default_factory=datetime.now)
 
 

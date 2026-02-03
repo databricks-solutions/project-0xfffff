@@ -60,6 +60,50 @@ from server.utils.password import generate_default_password, hash_password, veri
 logger = logging.getLogger(__name__)
 
 
+def _retry_mlflow_operation(operation, max_retries: int = 3, base_delay: float = 1.0, description: str = "MLflow operation"):
+  """Retry an MLflow operation with exponential backoff.
+
+  Args:
+    operation: Callable that performs the MLflow operation
+    max_retries: Maximum number of retry attempts (default: 3)
+    base_delay: Base delay in seconds between retries (default: 1.0)
+    description: Description for logging purposes
+
+  Returns:
+    Result of the operation if successful, None if all retries fail
+  """
+  import time
+
+  last_error = None
+  for attempt in range(max_retries):
+    try:
+      return operation()
+    except Exception as e:
+      last_error = e
+      error_str = str(e).lower()
+
+      # Don't retry on certain errors
+      if "maximum allowed assessments" in error_str:
+        logger.warning(f"{description} hit assessment limit: {e}")
+        return None
+      if "not found" in error_str or "404" in error_str:
+        logger.warning(f"{description} resource not found: {e}")
+        return None
+      if "unauthorized" in error_str or "401" in error_str or "403" in error_str:
+        logger.warning(f"{description} auth error (not retrying): {e}")
+        return None
+
+      # Retry on transient errors
+      if attempt < max_retries - 1:
+        delay = base_delay * (2 ** attempt)  # Exponential backoff
+        logger.warning(f"{description} failed (attempt {attempt + 1}/{max_retries}), retrying in {delay}s: {e}")
+        time.sleep(delay)
+      else:
+        logger.error(f"{description} failed after {max_retries} attempts: {e}")
+
+  return None
+
+
 class DatabaseService:
   """Service layer for database operations with caching support."""
 
@@ -105,20 +149,8 @@ class DatabaseService:
     self.db.commit()
     self.db.refresh(db_workshop)
 
-    return Workshop(
-      id=db_workshop.id,
-      name=db_workshop.name,
-      description=db_workshop.description,
-      facilitator_id=db_workshop.facilitator_id,
-      status=db_workshop.status,
-      current_phase=db_workshop.current_phase,
-      completed_phases=db_workshop.completed_phases or [],
-      discovery_started=db_workshop.discovery_started or False,
-      annotation_started=db_workshop.annotation_started or False,
-      active_discovery_trace_ids=db_workshop.active_discovery_trace_ids or [],
-      active_annotation_trace_ids=db_workshop.active_annotation_trace_ids or [],
-      created_at=db_workshop.created_at,
-    )
+    # Use _workshop_from_db to ensure all fields are properly populated
+    return self._workshop_from_db(db_workshop)
 
   def _workshop_from_db(self, db_workshop: WorkshopDB) -> Workshop:
     """Convert a database workshop object to a Workshop model."""
@@ -139,6 +171,9 @@ class DatabaseService:
       judge_name=db_workshop.judge_name or 'workshop_judge',
       input_jsonpath=getattr(db_workshop, 'input_jsonpath', None),
       output_jsonpath=getattr(db_workshop, 'output_jsonpath', None),
+      auto_evaluation_job_id=getattr(db_workshop, 'auto_evaluation_job_id', None),
+      auto_evaluation_prompt=getattr(db_workshop, 'auto_evaluation_prompt', None),
+      auto_evaluation_model=getattr(db_workshop, 'auto_evaluation_model', None),
       created_at=db_workshop.created_at,
     )
 
@@ -374,6 +409,42 @@ class DatabaseService:
     self.db.refresh(db_workshop)
 
     return self._workshop_from_db(db_workshop)
+
+  def update_auto_evaluation_job(self, workshop_id: str, job_id: str, prompt: str, model: Optional[str] = None) -> Optional[Workshop]:
+    """Update the auto-evaluation job ID, derived prompt, and model for a workshop."""
+    db_workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if not db_workshop:
+      return None
+
+    db_workshop.auto_evaluation_job_id = job_id
+    db_workshop.auto_evaluation_prompt = prompt
+    if model:
+      db_workshop.auto_evaluation_model = model
+    self.db.commit()
+    self.db.refresh(db_workshop)
+
+    return self._workshop_from_db(db_workshop)
+
+  def get_auto_evaluation_job_id(self, workshop_id: str) -> Optional[str]:
+    """Get the auto-evaluation job ID for a workshop."""
+    db_workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if not db_workshop:
+      return None
+    return db_workshop.auto_evaluation_job_id
+
+  def get_auto_evaluation_prompt(self, workshop_id: str) -> Optional[str]:
+    """Get the auto-evaluation derived prompt for a workshop."""
+    db_workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if not db_workshop:
+      return None
+    return db_workshop.auto_evaluation_prompt
+
+  def get_auto_evaluation_model(self, workshop_id: str) -> Optional[str]:
+    """Get the auto-evaluation model for a workshop."""
+    db_workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if not db_workshop:
+      return None
+    return getattr(db_workshop, 'auto_evaluation_model', None)
 
   # Trace operations
   def add_traces(self, workshop_id: str, traces: List[TraceUpload]) -> List[Trace]:
@@ -1080,6 +1151,180 @@ class DatabaseService:
       rating_scale=db_rubric.rating_scale or 5,
     )
 
+  def derive_judge_prompt_from_rubric(self, workshop_id: str, question_index: int = 0) -> Optional[str]:
+    """Generate a judge prompt for a single rubric criterion.
+
+    Uses the same templates as the frontend (Likert/Binary), with the rubric
+    criterion substituted in. Uses {{ inputs }}/{{ outputs }} for MLflow compatibility.
+
+    Args:
+        workshop_id: The workshop ID
+        question_index: Index of the rubric question to use (default: 0, the first question)
+
+    Returns:
+        A judge prompt string for the specified criterion, or None if no rubric exists.
+    """
+    rubric = self.get_rubric(workshop_id)
+    if not rubric:
+      return None
+
+    # Parse rubric questions
+    questions = self._parse_rubric_questions(rubric.question)
+    if not questions:
+      # Single question rubric (legacy format)
+      questions = [{
+        'id': 'q_1',
+        'title': rubric.question.split(':')[0].strip() if ':' in rubric.question else 'Response Quality',
+        'description': rubric.question,
+        'judge_type': rubric.judge_type or 'likert',
+      }]
+
+    # Get the specific question (default to first if index out of bounds)
+    if question_index >= len(questions):
+      question_index = 0
+    question = questions[question_index]
+
+    title = question.get('title', 'Response Quality')
+    description = question.get('description', '')
+    judge_type = question.get('judge_type', rubric.judge_type or 'likert')
+
+    # Build rubric content: title + description
+    rubric_content = f"**{title}**"
+    if description:
+      rubric_content += f"\n{description}"
+
+    # Use the same templates as the frontend (JudgeTypeSelector.tsx)
+    if judge_type == 'binary':
+      # Binary template
+      return f"""You are an expert evaluator performing a quality check on an AI assistant's response.
+
+## Evaluation Criterion
+{rubric_content}
+
+## Task
+Determine if the response meets the evaluation criterion.
+
+- 1: The response meets the required criterion (PASS)
+- 0: The response does not meet the required criterion (FAIL)
+
+## Input
+{{{{ inputs }}}}
+
+## Output to Evaluate
+{{{{ outputs }}}}
+
+Think step by step about whether the output meets the criterion, then provide your rating.
+
+Your response MUST start with a single integer rating (0 or 1) on its own line, followed by your reasoning.
+
+Example format:
+1
+The response meets the criterion because..."""
+    else:
+      # Likert template (default)
+      return f"""You are an expert evaluator assessing the quality of an AI assistant's response.
+
+## Evaluation Criterion
+{rubric_content}
+
+## Task
+Rate the response on a scale of 1-5 where:
+- 1 = Poor: Does not meet the criterion
+- 2 = Below Average: Partially meets criterion with significant issues
+- 3 = Average: Meets basic criterion but has room for improvement
+- 4 = Good: Meets criterion well with minor issues
+- 5 = Excellent: Fully meets or exceeds all expectations
+
+## Input
+{{{{ inputs }}}}
+
+## Output to Evaluate
+{{{{ outputs }}}}
+
+Provide your rating as a single number (1-5) followed by a brief explanation."""
+
+  def get_rubric_questions_for_evaluation(self, workshop_id: str) -> List[Dict[str, Any]]:
+    """Get all rubric questions with their judge prompts for multi-judge evaluation.
+
+    Returns a list of dicts, each containing:
+    - judge_name: The derived judge name (e.g., "helpful_judge")
+    - judge_prompt: The prompt for this specific criterion
+    - judge_type: 'likert', 'binary', or 'freeform'
+    - question_id: The question ID (e.g., "q_1")
+    - title: The question title
+    """
+    rubric = self.get_rubric(workshop_id)
+    if not rubric:
+      return []
+
+    questions = self._parse_rubric_questions(rubric.question)
+    if not questions:
+      # Single question rubric (legacy format)
+      questions = [{
+        'id': 'q_1',
+        'title': rubric.question.split(':')[0].strip() if ':' in rubric.question else 'Response Quality',
+        'description': rubric.question,
+        'judge_type': rubric.judge_type or 'likert',
+      }]
+
+    result = []
+    for question in questions:
+      title = question.get('title', 'Response Quality')
+      description = question.get('description', '')
+      judge_type = question.get('judge_type', 'likert')
+      question_id = question.get('id', 'q_1')
+
+      # Derive judge name from title
+      import re
+      snake_case = re.sub(r'[^a-z0-9]+', '_', title.lower()).strip('_')
+      judge_name = f"{snake_case}_judge"
+
+      # Build prompt for this single criterion
+      prompt_parts = []
+      prompt_parts.append("You are an expert evaluator. Your task is to evaluate the quality of AI-generated responses based on a specific criterion.")
+      prompt_parts.append("")
+      prompt_parts.append("## Input")
+      prompt_parts.append("Request: {{ inputs }}")
+      prompt_parts.append("Response: {{ outputs }}")
+      prompt_parts.append("")
+      prompt_parts.append("## Evaluation Criterion")
+      prompt_parts.append(f"**Title:** {title}")
+      if description:
+        prompt_parts.append(f"**Description:** {description}")
+      prompt_parts.append("")
+
+      # Add rating instructions based on judge type
+      # NOTE: Do NOT add custom output format instructions here - MLflow InstructionsJudge
+      # expects JSON output with "result" and "rationale" fields, handled automatically
+      if judge_type == 'binary':
+        binary_labels = rubric.binary_labels or {'pass': 'Pass', 'fail': 'Fail'}
+        pass_label = binary_labels.get('pass', 'Pass')
+        fail_label = binary_labels.get('fail', 'Fail')
+        prompt_parts.append("## Rating Instructions")
+        prompt_parts.append("Provide a binary rating:")
+        prompt_parts.append(f"- 1 ({pass_label}): The response meets the criterion")
+        prompt_parts.append(f"- 0 ({fail_label}): The response does not meet the criterion")
+      else:
+        # Likert scale
+        rating_scale = rubric.rating_scale or 5
+        prompt_parts.append("## Rating Instructions")
+        prompt_parts.append(f"Rate the response on a scale of 1 to {rating_scale}:")
+        prompt_parts.append("- 1: Very poor - Does not meet the criterion at all")
+        prompt_parts.append("- 2: Poor - Barely meets the criterion")
+        prompt_parts.append("- 3: Acceptable - Partially meets the criterion")
+        prompt_parts.append("- 4: Good - Mostly meets the criterion")
+        prompt_parts.append("- 5: Excellent - Fully meets the criterion")
+
+      result.append({
+        'judge_name': judge_name,
+        'judge_prompt': "\n".join(prompt_parts),
+        'judge_type': judge_type,
+        'question_id': question_id,
+        'title': title,
+      })
+
+    return result
+
   # Annotation operations
   def add_annotation(self, workshop_id: str, annotation_data: AnnotationCreate) -> Annotation:
     """Add an annotation. If a duplicate exists, update the existing one."""
@@ -1401,18 +1646,29 @@ class DatabaseService:
     snake_case = re.sub(r'[^a-z0-9]+', '_', title.lower()).strip('_')
     return f"{snake_case}_judge" if snake_case else "workshop_judge"
 
-  def _sync_annotation_with_mlflow(self, workshop_id: str, annotation_db: AnnotationDB) -> None:
+  def _sync_annotation_with_mlflow(self, workshop_id: str, annotation_db: AnnotationDB) -> dict:
     """Ensure MLflow trace carries SME tag + feedback once an annotation is captured.
-    
+
     Logs ALL ratings (one per rubric question) as separate MLflow feedback entries,
     with judge names derived from the rubric question titles.
+
+    Returns:
+      Dict with 'logged' and 'skipped' counts
     """
+    result = {'logged': 0, 'skipped': 0, 'error': None}
+
     if not annotation_db or not getattr(annotation_db, 'trace', None):
-      return
+      logger.warning("_sync_annotation_with_mlflow: annotation or trace is None")
+      result['error'] = 'annotation or trace is None'
+      return result
 
     mlflow_trace_id = getattr(annotation_db.trace, 'mlflow_trace_id', None)
     if not mlflow_trace_id:
-      return
+      logger.warning(f"⚠️ _sync_annotation_with_mlflow: trace {annotation_db.trace_id[:8] if annotation_db.trace_id else 'None'}... has no mlflow_trace_id")
+      result['error'] = 'no mlflow_trace_id'
+      return result
+
+    logger.info(f"🔄 _sync_annotation_with_mlflow: syncing annotation to MLflow trace {mlflow_trace_id[:20]}...")
 
     config = (
       self.db.query(MLflowIntakeConfigDB)
@@ -1421,7 +1677,8 @@ class DatabaseService:
     )
     if not config or not config.databricks_host or not config.experiment_id:
       logger.debug('Skipping MLflow sync: config missing for workshop %s', workshop_id)
-      return
+      result['error'] = 'config missing'
+      return result
 
     databricks_token = token_storage.get_token(workshop_id)
     if not databricks_token:
@@ -1430,14 +1687,16 @@ class DatabaseService:
         token_storage.store_token(workshop_id, databricks_token)
     if not databricks_token:
       logger.debug('Skipping MLflow sync: token missing for workshop %s', workshop_id)
-      return
+      result['error'] = 'token missing'
+      return result
 
     try:
       import mlflow
       from mlflow.entities import AssessmentSource, AssessmentSourceType
     except ImportError:
       logger.warning('MLflow is not available; cannot sync annotation feedback.')
-      return
+      result['error'] = 'mlflow not available'
+      return result
 
     os.environ['DATABRICKS_HOST'] = config.databricks_host.rstrip('/')
     os.environ['DATABRICKS_TOKEN'] = databricks_token
@@ -1450,19 +1709,27 @@ class DatabaseService:
       mlflow.set_experiment(experiment_id=config.experiment_id)
     except Exception as exc:
       logger.warning('Failed to set MLflow experiment %s: %s', config.experiment_id, exc)
-      return
+      result['error'] = f'failed to set experiment: {exc}'
+      return result
 
     set_trace_tag = getattr(mlflow, 'set_trace_tag', None)
+    # Tag with 'align' label for alignment after human annotation
     tags = {
-      'label': 'jbws',
+      'label': 'align',
       'workshop_id': workshop_id,
     }
     if set_trace_tag:
       for key, value in tags.items():
-        try:
-          set_trace_tag(trace_id=mlflow_trace_id, key=key, value=value)
-        except Exception as exc:
-          logger.warning('Failed to set MLflow trace tag %s for %s: %s', key, mlflow_trace_id, exc)
+        # Use retry logic for tagging - bind variables via default args
+        def _set_tag(_tid=mlflow_trace_id, _key=key, _val=value, _set_fn=set_trace_tag):
+          _set_fn(trace_id=_tid, key=_key, value=_val)
+          return True
+
+        _retry_mlflow_operation(
+          _set_tag,
+          max_retries=3,
+          description=f"set_trace_tag({key}) for {mlflow_trace_id[:12]}..."
+        )
     else:
       logger.debug('mlflow.set_trace_tag not available; skip tagging for trace %s', mlflow_trace_id)
 
@@ -1562,62 +1829,76 @@ class DatabaseService:
           skipped_count += 1
           continue
         
-        try:
+        # Use retry logic for MLflow API call
+        rationale_for_this = rationale if logged_count == 0 else None
+        # Bind loop variables via default args to avoid closure issues
+        def _log_feedback(_tid=mlflow_trace_id, _name=judge_name, _val=rating_value, _src=source, _rat=rationale_for_this):
           mlflow.log_feedback(
-            trace_id=mlflow_trace_id,
-            name=judge_name,
-            value=rating_value,
-            source=source,
-            rationale=rationale if logged_count == 0 else None,  # Only attach rationale to first
+            trace_id=_tid,
+            name=_name,
+            value=_val,
+            source=_src,
+            rationale=_rat,
           )
+          return True
+
+        api_result = _retry_mlflow_operation(
+          _log_feedback,
+          max_retries=3,
+          description=f"log_feedback({judge_name}) for trace {mlflow_trace_id[:12]}..."
+        )
+        if api_result:
           logged_count += 1
           logger.info(f"Logged MLflow feedback: {judge_name}={rating_value} for trace {mlflow_trace_id}")
-        except Exception as exc:
-          # Check if it's the 50 limit error
-          if "maximum allowed assessments" in str(exc):
-            logger.warning(f"Trace {mlflow_trace_id[:12]}... hit 50 assessment limit, skipping {judge_name}")
-          else:
-            logger.warning('Failed to log MLflow feedback %s for trace %s: %s', judge_name, mlflow_trace_id, exc)
-      
+
       if logged_count > 0 or skipped_count > 0:
         logger.info(f"MLflow sync for trace {mlflow_trace_id[:12]}...: logged={logged_count}, skipped={skipped_count}")
-        return
-    
+        return {'logged': logged_count, 'skipped': skipped_count, 'error': None}
+
     # Fallback: log legacy single rating if no ratings dict
     if annotation_db.rating is not None:
       # Get the workshop's judge_name as fallback
       workshop_db = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
       judge_name = workshop_db.judge_name if workshop_db and workshop_db.judge_name else 'workshop_judge'
-      
+
       # Skip if THIS USER already has this assessment
       if (judge_name, current_user_id) in existing_assessments:
         logger.info(f"✓ Skipping legacy {judge_name} for user {current_user_id} - already exists on trace {mlflow_trace_id[:12]}...")
-        return
-      
-      try:
+        return {'logged': 0, 'skipped': 1, 'error': None}
+
+      # Use retry logic for legacy rating
+      rating_val = annotation_db.rating
+      def _log_legacy_feedback(_tid=mlflow_trace_id, _name=judge_name, _val=rating_val, _src=source, _rat=rationale):
         mlflow.log_feedback(
-          trace_id=mlflow_trace_id,
-          name=judge_name,
-          value=annotation_db.rating,
-          source=source,
-          rationale=rationale,
+          trace_id=_tid,
+          name=_name,
+          value=_val,
+          source=_src,
+          rationale=_rat,
         )
-      except Exception as exc:
-        if "maximum allowed assessments" in str(exc):
-          logger.warning(f"Trace {mlflow_trace_id[:12]}... hit 50 assessment limit")
-        else:
-          logger.warning('Failed to log MLflow feedback for trace %s: %s', mlflow_trace_id, exc)
+        return True
+
+      api_result = _retry_mlflow_operation(
+        _log_legacy_feedback,
+        max_retries=3,
+        description=f"log_feedback(legacy {judge_name}) for trace {mlflow_trace_id[:12]}..."
+      )
+      if api_result:
+        logger.info(f"Logged MLflow legacy feedback: {judge_name}={rating_val} for trace {mlflow_trace_id}")
+        return {'logged': 1, 'skipped': 0, 'error': None}
+
+    return {'logged': 0, 'skipped': 0, 'error': 'no ratings to sync'}
 
   def resync_annotations_to_mlflow(self, workshop_id: str) -> Dict[str, Any]:
     """Re-sync all annotations to MLflow with judge names derived from rubric questions.
-    
+
     This is useful when rubric question titles change after annotations were created.
     Creates new MLflow feedback entries with the correct judge names (one per rubric question).
     """
     workshop_db = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
     if not workshop_db:
       return {'error': 'Workshop not found', 'synced': 0}
-    
+
     # Get rubric questions to derive judge names
     rubric_db = self.db.query(RubricDB).filter(RubricDB.workshop_id == workshop_id).first()
     judge_names = []
@@ -1627,12 +1908,12 @@ class DatabaseService:
       # Support both new delimiter (|||QUESTION_SEPARATOR|||) and legacy delimiter (---)
       QUESTION_DELIMITER_NEW = '|||QUESTION_SEPARATOR|||'
       QUESTION_DELIMITER_LEGACY = '---'
-      
+
       if QUESTION_DELIMITER_NEW in rubric_db.question:
         questions = rubric_db.question.split(QUESTION_DELIMITER_NEW)
       else:
         questions = rubric_db.question.split(QUESTION_DELIMITER_LEGACY)
-      
+
       for q in questions:
         q = q.strip()
         if not q:
@@ -1645,13 +1926,19 @@ class DatabaseService:
         title = content_part[:colon_idx].strip() if colon_idx > 0 else content_part.strip()
         question_titles.append(title)
         judge_names.append(self._derive_judge_name_from_title(title))
-    
+
     # Get all annotations
     annotations = self.get_annotations(workshop_id)
-    
+
     synced_count = 0
+    total_logged = 0
+    total_skipped_existing = 0
+    skipped_no_mlflow_id = 0
+    skipped_no_trace = 0
+    skipped_no_ratings = 0
+    sync_errors = []
     errors = []
-    
+
     # Log summary of what's in annotations for debugging
     ratings_keys_found = set()
     for annotation in annotations:
@@ -1660,25 +1947,52 @@ class DatabaseService:
     logger.info(f"📊 Found rating keys across all annotations: {ratings_keys_found}")
     logger.info(f"📊 Expected judge names: {judge_names}")
     logger.info(f"📊 Expected question titles: {question_titles}")
-    
+
     for annotation in annotations:
       try:
         # Get the annotation DB record to access trace relationship
         annotation_db = self.db.query(AnnotationDB).filter(AnnotationDB.id == annotation.id).first()
-        if annotation_db:
-          logger.info(f"📊 Syncing annotation: trace_id={annotation_db.trace_id[:8] if annotation_db.trace_id else 'None'}..., ratings={annotation_db.ratings}, legacy_rating={annotation_db.rating}")
-          self._sync_annotation_with_mlflow(workshop_id, annotation_db)
-          synced_count += 1
+        if not annotation_db:
+          skipped_no_trace += 1
+          continue
+
+        # Check if trace has mlflow_trace_id
+        if not annotation_db.trace or not annotation_db.trace.mlflow_trace_id:
+          skipped_no_mlflow_id += 1
+          logger.warning(f"⚠️ Annotation {annotation_db.id[:8]}... has no mlflow_trace_id, skipping MLflow sync")
+          continue
+
+        # Check if annotation has ratings
+        if not annotation_db.ratings and annotation_db.rating is None:
+          skipped_no_ratings += 1
+          logger.warning(f"⚠️ Annotation {annotation_db.id[:8]}... has no ratings, skipping MLflow sync")
+          continue
+
+        logger.info(f"📊 Syncing annotation: trace_id={annotation_db.trace_id[:8]}..., mlflow_id={annotation_db.trace.mlflow_trace_id[:20]}..., ratings={annotation_db.ratings}, legacy_rating={annotation_db.rating}")
+        sync_result = self._sync_annotation_with_mlflow(workshop_id, annotation_db)
+        if sync_result:
+          total_logged += sync_result.get('logged', 0)
+          total_skipped_existing += sync_result.get('skipped', 0)
+          if sync_result.get('error'):
+            sync_errors.append(f"Annotation {annotation.id}: {sync_result['error']}")
+          if sync_result.get('logged', 0) > 0 or sync_result.get('skipped', 0) > 0:
+            synced_count += 1
       except Exception as e:
         errors.append(f"Annotation {annotation.id}: {str(e)}")
         logger.warning('Failed to resync annotation %s: %s', annotation.id, e)
-    
+
     return {
       'synced': synced_count,
       'total': len(annotations),
+      'total_logged': total_logged,
+      'total_skipped_existing': total_skipped_existing,
+      'skipped_no_mlflow_id': skipped_no_mlflow_id,
+      'skipped_no_trace': skipped_no_trace,
+      'skipped_no_ratings': skipped_no_ratings,
       'judge_names': judge_names,
       'question_titles': question_titles,
       'ratings_keys_found': list(ratings_keys_found),
+      'sync_errors': sync_errors if sync_errors else None,
       'errors': errors if errors else None
     }
 
@@ -1795,24 +2109,31 @@ class DatabaseService:
         skipped_count += 1
         continue
       
-      try:
+      # Use retry logic for AI evaluation feedback
+      reasoning = eval_result.get('reasoning')
+      rating_float = float(predicted_rating)
+      def _log_ai_feedback(_tid=mlflow_trace_id, _name=judge_name, _val=rating_float, _src=source, _rat=reasoning):
         mlflow.log_feedback(
-          trace_id=mlflow_trace_id,
-          name=judge_name,
-          value=float(predicted_rating),
-          source=source,
-          rationale=eval_result.get('reasoning'),
+          trace_id=_tid,
+          name=_name,
+          value=_val,
+          source=_src,
+          rationale=_rat,
         )
+        return True
+
+      result = _retry_mlflow_operation(
+        _log_ai_feedback,
+        max_retries=3,
+        description=f"log_ai_feedback({judge_name}) for trace {mlflow_trace_id[:12]}..."
+      )
+      if result:
         synced_count += 1
         logger.info(f"Logged MLflow AI feedback: {judge_name}={predicted_rating} for trace {mlflow_trace_id}")
-      except Exception as exc:
-        if "maximum allowed assessments" in str(exc):
-          logger.warning(f"Trace {mlflow_trace_id[:12]}... hit 50 assessment limit for AI eval")
-        else:
-          error_msg = f"Failed to log AI feedback for trace {mlflow_trace_id}: {exc}"
-          errors.append(error_msg)
-          logger.warning(error_msg)
-    
+      else:
+        error_msg = f"Failed to log AI feedback for trace {mlflow_trace_id} after retries"
+        errors.append(error_msg)
+
     logger.info(f"Synced {synced_count} AI evaluations to MLflow for judge '{judge_name}' (skipped {skipped_count} existing)")
     return {
       'synced': synced_count,
@@ -1821,6 +2142,97 @@ class DatabaseService:
       'judge_name': judge_name,
       'errors': errors if errors else None
     }
+
+  def tag_traces_for_evaluation(self, workshop_id: str, trace_ids: List[str], tag_type: str = 'eval') -> Dict[str, Any]:
+    """Tag MLflow traces with a label for auto-evaluation.
+
+    Args:
+        workshop_id: The workshop ID
+        trace_ids: List of workshop trace IDs to tag
+        tag_type: The tag value (default 'eval')
+
+    Returns:
+        Dict with 'tagged' count and 'failed' list
+    """
+    # Get MLflow config
+    config = (
+      self.db.query(MLflowIntakeConfigDB)
+      .filter(MLflowIntakeConfigDB.workshop_id == workshop_id)
+      .first()
+    )
+    if not config:
+      logger.warning('Skipping MLflow tagging: config missing for workshop %s', workshop_id)
+      return {'tagged': 0, 'failed': trace_ids, 'error': 'MLflow config missing'}
+
+    # Get token from token storage
+    databricks_token = token_storage.get_token(workshop_id)
+    if not databricks_token:
+      logger.warning('Skipping MLflow tagging: token missing for workshop %s', workshop_id)
+      return {'tagged': 0, 'failed': trace_ids, 'error': 'Databricks token missing'}
+
+    try:
+      import mlflow
+    except ImportError:
+      logger.warning('MLflow is not available; cannot tag traces.')
+      return {'tagged': 0, 'failed': trace_ids, 'error': 'MLflow not available'}
+
+    # Set up MLflow credentials
+    os.environ['DATABRICKS_HOST'] = config.databricks_host.rstrip('/')
+    os.environ['DATABRICKS_TOKEN'] = databricks_token
+    os.environ.pop('DATABRICKS_CLIENT_ID', None)
+    os.environ.pop('DATABRICKS_CLIENT_SECRET', None)
+
+    mlflow.set_tracking_uri('databricks')
+
+    try:
+      mlflow.set_experiment(experiment_id=config.experiment_id)
+    except Exception as exc:
+      logger.warning('Failed to set MLflow experiment %s: %s', config.experiment_id, exc)
+      return {'tagged': 0, 'failed': trace_ids, 'error': f'Failed to set experiment: {exc}'}
+
+    # Get set_trace_tag function
+    set_trace_tag = getattr(mlflow, 'set_trace_tag', None)
+    if not set_trace_tag:
+      logger.warning('mlflow.set_trace_tag not available')
+      return {'tagged': 0, 'failed': trace_ids, 'error': 'set_trace_tag not available'}
+
+    # Get traces from database to get their MLflow trace IDs
+    db_traces = self.db.query(TraceDB).filter(
+      TraceDB.workshop_id == workshop_id,
+      TraceDB.id.in_(trace_ids)
+    ).all()
+
+    trace_id_map = {t.id: t.mlflow_trace_id for t in db_traces if t.mlflow_trace_id}
+
+    tagged = []
+    failed = []
+
+    for trace_id in trace_ids:
+      mlflow_trace_id = trace_id_map.get(trace_id)
+      if not mlflow_trace_id:
+        logger.debug(f"No MLflow trace ID for workshop trace {trace_id}")
+        failed.append(trace_id)
+        continue
+
+      # Use retry logic for tagging - bind variables via default args
+      def _tag_trace(_tid=mlflow_trace_id, _tag=tag_type, _wid=workshop_id, _set_tag=set_trace_tag):
+        _set_tag(trace_id=_tid, key='label', value=_tag)
+        _set_tag(trace_id=_tid, key='workshop_id', value=_wid)
+        return True
+
+      result = _retry_mlflow_operation(
+        _tag_trace,
+        max_retries=3,
+        description=f"tag_trace for {mlflow_trace_id[:12]}..."
+      )
+      if result:
+        tagged.append(trace_id)
+        logger.debug(f"Tagged trace {mlflow_trace_id} with label={tag_type}")
+      else:
+        failed.append(trace_id)
+
+    logger.info(f"Tagged {len(tagged)} traces for {tag_type}, {len(failed)} failed")
+    return {'tagged': len(tagged), 'failed': failed}
 
   def get_annotations(self, workshop_id: str, user_id: Optional[str] = None) -> List[Annotation]:
     """Get annotations for a workshop, optionally filtered by user."""
@@ -1865,6 +2277,7 @@ class DatabaseService:
         'user_id': annotation.user_id,
         'user_name': user.name,
         'user_email': user.email,
+        'user_role': user.role,  # Include user role for SME/participant distinction
         'rating': annotation.rating,
         'ratings': annotation.ratings,  # Include per-metric ratings dictionary
         'comment': annotation.comment,
@@ -2642,28 +3055,44 @@ class DatabaseService:
     is_binary = judge_type_str == 'binary'
     logger.info(f"Judge type for evaluation validation: {judge_type_str}, is_binary={is_binary}")
 
-    # Add new evaluations with validation
+    # Add new evaluations - ALWAYS save ratings, never reject them
     for evaluation in evaluations:
-      # Validate and normalize predicted_rating based on judge type
       validated_predicted_rating = evaluation.predicted_rating
+
+      # Log what we're saving for debugging
+      if evaluation == evaluations[0]:
+        logger.info(f"Storing evaluation: trace={evaluation.trace_id[:8]}..., predicted_rating={validated_predicted_rating}, is_binary={is_binary}")
+
       if validated_predicted_rating is not None:
+        # Normalize the rating value
+        try:
+          validated_predicted_rating = float(validated_predicted_rating)
+        except (ValueError, TypeError):
+          logger.warning(f"Could not convert predicted_rating {evaluation.predicted_rating} to float for trace {evaluation.trace_id[:8]}... - keeping as-is")
+
+        # Apply appropriate normalization based on detected judge type
         if is_binary:
-          # Binary: only 0 or 1 are valid - reject anything else
-          if validated_predicted_rating == 0:
+          # Binary: normalize to 0 or 1
+          if validated_predicted_rating == 0 or validated_predicted_rating == 0.0:
             validated_predicted_rating = 0.0
-          elif validated_predicted_rating == 1:
+          elif validated_predicted_rating == 1 or validated_predicted_rating == 1.0:
             validated_predicted_rating = 1.0
-          else:
-            # Reject invalid binary values - set to None
+          elif 1 <= validated_predicted_rating <= 5:
+            # Convert Likert-style rating to binary using threshold of 3
             original_value = validated_predicted_rating
-            validated_predicted_rating = None
-            logger.error(f"Invalid binary predicted_rating {original_value} for trace {evaluation.trace_id[:8]}... - must be 0 or 1, rejecting evaluation")
+            validated_predicted_rating = 1.0 if validated_predicted_rating >= 3 else 0.0
+            logger.info(f"Converting Likert rating {original_value} to binary {validated_predicted_rating} for trace {evaluation.trace_id[:8]}...")
+          else:
+            # Unknown value - convert to binary based on threshold
+            original_value = validated_predicted_rating
+            validated_predicted_rating = 1.0 if validated_predicted_rating > 0.5 else 0.0
+            logger.info(f"Converting unknown rating {original_value} to binary {validated_predicted_rating} for trace {evaluation.trace_id[:8]}...")
         else:
-          # Likert: clamp to 1-5 range
-          if not (1 <= validated_predicted_rating <= 5):
+          # Likert: clamp to 1-5 range, NEVER reject
+          if validated_predicted_rating < 1 or validated_predicted_rating > 5:
             original_value = validated_predicted_rating
             validated_predicted_rating = max(1.0, min(5.0, validated_predicted_rating))
-            logger.warning(f"Likert predicted_rating {original_value} out of range for trace {evaluation.trace_id[:8]}... - clamped to {validated_predicted_rating}")
+            logger.info(f"Likert rating {original_value} clamped to {validated_predicted_rating} for trace {evaluation.trace_id[:8]}...")
       
       db_evaluation = JudgeEvaluationDB(
         id=evaluation.id,
@@ -2703,6 +3132,47 @@ class DatabaseService:
     """Clear all evaluation results for a specific judge prompt."""
     self.db.query(JudgeEvaluationDB).filter(and_(JudgeEvaluationDB.workshop_id == workshop_id, JudgeEvaluationDB.prompt_id == prompt_id)).delete()
     self.db.commit()
+
+  def get_latest_evaluations(self, workshop_id: str) -> List[JudgeEvaluation]:
+    """Get the most recent evaluation results for a workshop (from any prompt).
+    
+    This returns evaluations from the most recently created prompt that has evaluations.
+    Useful for getting auto-evaluation results without knowing the prompt ID.
+    """
+    # Get the latest prompt with evaluations
+    latest_prompt = (
+      self.db.query(JudgePromptDB)
+      .filter(JudgePromptDB.workshop_id == workshop_id)
+      .order_by(JudgePromptDB.created_at.desc())
+      .first()
+    )
+    
+    if not latest_prompt:
+      return []
+    
+    # Get evaluations for this prompt
+    db_evaluations = (
+      self.db.query(JudgeEvaluationDB)
+      .filter(and_(
+        JudgeEvaluationDB.workshop_id == workshop_id,
+        JudgeEvaluationDB.prompt_id == latest_prompt.id
+      ))
+      .all()
+    )
+    
+    return [
+      JudgeEvaluation(
+        id=db_eval.id,
+        workshop_id=db_eval.workshop_id,
+        prompt_id=db_eval.prompt_id,
+        trace_id=db_eval.trace_id,
+        predicted_rating=db_eval.predicted_rating,
+        human_rating=db_eval.human_rating,
+        confidence=db_eval.confidence,
+        reasoning=db_eval.reasoning,
+      )
+      for db_eval in db_evaluations
+    ]
 
   # User trace order operations
   def get_user_trace_order(self, workshop_id: str, user_id: str) -> Optional[UserTraceOrder]:

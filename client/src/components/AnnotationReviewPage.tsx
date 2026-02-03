@@ -35,14 +35,15 @@ const convertTraceToTraceData = (trace: Trace): TraceData => ({
   mlflow_trace_id: trace.mlflow_trace_id || undefined
 });
 
-// Parse rubric question from API format
-const parseRubricQuestions = (rubric: any) => {
+// Parse rubric question from API format - uses the proper parser that includes judgeType
+const parseRubricQuestionsWithType = (rubric: any) => {
   if (!rubric || !rubric.question) return [];
   
   return parseQuestions(rubric.question).map((q, index) => ({
-    id: `${rubric.id}_${index}`,
+    id: q.id,
     title: q.title,
-    description: q.description
+    description: q.description,
+    judgeType: q.judgeType
   }));
 };
 
@@ -83,7 +84,7 @@ export function AnnotationReviewPage({ onBack }: AnnotationReviewPageProps) {
   
   const currentTrace = annotatedTraces[currentTraceIndex];
   const currentAnnotation = userAnnotations?.find(ann => ann.trace_id === currentTrace?.id);
-  const questions = parseRubricQuestions(rubric);
+  const questions = parseRubricQuestionsWithType(rubric);
   
   // Navigation
   const prevTrace = () => {
@@ -98,7 +99,7 @@ export function AnnotationReviewPage({ onBack }: AnnotationReviewPageProps) {
     }
   };
   
-  // Get rating display
+  // Get rating display for Likert scale
   const getRatingStars = (rating: number) => {
     return Array.from({ length: 5 }, (_, i) => (
       <Star
@@ -110,6 +111,26 @@ export function AnnotationReviewPage({ onBack }: AnnotationReviewPageProps) {
         }`}
       />
     ));
+  };
+  
+  // Get rating display for binary scale
+  const getBinaryDisplay = (rating: number) => {
+    if (rating === 1) {
+      return <span className="text-green-600 font-medium">✓ Pass</span>;
+    } else {
+      return <span className="text-red-600 font-medium">✗ Fail</span>;
+    }
+  };
+  
+  // Get the rating for a specific question from the annotation
+  const getQuestionRating = (questionId: string): number => {
+    // Check if annotation has per-question ratings
+    if (currentAnnotation?.ratings && typeof currentAnnotation.ratings === 'object') {
+      const rating = (currentAnnotation.ratings as Record<string, number>)[questionId];
+      if (rating !== undefined) return rating;
+    }
+    // Fallback to legacy rating
+    return currentAnnotation?.rating || 0;
   };
   
   if (tracesLoading || rubricLoading) {
@@ -218,25 +239,43 @@ export function AnnotationReviewPage({ onBack }: AnnotationReviewPageProps) {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {questions.map((question, index) => (
-                    <div key={question.id} className="p-4 bg-gray-50 rounded-lg">
-                      <div className="font-medium text-gray-900 mb-1">
-                        {question.title}
-                      </div>
-                      <div className="text-sm text-gray-600 mb-3">
-                        {question.description}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-700">Your Rating:</span>
-                        <div className="flex items-center gap-1">
-                          {getRatingStars(currentAnnotation?.rating || 0)}
+                  {questions.map((question, index) => {
+                    const rating = getQuestionRating(question.id);
+                    const isBinary = question.judgeType === 'binary';
+                    const isFreeform = question.judgeType === 'freeform';
+                    
+                    return (
+                      <div key={question.id} className="p-4 bg-gray-50 rounded-lg">
+                        <div className="font-medium text-gray-900 mb-1">
+                          {question.title}
+                          {isBinary && <Badge variant="outline" className="ml-2 text-xs">Pass/Fail</Badge>}
+                          {isFreeform && <Badge variant="outline" className="ml-2 text-xs">Freeform</Badge>}
                         </div>
-                        <Badge variant="outline">
-                          {currentAnnotation?.rating || 0}/5
-                        </Badge>
+                        <div className="text-sm text-gray-600 mb-3">
+                          {question.description}
+                        </div>
+                        {!isFreeform && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-gray-700">Your Rating:</span>
+                            {isBinary ? (
+                              // Binary display: Pass/Fail
+                              getBinaryDisplay(rating)
+                            ) : (
+                              // Likert display: Stars
+                              <>
+                                <div className="flex items-center gap-1">
+                                  {getRatingStars(rating)}
+                                </div>
+                                <Badge variant="outline">
+                                  {rating}/5
+                                </Badge>
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </CardContent>
               </Card>
               

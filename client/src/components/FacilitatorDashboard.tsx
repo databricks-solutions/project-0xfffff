@@ -191,21 +191,57 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
   const tracesWithAnnotations = annotations ? new Set(annotations.map(a => a.trace_id)) : new Set();
   const annotationProgress = annotationTraceCount > 0 ? (tracesWithAnnotations.size / annotationTraceCount) * 100 : 0;
 
+  // Determine effective judge type from parsed rubric questions (per-question type takes precedence)
+  // This must be computed before annotationMetrics since it depends on this
+  const effectiveJudgeType = React.useMemo(() => {
+    if (!rubric?.question) return rubric?.judge_type || 'likert';
+    
+    // Parse the rubric questions to get per-question judge types
+    const questions = parseRubricQuestions(rubric.question);
+    if (questions.length > 0) {
+      return questions[0].judgeType || rubric?.judge_type || 'likert';
+    }
+    return rubric?.judge_type || 'likert';
+  }, [rubric]);
+
   // Annotation metrics for focused view
   const annotationMetrics = React.useMemo(() => {
     if (!annotations) return { smeCount: 0, participantCount: 0, avgRating: 0, ratingDistribution: {} };
     
-    // Separate SME and participant annotations (role data stored with each annotation)
-    const smeAnnotations = annotations.filter(a => a.user_id.includes('sme') || a.user_id.includes('SME'));
-    const participantAnnotations = annotations.filter(a => !a.user_id.includes('sme') && !a.user_id.includes('SME'));
+    // Use annotationsWithUserDetails if available (has user_role), otherwise fall back to basic annotations
+    const annotationsToUse = annotationsWithUserDetails || annotations;
     
-    // Calculate average rating
-    const avgRating = annotations.length > 0 ? 
-      annotations.reduce((sum, a) => sum + a.rating, 0) / annotations.length : 0;
+    // Separate SME and participant annotations using actual role data
+    const smeAnnotations = annotationsToUse.filter((a: any) => a.user_role === 'sme');
+    const participantAnnotations = annotationsToUse.filter((a: any) => a.user_role !== 'sme');
     
-    // Rating distribution
-    const ratingDistribution = annotations.reduce((dist, a) => {
-      dist[a.rating] = (dist[a.rating] || 0) + 1;
+    // Helper to get the actual rating from annotation based on judge type
+    const getRating = (a: any): number | null => {
+      if (effectiveJudgeType === 'binary') {
+        // For binary, get from ratings object first
+        if (a.ratings && typeof a.ratings === 'object') {
+          const values = Object.values(a.ratings) as number[];
+          for (const v of values) {
+            if (v === 0 || v === 1) return v;
+          }
+        }
+        // Fallback to legacy rating only if it's 0 or 1
+        if (a.rating === 0 || a.rating === 1) return a.rating;
+        return null; // Invalid binary rating
+      } else {
+        // For likert, use legacy rating field
+        return a.rating;
+      }
+    };
+    
+    // Calculate average rating (only for valid ratings)
+    const validRatings = annotationsToUse.map(getRating).filter(r => r !== null) as number[];
+    const avgRating = validRatings.length > 0 ? 
+      validRatings.reduce((sum, r) => sum + r, 0) / validRatings.length : 0;
+    
+    // Rating distribution (based on actual ratings)
+    const ratingDistribution = validRatings.reduce((dist, rating) => {
+      dist[rating] = (dist[rating] || 0) + 1;
       return dist;
     }, {} as Record<number, number>);
     
@@ -215,7 +251,7 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
       avgRating: Math.round(avgRating * 10) / 10,
       ratingDistribution
     };
-  }, [annotations]);
+  }, [annotations, annotationsWithUserDetails, effectiveJudgeType]);
 
   // Phase advancement logic
   const getNextPhase = () => {
@@ -304,16 +340,19 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
     
     setIsAddingTraces(true);
     try {
+      const requestBody = { 
+        additional_count: count,
+        phase: phase === 'annotation' ? 'annotation' : 'discovery'
+      };
+      console.log('[FacilitatorDashboard] Adding traces:', requestBody);
+      
       // Use unified endpoint with explicit phase parameter
       const response = await fetch(`/workshops/${workshopId}/add-traces`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
-          additional_count: count,
-          phase: phase === 'annotation' ? 'annotation' : 'discovery'
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
@@ -322,6 +361,7 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
       }
 
       const result = await response.json();
+      console.log('[FacilitatorDashboard] Add traces response:', result);
       
       // Clear the appropriate input and refresh data
       setCountValue('');
@@ -332,7 +372,12 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
       queryClient.invalidateQueries({ queryKey: ['findings', workshopId] });
       queryClient.invalidateQueries({ queryKey: ['annotations', workshopId] });
       
-      toast.success(`Successfully added ${result.traces_added} traces to ${phaseLabel}! (Total: ${result.total_active_traces})`);
+      // Show success message with auto-evaluation status for annotation phase
+      if (phase === 'annotation' && result.auto_evaluation_started) {
+        toast.success(`Added ${result.traces_added} traces to ${phaseLabel}. Auto-evaluation started in background.`);
+      } else {
+        toast.success(`Successfully added ${result.traces_added} traces to ${phaseLabel}! (Total: ${result.total_active_traces})`);
+      }
     } catch (error) {
       toast.error(`Failed to add traces: ${error.message}`);
     } finally {
@@ -621,10 +666,22 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                       {focusPhase === 'annotation' ? (
                         // Detailed annotation metrics when focused
                         <div className="space-y-2 text-xs">
-                          <div className="flex justify-between text-purple-600">
-                            <span>Average Rating:</span>
-                            <span className="font-medium">{annotationMetrics.avgRating}/5</span>
-                          </div>
+                          {/* Average Rating - adapt display for binary vs likert scale */}
+                          {effectiveJudgeType === 'binary' ? (
+                            <div className="flex justify-between text-purple-600">
+                              <span>Pass Rate:</span>
+                              <span className="font-medium">
+                                {annotations && annotations.length > 0 
+                                  ? `${Math.round((annotations.filter(a => a.rating === 1).length / annotations.length) * 100)}%`
+                                  : '0%'}
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="flex justify-between text-purple-600">
+                              <span>Average Rating:</span>
+                              <span className="font-medium">{annotationMetrics.avgRating}/{rubric?.rating_scale || 5}</span>
+                            </div>
+                          )}
                           <div className="flex justify-between text-purple-600">
                             <span>SME Annotations:</span>
                             <span className="font-medium">{annotationMetrics.smeCount}</span>
@@ -636,14 +693,33 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                           {Object.keys(annotationMetrics.ratingDistribution).length > 0 && (
                             <div className="pt-1 border-t border-purple-200">
                               <div className="text-purple-700 font-medium mb-1">Rating Distribution:</div>
-                              {[5, 4, 3, 2, 1].map(rating => (
-                                annotationMetrics.ratingDistribution[rating] && (
-                                  <div key={rating} className="flex justify-between">
-                                    <span>{rating}⭐:</span>
-                                    <span>{annotationMetrics.ratingDistribution[rating]}</span>
-                                  </div>
-                                )
-                              ))}
+                              {effectiveJudgeType === 'binary' ? (
+                                // Binary scale: show Pass/Fail
+                                <>
+                                  {annotationMetrics.ratingDistribution[1] !== undefined && (
+                                    <div className="flex justify-between">
+                                      <span className="text-green-600">✓ {rubric?.binary_labels?.pass || 'Pass'}:</span>
+                                      <span>{annotationMetrics.ratingDistribution[1]}</span>
+                                    </div>
+                                  )}
+                                  {annotationMetrics.ratingDistribution[0] !== undefined && (
+                                    <div className="flex justify-between">
+                                      <span className="text-red-600">✗ {rubric?.binary_labels?.fail || 'Fail'}:</span>
+                                      <span>{annotationMetrics.ratingDistribution[0]}</span>
+                                    </div>
+                                  )}
+                                </>
+                              ) : (
+                                // Likert scale: show star ratings
+                                [5, 4, 3, 2, 1].map(rating => (
+                                  annotationMetrics.ratingDistribution[rating] && (
+                                    <div key={rating} className="flex justify-between">
+                                      <span>{rating}⭐:</span>
+                                      <span>{annotationMetrics.ratingDistribution[rating]}</span>
+                                    </div>
+                                  )
+                                ))
+                              )}
                             </div>
                           )}
                         </div>

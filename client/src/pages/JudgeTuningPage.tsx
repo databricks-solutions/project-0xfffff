@@ -63,8 +63,8 @@ export function JudgeTuningPage() {
   const [prompts, setPrompts] = useState<JudgePrompt[]>([]);
   const [currentPrompt, setCurrentPrompt] = useState<string>('');
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
-  const [selectedEvaluationModel, setSelectedEvaluationModel] = useState<string>('GPT-5.1');
-  const [selectedAlignmentModel, setSelectedAlignmentModel] = useState<string>('GPT-5.1');
+  const [selectedEvaluationModel, setSelectedEvaluationModel] = useState<string>('Claude Opus 4.5');
+  const [selectedAlignmentModel, setSelectedAlignmentModel] = useState<string>('Claude Opus 4.5');
   const [evaluations, setEvaluations] = useState<JudgeEvaluation[]>([]);
   const [metrics, setMetrics] = useState<JudgePerformanceMetrics | null>(null);
   const [rubric, setRubric] = useState<Rubric | null>(null);
@@ -113,6 +113,15 @@ export function JudgeTuningPage() {
   // Evaluation mode: 'mlflow' or 'simple'
   const [evaluationMode, setEvaluationMode] = useState<'mlflow' | 'simple'>('mlflow');
   const [simpleEndpointName, setSimpleEndpointName] = useState<string>('databricks-claude-sonnet-4-5');
+  
+  // Auto-evaluation state (runs when annotation begins)
+  const [autoEvalStatus, setAutoEvalStatus] = useState<string>('not_started');
+  const [autoEvalJobId, setAutoEvalJobId] = useState<string | null>(null);
+  const [autoEvalDerivedPrompt, setAutoEvalDerivedPrompt] = useState<string | null>(null);
+  const [isPollingAutoEval, setIsPollingAutoEval] = useState(false);
+
+  // Run All Evaluations state
+  const [isRunningAllEvaluations, setIsRunningAllEvaluations] = useState(false);
   
   // Judge name derivation logic - based on selected question
   const judgeName = useMemo(() => {
@@ -229,11 +238,15 @@ export function JudgeTuningPage() {
       const template = defaultPromptTemplates[questionJudgeType];
       
       let customizedTemplate = template;
-      if (selectedQuestion.description) {
+      // Combine title and description for the rubric content
+      const rubricContent = selectedQuestion.title && selectedQuestion.description
+        ? `**${selectedQuestion.title}**\n${selectedQuestion.description}`
+        : selectedQuestion.description || selectedQuestion.title || '';
+      if (rubricContent) {
         customizedTemplate = template
-          .replace('{rubric}', selectedQuestion.description)
-          .replace('{criteria}', selectedQuestion.description)
-          .replace('{focus}', selectedQuestion.description);
+          .replace('{rubric}', rubricContent)
+          .replace('{criteria}', rubricContent)
+          .replace('{focus}', rubricContent);
       }
       
       setCurrentPrompt(customizedTemplate);
@@ -262,11 +275,13 @@ export function JudgeTuningPage() {
         }
       }
       
-      // No saved data - reset evaluation state
+      // No saved data - reset evaluation state for manual evaluations
+      // But preserve auto-evaluation results (they're global, not per-question)
       setHasEvaluated(false);
       setEvaluationComplete(false);
       setMetrics(null);
-      setEvaluations([]);
+      // Don't clear evaluations here - auto-eval results should persist across question switches
+      // setEvaluations([]);
       
       prevQuestionIndexRef.current = selectedQuestionIndex;
     }
@@ -278,6 +293,127 @@ export function JudgeTuningPage() {
       loadInitialData();
     }
   }, [workshopId]);
+
+  // Fetch auto-evaluation status and results on mount
+  // ALWAYS fetch results directly - don't depend only on status check
+  useEffect(() => {
+    if (!workshopId) return;
+
+    const fetchAutoEvalResults = async () => {
+      try {
+        console.log('[AutoEval] Fetching results for workshop:', workshopId);
+        const response = await fetch(`/workshops/${workshopId}/auto-evaluation-results`);
+        if (response.ok) {
+          const data = await response.json();
+          console.log('[AutoEval] Response:', { status: data.status, evalCount: data.evaluations?.length || 0, diagnostics: data.diagnostics });
+
+          // Set status from results endpoint
+          if (data.status) {
+            setAutoEvalStatus(data.status);
+          }
+          if (data.job_id) {
+            setAutoEvalJobId(data.job_id);
+          }
+          if (data.derived_prompt) {
+            setAutoEvalDerivedPrompt(data.derived_prompt);
+          }
+
+          if (data.evaluations && data.evaluations.length > 0) {
+            // Convert to expected format
+            const evalResults = data.evaluations.map((e: any) => ({
+              id: e.trace_id,
+              trace_id: e.trace_id,
+              mlflow_trace_id: e.mlflow_trace_id,
+              predicted_rating: e.predicted_rating,
+              human_rating: e.human_rating,
+              confidence: e.confidence,
+              reasoning: e.reasoning,
+            }));
+            console.log('[AutoEval] Setting evaluations:', evalResults.length, 'items');
+            console.log('[AutoEval] Sample evaluation:', evalResults[0]);
+            setEvaluations(evalResults);
+            setHasEvaluated(true);
+            setEvaluationComplete(evalResults.length >= 10);
+
+            if (data.metrics) {
+              setMetrics(data.metrics);
+            }
+          } else {
+            console.log('[AutoEval] No evaluations found in response');
+          }
+        } else {
+          console.log('[AutoEval] Response not ok:', response.status);
+        }
+      } catch (error) {
+        console.error('[AutoEval] Failed to fetch auto-evaluation results:', error);
+      }
+    };
+
+    // Fetch results immediately on mount
+    console.log('[AutoEval] useEffect triggered, workshopId:', workshopId);
+    fetchAutoEvalResults();
+  }, [workshopId]);
+
+  // Poll for auto-evaluation completion
+  useEffect(() => {
+    if (!workshopId || !isPollingAutoEval || autoEvalStatus !== 'running') {
+      return;
+    }
+    
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await fetch(`/workshops/${workshopId}/auto-evaluation-status`);
+        if (response.ok) {
+          const data = await response.json();
+          setAutoEvalStatus(data.status);
+          
+          // Add logs to alignment logs
+          if (data.logs && data.logs.length > 0) {
+            updateAlignmentLogs(prev => {
+              const newLogs = data.logs.filter((log: string) => !prev.includes(log));
+              return [...prev, ...newLogs];
+            });
+          }
+          
+          if (data.status === 'completed') {
+            setIsPollingAutoEval(false);
+            setIsRunningEvaluation(false);  // Stop the spinner
+            // Fetch results
+            const resultsResponse = await fetch(`/workshops/${workshopId}/auto-evaluation-results`);
+            if (resultsResponse.ok) {
+              const resultsData = await resultsResponse.json();
+              if (resultsData.evaluations && resultsData.evaluations.length > 0) {
+                const evalResults = resultsData.evaluations.map((e: any) => ({
+                  id: e.trace_id,
+                  trace_id: e.trace_id,
+                  mlflow_trace_id: e.mlflow_trace_id,
+                  predicted_rating: e.predicted_rating,
+                  human_rating: e.human_rating,
+                  confidence: e.confidence,
+                  reasoning: e.reasoning,
+                }));
+                setEvaluations(evalResults);
+                setHasEvaluated(true);
+                setEvaluationComplete(evalResults.length >= 10);
+                if (resultsData.metrics) {
+                  setMetrics(resultsData.metrics);
+                }
+                toast.success('Auto-evaluation complete! LLM judge scores are now available.');
+              }
+            }
+          } else if (data.status === 'failed') {
+            setIsPollingAutoEval(false);
+            setIsRunningEvaluation(false);  // Stop the spinner
+            toast.error('Auto-evaluation failed. You can try re-evaluating manually.');
+          }
+        }
+      } catch (error) {
+        console.error('Failed to poll auto-evaluation status:', error);
+      }
+    }, 3000); // Poll every 3 seconds
+    
+    return () => clearInterval(pollInterval);
+  }, [workshopId, isPollingAutoEval, autoEvalStatus, updateAlignmentLogs]);
 
   // Load saved evaluations for the current question on mount and when question changes
   useEffect(() => {
@@ -392,7 +528,7 @@ export function JudgeTuningPage() {
 
       // Determine default model first (used in multiple places)
       const modelOptions = getModelOptions(!!mlflowConfigData);
-      const defaultModel = modelOptions.find(opt => !opt.disabled)?.value || modelOptions[0]?.value || 'GPT-5.1';
+      const defaultModel = modelOptions.find(opt => !opt.disabled)?.value || modelOptions[0]?.value || 'Claude Opus 4.5';
       
       // Initialize with rubric question if no prompts exist
       if (promptsData.length === 0 && rubricData) {
@@ -501,43 +637,38 @@ export function JudgeTuningPage() {
     const judgeType = targetQuestion?.judgeType || 'likert';
     
     // Return different prompt templates based on judge type
+    // NOTE: Do NOT add custom output format instructions - MLflow InstructionsJudge
+    // expects JSON output with "result" and "rationale" fields, handled automatically
     if (judgeType === 'binary') {
       return `You are an expert evaluator. Please evaluate the following response based on this criteria: "${questionText}"
 
-Rate the response on a scale of 0-1, where:
-
+Rate the response as either:
 - 0: The response does not meet the criteria (FAIL)
 - 1: The response meets the criteria (PASS)
 
 Input: {{ inputs }}
 Output: {{ outputs }}
 
-Think step by step about whether the output meets the criteria, then provide your rating.
-
-Your response MUST start with a single integer rating (0 or 1) on its own line, followed by your reasoning.
-
-Example format:
-1
-The response meets the criteria because...`;
+Think step by step about whether the output meets the criteria, then provide your rating with reasoning.`;
     }
-    
+
     if (judgeType === 'freeform') {
       return `You are an expert evaluator. Please evaluate the following response based on this criteria: "${questionText}"
 
 Provide detailed qualitative feedback on how well the response addresses this criteria.
 
-Input: {input}
-Output: {output}
+Input: {{ inputs }}
+Output: {{ outputs }}
 
 Think step by step about the strengths and weaknesses of the output with respect to the criteria.
 
-Provide your analysis as a structured response with:
+Provide your analysis covering:
 1. Key observations
 2. Strengths
 3. Areas for improvement
 4. Overall assessment`;
     }
-    
+
     // Default: Likert scale (1-5)
     return `You are an expert evaluator. Please evaluate the following response based on this criteria: "${questionText}"
 
@@ -548,16 +679,10 @@ Rate the response on a scale of 1-5, where:
 - 4 = Good (exceeds criteria in some ways)
 - 5 = Excellent (fully exceeds criteria)
 
-Input: {input}
-Output: {output}
+Input: {{ inputs }}
+Output: {{ outputs }}
 
-Think step by step about how well the output addresses the criteria, then provide your rating.
-
-Your response MUST start with a single integer rating (1, 2, 3, 4, or 5) on its own line, followed by your reasoning.
-
-Example format:
-3
-The response partially meets the criteria because...`;
+Think step by step about how well the output addresses the criteria, then provide your rating with reasoning.`;
   };
 
   const createAndEvaluateBaselinePrompt = async (promptText: string) => {
@@ -961,9 +1086,118 @@ The response partially meets the criteria because...`;
     }
   };
 
+  // Re-evaluate handler - calls the /re-evaluate endpoint
+  const handleReEvaluate = async () => {
+    if (!workshopId) {
+      toast.error('Workshop not found');
+      return;
+    }
+
+    // Use current prompt if modified, otherwise use derived prompt
+    const promptToUse = currentPrompt.trim() || autoEvalDerivedPrompt;
+    if (!promptToUse) {
+      toast.error('No judge prompt available. Please enter a prompt.');
+      return;
+    }
+
+    setIsRunningEvaluation(true);
+    setEvaluationError(null);
+    updateAlignmentLogs([`Starting re-evaluation...`]);
+    setShowAlignmentLogs(true);
+
+    try {
+      // Don't pass evaluation_model_name - backend will use the original model from auto-evaluation
+      const response = await fetch(`/workshops/${workshopId}/re-evaluate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          judge_prompt: promptToUse,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to start re-evaluation: ${response.status} ${errorText}`);
+      }
+
+      const { job_id } = await response.json();
+      setAutoEvalJobId(job_id);
+      setAutoEvalStatus('running');
+      setIsPollingAutoEval(true);
+      toast.info('Re-evaluation started. Polling for results...');
+
+    } catch (error: any) {
+      console.error('[RE-EVAL] Exception caught:', error);
+      const message = error?.message || 'Re-evaluation failed';
+      toast.error(`Re-evaluation failed: ${message}`);
+      updateAlignmentLogs(prev => [...prev, `ERROR: ${message}`]);
+      setEvaluationError(message);
+      setIsRunningEvaluation(false);
+    }
+  };
+
+  // Run Evaluation handler - runs evaluation for the CURRENT judge/prompt
+  const handleRunCurrentEvaluation = async () => {
+    if (!workshopId) {
+      toast.error('Workshop not found');
+      return;
+    }
+
+    if (!currentPrompt.trim()) {
+      toast.error('Please enter a judge prompt first');
+      return;
+    }
+
+    if (!judgeName.trim()) {
+      toast.error('Judge name is required');
+      return;
+    }
+
+    setIsRunningAllEvaluations(true);
+    setEvaluationError(null);
+    updateAlignmentLogs([`Starting evaluation for judge: ${judgeName}...`]);
+    setShowAlignmentLogs(true);
+
+    try {
+      const response = await fetch(`/workshops/${workshopId}/re-evaluate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          judge_prompt: currentPrompt.trim(),
+          judge_name: judgeName,
+          judge_type: judgeType,
+          evaluation_model_name: getBackendModelName(selectedEvaluationModel),
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to start evaluation: ${response.status} ${errorText}`);
+      }
+
+      const { job_id } = await response.json();
+
+      setAutoEvalJobId(job_id);
+      setAutoEvalStatus('running');
+      setIsPollingAutoEval(true);
+
+      updateAlignmentLogs(prev => [...prev, `Evaluation job started: ${job_id}`]);
+      toast.success(`Started evaluation for ${judgeName}`);
+
+    } catch (error: any) {
+      console.error('[RUN-EVAL] Exception caught:', error);
+      const message = error?.message || 'Evaluation failed';
+      toast.error(`Evaluation failed: ${message}`);
+      updateAlignmentLogs(prev => [...prev, `ERROR: ${message}`]);
+      setEvaluationError(message);
+    } finally {
+      setIsRunningAllEvaluations(false);
+    }
+  };
+
   const handleRunAlignment = async () => {
     console.log('[ALIGN] ===== FUNCTION CALLED =====');
-    
+
     // Validation
     if (!workshopId || !currentPrompt.trim()) {
       toast.error('Please enter a judge prompt first');
@@ -977,19 +1211,138 @@ The response partially meets the criteria because...`;
       toast.error('Databricks configuration required for alignment');
       return;
     }
-    if (!evaluationComplete) {
-      toast.error('Please run evaluate() first');
+    if (annotatedTraceCount < 10) {
+      toast.error(`Need at least 10 human-annotated traces for alignment (${annotatedTraceCount}/10)`);
       return;
     }
-    if (evaluations.length < 10) {
-      toast.error('Need at least 10 evaluated traces before running align()');
-      return;
+    // Check if auto-evaluation has already completed before triggering it again
+    // First, check the server status to see if auto-eval results exist
+    let needsAutoEval = evaluations.length < annotatedTraceCount && autoEvalStatus !== 'completed';
+
+    if (needsAutoEval) {
+      // Double-check by fetching current status from server
+      try {
+        const statusCheck = await fetch(`/workshops/${workshopId}/auto-evaluation-status`);
+        if (statusCheck.ok) {
+          const statusData = await statusCheck.json();
+          if (statusData.status === 'completed') {
+            console.log('[ALIGN] Auto-evaluation already completed on server, fetching results...');
+            // Auto-eval already done, just fetch the results
+            const resultsResponse = await fetch(`/workshops/${workshopId}/auto-evaluation-results`);
+            if (resultsResponse.ok) {
+              const resultsData = await resultsResponse.json();
+              if (resultsData.evaluations && resultsData.evaluations.length > 0) {
+                const evalResults = resultsData.evaluations.map((e: any) => ({
+                  id: e.trace_id,
+                  trace_id: e.trace_id,
+                  mlflow_trace_id: e.mlflow_trace_id,
+                  predicted_rating: e.predicted_rating,
+                  human_rating: e.human_rating,
+                  confidence: e.confidence,
+                  reasoning: e.reasoning,
+                }));
+                setEvaluations(evalResults);
+                setAutoEvalStatus('completed');
+                needsAutoEval = false;
+                console.log(`[ALIGN] Loaded ${evalResults.length} existing evaluations`);
+              }
+            }
+          }
+        }
+      } catch (checkErr) {
+        console.warn('[ALIGN] Could not check auto-eval status:', checkErr);
+      }
+    }
+
+    // Only trigger auto-evaluation if it hasn't run yet
+    if (needsAutoEval) {
+      console.log('[ALIGN] Auto-evaluation incomplete, triggering first...');
+      setIsRunningAlignment(true);
+      updateAlignmentLogs([`Auto-evaluation needed (${evaluations.length}/${annotatedTraceCount} evaluated)`, 'Starting auto-evaluation...']);
+      setShowAlignmentLogs(true);
+
+      try {
+        // Trigger auto-evaluation
+        const autoEvalResponse = await fetch(`/workshops/${workshopId}/restart-auto-evaluation`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            evaluation_model_name: getBackendModelName(selectedEvaluationModel),
+          }),
+        });
+
+        if (!autoEvalResponse.ok) {
+          const errorText = await autoEvalResponse.text();
+          throw new Error(`Failed to start auto-evaluation: ${autoEvalResponse.status} ${errorText}`);
+        }
+
+        const autoEvalData = await autoEvalResponse.json();
+        const autoEvalJobIds = autoEvalData.job_ids || [autoEvalData.job_id];
+        updateAlignmentLogs(prev => [...prev, `Auto-evaluation started (${autoEvalJobIds.length} judge(s))`]);
+
+        // Poll for auto-evaluation completion
+        let autoEvalComplete = false;
+        let pollAttempts = 0;
+        const maxAttempts = 180; // 3 minutes at 1 second intervals
+
+        while (!autoEvalComplete && pollAttempts < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          pollAttempts++;
+
+          const statusResponse = await fetch(`/workshops/${workshopId}/auto-evaluation-status`);
+          if (statusResponse.ok) {
+            const status = await statusResponse.json();
+
+            if (status.status === 'completed') {
+              autoEvalComplete = true;
+              updateAlignmentLogs(prev => [...prev, 'Auto-evaluation completed!']);
+
+              // Fetch updated evaluations
+              const resultsResponse = await fetch(`/workshops/${workshopId}/auto-evaluation-results`);
+              if (resultsResponse.ok) {
+                const resultsData = await resultsResponse.json();
+                if (resultsData.evaluations && resultsData.evaluations.length > 0) {
+                  const evalResults = resultsData.evaluations.map((e: any) => ({
+                    id: e.trace_id,
+                    trace_id: e.trace_id,
+                    mlflow_trace_id: e.mlflow_trace_id,
+                    predicted_rating: e.predicted_rating,
+                    human_rating: e.human_rating,
+                    confidence: e.confidence,
+                    reasoning: e.reasoning,
+                  }));
+                  setEvaluations(evalResults);
+                }
+              }
+            } else if (status.status === 'failed') {
+              throw new Error('Auto-evaluation failed');
+            } else if (pollAttempts % 10 === 0) {
+              updateAlignmentLogs(prev => [...prev, `Still evaluating... (${pollAttempts}s)`]);
+            }
+          }
+        }
+
+        if (!autoEvalComplete) {
+          throw new Error('Auto-evaluation timed out');
+        }
+
+      } catch (autoEvalError: any) {
+        console.error('[ALIGN] Auto-evaluation failed:', autoEvalError);
+        toast.error(`Auto-evaluation failed: ${autoEvalError.message}`);
+        updateAlignmentLogs(prev => [...prev, `ERROR: ${autoEvalError.message}`]);
+        setIsRunningAlignment(false);
+        return;
+      }
+
+      updateAlignmentLogs(prev => [...prev, 'Proceeding with alignment...']);
     }
 
     console.log('[ALIGN] Starting alignment with polling approach...');
-    setIsRunningAlignment(true);
-    updateAlignmentLogs(['Starting alignment job...']);
-    setShowAlignmentLogs(true);
+    if (!isRunningAlignment) {
+      setIsRunningAlignment(true);
+      updateAlignmentLogs(['Starting alignment job...']);
+      setShowAlignmentLogs(true);
+    }
     setAlignmentResult(null);
     const normalizedPrompt = ensurePromptHasPlaceholders(currentPrompt);
 
@@ -1367,7 +1720,7 @@ The response partially meets the criteria because...`;
                     <Download className="h-4 w-4" />
                   </Button>
                   {/* Reset to Default Template */}
-                  <Button 
+                  <Button
                     onClick={handleResetToDefaultTemplate}
                     disabled={!rubric?.question}
                     variant="outline"
@@ -1394,7 +1747,7 @@ The response partially meets the criteria because...`;
                 <Button 
                   size="sm" 
                   variant="outline" 
-                  onClick={() => handleEvaluatePrompt()} 
+                  onClick={() => handleReEvaluate()} 
                   className="mt-2"
                 >
                   Retry
@@ -1632,22 +1985,36 @@ The response partially meets the criteria because...`;
                           }
                           
                           // Find evaluation for this trace
-                          // The evaluation can match by: workshop_uuid (workshop trace ID), 
-                          // trace_id (MLflow trace ID), or the trace's mlflow_trace_id
+                          // Match by: DB trace ID or MLflow trace ID
+                          // Debug: log on first trace only
+                          if (index === 0) {
+                            console.log('[EvalMatch] Evaluations count:', evaluations.length);
+                            console.log('[EvalMatch] First trace ID:', trace.id);
+                            console.log('[EvalMatch] First trace mlflow_trace_id:', trace.mlflow_trace_id);
+                            if (evaluations.length > 0) {
+                              console.log('[EvalMatch] First evaluation trace_id:', evaluations[0].trace_id);
+                              console.log('[EvalMatch] First evaluation mlflow_trace_id:', evaluations[0].mlflow_trace_id);
+                            }
+                          }
                           const evaluation = evaluations.find(
                             (e: any) => {
-                              // Match by workshop UUID (internal trace ID)
-                              if (e.workshop_uuid && e.workshop_uuid === trace.id) return true;
-                              // Match by trace_id against workshop trace ID
+                              // Match by DB trace_id (workshop internal ID)
                               if (e.trace_id && e.trace_id === trace.id) return true;
-                              // Match by trace_id against MLflow trace ID
+                              // Match by evaluation's mlflow_trace_id against trace's mlflow_trace_id
+                              if (e.mlflow_trace_id && trace.mlflow_trace_id && e.mlflow_trace_id === trace.mlflow_trace_id) return true;
+                              // Fallback: match evaluation trace_id against trace's mlflow_trace_id
                               if (e.trace_id && trace.mlflow_trace_id && e.trace_id === trace.mlflow_trace_id) return true;
                               return false;
                             }
                           );
                           
                           const judgeRating = evaluation?.predicted_rating;
-                          
+
+                          // Debug: log predicted_rating for first trace
+                          if (index === 0 && evaluation) {
+                            console.log('[EvalMatch] First evaluation predicted_rating:', evaluation.predicted_rating, 'type:', typeof evaluation.predicted_rating);
+                          }
+
                           // Calculate diff and match if both ratings exist
                           // Note: Check for !== null (not just truthy) to handle 0 values correctly
                           const diff = humanRating !== null && judgeRating !== null && judgeRating !== undefined ? Math.abs(judgeRating - humanRating) : null;
@@ -1865,59 +2232,35 @@ The response partially meets the criteria because...`;
               </div>
             </div>
             <div>
-              <span className="text-sm font-medium text-gray-700">Evaluation Status</span>
+              <span className="text-sm font-medium text-gray-700">Alignment Status</span>
               <div className="mt-2">
-                {evaluationComplete && evaluations.length >= 10 ? (
+                {alignmentResult ? (
+                  <Badge className="bg-indigo-100 text-indigo-800">
+                    <CheckCircle className="h-3 w-3 mr-1" />
+                    Alignment complete
+                  </Badge>
+                ) : annotatedTraceCount >= 10 ? (
                   <Badge className="bg-green-100 text-green-800">
                     <CheckCircle className="h-3 w-3 mr-1" />
                     Ready for alignment
                   </Badge>
                 ) : (
-                  <Badge className="bg-gray-100 text-gray-600">
-                    Pending evaluate() (need ≥10 samples)
+                  <Badge className="bg-amber-100 text-amber-800">
+                    {annotatedTraceCount}/10 annotations
                   </Badge>
                 )}
               </div>
-              <p className="text-xs text-gray-500 mt-1">
-                Evaluated traces: {Math.min(evaluations.length, 10)}/10
-              </p>
+              {hasEvaluated && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Auto-evaluated: {evaluations.length} traces
+                </p>
+              )}
             </div>
           </div>
 
           {/* MLflow Mode Options */}
           {evaluationMode === 'mlflow' && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-2 block">Evaluation LLM Judge</label>
-                <Select 
-                  value={selectedEvaluationModel} 
-                  onValueChange={setSelectedEvaluationModel}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Choose evaluation model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getModelOptions(!!mlflowConfig).map((option) => (
-                      <SelectItem 
-                        key={option.value} 
-                        value={option.value}
-                        disabled={option.disabled}
-                      >
-                        <div className="flex items-center justify-between w-full">
-                          <span>{option.label}</span>
-                          {option.requiresDatabricks && !mlflowConfig && (
-                            <span className="text-xs text-gray-500 ml-2">(Requires Databricks)</span>
-                          )}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-gray-500 mt-1">
-                  Used for evaluate() job
-                </p>
-              </div>
-              
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="text-sm font-medium text-gray-700 mb-2 block">Alignment LLM</label>
                 <Select 
@@ -2007,44 +2350,46 @@ The response partially meets the criteria because...`;
 
           {/* Databricks workspace + token inputs removed; use Intake configuration */}
 
-          <div className="flex flex-wrap items-center gap-4">
-            <Button
-              onClick={handleEvaluatePrompt}
-              disabled={
-                !currentPrompt.trim() ||
-                !judgeName.trim() ||
-                isRunningEvaluation ||
-                isRunningAlignment ||
-                (evaluationMode === 'simple' && !simpleEndpointName.trim())
-              }
-              className={evaluationMode === 'simple' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-purple-600 hover:bg-purple-700'}
-            >
-              {isRunningEvaluation ? (
-                <>
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  Running Evaluate()...
-                </>
-              ) : (
-                <>
-                  <Target className="h-4 w-4 mr-2" />
-                  {evaluationMode === 'simple' ? 'Run Simple Evaluate' : 'Run Evaluate()'}
-                </>
-              )}
-            </Button>
+          {/* Auto-evaluation status messages */}
+          {autoEvalStatus === 'completed' && hasEvaluated && !alignmentResult && (
+            <Alert className="mb-4 border-green-200 bg-green-50">
+              <CheckCircle className="h-4 w-4 text-green-600" />
+              <AlertDescription className="text-green-800">
+                <strong>Auto-evaluation complete</strong> - LLM judge scores are available below. 
+                {annotatedTraceCount >= 10 
+                  ? ' Ready to run alignment!'
+                  : ` Need ${10 - annotatedTraceCount} more human annotations before alignment.`}
+              </AlertDescription>
+            </Alert>
+          )}
 
-            {/* Alignment button - only show for MLflow mode */}
+          {alignmentResult && (
+            <Alert className="mb-4 border-indigo-200 bg-indigo-50">
+              <Brain className="h-4 w-4 text-indigo-600" />
+              <AlertDescription className="text-indigo-800">
+                <strong>Alignment complete</strong> - Judge has been optimized. 
+                You can now re-evaluate to see improved scores, or run alignment again with different settings.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <div className="flex flex-wrap items-center gap-4">
+            {/* Alignment button - PRIMARY action for MLflow mode */}
             {evaluationMode === 'mlflow' && (
               <Button
                 onClick={handleRunAlignment}
                 disabled={
                   isRunningAlignment ||
                   isRunningEvaluation ||
-                  !judgeName.trim()
+                  isPollingAutoEval ||
+                  autoEvalStatus === 'running' ||
+                  !judgeName.trim() ||
+                  annotatedTraceCount < 10
                 }
                 className={
-                  evaluationComplete && evaluations.length >= 10
+                  annotatedTraceCount >= 10
                     ? 'bg-indigo-600 hover:bg-indigo-700'
-                    : 'bg-gray-600 hover:bg-gray-700 text-white'
+                    : 'bg-gray-400 cursor-not-allowed'
                 }
               >
                 {isRunningAlignment ? (
@@ -2061,9 +2406,91 @@ The response partially meets the criteria because...`;
               </Button>
             )}
 
-            {evaluationMode === 'mlflow' && (!evaluationComplete || evaluations.length < 10) && (
+            {/* Re-evaluate button - only show after alignment has run */}
+            {evaluationMode === 'mlflow' && alignmentResult && (
+              <Button
+                onClick={handleReEvaluate}
+                disabled={
+                  isRunningEvaluation ||
+                  isRunningAlignment ||
+                  isPollingAutoEval ||
+                  autoEvalStatus === 'running'
+                }
+                variant="outline"
+                className="border-purple-300 text-purple-700 hover:bg-purple-50"
+              >
+                {isRunningEvaluation ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Re-evaluating...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Re-evaluate
+                  </>
+                )}
+              </Button>
+            )}
+
+            {/* Run Evaluation button - runs evaluation for current judge/prompt */}
+            {evaluationMode === 'mlflow' && (
+              <Button
+                onClick={handleRunCurrentEvaluation}
+                disabled={
+                  isRunningAllEvaluations ||
+                  isRunningEvaluation ||
+                  isRunningAlignment ||
+                  isPollingAutoEval ||
+                  autoEvalStatus === 'running' ||
+                  !currentPrompt.trim()
+                }
+                variant="outline"
+                className="border-green-400 text-green-700 hover:bg-green-50"
+              >
+                {isRunningAllEvaluations || (isPollingAutoEval && autoEvalStatus === 'running') ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Evaluating...
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-4 w-4 mr-2" />
+                    Run Evaluation
+                  </>
+                )}
+              </Button>
+            )}
+
+            {/* Simple mode evaluate button */}
+            {evaluationMode === 'simple' && (
+              <Button
+                onClick={handleReEvaluate}
+                disabled={
+                  isRunningEvaluation ||
+                  isPollingAutoEval ||
+                  autoEvalStatus === 'running'
+                }
+                className="bg-purple-600 hover:bg-purple-700"
+              >
+                {isRunningEvaluation ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Evaluating...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Run Evaluate
+                  </>
+                )}
+              </Button>
+            )}
+
+            {/* Status messages */}
+            {evaluationMode === 'mlflow' && annotatedTraceCount < 10 && autoEvalStatus !== 'running' && (
               <span className="text-sm text-gray-500">
-                ⚠️ Run evaluate() on at least 10 traces to enable alignment
+                ⚠️ Need {10 - annotatedTraceCount} more human-annotated traces for alignment
               </span>
             )}
             
@@ -2114,17 +2541,11 @@ The response partially meets the criteria because...`;
                   <span className="ml-1">(Saved as v{alignmentResult.saved_prompt_version})</span>
                 )}
               </p>
+              <p className="text-sm text-green-600 mt-1">
+                The prompt editor has been updated with the aligned instructions. MLflow scorer has been updated.
+              </p>
               {alignmentResult.aligned_instructions && (
-                <div className="mt-3 space-y-2">
-                  <Button
-                    onClick={() => {
-                      setCurrentPrompt(alignmentResult.aligned_instructions);
-                      setOriginalPromptText(alignmentResult.aligned_instructions);
-                    }}
-                    className="bg-green-600 hover:bg-green-700 text-white"
-                  >
-                    Use Aligned Prompt
-                  </Button>
+                <div className="mt-3">
                   <details className="text-sm">
                     <summary className="cursor-pointer text-green-600 hover:text-green-800">
                       View Aligned Instructions
