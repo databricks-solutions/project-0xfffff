@@ -181,7 +181,15 @@ const tryParseJson = (str: string): { success: boolean; data: any } => {
 
   // First, try direct JSON parse
   try {
-    const data = JSON.parse(cleanStr);
+    let data = JSON.parse(cleanStr);
+    // Handle double-stringified JSON (string containing JSON string)
+    if (typeof data === 'string') {
+      try {
+        data = JSON.parse(data);
+      } catch {
+        // It was a regular string, not double-encoded
+      }
+    }
     return { success: true, data };
   } catch {
     // Continue to try alternatives
@@ -1174,11 +1182,21 @@ const OutputRenderer: React.FC<{
       let parsed: any;
       if (typeof rawOutput === 'string') {
         parsed = JSON.parse(rawOutput);
+        // Handle double-stringified JSON (string containing JSON string)
+        // This happens when the output is stored as a stringified JSON string
+        if (typeof parsed === 'string') {
+          try {
+            parsed = JSON.parse(parsed);
+          } catch {
+            // It was a regular string, not double-encoded
+          }
+        }
       } else if (typeof rawOutput === 'object' && rawOutput !== null) {
         parsed = rawOutput;
       } else {
         return { content: null, metadata: null };
       }
+
       return extractLLMResponseContent(parsed);
     } catch {
       return { content: null, metadata: null };

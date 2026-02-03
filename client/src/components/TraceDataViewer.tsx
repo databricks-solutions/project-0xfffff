@@ -332,11 +332,20 @@ export function TraceDataViewer({
   const parsedOutput: ParsedOutput | null = useMemo(() => {
     try {
       if (typeof trace.output === 'string') {
-        return JSON.parse(trace.output);
+        let parsed = JSON.parse(trace.output);
+        // Handle double-stringified JSON (string containing JSON string)
+        if (typeof parsed === 'string') {
+          try {
+            parsed = JSON.parse(parsed);
+          } catch {
+            // It was a regular string, not double-encoded
+          }
+        }
+        return parsed;
       }
       return trace.output;
     } catch (error) {
-      
+
       return null;
     }
   }, [trace.output]);
