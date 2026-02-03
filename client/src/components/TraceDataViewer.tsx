@@ -44,6 +44,50 @@ function extractLLMContent(output: any): { content: string | null; metadata: Rec
     return { content: null, metadata: null };
   }
 
+  // Helper to extract content from a string that might be JSON-encoded
+  const extractContentFromString = (str: string): string => {
+    const trimmed = str.trim();
+    if (trimmed.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed.rationale && typeof parsed.rationale === 'string') {
+          const resultLabel = parsed.result !== undefined ? `**Rating: ${parsed.result}**\n\n` : '';
+          return resultLabel + parsed.rationale;
+        }
+        if (parsed.content && typeof parsed.content === 'string') {
+          return parsed.content;
+        }
+      } catch {
+        // Not valid JSON
+      }
+    }
+    return str;
+  };
+
+  // Handle FLATTENED format where choices have been unwrapped:
+  // { id, model, object, finish_reason, role, content }
+  if (output.object === 'chat.completion' && output.role === 'assistant' && !output.choices) {
+    let content: string | null = null;
+
+    if (typeof output.content === 'string') {
+      content = extractContentFromString(output.content);
+    } else if (output.message?.content) {
+      if (typeof output.message.content === 'string') {
+        content = extractContentFromString(output.message.content);
+      }
+    }
+
+    if (content) {
+      const metadata: Record<string, any> = {};
+      if (output.id) metadata.id = output.id;
+      if (output.model) metadata.model = output.model;
+      if (output.object) metadata.object = output.object;
+      if (output.finish_reason) metadata.finish_reason = output.finish_reason;
+      if (output.usage) metadata.usage = output.usage;
+      return { content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+    }
+  }
+
   // Handle OpenAI/ChatCompletion format: { choices: [{ message: { content: "..." } }] }
   if (output.choices && Array.isArray(output.choices) && output.choices.length > 0) {
     const firstChoice = output.choices[0];
@@ -213,6 +257,65 @@ function extractLLMContent(output: any): { content: string | null; metadata: Rec
         }
       }
     }
+  }
+
+  // LAST RESORT: Recursively search for content/rationale fields anywhere in the structure
+  const findContentRecursively = (obj: any, depth: number = 0): string | null => {
+    if (depth > 5 || !obj || typeof obj !== 'object') return null;
+
+    // Check for rationale (judge output)
+    if (obj.rationale && typeof obj.rationale === 'string') {
+      const resultLabel = obj.result !== undefined ? `**Rating: ${obj.result}**\n\n` : '';
+      return resultLabel + obj.rationale;
+    }
+
+    // Check for content field
+    if (obj.content !== undefined && obj.content !== null) {
+      if (typeof obj.content === 'string') {
+        const trimmed = obj.content.trim();
+        if (trimmed.startsWith('{')) {
+          try {
+            const parsed = JSON.parse(trimmed);
+            if (parsed.rationale && typeof parsed.rationale === 'string') {
+              const resultLabel = parsed.result !== undefined ? `**Rating: ${parsed.result}**\n\n` : '';
+              return resultLabel + parsed.rationale;
+            }
+          } catch {
+            // Not JSON
+          }
+        }
+        if (trimmed.length > 50) {
+          return trimmed;
+        }
+      }
+    }
+
+    // Check arrays
+    if (Array.isArray(obj)) {
+      for (const item of obj) {
+        const found = findContentRecursively(item, depth + 1);
+        if (found) return found;
+      }
+    }
+
+    // Check object properties
+    for (const key of Object.keys(obj)) {
+      if (['id', 'model', 'object', 'usage', 'created'].includes(key)) continue;
+      const found = findContentRecursively(obj[key], depth + 1);
+      if (found) return found;
+    }
+
+    return null;
+  };
+
+  const foundContent = findContentRecursively(output);
+  if (foundContent) {
+    const metadata: Record<string, any> = {};
+    if (output.id) metadata.id = output.id;
+    if (output.model) metadata.model = output.model;
+    if (output.object) metadata.object = output.object;
+    if (output.finish_reason) metadata.finish_reason = output.finish_reason;
+    return { content: foundContent, metadata: Object.keys(metadata).length > 0 ? metadata : null };
   }
 
   return { content: null, metadata: null };
