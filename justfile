@@ -486,6 +486,17 @@ e2e-servers db_path=".e2e-workshop.db" api_port="8000" ui_port="3000":
   API_PORT="${2:-{{api_port}}}"
   UI_PORT="${3:-{{ui_port}}}"
 
+  # Log suppression: set E2E_QUIET=1 to redirect server logs to files
+  LOG_DIR=".test-results"
+  mkdir -p "$LOG_DIR"
+  if [ "${E2E_QUIET:-0}" = "1" ]; then
+    API_LOG="$LOG_DIR/api-server.log"
+    UI_LOG="$LOG_DIR/ui-server.log"
+  else
+    API_LOG="/dev/stdout"
+    UI_LOG="/dev/stdout"
+  fi
+
   # Ensure schema exists before starting the API (migrations are part of the workflow, not app startup)
   ENVIRONMENT=development DATABASE_URL="sqlite:///./${DB_PATH}" just db-bootstrap
 
@@ -493,13 +504,16 @@ e2e-servers db_path=".e2e-workshop.db" api_port="8000" ui_port="3000":
   echo "  DB : ${DB_PATH}"
   echo "  API: http://localhost:${API_PORT}"
   echo "  UI : http://localhost:${UI_PORT}"
+  if [ "${E2E_QUIET:-0}" = "1" ]; then
+    echo "  Logs: $LOG_DIR/{api,ui}-server.log"
+  fi
 
   # Start API (no reload for E2E)
-  (ENVIRONMENT=development DATABASE_URL="sqlite:///./${DB_PATH}" uv run uvicorn {{server-dir}}.app:app --host 127.0.0.1 --port "$API_PORT") &
+  (ENVIRONMENT=development DATABASE_URL="sqlite:///./${DB_PATH}" uv run uvicorn {{server-dir}}.app:app --host 127.0.0.1 --port "$API_PORT" > "$API_LOG" 2>&1) &
   api_pid=$!
 
   # Start UI (force port for determinism)
-  (npm -C {{client-dir}} run dev -- --host 127.0.0.1 --port "$UI_PORT" --strictPort) &
+  (npm -C {{client-dir}} run dev -- --host 127.0.0.1 --port "$UI_PORT" --strictPort > "$UI_LOG" 2>&1) &
   ui_pid=$!
 
   cleanup() {
@@ -591,6 +605,8 @@ e2e mode="headless" workers="1" *args:
 
   # Enable JSON reporting for token-efficient output
   export PW_JSON_REPORT=1
+  # Suppress server logs (redirect to files in .test-results/)
+  export E2E_QUIET=1
   mkdir -p .test-results
 
   DB_PATH=".e2e-workshop.db"
