@@ -4483,14 +4483,16 @@ async def re_evaluate(
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     """Manually trigger re-evaluation with the derived or custom prompt.
-    
+
     This is the "Re-evaluate" button functionality for when the user wants
     to run evaluation again (e.g., after modifying the prompt).
-    
+
     Args:
         request: Optional JSON body with:
             - judge_prompt: Custom judge prompt (if not provided, uses derived prompt)
-            - evaluation_model_name: Model to use (default: "databricks-meta-llama-3-3-70b-instruct")
+            - judge_name: Name of the judge to use (if not provided, uses workshop judge_name)
+            - judge_type: Type of judge ('likert', 'binary', 'freeform') - defaults to 'likert'
+            - evaluation_model_name: Model to use (default: uses stored model)
     """
     import threading
     
@@ -4528,21 +4530,27 @@ async def re_evaluate(
         raise HTTPException(status_code=400, detail="Databricks token not found")
     
     mlflow_config.databricks_token = databricks_token
-    
-    # Get judge type from rubric - parse questions to get per-question judge type
-    rubric = db_service.get_rubric(workshop_id)
-    judge_type = 'likert'  # default
-    if rubric and rubric.question:
-        # Parse rubric questions to extract judge type from first question
-        parsed_questions = db_service._parse_rubric_questions(rubric.question)
-        if parsed_questions:
-            judge_type = parsed_questions[0].get('judge_type', 'likert')
-    
+
+    # Get judge_name from request, or fall back to workshop judge_name
+    judge_name = request.get("judge_name") or workshop.judge_name or "workshop_judge"
+
+    # Get judge_type from request, or derive from rubric
+    judge_type = request.get("judge_type")
+    if not judge_type:
+        # Fall back to deriving from rubric
+        rubric = db_service.get_rubric(workshop_id)
+        judge_type = 'likert'  # default
+        if rubric and rubric.question:
+            # Parse rubric questions to extract judge type from first question
+            parsed_questions = db_service._parse_rubric_questions(rubric.question)
+            if parsed_questions:
+                judge_type = parsed_questions[0].get('judge_type', 'likert')
+
     # Create new evaluation job
     job_id = str(uuid.uuid4())
     job = create_job(job_id, workshop_id)
     job.set_status("running")
-    job.add_log("Re-evaluation started")
+    job.add_log(f"Re-evaluation started for judge: {judge_name}")
     
     # Update the auto-evaluation job ID
     db_service.update_auto_evaluation_job(workshop_id, job_id, judge_prompt)
@@ -4563,14 +4571,14 @@ async def re_evaluate(
                 result = None
                 for message in alignment_service.run_evaluation_with_answer_sheet(
                     workshop_id=workshop_id,
-                    judge_name=workshop.judge_name or "workshop_judge",
+                    judge_name=judge_name,
                     judge_prompt=judge_prompt,
                     evaluation_model_name=evaluation_model_name,
                     mlflow_config=mlflow_config,
                     judge_type=judge_type,
-                    require_human_ratings=True,  # Re-evaluation compares against human ratings
-                    tag_type='align',  # Use 'align' tag (traces with human annotations)
-                    use_registered_judge=True,  # Load the aligned judge with episodic/semantic memory
+                    require_human_ratings=False,  # Don't require human ratings - just run evaluation
+                    tag_type='eval',  # Use 'eval' tag for evaluation traces
+                    use_registered_judge=False,  # Use the prompt directly, not the aligned judge
                 ):
                     if isinstance(message, dict):
                         result = message

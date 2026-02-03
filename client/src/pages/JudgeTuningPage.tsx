@@ -1136,23 +1136,36 @@ Think step by step about how well the output addresses the criteria, then provid
     }
   };
 
-  // Run All Evaluations handler - calls restart-auto-evaluation for all judges
-  const handleRunAllEvaluations = async () => {
+  // Run Evaluation handler - runs evaluation for the CURRENT judge/prompt
+  const handleRunCurrentEvaluation = async () => {
     if (!workshopId) {
       toast.error('Workshop not found');
       return;
     }
 
+    if (!currentPrompt.trim()) {
+      toast.error('Please enter a judge prompt first');
+      return;
+    }
+
+    if (!judgeName.trim()) {
+      toast.error('Judge name is required');
+      return;
+    }
+
     setIsRunningAllEvaluations(true);
     setEvaluationError(null);
-    updateAlignmentLogs([`Starting evaluation for all judges...`]);
+    updateAlignmentLogs([`Starting evaluation for judge: ${judgeName}...`]);
     setShowAlignmentLogs(true);
 
     try {
-      const response = await fetch(`/workshops/${workshopId}/restart-auto-evaluation`, {
+      const response = await fetch(`/workshops/${workshopId}/re-evaluate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          judge_prompt: currentPrompt.trim(),
+          judge_name: judgeName,
+          judge_type: judgeType,
           evaluation_model_name: getBackendModelName(selectedEvaluationModel),
         }),
       });
@@ -1162,20 +1175,17 @@ Think step by step about how well the output addresses the criteria, then provid
         throw new Error(`Failed to start evaluation: ${response.status} ${errorText}`);
       }
 
-      const data = await response.json();
-      const { job_id, judges, message } = data;
+      const { job_id } = await response.json();
 
       setAutoEvalJobId(job_id);
       setAutoEvalStatus('running');
       setIsPollingAutoEval(true);
 
-      updateAlignmentLogs(prev => [...prev, message]);
-      updateAlignmentLogs(prev => [...prev, `Evaluating judges: ${judges.join(', ')}`]);
-
-      toast.success(`Started evaluation for ${judges.length} judges`);
+      updateAlignmentLogs(prev => [...prev, `Evaluation job started: ${job_id}`]);
+      toast.success(`Started evaluation for ${judgeName}`);
 
     } catch (error: any) {
-      console.error('[RUN-ALL-EVAL] Exception caught:', error);
+      console.error('[RUN-EVAL] Exception caught:', error);
       const message = error?.message || 'Evaluation failed';
       toast.error(`Evaluation failed: ${message}`);
       updateAlignmentLogs(prev => [...prev, `ERROR: ${message}`]);
@@ -2434,16 +2444,17 @@ Think step by step about how well the output addresses the criteria, then provid
               </Button>
             )}
 
-            {/* Run All Evaluations button - evaluates all judges at once */}
+            {/* Run Evaluation button - runs evaluation for current judge/prompt */}
             {evaluationMode === 'mlflow' && (
               <Button
-                onClick={handleRunAllEvaluations}
+                onClick={handleRunCurrentEvaluation}
                 disabled={
                   isRunningAllEvaluations ||
                   isRunningEvaluation ||
                   isRunningAlignment ||
                   isPollingAutoEval ||
-                  autoEvalStatus === 'running'
+                  autoEvalStatus === 'running' ||
+                  !currentPrompt.trim()
                 }
                 variant="outline"
                 className="border-green-400 text-green-700 hover:bg-green-50"
@@ -2451,12 +2462,12 @@ Think step by step about how well the output addresses the criteria, then provid
                 {isRunningAllEvaluations || (isPollingAutoEval && autoEvalStatus === 'running') ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Evaluating All...
+                    Evaluating...
                   </>
                 ) : (
                   <>
                     <Play className="h-4 w-4 mr-2" />
-                    Run All Evaluations
+                    Run Evaluation
                   </>
                 )}
               </Button>
