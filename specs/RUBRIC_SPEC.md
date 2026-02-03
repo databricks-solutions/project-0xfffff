@@ -64,8 +64,31 @@ interface RubricQuestion {
   id: string;           // Generated UUID
   title: string;        // First line of question block
   description: string;  // Remaining lines of question block
+  judgeType: 'likert' | 'binary' | 'freeform';  // Per-question judge type
 }
 ```
+
+### Per-Question Judge Type
+
+Each question can specify its own judge type using a delimiter:
+
+```
+Question Title [JUDGE_TYPE:binary]
+Question description here
+|||QUESTION_SEPARATOR|||
+Another Question [JUDGE_TYPE:likert]
+Description for likert scale question
+```
+
+**Delimiter**: `|||JUDGE_TYPE_DELIMITER|||` or `[JUDGE_TYPE:xxx]` format
+
+**Parsing Logic**:
+1. Check for `[JUDGE_TYPE:xxx]` in title
+2. Extract judge type (binary, likert, freeform)
+3. Remove delimiter from title for display
+4. Default to 'likert' if not specified
+
+This enables mixed rubrics where some questions use Pass/Fail and others use 1-5 scale.
 
 ## Delimiter System
 
@@ -94,11 +117,13 @@ Use a unique delimiter that won't appear in user input:
 
 ```typescript
 const QUESTION_DELIMITER = '|||QUESTION_SEPARATOR|||';
+const JUDGE_TYPE_DELIMITER = '|||JUDGE_TYPE_DELIMITER|||';
 
 interface RubricQuestion {
   id: string;
   title: string;
   description: string;
+  judgeType: 'likert' | 'binary' | 'freeform';
 }
 
 function parseRubricQuestions(raw: string): RubricQuestion[] {
@@ -111,20 +136,29 @@ function parseRubricQuestions(raw: string): RubricQuestion[] {
     .filter(part => part.length > 0)
     .map(part => {
       const lines = part.split('\n');
-      const title = lines[0]?.trim() || '';
+      let title = lines[0]?.trim() || '';
       const description = lines.slice(1).join('\n').trim();
+
+      // Parse judge type from title
+      let judgeType: 'likert' | 'binary' | 'freeform' = 'likert';
+      const judgeTypeMatch = title.match(/\[JUDGE_TYPE:(\w+)\]/i);
+      if (judgeTypeMatch) {
+        judgeType = judgeTypeMatch[1].toLowerCase() as any;
+        title = title.replace(/\s*\[JUDGE_TYPE:\w+\]/i, '').trim();
+      }
 
       return {
         id: generateUUID(),
         title,
         description,
+        judgeType,
       };
     });
 }
 
 function formatRubricQuestions(questions: RubricQuestion[]): string {
   return questions
-    .map(q => `${q.title}\n${q.description}`)
+    .map(q => `${q.title}${JUDGE_TYPE_DELIMITER}${q.judgeType}\n${q.description}`)
     .join(`\n${QUESTION_DELIMITER}\n`);
 }
 ```
@@ -257,7 +291,10 @@ Rubrics created before the delimiter change use `\n\n` as separator:
 - [ ] Delimiter never appears in user input (by design)
 - [ ] Frontend and backend use same delimiter constant
 - [ ] Likert scale shows 1-5 rating options
-- [ ] Binary scale shows custom pass/fail labels
+- [ ] Binary scale shows Pass/Fail buttons (not star ratings)
+- [ ] Binary feedback logged as 0/1 to MLflow (not 3)
+- [ ] Per-question judge_type parsed from `[JUDGE_TYPE:xxx]` format
+- [ ] Mixed rubrics support different scales per question
 - [ ] Parsed questions have stable UUIDs within session
 - [ ] Empty/whitespace-only parts filtered out
 
@@ -294,9 +331,37 @@ Expected:
 Rubric:
 { judge_type: 'binary', binary_labels: { pass: 'Acceptable', fail: 'Unacceptable' } }
 
-UI shows: [Unacceptable] [Acceptable]
+UI shows: [Unacceptable] [Acceptable]  (Pass/Fail buttons, not star ratings)
 Rating value for Acceptable: 1
 Rating value for Unacceptable: 0
+
+MLflow feedback logged: 0 or 1 (NOT 3 for neutral)
+```
+
+### Test 4: Per-Question Judge Type
+```
+Input:
+"Accuracy [JUDGE_TYPE:binary]\nIs the response factually correct?|||QUESTION_SEPARATOR|||Helpfulness [JUDGE_TYPE:likert]\nRate helpfulness 1-5"
+
+Expected:
+[
+  { title: "Accuracy", description: "Is the response factually correct?", judgeType: "binary" },
+  { title: "Helpfulness", description: "Rate helpfulness 1-5", judgeType: "likert" }
+]
+
+UI shows:
+- Question 1: Pass/Fail buttons
+- Question 2: 1-5 star rating
+```
+
+### Test 5: Mixed Rubric Evaluation
+```
+Rubric with binary Question 1 and likert Question 2
+
+When evaluating:
+- Question 1 uses binary judge (0/1 output)
+- Question 2 uses likert judge (1-5 output)
+- Results stored with correct scale per question
 ```
 
 ## Backwards Compatibility
