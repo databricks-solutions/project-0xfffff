@@ -388,16 +388,20 @@ def _run_periodic_backup() -> None:
 
     if volume_backup_path:
         logger.info(f"Periodic backup triggered (every {backup_interval_minutes} minutes)")
-        # Run the actual backup
-        backup_to_volume(force=False)
+        # Run the actual backup - wrapped in try/except to ensure rescheduling happens
+        try:
+            backup_to_volume(force=False)
+        except Exception as e:
+            logger.error(f"Periodic backup failed: {e}")
 
-    # Schedule the next backup
+    # Schedule the next backup (always reschedule, even if backup failed)
     with _backup_timer_lock:
         if _backup_timer_running:
             interval_seconds = backup_interval_minutes * 60
             _backup_timer = threading.Timer(interval_seconds, _run_periodic_backup)
             _backup_timer.daemon = True
             _backup_timer.start()
+            logger.debug(f"Next backup scheduled in {backup_interval_minutes} minutes")
 
 
 def start_backup_timer() -> None:

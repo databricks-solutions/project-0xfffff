@@ -1412,6 +1412,62 @@ async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Sessi
                             successful = [r for r in all_results if r['result'].get('success')]
                             failed = [r for r in all_results if not r['result'].get('success')]
 
+                            # Save evaluations to database
+                            if successful:
+                                try:
+                                    from server.models import JudgePromptCreate, JudgeEvaluation
+
+                                    # Create or get judge prompt for storing evaluations
+                                    prompts = thread_db_service.get_judge_prompts(workshop_id)
+                                    if prompts:
+                                        prompt_id_to_use = prompts[0].id  # Use latest prompt
+                                    else:
+                                        # Create a new prompt
+                                        new_prompt_data = JudgePromptCreate(
+                                            prompt_text=derived_prompt,
+                                            few_shot_examples=[],
+                                            model_name=evaluation_model_name,
+                                            model_parameters={'mode': 'auto_evaluation'},
+                                        )
+                                        new_prompt = thread_db_service.create_judge_prompt(workshop_id, new_prompt_data)
+                                        prompt_id_to_use = new_prompt.id
+                                        job.add_log(f"Created prompt v{new_prompt.version} for storing evaluations")
+
+                                    # Collect all evaluations from successful results
+                                    all_evaluations = []
+                                    for judge_result in successful:
+                                        result = judge_result['result']
+                                        if 'evaluations' in result:
+                                            for eval_data in result['evaluations']:
+                                                try:
+                                                    pred = eval_data.get('predicted_rating')
+                                                    pred_val = int(round(float(pred))) if pred is not None else 0
+                                                    # Use workshop_uuid (DB UUID) if available, otherwise trace_id
+                                                    trace_id_for_db = eval_data.get('workshop_uuid') or eval_data.get('trace_id')
+                                                    all_evaluations.append(
+                                                        JudgeEvaluation(
+                                                            id=str(uuid.uuid4()),
+                                                            workshop_id=workshop_id,
+                                                            prompt_id=prompt_id_to_use,
+                                                            trace_id=trace_id_for_db,
+                                                            predicted_rating=pred_val,
+                                                            human_rating=int(eval_data.get('human_rating')) if eval_data.get('human_rating') is not None else None,
+                                                            confidence=eval_data.get('confidence'),
+                                                            reasoning=eval_data.get('reasoning'),
+                                                        )
+                                                    )
+                                                except Exception as inner_err:
+                                                    logger.error(f"Error parsing evaluation: {inner_err}")
+
+                                    if all_evaluations:
+                                        thread_db_service.store_judge_evaluations(all_evaluations)
+                                        job.add_log(f"✓ Saved {len(all_evaluations)} evaluations to database")
+                                    else:
+                                        job.add_log("⚠ No evaluations to save")
+                                except Exception as save_err:
+                                    job.add_log(f"⚠ Warning: Could not save evaluations: {save_err}")
+                                    logger.exception("Failed to save auto-evaluation results")
+
                             job.result = {
                                 'success': len(failed) == 0,
                                 'total_judges': len(questions_to_eval),
@@ -4041,6 +4097,104 @@ async def get_auto_evaluation_status(
     return response
 
 
+@router.post("/{workshop_id}/refresh-judge-prompt")
+async def refresh_judge_prompt(
+    workshop_id: str,
+    request: dict = {},
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Regenerate the judge prompt from the rubric without running evaluation.
+
+    Use this to update the stored prompt after rubric changes.
+    The prompt is regenerated for a single criterion (not all combined).
+
+    Args:
+        request: Optional JSON body with:
+            - question_index: Which rubric question to generate prompt for (default: 0)
+    """
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    question_index = request.get("question_index", 0)
+
+    # Regenerate prompt for the specified question
+    new_prompt = db_service.derive_judge_prompt_from_rubric(workshop_id, question_index)
+    if not new_prompt:
+        raise HTTPException(status_code=400, detail="Could not generate prompt - check rubric exists")
+
+    # Update the stored prompt (keep existing job_id if any)
+    job_id = db_service.get_auto_evaluation_job_id(workshop_id) or ""
+    db_service.update_auto_evaluation_job(workshop_id, job_id, new_prompt)
+
+    return {
+        "success": True,
+        "message": f"Judge prompt regenerated for criterion {question_index + 1}",
+        "prompt": new_prompt,
+    }
+
+
+@router.get("/{workshop_id}/debug-evaluations")
+async def debug_evaluations(
+    workshop_id: str,
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Debug endpoint to check evaluation storage.
+
+    Shows raw data about prompts and evaluations in the database.
+    """
+    from server.models import JudgePromptDB, JudgeEvaluationDB
+
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    # Get all prompts
+    prompts = db.query(JudgePromptDB).filter(JudgePromptDB.workshop_id == workshop_id).order_by(JudgePromptDB.created_at.desc()).all()
+
+    # Get all evaluations
+    all_evals = db.query(JudgeEvaluationDB).filter(JudgeEvaluationDB.workshop_id == workshop_id).all()
+
+    # Get traces for comparison
+    traces = db_service.get_traces(workshop_id)
+
+    return {
+        "workshop_id": workshop_id,
+        "prompts": [
+            {
+                "id": p.id,
+                "version": p.version,
+                "created_at": str(p.created_at),
+                "model_name": p.model_name,
+                "prompt_text_preview": p.prompt_text[:100] + "..." if p.prompt_text and len(p.prompt_text) > 100 else p.prompt_text,
+            }
+            for p in prompts
+        ],
+        "evaluations_by_prompt": {
+            p.id: [
+                {
+                    "trace_id": e.trace_id,
+                    "predicted_rating": e.predicted_rating,
+                    "human_rating": e.human_rating,
+                }
+                for e in all_evals if e.prompt_id == p.id
+            ]
+            for p in prompts
+        },
+        "total_evaluations": len(all_evals),
+        "traces": [
+            {
+                "id": t.id,
+                "mlflow_trace_id": t.mlflow_trace_id,
+            }
+            for t in traces[:10]  # Just first 10 for debugging
+        ],
+        "trace_count": len(traces),
+    }
+
+
 @router.post("/{workshop_id}/restart-auto-evaluation")
 async def restart_auto_evaluation(
     workshop_id: str,
@@ -4255,13 +4409,53 @@ async def get_auto_evaluation_results(
             if latest_prompt.performance_metrics:
                 metrics = latest_prompt.performance_metrics
     
+    # Build lookups for trace ID mapping (both directions)
+    traces = db_service.get_traces(workshop_id)
+    # DB UUID -> MLflow trace ID
+    db_to_mlflow_map = {t.id: t.mlflow_trace_id for t in traces if t.mlflow_trace_id}
+    # MLflow trace ID -> DB UUID (for cases where evaluation was stored with MLflow ID)
+    mlflow_to_db_map = {t.mlflow_trace_id: t.id for t in traces if t.mlflow_trace_id}
+
+    logger.info(f"auto-evaluation-results: {len(evaluations) if evaluations else 0} evaluations, {len(traces)} traces, {len(db_to_mlflow_map)} with mlflow_trace_id")
+    if evaluations:
+        sample_eval_ids = [e.trace_id[:20] + "..." for e in evaluations[:3]]
+        logger.info(f"Sample evaluation trace_ids: {sample_eval_ids}")
+        sample_trace_ids = [t.id[:20] + "..." for t in traces[:3]]
+        logger.info(f"Sample DB trace_ids: {sample_trace_ids}")
+
+    def resolve_trace_ids(eval_trace_id: str):
+        """Resolve trace IDs to ensure both DB UUID and MLflow trace ID are available."""
+        # Check if eval_trace_id is a DB UUID (exists in db_to_mlflow_map)
+        if eval_trace_id in db_to_mlflow_map:
+            logger.debug(f"resolve_trace_ids: {eval_trace_id[:8]}... is DB UUID -> mlflow={db_to_mlflow_map[eval_trace_id][:20] if db_to_mlflow_map[eval_trace_id] else None}...")
+            return eval_trace_id, db_to_mlflow_map[eval_trace_id]
+        # Check if eval_trace_id is an MLflow trace ID (exists in mlflow_to_db_map)
+        if eval_trace_id in mlflow_to_db_map:
+            logger.debug(f"resolve_trace_ids: {eval_trace_id[:20]}... is MLflow ID -> db_uuid={mlflow_to_db_map[eval_trace_id][:8]}...")
+            return mlflow_to_db_map[eval_trace_id], eval_trace_id
+        # Fallback: return as-is with None for the other
+        logger.warning(f"resolve_trace_ids: {eval_trace_id[:20]}... not found in any map!")
+        return eval_trace_id, None
+
+    # Add diagnostic info
+    prompts = db_service.get_judge_prompts(workshop_id)
+    latest_prompt_info = None
+    if prompts:
+        latest = prompts[0]
+        latest_prompt_info = {
+            "id": latest.id,
+            "version": latest.version,
+            "has_metrics": latest.performance_metrics is not None,
+        }
+
     return {
         "status": job_status,
         "job_id": job_id,
         "derived_prompt": derived_prompt,
         "evaluations": [
             {
-                "trace_id": e.trace_id,
+                "trace_id": resolve_trace_ids(e.trace_id)[0],  # Always return DB UUID if possible
+                "mlflow_trace_id": resolve_trace_ids(e.trace_id)[1],  # MLflow trace ID for matching
                 "predicted_rating": e.predicted_rating,
                 "human_rating": e.human_rating,
                 "confidence": e.confidence,
@@ -4271,6 +4465,14 @@ async def get_auto_evaluation_results(
         ] if evaluations else [],
         "evaluation_count": len(evaluations) if evaluations else 0,
         "metrics": metrics,
+        # Diagnostic info
+        "diagnostics": {
+            "trace_count": len(traces),
+            "traces_with_mlflow_id": len(db_to_mlflow_map),
+            "prompts_count": len(prompts) if prompts else 0,
+            "latest_prompt": latest_prompt_info,
+            "job_logs": get_job(job_id).logs if job_id and get_job(job_id) else None,
+        }
     }
 
 

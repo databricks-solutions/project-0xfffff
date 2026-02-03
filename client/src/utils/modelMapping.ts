@@ -52,24 +52,11 @@ export function getFrontendModelName(backendName: string): string {
  */
 export function getModelOptions(hasMlflowConfig: boolean = false): ModelOption[] {
   return [
-    {
-      value: 'GPT-5.2',
-      label: 'GPT-5.2',
-      description: 'OpenAI GPT-5.2 model',
-      disabled: !hasMlflowConfig,
-      requiresDatabricks: true,
-    },
-    {
-      value: 'GPT-5.1',
-      label: 'GPT-5.1',
-      description: 'OpenAI GPT-5.1 model',
-      disabled: !hasMlflowConfig,
-      requiresDatabricks: true,
-    },
+    // Claude models first (recommended for alignment)
     {
       value: 'Claude Opus 4.5',
-      label: 'Claude Opus 4.5',
-      description: 'Anthropic Claude Opus 4.5 model',
+      label: 'Claude Opus 4.5 (Recommended)',
+      description: 'Anthropic Claude Opus 4.5 - Best for alignment',
       disabled: !hasMlflowConfig,
       requiresDatabricks: true,
     },
@@ -87,6 +74,22 @@ export function getModelOptions(hasMlflowConfig: boolean = false): ModelOption[]
       disabled: !hasMlflowConfig,
       requiresDatabricks: true,
     },
+    // GPT models
+    {
+      value: 'GPT-5.2',
+      label: 'GPT-5.2',
+      description: 'OpenAI GPT-5.2 model',
+      disabled: !hasMlflowConfig,
+      requiresDatabricks: true,
+    },
+    {
+      value: 'GPT-5.1',
+      label: 'GPT-5.1',
+      description: 'OpenAI GPT-5.1 model',
+      disabled: !hasMlflowConfig,
+      requiresDatabricks: true,
+    },
+    // Other models
     {
       value: 'Gemini 3 Pro',
       label: 'Gemini 3 Pro',

@@ -595,41 +595,11 @@ class AlignmentService:
                 # The prompt template with placeholders for judge instructions
                 mlflow_prompt_template = self._normalize_judge_prompt(judge_prompt)
                 
-                # For binary rubrics, enhance the prompt to explicitly require 0/1 numeric values
+                # For binary rubrics, enhance the prompt to clarify pass/fail criteria
+                # NOTE: Do NOT add custom output format instructions - MLflow InstructionsJudge
+                # expects JSON output with "result" and "rationale" fields, handled automatically
                 if effective_judge_type == 'binary':
-                    # Check if prompt already has 0/1 numeric instructions
-                    prompt_lower = mlflow_prompt_template.lower()
-                    has_numeric_instructions = any(phrase in prompt_lower for phrase in [
-                        '0 or 1', '0/1', 'integer rating (0 or 1)', 'single integer rating (0 or 1)',
-                        'rating (0 or 1)', 'must start with a single integer rating', 'critical output format'
-                    ])
-                    
-                    if not has_numeric_instructions:
-                        # PREPEND strong binary instructions - models pay more attention to the start
-                        binary_prefix = """## CRITICAL OUTPUT FORMAT REQUIREMENT
-You are a BINARY judge. You MUST output EXACTLY one of these two values:
-- Output "0" if the response FAILS to meet the criteria
-- Output "1" if the response PASSES and meets the criteria
-
-YOUR FIRST LINE MUST BE EXACTLY "0" OR "1" - NO OTHER VALUES ARE VALID.
-Do NOT use any other numbers like 2, 3, 4, or 5. This is a PASS/FAIL evaluation, not a rating scale.
-
-After the rating, provide your reasoning on subsequent lines.
-
-Example valid outputs:
----
-0
-The response does not address the user's question.
----
-1
-The response correctly and helpfully answers the question.
----
-
-Now evaluate the following:
-
-"""
-                        mlflow_prompt_template = binary_prefix + mlflow_prompt_template
-                        yield f"Enhanced prompt with STRONG binary 0/1 instructions (prepended)"
+                    yield "Binary judge - MLflow will handle JSON output format automatically"
                 
                 # Set feedback_value_type based on judge type
                 # - Binary judges: use float for 0/1 numeric ratings (NOT bool - bool is unreliable)
@@ -1061,19 +1031,11 @@ Now evaluate the following:
             # Get judge type from rubric to determine feedback_value_type
             judge_type = get_judge_type_from_rubric(self.db_service, workshop_id)
             
-            # For binary rubrics, enhance the prompt to explicitly require 0/1 numeric values
+            # For binary rubrics, log the judge type
+            # NOTE: Do NOT add custom output format instructions - MLflow InstructionsJudge
+            # expects JSON output with "result" and "rationale" fields, handled automatically
             if judge_type == 'binary':
-                # Check if prompt already has 0/1 numeric instructions
-                prompt_lower = normalized_judge_prompt.lower()
-                has_numeric_instructions = any(phrase in prompt_lower for phrase in [
-                    '0 or 1', '0/1', 'integer rating (0 or 1)', 'single integer rating (0 or 1)',
-                    'rating (0 or 1)', 'must start with a single integer rating'
-                ])
-                
-                if not has_numeric_instructions:
-                    # Append 0/1 numeric instructions to ensure clear binary response
-                    normalized_judge_prompt += "\n\nIMPORTANT: Your response MUST start with a single integer rating (0 or 1) on its own line, followed by your reasoning. Return 1 if the response meets the criteria, 0 if it does not."
-                    yield f"Enhanced prompt with 0/1 numeric instructions for binary rubric"
+                yield "Binary judge - MLflow will handle JSON output format automatically"
             
             # Set feedback_value_type based on judge type
             # - Binary judges: use float for 0/1 numeric ratings
@@ -1154,16 +1116,38 @@ Now evaluate the following:
             # - Semantic Memory: Distills general guidelines from feedback
             # - Episodic Memory: Retrieves similar past examples during evaluation
             yield "Creating MemAlign optimizer..."
-            
+
             try:
                 from mlflow.genai.judges.optimizers import MemAlignOptimizer
-                
+
+                # IMPORTANT: Databricks models don't support the JSON schema format required
+                # for guideline distillation (additionalProperties: false). OpenAI and Claude models
+                # support this, so we prefer those for the reflection_lm.
+                openai_api_key = os.environ.get('OPENAI_API_KEY')
+                is_openai_model = alignment_model.startswith('openai-') or alignment_model.startswith('gpt-')
+                is_claude_model = alignment_model.startswith('claude-') or 'claude' in alignment_model.lower()
+
+                if is_openai_model or is_claude_model:
+                    # User selected OpenAI/Claude model - use it for reflection (supports JSON schema)
+                    reflection_model = optimizer_model_uri
+                    yield f"Using {alignment_model} for guideline distillation"
+                elif openai_api_key:
+                    # Databricks model selected but OpenAI key available - use OpenAI for reflection
+                    reflection_model = "openai:/gpt-4o-mini"
+                    yield "Using OpenAI (gpt-4o-mini) for guideline distillation (Databricks doesn't support required JSON schema)"
+                else:
+                    # Fall back to Databricks - guideline distillation will fail but episodic memory will work
+                    reflection_model = optimizer_model_uri
+                    yield "WARNING: Using Databricks model for reflection."
+                    yield "Guideline distillation may fail (Databricks doesn't support required JSON schema)."
+                    yield "Alignment will still work using episodic memory (example-based learning)."
+
                 optimizer = MemAlignOptimizer(
-                    reflection_lm=optimizer_model_uri,  # Model for distilling guidelines
+                    reflection_lm=reflection_model,  # Model for distilling guidelines
                     retrieval_k=5,  # Number of similar examples to retrieve
                     embedding_model="databricks:/databricks-gte-large-en",  # Databricks embedding model
                 )
-                yield f"MemAlign optimizer created with reflection_lm={optimizer_model_uri}, retrieval_k=5, embedding_model=databricks-gte-large-en"
+                yield f"MemAlign optimizer created with reflection_lm={reflection_model}, retrieval_k=5"
                 yield "Using MemAlign dual memory system (semantic + episodic memory)"
             except ImportError as e:
                 error_msg = f"MemAlign optimizer not available: {e}. Ensure mlflow>=3.9 is installed."
@@ -1239,7 +1223,13 @@ Now evaluate the following:
             yield f"Aligned judge instructions length: {len(aligned_instructions)} chars"
             yield f"Semantic memory: {guideline_count} distilled guidelines"
             yield f"Episodic memory: {example_count} examples (not persisted to registered judge)"
-            
+
+            # Explain if no guidelines were distilled (common with Databricks models)
+            if guideline_count == 0 and example_count > 0:
+                yield "NOTE: Guideline distillation requires JSON structured output which Databricks models may not fully support."
+                yield "The alignment still succeeded using episodic memory (example-based learning)."
+                yield "The judge will use the original instructions + learned examples for evaluation."
+
             # Log the distilled guidelines
             if semantic_memory:
                 yield "--- Distilled Guidelines (Semantic Memory) ---"
