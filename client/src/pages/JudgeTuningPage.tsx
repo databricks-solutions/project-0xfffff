@@ -119,6 +119,9 @@ export function JudgeTuningPage() {
   const [autoEvalJobId, setAutoEvalJobId] = useState<string | null>(null);
   const [autoEvalDerivedPrompt, setAutoEvalDerivedPrompt] = useState<string | null>(null);
   const [isPollingAutoEval, setIsPollingAutoEval] = useState(false);
+
+  // Run All Evaluations state
+  const [isRunningAllEvaluations, setIsRunningAllEvaluations] = useState(false);
   
   // Judge name derivation logic - based on selected question
   const judgeName = useMemo(() => {
@@ -1133,9 +1136,58 @@ Think step by step about how well the output addresses the criteria, then provid
     }
   };
 
+  // Run All Evaluations handler - calls restart-auto-evaluation for all judges
+  const handleRunAllEvaluations = async () => {
+    if (!workshopId) {
+      toast.error('Workshop not found');
+      return;
+    }
+
+    setIsRunningAllEvaluations(true);
+    setEvaluationError(null);
+    updateAlignmentLogs([`Starting evaluation for all judges...`]);
+    setShowAlignmentLogs(true);
+
+    try {
+      const response = await fetch(`/workshops/${workshopId}/restart-auto-evaluation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          evaluation_model_name: getBackendModelName(selectedEvaluationModel),
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to start evaluation: ${response.status} ${errorText}`);
+      }
+
+      const data = await response.json();
+      const { job_id, judges, message } = data;
+
+      setAutoEvalJobId(job_id);
+      setAutoEvalStatus('running');
+      setIsPollingAutoEval(true);
+
+      updateAlignmentLogs(prev => [...prev, message]);
+      updateAlignmentLogs(prev => [...prev, `Evaluating judges: ${judges.join(', ')}`]);
+
+      toast.success(`Started evaluation for ${judges.length} judges`);
+
+    } catch (error: any) {
+      console.error('[RUN-ALL-EVAL] Exception caught:', error);
+      const message = error?.message || 'Evaluation failed';
+      toast.error(`Evaluation failed: ${message}`);
+      updateAlignmentLogs(prev => [...prev, `ERROR: ${message}`]);
+      setEvaluationError(message);
+    } finally {
+      setIsRunningAllEvaluations(false);
+    }
+  };
+
   const handleRunAlignment = async () => {
     console.log('[ALIGN] ===== FUNCTION CALLED =====');
-    
+
     // Validation
     if (!workshopId || !currentPrompt.trim()) {
       toast.error('Please enter a judge prompt first');
@@ -2377,6 +2429,34 @@ Think step by step about how well the output addresses the criteria, then provid
                   <>
                     <RefreshCw className="h-4 w-4 mr-2" />
                     Re-evaluate
+                  </>
+                )}
+              </Button>
+            )}
+
+            {/* Run All Evaluations button - evaluates all judges at once */}
+            {evaluationMode === 'mlflow' && (
+              <Button
+                onClick={handleRunAllEvaluations}
+                disabled={
+                  isRunningAllEvaluations ||
+                  isRunningEvaluation ||
+                  isRunningAlignment ||
+                  isPollingAutoEval ||
+                  autoEvalStatus === 'running'
+                }
+                variant="outline"
+                className="border-green-400 text-green-700 hover:bg-green-50"
+              >
+                {isRunningAllEvaluations || (isPollingAutoEval && autoEvalStatus === 'running') ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Evaluating All...
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-4 w-4 mr-2" />
+                    Run All Evaluations
                   </>
                 )}
               </Button>
