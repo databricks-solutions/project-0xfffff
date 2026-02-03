@@ -20,3 +20,4 @@ workshop.db
 *.db-wal
 *.csv
 .databricks/
+.pytest_cache/
