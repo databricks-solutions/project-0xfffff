@@ -2350,17 +2350,6 @@ Think step by step about how well the output addresses the criteria, then provid
 
           {/* Databricks workspace + token inputs removed; use Intake configuration */}
 
-          {/* Auto-evaluation status indicator */}
-          {autoEvalStatus === 'running' && (
-            <Alert className="mb-4 border-blue-200 bg-blue-50">
-              <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-              <AlertDescription className="text-blue-800">
-                <strong>Auto-evaluation in progress</strong> - LLM judge is evaluating traces in the background. 
-                Results will appear automatically when complete.
-              </AlertDescription>
-            </Alert>
-          )}
-
           {/* Auto-evaluation status messages */}
           {autoEvalStatus === 'completed' && hasEvaluated && !alignmentResult && (
             <Alert className="mb-4 border-green-200 bg-green-50">
