@@ -168,6 +168,76 @@ const fixUnescapedNewlines = (str: string): string => {
 };
 
 /**
+ * Extract judge result (result + rationale) from malformed JSON string
+ * This handles the case where judge output was stored with improper escaping
+ */
+const extractJudgeResultFromMalformed = (str: string): { result?: number; rationale?: string } | null => {
+  // Look for the pattern: "content": "{"result":X.X,"rationale":"..."}"
+  // where the inner quotes are not properly escaped
+
+  // First, check if this looks like a malformed judge output
+  if (!str.includes('"content": "{"result"') && !str.includes('"content":"{"result"')) {
+    return null;
+  }
+
+  // Extract result value
+  const resultMatch = str.match(/"result"\s*:\s*([\d.]+)/);
+  const result = resultMatch ? parseFloat(resultMatch[1]) : undefined;
+
+  // Extract rationale - find the start after "rationale":"
+  const rationaleStart = str.indexOf('"rationale":"');
+  if (rationaleStart === -1) {
+    return result !== undefined ? { result } : null;
+  }
+
+  const valueStart = rationaleStart + '"rationale":"'.length;
+
+  // Find the end of the rationale - look for the closing pattern
+  // The rationale ends with "}" followed by ", "role" or similar
+  // But we need to handle escaped quotes inside the rationale
+
+  // Find potential end markers
+  let valueEnd = -1;
+  const endPatterns = ['}", "role"', '}","role"', '}"}, "role"', '}"},"role"'];
+  for (const pattern of endPatterns) {
+    const idx = str.indexOf(pattern, valueStart);
+    if (idx !== -1 && (valueEnd === -1 || idx < valueEnd)) {
+      valueEnd = idx;
+    }
+  }
+
+  if (valueEnd === -1) {
+    // Try to find just the closing "}
+    const closeIdx = str.lastIndexOf('"}');
+    if (closeIdx > valueStart) {
+      valueEnd = closeIdx;
+    }
+  }
+
+  if (valueEnd === -1) {
+    return result !== undefined ? { result } : null;
+  }
+
+  // Extract the rationale value
+  let rationale = str.substring(valueStart, valueEnd);
+
+  // Clean up escape sequences - handle various malformed patterns
+  rationale = rationale
+    .replace(/\\\n/g, '\n')    // backslash followed by actual newline -> just newline
+    .replace(/\\\\"/g, '"')    // \\" -> "
+    .replace(/\\"/g, '"')      // \" -> " (single escaped quote)
+    .replace(/\\\\n/g, '\n')   // \\n -> newline
+    .replace(/\\n/g, '\n')     // \n -> newline
+    .replace(/\\\\r/g, '\r')   // \\r -> carriage return
+    .replace(/\\r/g, '\r')     // \r -> carriage return
+    .replace(/\\\\t/g, '\t')   // \\t -> tab
+    .replace(/\\t/g, '\t')     // \t -> tab
+    .replace(/\\\\/g, '\\');   // \\\\ -> \
+
+  return { result, rationale };
+};
+
+/**
  * Try to parse a string as JSON
  * Also handles some common non-JSON formats like Python dict notation
  */
@@ -192,7 +262,17 @@ const tryParseJson = (str: string): { success: boolean; data: any } => {
     }
     return { success: true, data };
   } catch {
-    // Continue to try alternatives
+    // Try fixing malformed content JSON (common issue with judge outputs)
+    try {
+      const fixed = fixMalformedContentJson(cleanStr);
+      if (fixed !== cleanStr) {
+        const data = JSON.parse(fixed);
+        return { success: true, data };
+      }
+    } catch {
+      // Still failed after fix attempt
+    }
+    // Continue to try other alternatives
   }
 
   // Try fixing unescaped newlines in string values
@@ -1177,13 +1257,30 @@ const OutputRenderer: React.FC<{
 }> = ({ rawOutput, displayOutput }) => {
   // Try to extract LLM content from the raw output first
   const llmExtraction = useMemo(() => {
+    // First, try to extract judge result from malformed JSON string
+    if (typeof rawOutput === 'string') {
+      const judgeResult = extractJudgeResultFromMalformed(rawOutput);
+      if (judgeResult && judgeResult.rationale) {
+        const resultLabel = judgeResult.result !== undefined ? `**Rating: ${judgeResult.result}**\n\n` : '';
+        const content = resultLabel + judgeResult.rationale;
+
+        // Extract basic metadata from the raw string
+        const idMatch = rawOutput.match(/"id":\s*"([^"]+)"/);
+        const modelMatch = rawOutput.match(/"model":\s*"([^"]+)"/);
+        const metadata: Record<string, any> = {};
+        if (idMatch) metadata.id = idMatch[1];
+        if (modelMatch) metadata.model = modelMatch[1];
+
+        return { content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+      }
+    }
+
     try {
       // Handle both string and already-parsed object
       let parsed: any;
       if (typeof rawOutput === 'string') {
         parsed = JSON.parse(rawOutput);
         // Handle double-stringified JSON (string containing JSON string)
-        // This happens when the output is stored as a stringified JSON string
         if (typeof parsed === 'string') {
           try {
             parsed = JSON.parse(parsed);
