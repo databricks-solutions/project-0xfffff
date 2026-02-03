@@ -50,33 +50,47 @@ function extractLLMContent(output: any): { content: string | null; metadata: Rec
     let content: string | null = null;
 
     // Check message.content - handle both string and array formats
-    if (firstChoice.message?.content) {
-      if (typeof firstChoice.message.content === 'string') {
-        const msgContent = firstChoice.message.content;
+    if (firstChoice.message?.content !== undefined && firstChoice.message?.content !== null) {
+      const msgContent = firstChoice.message.content;
+
+      if (typeof msgContent === 'string') {
+        const trimmedContent = msgContent.trim();
         // Check if the content is a JSON-encoded judge result
-        if (msgContent.trim().startsWith('{') && msgContent.includes('rationale')) {
+        if (trimmedContent.startsWith('{')) {
           try {
-            const parsed = JSON.parse(msgContent);
+            const parsed = JSON.parse(trimmedContent);
             if (parsed.rationale && typeof parsed.rationale === 'string') {
               const resultLabel = parsed.result !== undefined ? `**Rating: ${parsed.result}**\n\n` : '';
               content = resultLabel + parsed.rationale;
+            } else if (parsed.content && typeof parsed.content === 'string') {
+              // Handle nested content field
+              content = parsed.content;
             } else {
+              // It's JSON but not a judge result - just use the original message content
               content = msgContent;
             }
           } catch {
+            // Not valid JSON, use as-is
             content = msgContent;
           }
         } else {
+          // Regular string content
           content = msgContent;
         }
-      } else if (Array.isArray(firstChoice.message.content)) {
-        // Handle content as array of blocks (Anthropic/Databricks style)
-        const textParts = firstChoice.message.content
-          .filter((c: any) => c.type === 'text' || c.type === 'output_text')
-          .map((c: any) => c.text)
-          .filter(Boolean);
-        if (textParts.length > 0) {
-          content = textParts.join('\n');
+      } else if (typeof msgContent === 'object' && msgContent !== null) {
+        // Handle content that's already parsed as an object (e.g., judge result)
+        if (msgContent.rationale && typeof msgContent.rationale === 'string') {
+          const resultLabel = msgContent.result !== undefined ? `**Rating: ${msgContent.result}**\n\n` : '';
+          content = resultLabel + msgContent.rationale;
+        } else if (Array.isArray(msgContent)) {
+          // Handle content as array of blocks (Anthropic/Databricks style)
+          const textParts = msgContent
+            .filter((c: any) => c.type === 'text' || c.type === 'output_text')
+            .map((c: any) => c.text)
+            .filter(Boolean);
+          if (textParts.length > 0) {
+            content = textParts.join('\n');
+          }
         }
       }
     }
