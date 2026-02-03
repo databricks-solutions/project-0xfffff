@@ -64,6 +64,12 @@ function extractLLMContent(output: any): { content: string | null; metadata: Rec
         }
       }
     }
+    // Handle judge output format: { choices: [{ result: ..., rationale: "..." }] }
+    else if (firstChoice.rationale && typeof firstChoice.rationale === 'string') {
+      // This is a judge evaluation output - show rationale as main content
+      const resultLabel = firstChoice.result !== undefined ? `**Rating: ${firstChoice.result}**\n\n` : '';
+      content = resultLabel + firstChoice.rationale;
+    }
     // Alternative format with direct content on choice
     else if (typeof firstChoice.content === 'string') {
       content = firstChoice.content;
@@ -81,6 +87,7 @@ function extractLLMContent(output: any): { content: string | null; metadata: Rec
       if (output.object) metadata.object = output.object;
       if (output.usage) metadata.usage = output.usage;
       if (firstChoice.finish_reason) metadata.finish_reason = firstChoice.finish_reason;
+      if (output.finish_reason) metadata.finish_reason = output.finish_reason;
 
       return { content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
     }
