@@ -49,47 +49,94 @@ function extractLLMContent(output: any): { content: string | null; metadata: Rec
     const firstChoice = output.choices[0];
     let content: string | null = null;
 
-    // Standard OpenAI format
+    // Check message.content - handle both string and array formats
     if (firstChoice.message?.content) {
-      content = firstChoice.message.content;
+      if (typeof firstChoice.message.content === 'string') {
+        content = firstChoice.message.content;
+      } else if (Array.isArray(firstChoice.message.content)) {
+        // Handle content as array of blocks (Anthropic/Databricks style)
+        const textParts = firstChoice.message.content
+          .filter((c: any) => c.type === 'text' || c.type === 'output_text')
+          .map((c: any) => c.text)
+          .filter(Boolean);
+        if (textParts.length > 0) {
+          content = textParts.join('\n');
+        }
+      }
     }
-    // Alternative format with direct content
-    else if (firstChoice.content) {
+    // Alternative format with direct content on choice
+    else if (typeof firstChoice.content === 'string') {
       content = firstChoice.content;
     }
     // Text completion format
-    else if (firstChoice.text) {
+    else if (typeof firstChoice.text === 'string') {
       content = firstChoice.text;
     }
 
-    // Extract metadata (everything except choices content)
-    const metadata: Record<string, any> = {};
-    if (output.id) metadata.id = output.id;
-    if (output.model) metadata.model = output.model;
-    if (output.object) metadata.object = output.object;
-    if (output.usage) metadata.usage = output.usage;
-    if (firstChoice.finish_reason) metadata.finish_reason = firstChoice.finish_reason;
+    if (content) {
+      // Extract metadata (everything except the actual content)
+      const metadata: Record<string, any> = {};
+      if (output.id) metadata.id = output.id;
+      if (output.model) metadata.model = output.model;
+      if (output.object) metadata.object = output.object;
+      if (output.usage) metadata.usage = output.usage;
+      if (firstChoice.finish_reason) metadata.finish_reason = firstChoice.finish_reason;
 
-    return { content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+      return { content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+    }
   }
 
   // Handle Anthropic/Claude format: { content: [{ type: "text", text: "..." }] }
   if (output.content && Array.isArray(output.content)) {
-    const textContent = output.content
+    // Try type: "text" format
+    let textContent = output.content
       .filter((c: any) => c.type === 'text' && c.text)
       .map((c: any) => c.text)
       .join('\n');
+
+    // Also try type: "output_text" format (Databricks/MLflow style)
+    if (!textContent) {
+      textContent = output.content
+        .filter((c: any) => c.type === 'output_text' && c.text)
+        .map((c: any) => c.text)
+        .join('\n');
+    }
 
     if (textContent) {
       const metadata: Record<string, any> = {};
       if (output.id) metadata.id = output.id;
       if (output.model) metadata.model = output.model;
       if (output.type) metadata.type = output.type;
+      if (output.object) metadata.object = output.object;
       if (output.role) metadata.role = output.role;
       if (output.usage) metadata.usage = output.usage;
       if (output.stop_reason) metadata.stop_reason = output.stop_reason;
+      if (output.finish_reason) metadata.finish_reason = output.finish_reason;
 
       return { content: textContent, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+    }
+  }
+
+  // Handle messages array format: { messages: [{ role: "assistant", content: "..." }] }
+  if (output.messages && Array.isArray(output.messages)) {
+    // Find assistant message
+    const assistantMsg = output.messages.find((m: any) => m.role === 'assistant');
+    if (assistantMsg) {
+      let content: string | null = null;
+      if (typeof assistantMsg.content === 'string') {
+        content = assistantMsg.content;
+      } else if (Array.isArray(assistantMsg.content)) {
+        content = assistantMsg.content
+          .filter((c: any) => (c.type === 'text' || c.type === 'output_text') && c.text)
+          .map((c: any) => c.text)
+          .join('\n');
+      }
+      if (content) {
+        const metadata: Record<string, any> = {};
+        if (output.id) metadata.id = output.id;
+        if (output.model) metadata.model = output.model;
+        return { content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+      }
     }
   }
 
@@ -106,6 +153,29 @@ function extractLLMContent(output: any): { content: string | null; metadata: Rec
   // Handle response with text field directly
   if (output.text && typeof output.text === 'string') {
     return { content: output.text, metadata: null };
+  }
+
+  // Handle Databricks agent response format: { output: [{ type: "message", content: [...] }] }
+  if (output.output && Array.isArray(output.output)) {
+    for (const item of output.output) {
+      if (item.type === 'message' && item.role === 'assistant' && item.content) {
+        let content: string | null = null;
+        if (typeof item.content === 'string') {
+          content = item.content;
+        } else if (Array.isArray(item.content)) {
+          content = item.content
+            .filter((c: any) => (c.type === 'text' || c.type === 'output_text') && c.text)
+            .map((c: any) => c.text)
+            .join('\n');
+        }
+        if (content) {
+          const metadata: Record<string, any> = {};
+          if (output.id) metadata.id = output.id;
+          if (output.model) metadata.model = output.model;
+          return { content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+        }
+      }
+    }
   }
 
   return { content: null, metadata: null };
