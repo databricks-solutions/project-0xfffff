@@ -5,6 +5,7 @@ import pytest
 from server.utils.jsonpath_utils import apply_jsonpath, validate_jsonpath
 
 
+@pytest.mark.spec("TRACE_DISPLAY_SPEC")
 class TestApplyJsonPath:
     """Tests for the apply_jsonpath function."""
 
@@ -124,6 +125,7 @@ class TestApplyJsonPath:
         assert result == "hello"
 
 
+@pytest.mark.spec("TRACE_DISPLAY_SPEC")
 class TestValidateJsonPath:
     """Tests for the validate_jsonpath function."""
 
