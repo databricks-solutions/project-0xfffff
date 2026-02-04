@@ -13,6 +13,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from server.config import ServerConfig
 from server.db_bootstrap import maybe_bootstrap_db_on_startup
+from server.db_config import DatabaseBackend, detect_database_backend
 from server.routers import router
 from server.sqlite_rescue import (
     backup_to_volume,
@@ -29,25 +30,34 @@ async def lifespan(app: FastAPI):
     """Manage application lifespan with proper startup and shutdown."""
     print("🚀 Application startup - lifespan function called!")
 
-    # SQLite Rescue: Restore from Unity Catalog Volume if configured
-    # This MUST happen before database bootstrap/migrations
-    rescue_status = get_rescue_status()
-    if rescue_status["configured"]:
-        print(f"📦 SQLite rescue configured: {rescue_status['volume_backup_path']}")
-        if restore_from_volume():
-            print("✅ Database restored from Unity Catalog Volume")
-        else:
-            print("ℹ️  No backup to restore (starting fresh or backup not found)")
+    # Detect database backend
+    db_backend = detect_database_backend()
+    using_sqlite = db_backend == DatabaseBackend.SQLITE
 
-        # Install signal handlers for graceful shutdown backup
-        install_shutdown_handlers()
-
-        # Start periodic background backup timer (every 10 minutes by default)
-        start_backup_timer()
-        backup_interval = rescue_status.get("backup_interval_minutes", 10)
-        print(f"⏰ Periodic backup timer started (every {backup_interval} minutes)")
+    if db_backend == DatabaseBackend.POSTGRESQL:
+        print("🐘 Using Lakebase (PostgreSQL) - data persists automatically")
+        rescue_status = {"configured": False}  # SQLite rescue not needed for PostgreSQL
     else:
-        print("⚠️  SQLITE_VOLUME_BACKUP_PATH not configured - database will NOT persist across container restarts")
+        print("📁 Using SQLite database backend")
+        # SQLite Rescue: Restore from Unity Catalog Volume if configured
+        # This MUST happen before database bootstrap/migrations
+        rescue_status = get_rescue_status()
+        if rescue_status["configured"]:
+            print(f"📦 SQLite rescue configured: {rescue_status['volume_backup_path']}")
+            if restore_from_volume():
+                print("✅ Database restored from Unity Catalog Volume")
+            else:
+                print("ℹ️  No backup to restore (starting fresh or backup not found)")
+
+            # Install signal handlers for graceful shutdown backup
+            install_shutdown_handlers()
+
+            # Start periodic background backup timer (every 10 minutes by default)
+            start_backup_timer()
+            backup_interval = rescue_status.get("backup_interval_minutes", 10)
+            print(f"⏰ Periodic backup timer started (every {backup_interval} minutes)")
+        else:
+            print("⚠️  SQLITE_VOLUME_BACKUP_PATH not configured - database will NOT persist across container restarts")
 
     # NOTE: This is a *fallback* safety net for deployments that don't run `just db-bootstrap`.
     # It is designed to be safe under multi-process servers (e.g., gunicorn with multiple
@@ -57,9 +67,9 @@ async def lifespan(app: FastAPI):
     print("✅ Application startup complete!")
     yield
 
-    # SQLite Rescue: Backup to Unity Catalog Volume on shutdown
+    # Shutdown: Backup SQLite to Unity Catalog Volume if configured
     print("🔄 Application shutting down...")
-    if rescue_status["configured"]:
+    if using_sqlite and rescue_status["configured"]:
         # Stop the periodic backup timer first
         stop_backup_timer()
         print("⏰ Periodic backup timer stopped")

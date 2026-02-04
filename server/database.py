@@ -1,5 +1,14 @@
-"""Database setup and configuration for the workshop application."""
+"""Database setup and configuration for the workshop application.
 
+Supports two database backends:
+- SQLite (default): For local development and simple deployments
+- Lakebase (PostgreSQL): For Databricks Apps with database resources
+
+The backend is automatically detected based on environment variables.
+See db_config.py for detection logic and configuration.
+"""
+
+import logging
 import os
 import uuid
 
@@ -13,12 +22,19 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
-    create_engine,
     event,
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
 from sqlalchemy.sql import func
+
+from .db_config import (
+    DatabaseBackend,
+    create_engine_for_backend,
+    detect_database_backend,
+)
+
+logger = logging.getLogger(__name__)
 
 try:
     # Imported for side effects/availability; some deployments may not ship encryption extras.
@@ -27,60 +43,32 @@ try:
 except ImportError:
     pass
 
-# Database configuration
+# Detect database backend and create engine
+DATABASE_BACKEND = detect_database_backend()
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./workshop.db")
 
-# Enhanced connection arguments for SQLite to handle concurrency better
-sqlite_connect_args = (
-    {
-        'check_same_thread': False,
-        'timeout': 60,  # 60 second timeout for database operations (increased for concurrent writes)
-        'isolation_level': 'DEFERRED',  # Use DEFERRED for better concurrency with proper transaction support
-    }
-    if 'sqlite' in DATABASE_URL
-    else {}
-)
+# Log which backend is being used
+if DATABASE_BACKEND == DatabaseBackend.POSTGRESQL:
+    logger.info("Using Lakebase (PostgreSQL) database backend")
+else:
+    logger.info(f"Using SQLite database backend: {DATABASE_URL}")
 
-# Create engine with connection pooling and better concurrency settings
-engine = create_engine(
-    DATABASE_URL,
-    connect_args=sqlite_connect_args,
-    pool_size=20,  # Maximum number of connections to maintain in the pool
-    max_overflow=30,  # Maximum number of connections that can be created beyond pool_size
-    pool_timeout=30,  # Timeout in seconds for getting connection from pool
-    pool_recycle=3600,  # Recycle connections after 1 hour
-    pool_pre_ping=True,  # Verify connections before use
-    echo=False,  # Set to True for SQL debugging
-)
-
-
-# CRITICAL: Enable WAL mode and set busy_timeout for EVERY new SQLite connection
-# This is essential for proper concurrent write handling
-# Without this, multiple users submitting feedback simultaneously can lose data
-if 'sqlite' in DATABASE_URL:
-    @event.listens_for(engine, "connect")
-    def set_sqlite_pragma(dbapi_connection, connection_record):
-        """Set SQLite PRAGMAs on every new connection for proper concurrency."""
-        cursor = dbapi_connection.cursor()
-        # WAL mode: Allows concurrent reads during writes (critical for multi-user apps)
-        cursor.execute("PRAGMA journal_mode=WAL")
-        # Busy timeout: Wait up to 60 seconds if database is locked before failing
-        cursor.execute("PRAGMA busy_timeout=60000")
-        # Synchronous NORMAL: Good balance of safety and performance with WAL
-        cursor.execute("PRAGMA synchronous=NORMAL")
-        cursor.close()
+# Create engine using the appropriate backend configuration
+engine = create_engine_for_backend(DATABASE_BACKEND)
 
 
 # SQLite Rescue: Track write operations for backup triggering
 # This listener fires after successful commits and notifies the rescue module
-@event.listens_for(engine, "commit")
-def on_commit(conn):
-    """Record write operations for SQLite rescue backup triggering."""
-    try:
-        from server.sqlite_rescue import record_write_operation
-        record_write_operation()
-    except ImportError:
-        pass  # sqlite_rescue not available
+# Only applies to SQLite backend
+if DATABASE_BACKEND == DatabaseBackend.SQLITE:
+    @event.listens_for(engine, "commit")
+    def on_commit(conn):
+        """Record write operations for SQLite rescue backup triggering."""
+        try:
+            from server.sqlite_rescue import record_write_operation
+            record_write_operation()
+        except ImportError:
+            pass  # sqlite_rescue not available
 
 # Create session factory with better session management
 SessionLocal = sessionmaker(
@@ -440,9 +428,23 @@ def create_tables():
     """Legacy helper to create tables directly (not used in normal operation).
 
     Schema changes should be applied via Alembic migrations, not at runtime.
+    Supports both SQLite and PostgreSQL (Lakebase) backends.
     """
+    from .db_config import get_schema_name
+
     try:
         print('🔧 Creating database tables...')
+
+        # For PostgreSQL/Lakebase, create schema first if needed
+        if DATABASE_BACKEND == DatabaseBackend.POSTGRESQL:
+            schema_name = get_schema_name()
+            if schema_name:
+                from sqlalchemy import text
+                with engine.connect() as conn:
+                    conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}"'))
+                    conn.commit()
+                    print(f'✅ Created/verified schema: {schema_name}')
+
         # Use checkfirst=True to avoid errors if tables already exist
         Base.metadata.create_all(bind=engine, checkfirst=True)
         print('✅ Database tables created successfully')
@@ -455,26 +457,43 @@ def create_tables():
             print(f'❌ Error creating database tables: {e}')
             raise e
 
-    # Enable WAL mode for better SQLite concurrency (allows concurrent reads during writes)
-    try:
-        from sqlalchemy import text
-        with engine.connect() as conn:
-            conn.execute(text('PRAGMA journal_mode=WAL'))
-            conn.execute(text('PRAGMA busy_timeout=60000'))  # 60 second busy timeout
-            conn.commit()
-            print('✅ SQLite WAL mode enabled for better concurrency')
-    except Exception as e:
-        print(f'ℹ️ Could not enable WAL mode (non-critical): {e}')
+    # Enable WAL mode for better SQLite concurrency (only for SQLite)
+    if DATABASE_BACKEND == DatabaseBackend.SQLITE:
+        try:
+            from sqlalchemy import text
+            with engine.connect() as conn:
+                conn.execute(text('PRAGMA journal_mode=WAL'))
+                conn.execute(text('PRAGMA busy_timeout=60000'))  # 60 second busy timeout
+                conn.commit()
+                print('✅ SQLite WAL mode enabled for better concurrency')
+        except Exception as e:
+            print(f'ℹ️ Could not enable WAL mode (non-critical): {e}')
 
     # Update schema for existing databases
-    try:
-        from sqlalchemy import text
+    _apply_schema_updates()
 
+
+def _apply_schema_updates():
+    """Apply schema updates for existing databases.
+
+    Handles both SQLite and PostgreSQL syntax differences.
+    """
+    from sqlalchemy import text
+
+    try:
         with engine.connect() as conn:
+            # Determine if we're using PostgreSQL or SQLite
+            is_postgres = DATABASE_BACKEND == DatabaseBackend.POSTGRESQL
+
             try:
                 # Add new columns to judge_prompts table if they don't exist
-                conn.execute(text("ALTER TABLE judge_prompts ADD COLUMN model_name VARCHAR DEFAULT 'demo'"))
-                conn.execute(text('ALTER TABLE judge_prompts ADD COLUMN model_parameters JSON'))
+                if is_postgres:
+                    conn.execute(text("ALTER TABLE judge_prompts ADD COLUMN IF NOT EXISTS model_name VARCHAR DEFAULT 'demo'"))
+                    conn.execute(text('ALTER TABLE judge_prompts ADD COLUMN IF NOT EXISTS model_parameters JSON'))
+                else:
+                    conn.execute(text("ALTER TABLE judge_prompts ADD COLUMN model_name VARCHAR DEFAULT 'demo'"))
+                    conn.execute(text('ALTER TABLE judge_prompts ADD COLUMN model_parameters JSON'))
+                conn.commit()
                 print('✅ Database schema updated for judge_prompts')
             except Exception as e:
                 # Columns already exist or table doesn't exist yet
@@ -482,16 +501,21 @@ def create_tables():
 
             try:
                 # Add ratings column to annotations table for multiple question support
-                conn.execute(text('ALTER TABLE annotations ADD COLUMN ratings JSON'))
+                if is_postgres:
+                    conn.execute(text('ALTER TABLE annotations ADD COLUMN IF NOT EXISTS ratings JSON'))
+                else:
+                    conn.execute(text('ALTER TABLE annotations ADD COLUMN ratings JSON'))
                 conn.commit()
                 print('✅ Database schema updated for annotations (added ratings column)')
             except Exception as e:
-                # Column already exists or table doesn't exist yet
                 print(f'ℹ️ annotations schema update skipped (ratings column may already exist): {e}')
 
             try:
                 # Add include_in_alignment column to traces table for alignment filtering
-                conn.execute(text('ALTER TABLE traces ADD COLUMN include_in_alignment BOOLEAN DEFAULT 1'))
+                if is_postgres:
+                    conn.execute(text('ALTER TABLE traces ADD COLUMN IF NOT EXISTS include_in_alignment BOOLEAN DEFAULT TRUE'))
+                else:
+                    conn.execute(text('ALTER TABLE traces ADD COLUMN include_in_alignment BOOLEAN DEFAULT 1'))
                 conn.commit()
                 print('✅ Database schema updated for traces (added include_in_alignment column)')
             except Exception as e:
@@ -499,7 +523,10 @@ def create_tables():
 
             try:
                 # Add sme_feedback column to traces table for concatenated SME feedback
-                conn.execute(text('ALTER TABLE traces ADD COLUMN sme_feedback TEXT'))
+                if is_postgres:
+                    conn.execute(text('ALTER TABLE traces ADD COLUMN IF NOT EXISTS sme_feedback TEXT'))
+                else:
+                    conn.execute(text('ALTER TABLE traces ADD COLUMN sme_feedback TEXT'))
                 conn.commit()
                 print('✅ Database schema updated for traces (added sme_feedback column)')
             except Exception as e:
@@ -507,7 +534,10 @@ def create_tables():
 
             try:
                 # Add unique constraint to discovery_findings to prevent duplicate entries
-                conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS idx_discovery_findings_unique ON discovery_findings (workshop_id, trace_id, user_id)'))
+                if is_postgres:
+                    conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS idx_discovery_findings_unique ON discovery_findings (workshop_id, trace_id, user_id)'))
+                else:
+                    conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS idx_discovery_findings_unique ON discovery_findings (workshop_id, trace_id, user_id)'))
                 conn.commit()
                 print('✅ Database schema updated: added unique constraint to discovery_findings')
             except Exception as e:

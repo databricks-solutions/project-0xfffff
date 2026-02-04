@@ -733,13 +733,15 @@ class DatabaseService:
   # Discovery finding operations
   def add_finding(self, workshop_id: str, finding_data: DiscoveryFindingCreate) -> DiscoveryFinding:
     """Add or update a discovery finding (upsert) with automatic retry on failure.
-    
+
     Retries are handled transparently in the backend - the frontend only sees
     success or failure after all retries are exhausted.
-    
+
+    Works with both SQLite and PostgreSQL (Lakebase) backends.
+
     Handles:
     - IntegrityError: Race conditions when multiple users save simultaneously
-    - OperationalError: Database locked/busy (SQLite concurrent access)
+    - OperationalError: Database locked/busy (SQLite) or deadlocks (PostgreSQL)
     - General exceptions: Network issues, timeouts, etc.
     """
     from sqlalchemy.exc import IntegrityError, OperationalError
@@ -755,8 +757,8 @@ class DatabaseService:
     for attempt in range(max_retries):
       try:
         # First, try to find existing record to preserve its ID
-        # Note: Removed with_for_update() - SQLite doesn't support row-level locking
-        # and it can cause issues. SQLite uses file-level locking instead.
+        # Note: with_for_update() is not used for cross-database compatibility
+        # (SQLite uses file-level locking; PostgreSQL supports row-level but this works for both)
         existing_finding = self.db.query(DiscoveryFindingDB).filter(
           DiscoveryFindingDB.workshop_id == workshop_id,
           DiscoveryFindingDB.trace_id == finding_data.trace_id,
@@ -833,11 +835,11 @@ class DatabaseService:
           raise e
           
       except OperationalError as e:
-        # Handle database locked/busy errors (common with SQLite concurrent access)
+        # Handle database contention errors (locked/busy for SQLite, deadlocks for PostgreSQL)
         last_error = e
         error_msg = str(e).lower()
-        if 'locked' in error_msg or 'busy' in error_msg:
-          logger.warning(f"⚠️ Database locked/busy on finding save (attempt {attempt + 1}/{max_retries}): {e}")
+        if 'locked' in error_msg or 'busy' in error_msg or 'deadlock' in error_msg:
+          logger.warning(f"⚠️ Database contention on finding save (attempt {attempt + 1}/{max_retries}): {e}")
         else:
           logger.warning(f"⚠️ OperationalError on finding save (attempt {attempt + 1}/{max_retries}): {e}")
         self.db.rollback()
@@ -1423,7 +1425,7 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
     import random
 
     # Increased retry parameters for better handling of concurrent writes
-    # With 10+ users annotating simultaneously, SQLite needs more time to serialize writes
+    # Works with both SQLite (file-level locking) and PostgreSQL (MVCC with potential deadlocks)
     max_retries = 7  # Increased from 3 to handle more concurrent users
     base_delay = 0.3  # Base delay in seconds (increased from 0.2)
     max_delay = 5.0  # Maximum delay between retries
@@ -1432,8 +1434,8 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
     last_error = None
     for attempt in range(max_retries):
       try:
-        # Note: Removed with_for_update() - SQLite doesn't support row-level locking
-        # and it can cause silent failures. SQLite uses file-level locking instead.
+        # Note: with_for_update() is not used for cross-database compatibility
+        # (SQLite uses file-level locking; PostgreSQL supports row-level but this works for both)
         existing_annotation = (
           self.db.query(AnnotationDB)
           .filter(AnnotationDB.user_id == annotation_data.user_id, AnnotationDB.trace_id == annotation_data.trace_id)
@@ -1559,11 +1561,11 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
           raise e
           
       except OperationalError as e:
-        # Handle database locked/busy errors (common with SQLite concurrent access)
+        # Handle database contention errors (locked/busy for SQLite, deadlocks for PostgreSQL)
         last_error = e
         error_msg = str(e).lower()
-        if 'locked' in error_msg or 'busy' in error_msg:
-          logger.warning(f"⚠️ Database locked/busy on annotation save (attempt {attempt + 1}/{max_retries}): {e}")
+        if 'locked' in error_msg or 'busy' in error_msg or 'deadlock' in error_msg:
+          logger.warning(f"⚠️ Database contention on annotation save (attempt {attempt + 1}/{max_retries}): {e}")
         else:
           logger.warning(f"⚠️ OperationalError on annotation save (attempt {attempt + 1}/{max_retries}): {e}")
         self.db.rollback()
