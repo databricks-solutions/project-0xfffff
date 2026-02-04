@@ -6,10 +6,10 @@ on:
 
 jobs:
   e2e-test:
-    runs-on: 
+    runs-on:
       group: databricks-solutions-protected-runner-group
       labels: linux-ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -47,9 +47,14 @@ jobs:
         run: |
           # Set up environment
           export ENVIRONMENT=development
-          
+
           # Run e2e tests using just
           uv run just e2e headless 1
+        env:
+          CI: true
+
+      - name: Run Python unit tests
+        run: uv run just test-server
         env:
           CI: true
 
