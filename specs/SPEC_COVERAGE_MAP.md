@@ -1,6 +1,6 @@
 # Spec Test Coverage Map
 
-**Generated**: 2026-02-03 13:25:52
+**Generated**: 2026-02-05 22:18:08
 
 This report shows which tests cover each specification.
 Tests are tagged using framework-specific conventions:
@@ -15,19 +15,20 @@ Tests are tagged using framework-specific conventions:
 
 | Spec | pytest | Playwright | Vitest | Total | Status |
 |------|--------|------------|--------|-------|--------|
-| [ANNOTATION_SPEC](#annotation-spec) | 4 | 1 | 0 | 5 | ✅ Covered |
-| [AUTHENTICATION_SPEC](#authentication-spec) | 8 | 1 | 0 | 9 | ✅ Covered |
-| [BUILD_AND_DEPLOY_SPEC](#build-and-deploy-spec) | 1 | 0 | 0 | 1 | 🟡 Partial |
-| [CUSTOM_LLM_PROVIDER_SPEC](#custom-llm-provider-spec) | 8 | 1 | 0 | 9 | ✅ Covered |
-| [DATASETS_SPEC](#datasets-spec) | 2 | 0 | 1 | 3 | ✅ Covered |
-| [DESIGN_SYSTEM_SPEC](#design-system-spec) | 0 | 0 | 1 | 1 | 🟡 Partial |
-| [DISCOVERY_TRACE_ASSIGNMENT_SPEC](#discovery-trace-assignment-spec) | 3 | 1 | 1 | 5 | ✅ Covered |
-| [JUDGE_EVALUATION_SPEC](#judge-evaluation-spec) | 41 | 4 | 1 | 46 | ✅ Covered |
-| [RUBRIC_SPEC](#rubric-spec) | 10 | 6 | 2 | 18 | ✅ Covered |
-| [TRACE_DISPLAY_SPEC](#trace-display-spec) | 0 | 5 | 0 | 5 | ✅ Covered |
-| [UI_COMPONENTS_SPEC](#ui-components-spec) | 0 | 0 | 0 | 0 | ❌ Uncovered |
+| [ANNOTATION_SPEC](#annotation-spec) | 6 | 2 | 0 | 8 | ✅ Covered |
+| [AUTHENTICATION_SPEC](#authentication-spec) | 11 | 2 | 0 | 13 | ✅ Covered |
+| [BUILD_AND_DEPLOY_SPEC](#build-and-deploy-spec) | 9 | 0 | 0 | 9 | ✅ Covered |
+| [CUSTOM_LLM_PROVIDER_SPEC](#custom-llm-provider-spec) | 13 | 1 | 0 | 14 | ✅ Covered |
+| [DATASETS_SPEC](#datasets-spec) | 7 | 1 | 2 | 10 | ✅ Covered |
+| [DESIGN_SYSTEM_SPEC](#design-system-spec) | 0 | 1 | 4 | 5 | ✅ Covered |
+| [DISCOVERY_TRACE_ASSIGNMENT_SPEC](#discovery-trace-assignment-spec) | 7 | 2 | 1 | 10 | ✅ Covered |
+| [JUDGE_EVALUATION_SPEC](#judge-evaluation-spec) | 42 | 6 | 1 | 49 | ✅ Covered |
+| [RUBRIC_SPEC](#rubric-spec) | 14 | 7 | 2 | 23 | ✅ Covered |
+| [TESTING_SPEC](#testing-spec) | 3 | 0 | 0 | 3 | ✅ Covered |
+| [TRACE_DISPLAY_SPEC](#trace-display-spec) | 2 | 6 | 2 | 10 | ✅ Covered |
+| [UI_COMPONENTS_SPEC](#ui-components-spec) | 0 | 2 | 0 | 2 | 🟡 Partial |
 
-**Coverage**: 10/11 specs (90%)
+**Coverage**: 12/12 specs (100%)
 
 ---
 
@@ -35,6 +36,8 @@ Tests are tagged using framework-specific conventions:
 
 ### pytest
 
+- `tests/unit/routers/test_annotation_crud.py` (test_upsert_creates_new_annotation)
+- `tests/unit/routers/test_annotation_crud.py` (test_upsert_updates_existing_annotation)
 - `tests/unit/routers/test_annotation_last_trace.py` (test_all_10_annotations_can_be_saved)
 - `tests/unit/routers/test_annotation_last_trace.py` (test_10th_annotation_specifically)
 - `tests/unit/routers/test_annotation_last_trace.py` (test_multiple_annotators_can_save_10th_annotation)
@@ -42,12 +45,16 @@ Tests are tagged using framework-specific conventions:
 
 ### Playwright (E2E)
 
+- `client/tests/e2e/annotation-flow.spec.ts`
 - `client/tests/e2e/annotation-last-trace.spec.ts`
 
 ## AUTHENTICATION_SPEC
 
 ### pytest
 
+- `tests/unit/routers/test_auth_edge_cases.py` (test_permission_api_failure_returns_defaults_when_user_not_found)
+- `tests/unit/routers/test_auth_edge_cases.py` (test_permission_api_returns_role_based_defaults_for_valid_user)
+- `tests/unit/routers/test_auth_edge_cases.py` (test_permission_api_failure_when_db_service_raises)
 - `tests/unit/routers/test_users_router.py` (test_users_login_facilitator_path)
 - `tests/unit/routers/test_users_router.py` (test_users_login_invalid_credentials_returns_401)
 - `tests/unit/routers/test_users_router.py` (test_user_permissions_derived_from_role)
@@ -60,11 +67,20 @@ Tests are tagged using framework-specific conventions:
 ### Playwright (E2E)
 
 - `client/tests/e2e/facilitator-create-workshop.spec.ts`
+- `client/tests/e2e/authentication.spec.ts`
 
 ## BUILD_AND_DEPLOY_SPEC
 
 ### pytest
 
+- `tests/unit/test_sqlite_rescue.py` (test_default_database_url)
+- `tests/unit/test_sqlite_rescue.py` (test_valid_volume_path)
+- `tests/unit/test_sqlite_rescue.py` (test_extracts_volume_root)
+- `tests/unit/test_build_deploy.py` (test_bootstrap_creates_db_file)
+- `tests/unit/test_build_deploy.py` (test_migrations_directory_exists)
+- `tests/unit/test_build_deploy.py` (test_lock_is_exclusive)
+- `tests/unit/test_build_deploy.py` (test_vite_config_specifies_terser)
+- `tests/unit/test_build_deploy.py` (test_release_workflow_exists)
 - `tests/unit/test_health_smoke.py` (test_health_endpoint)
 
 ## CUSTOM_LLM_PROVIDER_SPEC
@@ -79,6 +95,11 @@ Tests are tagged using framework-specific conventions:
 - `tests/unit/routers/test_custom_llm_provider_router.py` (test_test_custom_llm_provider_auth_failure)
 - `tests/unit/routers/test_custom_llm_provider_router.py` (test_test_custom_llm_provider_no_config)
 - `tests/unit/routers/test_custom_llm_provider_router.py` (test_test_custom_llm_provider_no_api_key)
+- `tests/unit/services/test_judge_custom_provider.py` (test_custom_provider_sets_proxy_url_in_mlflow_configuration)
+- `tests/unit/services/test_judge_custom_provider.py` (test_build_chat_completions_url_with_v1_suffix)
+- `tests/unit/services/test_judge_custom_provider.py` (test_build_chat_completions_url_already_has_suffix)
+- `tests/unit/services/test_judge_custom_provider.py` (test_build_chat_completions_url_strips_trailing_slash)
+- `tests/unit/services/test_judge_custom_provider.py` (test_custom_provider_api_key_stored_with_correct_key_format)
 
 ### Playwright (E2E)
 
@@ -90,15 +111,32 @@ Tests are tagged using framework-specific conventions:
 
 - `tests/unit/routers/test_dbsql_export_router.py` (test_dbsql_export_success)
 - `tests/unit/routers/test_dbsql_export_router.py` (test_dbsql_export_status_happy_path)
+- `tests/unit/services/test_dataset_operations.py` (test_same_user_same_traces_same_order)
+- `tests/unit/services/test_dataset_operations.py` (test_two_users_different_orders)
+- `tests/unit/services/test_dataset_operations.py` (test_facilitator_order_is_chronological)
+- `tests/unit/services/test_dataset_operations.py` (test_incremental_addition_preserves_existing_order)
+- `tests/unit/services/test_dataset_operations.py` (test_new_round_produces_different_order)
+
+### Playwright (E2E)
+
+- `client/tests/e2e/dataset-operations.spec.ts`
 
 ### Vitest (Unit)
 
 - `client/src/utils/traceUtils.test.ts`
+- `client/src/utils/traceUtils.test.ts`
 
 ## DESIGN_SYSTEM_SPEC
 
+### Playwright (E2E)
+
+- `client/tests/e2e/design-system.spec.ts`
+
 ### Vitest (Unit)
 
+- `client/src/test/design-system.test.ts`
+- `client/src/test/design-system.test.ts`
+- `client/src/lib/utils.test.ts`
 - `client/src/lib/utils.test.ts`
 
 ## DISCOVERY_TRACE_ASSIGNMENT_SPEC
@@ -108,9 +146,14 @@ Tests are tagged using framework-specific conventions:
 - `tests/unit/routers/test_workshops_router.py` (test_get_workshop_404_when_missing)
 - `tests/unit/routers/test_workshops_router.py` (test_get_traces_requires_user_id)
 - `tests/unit/routers/test_workshops_router.py` (test_get_workshop_success)
+- `tests/unit/services/test_trace_assignment.py` (test_active_traces_only_current_round)
+- `tests/unit/services/test_trace_assignment.py` (test_different_users_different_order)
+- `tests/unit/services/test_trace_assignment.py` (test_append_preserves_existing_positions)
+- `tests/unit/services/test_trace_assignment.py` (test_new_dataset_triggers_fresh_randomization)
 
 ### Playwright (E2E)
 
+- `client/tests/e2e/trace-visibility.spec.ts`
 - `client/tests/e2e/discovery-invite-traces.spec.ts`
 
 ### Vitest (Unit)
@@ -124,6 +167,7 @@ Tests are tagged using framework-specific conventions:
 - `tests/unit/routers/test_workshops_begin_annotation.py` (test_begin_annotation_with_auto_eval_enabled)
 - `tests/unit/routers/test_workshops_begin_annotation.py` (test_begin_annotation_with_auto_eval_disabled)
 - `tests/unit/routers/test_workshops_begin_annotation.py` (test_begin_annotation_requires_rubric)
+- `tests/unit/routers/test_workshops_router.py` (test_re_evaluate_uses_stored_auto_evaluation_model)
 - `tests/unit/routers/test_databricks_router.py` (test_databricks_test_connection_success)
 - `tests/unit/routers/test_databricks_router.py` (test_databricks_call_endpoint_success)
 - `tests/unit/routers/test_databricks_router.py` (test_databricks_chat_endpoint_success)
@@ -165,6 +209,8 @@ Tests are tagged using framework-specific conventions:
 
 ### Playwright (E2E)
 
+- `client/tests/e2e/judge-evaluation.spec.ts`
+- `client/tests/e2e/judge-evaluation.spec.ts`
 - `client/tests/e2e/auto-evaluation.spec.ts`
 - `client/tests/e2e/auto-evaluation.spec.ts`
 - `client/tests/e2e/auto-evaluation.spec.ts`
@@ -178,6 +224,10 @@ Tests are tagged using framework-specific conventions:
 
 ### pytest
 
+- `tests/unit/services/test_rubric_parsing.py` (test_simple_questions)
+- `tests/unit/services/test_rubric_parsing.py` (test_reconstruct_simple_questions)
+- `tests/unit/services/test_rubric_parsing.py` (test_parse_reconstruct_roundtrip)
+- `tests/unit/services/test_rubric_parsing.py` (test_binary_judge_type_parsed_correctly)
 - `tests/unit/services/test_database_service_rubric.py` (test_parse_rubric_questions_with_judge_type_binary)
 - `tests/unit/services/test_database_service_rubric.py` (test_parse_rubric_questions_with_judge_type_likert)
 - `tests/unit/services/test_database_service_rubric.py` (test_parse_rubric_questions_default_to_likert)
@@ -196,6 +246,7 @@ Tests are tagged using framework-specific conventions:
 - `client/tests/e2e/rubric-judge-type.spec.ts`
 - `client/tests/e2e/rubric-judge-type.spec.ts`
 - `client/tests/e2e/rubric-judge-type.spec.ts`
+- `client/tests/e2e/rubric-persistence.spec.ts`
 - `client/tests/e2e/rubric-creation.spec.ts`
 
 ### Vitest (Unit)
@@ -203,7 +254,20 @@ Tests are tagged using framework-specific conventions:
 - `client/src/utils/rubricUtils.test.ts`
 - `client/src/utils/rubricUtils.test.ts`
 
+## TESTING_SPEC
+
+### pytest
+
+- `tests/unit/test_testing_infrastructure.py` (test_mock_db_session_fixture_exists)
+- `tests/unit/test_testing_infrastructure.py` (test_conftest_has_spec_option)
+- `tests/unit/test_testing_infrastructure.py` (test_e2e_workflow_exists)
+
 ## TRACE_DISPLAY_SPEC
+
+### pytest
+
+- `tests/unit/utils/test_jsonpath_utils.py` (test_simple_extraction)
+- `tests/unit/utils/test_jsonpath_utils.py` (test_valid_jsonpath)
 
 ### Playwright (E2E)
 
@@ -212,12 +276,16 @@ Tests are tagged using framework-specific conventions:
 - `client/tests/e2e/jsonpath-trace-display.spec.ts`
 - `client/tests/e2e/jsonpath-trace-display.spec.ts`
 - `client/tests/e2e/jsonpath-trace-display.spec.ts`
+- `client/tests/e2e/jsonpath-trace-display.spec.ts`
+
+### Vitest (Unit)
+
+- `client/src/hooks/useJsonPathExtraction.test.ts`
+- `client/src/hooks/useJsonPathExtraction.test.ts`
 
 ## UI_COMPONENTS_SPEC
 
-❌ **No tests tagged for this spec**
+### Playwright (E2E)
 
-To add coverage, tag tests with:
-- pytest: `@pytest.mark.spec("UI_COMPONENTS_SPEC")`
-- Playwright: `{ tag: ['@spec:UI_COMPONENTS_SPEC'] }`
-- Vitest: `// @spec UI_COMPONENTS_SPEC`
+- `client/tests/e2e/ui-components.spec.ts`
+- `client/tests/e2e/ui-components.spec.ts`

@@ -212,4 +212,108 @@ test.describe.skip('Custom LLM Provider Configuration', () => {
 
     await scenario.cleanup();
   });
+
+  test('custom provider appears in model selector when configured', async ({ page }) => {
+    // Set up a scenario where the custom LLM provider is already configured
+    const scenario = await TestScenario.create(page)
+      .withWorkshop({ name: 'Model Selector Workshop' })
+      .withFacilitator()
+      .withParticipants(1)
+      .withTraces(3)
+      .withRubric({ question: 'Rate the response quality' })
+      .withAnnotation({ rating: 4 })
+      .inPhase('tuning')
+      .build();
+
+    await page.goto('/');
+    await scenario.loginAs(scenario.facilitator);
+
+    // Wait for page load
+    await expect(page.getByRole('heading', { name: 'Model Selector Workshop' })).toBeVisible({ timeout: 15000 });
+
+    // Navigate to Judge Tuning via sidebar
+    await page.getByRole('button', { name: /Judge Tuning/i }).click();
+
+    // Wait for Custom LLM Provider section
+    await expect(page.getByText('Custom LLM Provider')).toBeVisible({ timeout: 10000 });
+
+    // Configure the custom provider first
+    await page.getByRole('button', { name: /Configure/i }).first().click();
+    await page.getByLabel('Provider Name').fill('My Custom Provider');
+    await page.getByLabel('Base URL').fill('https://custom-api.example.com/v1');
+    await page.getByLabel('Model Name').fill('custom-model-1');
+    await page.getByLabel('API Key').fill('custom-key-123');
+    await page.getByRole('button', { name: /Save Configuration/i }).click();
+
+    // Wait for save confirmation
+    await expect(page.getByText(/saved/i).or(page.getByText('Active')).first()).toBeVisible({ timeout: 5000 });
+
+    // Verify the custom provider is visible with its name and model info
+    await expect(page.getByText('My Custom Provider')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText('custom-model-1')).toBeVisible({ timeout: 5000 });
+
+    await scenario.cleanup();
+  });
+
+  test('switch between providers works', async ({ page }) => {
+    const scenario = await TestScenario.create(page)
+      .withWorkshop({ name: 'Switch Provider Workshop' })
+      .withFacilitator()
+      .withParticipants(1)
+      .withTraces(2)
+      .withRubric({ question: 'Assess response' })
+      .withAnnotation({ rating: 3 })
+      .inPhase('tuning')
+      .build();
+
+    await page.goto('/');
+    await scenario.loginAs(scenario.facilitator);
+
+    // Wait for page load
+    await expect(page.getByRole('heading', { name: 'Switch Provider Workshop' })).toBeVisible({ timeout: 15000 });
+
+    // Navigate to Judge Tuning
+    await page.getByRole('button', { name: /Judge Tuning/i }).click();
+
+    await expect(page.getByText('Custom LLM Provider')).toBeVisible({ timeout: 10000 });
+
+    // Configure a custom provider
+    await page.getByRole('button', { name: /Configure/i }).first().click();
+    await page.getByLabel('Provider Name').fill('Provider A');
+    await page.getByLabel('Base URL').fill('https://provider-a.example.com');
+    await page.getByLabel('Model Name').fill('model-a');
+    await page.getByLabel('API Key').fill('key-a');
+    await page.getByRole('button', { name: /Save Configuration/i }).click();
+
+    // Wait for save
+    await expect(page.getByText(/saved/i).or(page.getByText('Active')).first()).toBeVisible({ timeout: 5000 });
+
+    // Verify Provider A is showing
+    await expect(page.getByText('Provider A')).toBeVisible({ timeout: 5000 });
+
+    // Now reconfigure with a different provider (simulates switching)
+    // Click the reconfigure/edit button
+    const reconfigureButton = page.getByRole('button', { name: /Configure|Reconfigure|Edit/i }).first();
+    if (await reconfigureButton.isVisible().catch(() => false)) {
+      await reconfigureButton.click();
+    }
+
+    // Update to Provider B
+    await page.getByLabel('Provider Name').clear();
+    await page.getByLabel('Provider Name').fill('Provider B');
+    await page.getByLabel('Base URL').clear();
+    await page.getByLabel('Base URL').fill('https://provider-b.example.com');
+    await page.getByLabel('Model Name').clear();
+    await page.getByLabel('Model Name').fill('model-b');
+    await page.getByLabel('API Key').fill('key-b');
+    await page.getByRole('button', { name: /Save Configuration/i }).click();
+
+    // Wait for save confirmation
+    await expect(page.getByText(/saved/i).or(page.getByText('Active')).first()).toBeVisible({ timeout: 5000 });
+
+    // Verify Provider B is now showing (switched from A)
+    await expect(page.getByText('Provider B')).toBeVisible({ timeout: 5000 });
+
+    await scenario.cleanup();
+  });
 });
