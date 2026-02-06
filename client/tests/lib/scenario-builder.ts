@@ -348,8 +348,20 @@ export class TestScenario {
     // Step 8: Create rubric if configured
     await this.createRubricViaApi(page, store, apiUrl);
 
-    // Step 9: Advance to target phase
-    await this.advanceToTargetPhaseViaApi(page, store, apiUrl);
+    // Step 9: Advance to target phase (but not results yet if we have annotations to create)
+    // Results phase requires annotations to exist first
+    const hasAnnotations = this.state.annotationConfigs.length > 0;
+    const finalTargetPhase = this.state.targetPhase;
+
+    if (finalTargetPhase === 'results' && hasAnnotations) {
+      // Advance only to annotation phase, not results yet
+      this.state.targetPhase = 'annotation';
+      await this.advanceToTargetPhaseViaApi(page, store, apiUrl);
+      this.state.targetPhase = finalTargetPhase; // Restore target
+    } else {
+      // Advance to target phase normally
+      await this.advanceToTargetPhaseViaApi(page, store, apiUrl);
+    }
 
     // Step 9b: Begin annotation if target phase is annotation or later
     if (this.shouldBeginAnnotation()) {
@@ -358,6 +370,11 @@ export class TestScenario {
 
     // Step 10: Create annotations
     await this.createAnnotationsViaApi(page, store, apiUrl);
+
+    // Step 11: Advance to results phase if that was the original target
+    if (finalTargetPhase === 'results' && hasAnnotations) {
+      await actions.advanceToPhase(page, store.workshop!.id, 'results', apiUrl);
+    }
   }
 
   /**
