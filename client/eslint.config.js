@@ -12,14 +12,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default tseslint.config(
   // Global ignores
-  { ignores: ['dist', 'src/client/**', 'tests/**', 'playwright.config.ts'] },
+  { ignores: ['dist', 'src/client/**', 'playwright.config.ts'] },
 
   // TanStack Query recommended config
   ...pluginQuery.configs['flat/recommended'],
 
-  // Main config for TS/TSX files
+  // Main config for src TS/TSX files (type-checked)
   {
-    files: ['**/*.{ts,tsx}'],
+    files: ['src/**/*.{ts,tsx}'],
     extends: [
       js.configs.recommended,
       ...tseslint.configs.recommendedTypeChecked,
@@ -58,5 +58,39 @@ export default tseslint.config(
       '@typescript-eslint/require-await': 'warn',
       '@typescript-eslint/no-base-to-string': 'warn',
     },
-  }
+  },
+
+  // E2E spec files: ban raw locators, use actions from tests/lib/actions
+  {
+    files: ['tests/e2e/**/*.spec.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "CallExpression[callee.object.name='page'][callee.property.name='locator']",
+          message: 'Use an action from tests/lib/actions instead of page.locator(). Raw locators in specs are brittle and bypass the action abstraction layer.',
+        },
+        {
+          selector: "CallExpression[callee.object.name='page'][callee.property.name='getByRole']",
+          message: 'Use an action from tests/lib/actions instead of page.getByRole(). Raw locators in specs are brittle and bypass the action abstraction layer.',
+        },
+        {
+          selector: "CallExpression[callee.object.name='page'][callee.property.name='getByText']",
+          message: 'Use an action from tests/lib/actions instead of page.getByText(). Raw locators in specs are brittle and bypass the action abstraction layer.',
+        },
+        {
+          selector: "CallExpression[callee.object.name='page'][callee.property.name='getByTestId']",
+          message: 'Use an action from tests/lib/actions instead of page.getByTestId(). Raw locators in specs are brittle and bypass the action abstraction layer.',
+        },
+        {
+          selector: "CallExpression[callee.object.name='page'][callee.property.name='getByLabel']",
+          message: 'Use an action from tests/lib/actions instead of page.getByLabel(). Raw locators in specs are brittle and bypass the action abstraction layer.',
+        },
+        {
+          selector: "CallExpression[callee.object.name='page'][callee.property.name='getByPlaceholder']",
+          message: 'Use an action from tests/lib/actions instead of page.getByPlaceholder(). Raw locators in specs are brittle and bypass the action abstraction layer.',
+        },
+      ],
+    },
+  },
 );
