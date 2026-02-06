@@ -293,7 +293,7 @@ export function RubricCreationDemo() {
     }
   }, [rubric, isEditingExisting]);
 
-  // SECURITY: Block access if no valid user (after all hooks)
+  // SECURITY: Block access if no valid user or workshop (after all hooks)
   if (!user || !user.id) {
     return (
       <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
