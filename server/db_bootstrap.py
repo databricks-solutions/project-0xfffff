@@ -70,18 +70,26 @@ def _list_sqlite_tables(db_path: str) -> list[str]:
         return [r[0] for r in cur.fetchall()]
 
 
+def _get_postgres_schema_name() -> str:
+    """Get the PostgreSQL schema name derived from PGAPPNAME."""
+    app_name = os.getenv("PGAPPNAME", "human_eval_workshop")
+    return app_name.replace("-", "_")
+
+
 def _list_postgres_tables(database_url: str) -> list[str]:
-    """List tables in PostgreSQL database."""
+    """List tables in PostgreSQL database (checks app schema and public)."""
     try:
         from sqlalchemy import create_engine, text
 
+        schema_name = _get_postgres_schema_name()
         engine = create_engine(database_url)
         with engine.connect() as conn:
             result = conn.execute(
                 text(
                     "SELECT table_name FROM information_schema.tables "
-                    "WHERE table_schema = 'public'"
-                )
+                    "WHERE table_schema = :app_schema"
+                ),
+                {"app_schema": schema_name},
             )
             return [r[0] for r in result.fetchall()]
     except Exception as e:

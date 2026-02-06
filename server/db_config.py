@@ -91,7 +91,6 @@ class OAuthTokenManager:
         """Lazily initialize WorkspaceClient."""
         if self._workspace_client is None:
             from databricks.sdk import WorkspaceClient
-
             self._workspace_client = WorkspaceClient()
         return self._workspace_client
 
@@ -241,6 +240,9 @@ def create_engine_for_backend(backend: DatabaseBackend) -> "Engine":
         f"&application_name={config.app_name}"
     )
 
+    # Derive schema name from PGAPPNAME (hyphens → underscores for SQL safety)
+    schema_name = config.app_name.replace("-", "_")
+
     engine = create_engine(
         database_url,
         pool_size=10,
@@ -249,18 +251,31 @@ def create_engine_for_backend(backend: DatabaseBackend) -> "Engine":
         pool_recycle=1800,  # Recycle connections every 30 min (before token expires)
         pool_pre_ping=True,
         echo=False,
+        # Set search_path at the PostgreSQL protocol level during connection
+        # establishment.  This is more reliable than an event listener because
+        # it is handled by the server before any SQL statement runs.
+        connect_args={"options": f"-csearch_path={schema_name},public"},
     )
 
-    # Handle token refresh for PostgreSQL connections
+    # Also set search_path via on_connect as a belt-and-suspenders fallback
+    # and handle token refresh for long-lived pooled connections.
     @event.listens_for(engine, "connect")
     def on_connect(dbapi_connection, connection_record):
-        """Ensure fresh token on new connections."""
+        """Set search_path and refresh token on new connections."""
+        try:
+            cursor = dbapi_connection.cursor()
+            cursor.execute(f'SET search_path TO "{schema_name}", public')
+            cursor.close()
+        except Exception as e:
+            logger.warning(f"Failed to SET search_path in on_connect: {e}")
+
         if token_manager.needs_refresh:
             try:
                 token_manager.get_token()  # Refresh token
             except Exception as e:
                 logger.warning(f"Token refresh on connect failed: {e}")
 
+    logger.info(f"PostgreSQL engine created with search_path: {schema_name}, public")
     return engine
 
 

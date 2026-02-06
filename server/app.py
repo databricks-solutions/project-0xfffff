@@ -64,6 +64,50 @@ async def lifespan(app: FastAPI):
     # Uvicorn workers) via an inter-process lock.
     maybe_bootstrap_db_on_startup()
 
+    # For PostgreSQL/Lakebase: ensure schema and tables exist.
+    # Lakebase requires tables in a schema owned by the service principal.
+    if db_backend == DatabaseBackend.POSTGRESQL:
+        from sqlalchemy import text
+
+        from server.database import Base, engine
+        from server.db_config import LakebaseConfig
+
+        lakebase_cfg = LakebaseConfig.from_env()
+        schema_name = lakebase_cfg.app_name.replace("-", "_") if lakebase_cfg else "human_eval_workshop"
+        pg_user = os.getenv("PGUSER", "")
+
+        try:
+            with engine.connect() as conn:
+                # Create the schema owned by the service principal
+                conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}" AUTHORIZATION "{pg_user}"'))
+                conn.commit()
+                print(f"✅ PostgreSQL schema '{schema_name}' ensured")
+        except Exception as e:
+            print(f"⚠️  PostgreSQL schema creation failed: {e}")
+            import traceback
+            traceback.print_exc()
+
+        try:
+            # Create tables — search_path is set via connect_args options in
+            # create_engine_for_backend, so tables land in the app schema.
+            Base.metadata.create_all(bind=engine, checkfirst=True)
+            print("✅ PostgreSQL tables verified/created via SQLAlchemy metadata")
+        except Exception as e:
+            print(f"⚠️  PostgreSQL table creation failed: {e}")
+            import traceback
+            traceback.print_exc()
+
+        try:
+            # Fix: make users.workshop_id nullable (facilitators don't have a workshop)
+            # This is needed for existing tables created with NOT NULL constraint
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE users ALTER COLUMN workshop_id DROP NOT NULL"))
+                conn.commit()
+                print("✅ PostgreSQL users.workshop_id made nullable")
+        except Exception as e:
+            # Non-critical — column may already be nullable
+            print(f"ℹ️  users.workshop_id nullable fix skipped: {e}")
+
     print("✅ Application startup complete!")
     yield
 

@@ -80,10 +80,32 @@ def run_migrations_online() -> None:
 
     if is_sqlite:
         connect_args = {"check_same_thread": False, "timeout": 30}
+    else:
+        # Set search_path at the PostgreSQL protocol level so migrations
+        # create tables in the app schema from the very first statement.
+        app_name = os.getenv("PGAPPNAME", "human_eval_workshop")
+        schema_name = app_name.replace("-", "_")
+        connect_args = {"options": f"-csearch_path={schema_name},public"}
 
     engine = create_engine(url, connect_args=connect_args, poolclass=NullPool)
 
     with engine.connect() as connection:
+        # For PostgreSQL/Lakebase: set search_path so migrations create
+        # tables in the app schema (derived from PGAPPNAME).
+        if not is_sqlite:
+            from sqlalchemy import text
+
+            app_name = os.getenv("PGAPPNAME", "human_eval_workshop")
+            schema_name = app_name.replace("-", "_")
+            pg_user = os.getenv("PGUSER", "")
+
+            # Create schema with ownership if it doesn't exist
+            connection.execute(
+                text(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}" AUTHORIZATION "{pg_user}"')
+            )
+            connection.execute(text(f'SET search_path TO "{schema_name}", public'))
+            connection.commit()
+
         context.configure(
             connection=connection,
             target_metadata=target_metadata,

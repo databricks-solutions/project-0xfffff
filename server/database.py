@@ -91,7 +91,7 @@ class UserDB(Base):
     email = Column(String, unique=True, nullable=False)
     name = Column(String, nullable=False)
     role = Column(String, nullable=False)
-    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=True)  # Nullable for facilitators
     status = Column(String, default="active")
     password_hash = Column(String, nullable=True)  # For authentication
     created_at = Column(DateTime, default=func.now())

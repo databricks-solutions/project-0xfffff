@@ -2393,7 +2393,7 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       email=email,
       name=facilitator_data['name'],
       role=UserRole.FACILITATOR,
-      workshop_id='',  # Will be set when workshop is created
+      workshop_id=None,  # Facilitators aren't tied to a single workshop
       password_hash=password_hash,
     )
 

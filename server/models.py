@@ -64,7 +64,7 @@ class User(BaseModel):
   email: str
   name: str
   role: UserRole
-  workshop_id: str
+  workshop_id: Optional[str] = None  # Nullable for facilitators not tied to a workshop
   status: UserStatus = UserStatus.ACTIVE
   created_at: datetime = Field(default_factory=datetime.now)
   last_active: Optional[datetime] = None

@@ -21,4 +21,7 @@ dspy>=3.0.4
 alembic>=1.16.0
 jsonpath-ng>=1.5.3
 
-
+# PostgreSQL (Lakebase) - required for database backend
+psycopg>=3.1.0
+psycopg-binary>=3.1.0
+psycopg-pool>=3.1.0
