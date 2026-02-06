@@ -3137,30 +3137,38 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
 
   def get_latest_evaluations(self, workshop_id: str) -> List[JudgeEvaluation]:
     """Get the most recent evaluation results for a workshop (from any prompt).
-    
+
     This returns evaluations from the most recently created prompt that has evaluations.
     Useful for getting auto-evaluation results without knowing the prompt ID.
+
+    Note: We find the latest prompt that actually HAS evaluations, not just the latest
+    prompt. This is important because alignment creates new prompt versions (with aligned
+    instructions) that don't yet have evaluations until re-evaluation is run.
     """
-    # Get the latest prompt with evaluations
-    latest_prompt = (
+    # Get prompts ordered by creation date (newest first)
+    prompts = (
       self.db.query(JudgePromptDB)
       .filter(JudgePromptDB.workshop_id == workshop_id)
       .order_by(JudgePromptDB.created_at.desc())
-      .first()
-    )
-    
-    if not latest_prompt:
-      return []
-    
-    # Get evaluations for this prompt
-    db_evaluations = (
-      self.db.query(JudgeEvaluationDB)
-      .filter(and_(
-        JudgeEvaluationDB.workshop_id == workshop_id,
-        JudgeEvaluationDB.prompt_id == latest_prompt.id
-      ))
       .all()
     )
+
+    if not prompts:
+      return []
+
+    # Find the latest prompt that actually has evaluations
+    db_evaluations = []
+    for prompt in prompts:
+      db_evaluations = (
+        self.db.query(JudgeEvaluationDB)
+        .filter(and_(
+          JudgeEvaluationDB.workshop_id == workshop_id,
+          JudgeEvaluationDB.prompt_id == prompt.id
+        ))
+        .all()
+      )
+      if db_evaluations:
+        break
     
     return [
       JudgeEvaluation(

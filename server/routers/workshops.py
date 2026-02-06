@@ -924,7 +924,7 @@ async def add_traces(workshop_id: str, request: dict, db: Session = Depends(get_
     db_service = DatabaseService(db)
     
     # Retrieve the stored evaluation model from initial auto-evaluation (don't use a hardcoded default)
-    evaluation_model_name = db_service.get_auto_evaluation_model(workshop_id) or "databricks-meta-llama-3-3-70b-instruct"
+    evaluation_model_name = db_service.get_auto_evaluation_model(workshop_id) or "databricks-claude-opus-4-5"
     workshop = db_service.get_workshop(workshop_id)
     if not workshop:
         raise HTTPException(status_code=404, detail="Workshop not found")
@@ -1245,7 +1245,7 @@ async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Sessi
     else:
         auto_evaluate_enabled = True
         if not evaluation_model_name:  # Empty string
-            evaluation_model_name = "databricks-meta-llama-3-3-70b-instruct"
+            evaluation_model_name = "databricks-claude-opus-4-5"
 
     db_service = DatabaseService(db)
     workshop = db_service.get_workshop(workshop_id)
@@ -4256,7 +4256,7 @@ async def restart_auto_evaluation(
     # Get evaluation model
     evaluation_model_name = request.get("evaluation_model_name")
     if not evaluation_model_name:
-        evaluation_model_name = db_service.get_auto_evaluation_model(workshop_id) or "databricks-meta-llama-3-3-70b-instruct"
+        evaluation_model_name = db_service.get_auto_evaluation_model(workshop_id) or "databricks-claude-opus-4-5"
 
     # Create new evaluation job
     job_id = str(uuid.uuid4())
@@ -4512,7 +4512,7 @@ async def re_evaluate(
         raise HTTPException(status_code=400, detail="No judge prompt available. Create a rubric first.")
     
     # Use the stored model from initial auto-evaluation
-    evaluation_model_name = db_service.get_auto_evaluation_model(workshop_id) or "databricks-meta-llama-3-3-70b-instruct"
+    evaluation_model_name = db_service.get_auto_evaluation_model(workshop_id) or "databricks-claude-opus-4-5"
     
     # Get MLflow config
     mlflow_config = db_service.get_mlflow_config(workshop_id)
