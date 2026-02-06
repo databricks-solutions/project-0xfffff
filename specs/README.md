@@ -88,6 +88,8 @@ Use this index to find relevant specs by keyword.
 - **rubric question** → [RUBRIC_SPEC](./RUBRIC_SPEC.md)
 - **delimiter** → [RUBRIC_SPEC](./RUBRIC_SPEC.md)
 - **QUESTION_SEPARATOR** → [RUBRIC_SPEC](./RUBRIC_SPEC.md)
+- **JUDGE_TYPE_DELIMITER** → [RUBRIC_SPEC](./RUBRIC_SPEC.md)
+- **per-question judge_type** → [RUBRIC_SPEC](./RUBRIC_SPEC.md)
 - **parseRubricQuestions** → [RUBRIC_SPEC](./RUBRIC_SPEC.md)
 - **formatRubricQuestions** → [RUBRIC_SPEC](./RUBRIC_SPEC.md)
 - **rubricUtils** → [RUBRIC_SPEC](./RUBRIC_SPEC.md)
@@ -104,8 +106,15 @@ Use this index to find relevant specs by keyword.
 - **make_judge** → [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md)
 - **alignment** → [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md)
 - **align()** → [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md)
-- **SIMBA** → [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md)
-- **SIMBAAlignmentOptimizer** → [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md)
+- **MemAlign** → [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md)
+- **MemAlignOptimizer** → [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md)
+- **semantic memory** → [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md)
+- **episodic memory** → [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md)
+- **auto-evaluation** → [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md)
+- **re-evaluation** → [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md)
+- **auto_evaluation_model** → [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md)
+- **derive_judge_prompt** → [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md)
+- **registered judge** → [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md)
 - **IRR** → [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md)
 - **inter-rater reliability** → [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md)
 - **Cohen's Kappa** → [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md)
@@ -193,6 +202,13 @@ Use this index to find relevant specs by keyword.
 - **trace display** → [TRACE_DISPLAY_SPEC](./TRACE_DISPLAY_SPEC.md)
 - **preview** → [TRACE_DISPLAY_SPEC](./TRACE_DISPLAY_SPEC.md)
 - **facilitator settings** → [TRACE_DISPLAY_SPEC](./TRACE_DISPLAY_SPEC.md)
+
+### Build and Deployment
+- **SQLite rescue** → [BUILD_AND_DEPLOY_SPEC](./BUILD_AND_DEPLOY_SPEC.md)
+- **Volume backup** → [BUILD_AND_DEPLOY_SPEC](./BUILD_AND_DEPLOY_SPEC.md)
+- **Databricks Apps** → [BUILD_AND_DEPLOY_SPEC](./BUILD_AND_DEPLOY_SPEC.md)
+- **service principal** → [BUILD_AND_DEPLOY_SPEC](./BUILD_AND_DEPLOY_SPEC.md)
+- **SIGTERM** → [BUILD_AND_DEPLOY_SPEC](./BUILD_AND_DEPLOY_SPEC.md)
 
 ---
 

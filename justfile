@@ -256,18 +256,26 @@ ui-build:
 
   npm -C {{client-dir}} run build
 
+# Run pytest (writes JSON report to .test-results/ for token-efficient summaries)
 [group('dev')]
-test-server:
-  uv run pytest -q
+test-server *args:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  mkdir -p .test-results
+  uv run pytest -q --json-report --json-report-file=.test-results/pytest.json {{args}}
 
 [group('dev')]
 ui-test:
   npm -C {{client-dir}} run test
 
+# Run vitest (writes JSON report to .test-results/ for token-efficient summaries)
 [group('dev')]
-ui-test-unit:
-  npm -C {{client-dir}} run test:unit
-  
+ui-test-unit *args:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  mkdir -p .test-results
+  VITEST_JSON_REPORT=1 npm -C {{client-dir}} run test:unit -- {{args}}
+
 [group('dev')]
 ui-lint:
   npm -C {{client-dir}} run lint
@@ -287,6 +295,46 @@ spec-coverage:
 spec-tagging-check:
   @echo "✅ Validating that all tests are tagged with specs..."
   uv run spec-tagging-validator
+
+[group('dev')]
+test-server-spec spec *args:
+  @echo "Running Python tests for {{spec}}..."
+  just test-server --spec {{spec}} -v {{args}}
+
+[group('dev')]
+ui-test-unit-spec spec *args:
+  @echo "Running unit tests for {{spec}}..."
+  just ui-test-unit --grep "@spec:{{spec}}" {{args}}
+
+# Run E2E tests for a specific spec (writes JSON report to .test-results/)
+[group('e2e')]
+e2e-spec spec mode="headless" workers="1":
+  @echo "Running E2E tests for {{spec}} in {{mode}} mode..."
+  just e2e {{mode}} {{workers}} "@spec:{{spec}}"
+
+# Get token-efficient test summary from JSON reports
+[group('dev')]
+test-summary *args:
+  uv run test-summary {{args}}
+
+# Check status of a specific spec (test results + coverage info)
+[group('dev')]
+spec-status spec:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  echo "Spec: {{spec}}"
+  echo "=============="
+  echo ""
+  # Check if reports exist and filter by spec
+  if [ -f .test-results/pytest.json ] || [ -f .test-results/playwright.json ] || [ -f .test-results/vitest.json ]; then
+    uv run test-summary --spec {{spec}} || true
+  else
+    echo "No test reports found. Run tests first."
+  fi
+  echo ""
+  # Show spec coverage info
+  echo "Coverage from SPEC_COVERAGE_MAP.md:"
+  grep -A 10 "## {{spec}}" specs/SPEC_COVERAGE_MAP.md 2>/dev/null || echo "  (Run 'just spec-coverage' to generate)"
 
 [group('db')]
 db-upgrade:
@@ -438,6 +486,17 @@ e2e-servers db_path=".e2e-workshop.db" api_port="8000" ui_port="3000":
   API_PORT="${2:-{{api_port}}}"
   UI_PORT="${3:-{{ui_port}}}"
 
+  # Log suppression: set E2E_QUIET=1 to redirect server logs to files
+  LOG_DIR=".test-results"
+  mkdir -p "$LOG_DIR"
+  if [ "${E2E_QUIET:-0}" = "1" ]; then
+    API_LOG="$LOG_DIR/api-server.log"
+    UI_LOG="$LOG_DIR/ui-server.log"
+  else
+    API_LOG="/dev/stdout"
+    UI_LOG="/dev/stdout"
+  fi
+
   # Ensure schema exists before starting the API (migrations are part of the workflow, not app startup)
   ENVIRONMENT=development DATABASE_URL="sqlite:///./${DB_PATH}" just db-bootstrap
 
@@ -445,13 +504,16 @@ e2e-servers db_path=".e2e-workshop.db" api_port="8000" ui_port="3000":
   echo "  DB : ${DB_PATH}"
   echo "  API: http://localhost:${API_PORT}"
   echo "  UI : http://localhost:${UI_PORT}"
+  if [ "${E2E_QUIET:-0}" = "1" ]; then
+    echo "  Logs: $LOG_DIR/{api,ui}-server.log"
+  fi
 
   # Start API (no reload for E2E)
-  (ENVIRONMENT=development DATABASE_URL="sqlite:///./${DB_PATH}" uv run uvicorn {{server-dir}}.app:app --host 127.0.0.1 --port "$API_PORT") &
+  (ENVIRONMENT=development DATABASE_URL="sqlite:///./${DB_PATH}" uv run uvicorn {{server-dir}}.app:app --host 127.0.0.1 --port "$API_PORT" > "$API_LOG" 2>&1) &
   api_pid=$!
 
   # Start UI (force port for determinism)
-  (npm -C {{client-dir}} run dev -- --host 127.0.0.1 --port "$UI_PORT" --strictPort) &
+  (npm -C {{client-dir}} run dev -- --host 127.0.0.1 --port "$UI_PORT" --strictPort > "$UI_LOG" 2>&1) &
   ui_pid=$!
 
   cleanup() {
@@ -479,21 +541,32 @@ e2e-test mode="headless" workers="1" *args="":
   # If Playwright is configured with webServer, avoid double-starting when we already started servers via `just e2e`.
   export PW_NO_WEBSERVER=1
 
-  # Always run from tests/e2e directory, pass any extra args (like --grep) to playwright
+  # Default test path
   TEST_PATH="tests/e2e"
-  EXTRA_ARGS="{{args}}"
+  GREP_ARGS=""
 
-  echo "Running tests in {{mode}} mode with {{workers}} workers: $TEST_PATH $EXTRA_ARGS"
+  # Check if args is a tag filter (starts with @) or a path
+  if [ -n "{{args}}" ]; then
+    if [[ "{{args}}" == @* ]]; then
+      # It's a tag filter - use --grep
+      GREP_ARGS="--grep \"{{args}}\""
+    else
+      # It's a path or other argument
+      TEST_PATH="{{args}}"
+    fi
+  fi
+
+  echo "Running tests in {{mode}} mode with {{workers}} workers: $TEST_PATH $GREP_ARGS"
 
   case "{{mode}}" in
     ui)
-      npm -C {{client-dir}} run test -- $TEST_PATH --ui --workers={{workers}} $EXTRA_ARGS
+      eval "npm -C {{client-dir}} run test -- $TEST_PATH --ui --workers={{workers}} $GREP_ARGS"
       ;;
     headed)
-      npm -C {{client-dir}} run test -- $TEST_PATH --headed --workers={{workers}} $EXTRA_ARGS
+      eval "npm -C {{client-dir}} run test -- $TEST_PATH --headed --workers={{workers}} $GREP_ARGS"
       ;;
     headless)
-      npm -C {{client-dir}} run test -- $TEST_PATH --workers={{workers}} $EXTRA_ARGS
+      eval "npm -C {{client-dir}} run test -- $TEST_PATH --workers={{workers}} $GREP_ARGS"
       ;;
     *)
       echo "Unknown mode: {{mode}} (expected: headless|headed|ui)" >&2
@@ -524,10 +597,17 @@ _find-port start_port:
         exit(0)
   exit(1)
 
+# Run E2E tests (writes JSON report to .test-results/ for token-efficient summaries)
 [group('e2e')]
 e2e mode="headless" workers="1" *args:
   #!/usr/bin/env bash
   set -euo pipefail
+
+  # Enable JSON reporting for token-efficient output
+  export PW_JSON_REPORT=1
+  # Suppress server logs (redirect to files in .test-results/)
+  export E2E_QUIET=1
+  mkdir -p .test-results
 
   DB_PATH=".e2e-workshop.db"
 

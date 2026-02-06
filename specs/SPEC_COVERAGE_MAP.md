@@ -1,6 +1,6 @@
 # Spec Test Coverage Map
 
-**Generated**: 2026-01-21 12:15:13
+**Generated**: 2026-02-03 13:25:52
 
 This report shows which tests cover each specification.
 Tests are tagged using framework-specific conventions:
@@ -22,11 +22,12 @@ Tests are tagged using framework-specific conventions:
 | [DATASETS_SPEC](#datasets-spec) | 2 | 0 | 1 | 3 | ✅ Covered |
 | [DESIGN_SYSTEM_SPEC](#design-system-spec) | 0 | 0 | 1 | 1 | 🟡 Partial |
 | [DISCOVERY_TRACE_ASSIGNMENT_SPEC](#discovery-trace-assignment-spec) | 3 | 1 | 1 | 5 | ✅ Covered |
-| [JUDGE_EVALUATION_SPEC](#judge-evaluation-spec) | 28 | 0 | 1 | 29 | ✅ Covered |
-| [RUBRIC_SPEC](#rubric-spec) | 0 | 1 | 1 | 2 | 🟡 Partial |
+| [JUDGE_EVALUATION_SPEC](#judge-evaluation-spec) | 41 | 4 | 1 | 46 | ✅ Covered |
+| [RUBRIC_SPEC](#rubric-spec) | 10 | 6 | 2 | 18 | ✅ Covered |
+| [TRACE_DISPLAY_SPEC](#trace-display-spec) | 0 | 5 | 0 | 5 | ✅ Covered |
 | [UI_COMPONENTS_SPEC](#ui-components-spec) | 0 | 0 | 0 | 0 | ❌ Uncovered |
 
-**Coverage**: 9/10 specs (90%)
+**Coverage**: 10/11 specs (90%)
 
 ---
 
@@ -120,6 +121,9 @@ Tests are tagged using framework-specific conventions:
 
 ### pytest
 
+- `tests/unit/routers/test_workshops_begin_annotation.py` (test_begin_annotation_with_auto_eval_enabled)
+- `tests/unit/routers/test_workshops_begin_annotation.py` (test_begin_annotation_with_auto_eval_disabled)
+- `tests/unit/routers/test_workshops_begin_annotation.py` (test_begin_annotation_requires_rubric)
 - `tests/unit/routers/test_databricks_router.py` (test_databricks_test_connection_success)
 - `tests/unit/routers/test_databricks_router.py` (test_databricks_call_endpoint_success)
 - `tests/unit/routers/test_databricks_router.py` (test_databricks_chat_endpoint_success)
@@ -134,6 +138,10 @@ Tests are tagged using framework-specific conventions:
 - `tests/unit/services/test_irr_service.py` (test_calculate_irr_for_workshop_returns_error_details_when_invalid)
 - `tests/unit/services/test_irr_service.py` (test_calculate_irr_for_workshop_uses_cohens_kappa_when_two_raters_complete)
 - `tests/unit/services/test_irr_service.py` (test_calculate_irr_for_workshop_uses_krippendorff_when_missing_data)
+- `tests/unit/services/test_database_service_rubric.py` (test_get_judge_type_from_rubric_binary)
+- `tests/unit/services/test_database_service_rubric.py` (test_get_judge_type_from_rubric_likert)
+- `tests/unit/services/test_database_service_rubric.py` (test_get_judge_type_from_rubric_mixed_prefers_binary)
+- `tests/unit/services/test_database_service_rubric.py` (test_get_judge_type_from_rubric_no_rubric_defaults_likert)
 - `tests/unit/services/test_krippendorff_alpha.py` (test_get_unique_question_ids_sorted)
 - `tests/unit/services/test_krippendorff_alpha.py` (test_per_metric_returns_empty_when_no_ratings_dict_present)
 - `tests/unit/services/test_krippendorff_alpha.py` (test_calculate_krippendorff_alpha_returns_zero_when_insufficient)
@@ -141,7 +149,13 @@ Tests are tagged using framework-specific conventions:
 - `tests/unit/services/test_krippendorff_alpha.py` (test_calculate_krippendorff_alpha_handles_missing_data)
 - `tests/unit/services/test_krippendorff_alpha.py` (test_calculate_krippendorff_alpha_specific_question_id_uses_ratings_dict)
 - `tests/unit/services/test_alignment_service.py` (test_normalize_judge_prompt_converts_placeholders_to_mlflow_style)
-- `tests/unit/services/test_alignment_service.py` (test_likert_agreement_metric_from_store_is_one_when_equal)
+- `tests/unit/services/test_alignment_service.py` (test_calculate_eval_metrics_binary_scale)
+- `tests/unit/services/test_alignment_service.py` (test_calculate_eval_metrics_binary_all_pass)
+- `tests/unit/services/test_alignment_service.py` (test_calculate_eval_metrics_binary_all_fail)
+- `tests/unit/services/test_alignment_service.py` (test_calculate_eval_metrics_binary_mixed_ratings)
+- `tests/unit/services/test_alignment_service.py` (test_calculate_eval_metrics_binary_empty)
+- `tests/unit/services/test_alignment_service.py` (test_calculate_eval_metrics_binary_threshold_conversion)
+- `tests/unit/services/test_alignment_service.py` (test_calculate_eval_metrics_likert_default)
 - `tests/unit/services/test_cohens_kappa.py` (test_calculate_cohens_kappa_raises_on_empty)
 - `tests/unit/services/test_cohens_kappa.py` (test_calculate_cohens_kappa_raises_if_not_exactly_two_raters)
 - `tests/unit/services/test_cohens_kappa.py` (test_calculate_cohens_kappa_requires_two_paired_traces)
@@ -149,19 +163,55 @@ Tests are tagged using framework-specific conventions:
 - `tests/unit/services/test_cohens_kappa.py` (test_interpret_cohens_kappa_bucket_edges)
 - `tests/unit/services/test_cohens_kappa.py` (test_is_cohens_kappa_acceptable_default_threshold)
 
+### Playwright (E2E)
+
+- `client/tests/e2e/auto-evaluation.spec.ts`
+- `client/tests/e2e/auto-evaluation.spec.ts`
+- `client/tests/e2e/auto-evaluation.spec.ts`
+- `client/tests/e2e/auto-evaluation.spec.ts`
+
 ### Vitest (Unit)
 
 - `client/src/utils/modelMapping.test.ts`
 
 ## RUBRIC_SPEC
 
+### pytest
+
+- `tests/unit/services/test_database_service_rubric.py` (test_parse_rubric_questions_with_judge_type_binary)
+- `tests/unit/services/test_database_service_rubric.py` (test_parse_rubric_questions_with_judge_type_likert)
+- `tests/unit/services/test_database_service_rubric.py` (test_parse_rubric_questions_default_to_likert)
+- `tests/unit/services/test_database_service_rubric.py` (test_parse_rubric_questions_mixed_types)
+- `tests/unit/services/test_database_service_rubric.py` (test_parse_rubric_questions_with_freeform)
+- `tests/unit/services/test_database_service_rubric.py` (test_parse_rubric_questions_empty_input)
+- `tests/unit/services/test_database_service_rubric.py` (test_parse_rubric_questions_multiline_description)
+- `tests/unit/services/test_database_service_rubric.py` (test_reconstruct_rubric_questions_with_judge_type)
+- `tests/unit/services/test_database_service_rubric.py` (test_reconstruct_rubric_questions_empty)
+- `tests/unit/services/test_database_service_rubric.py` (test_parse_reconstruct_roundtrip)
+
 ### Playwright (E2E)
 
+- `client/tests/e2e/rubric-judge-type.spec.ts`
+- `client/tests/e2e/rubric-judge-type.spec.ts`
+- `client/tests/e2e/rubric-judge-type.spec.ts`
+- `client/tests/e2e/rubric-judge-type.spec.ts`
+- `client/tests/e2e/rubric-judge-type.spec.ts`
 - `client/tests/e2e/rubric-creation.spec.ts`
 
 ### Vitest (Unit)
 
 - `client/src/utils/rubricUtils.test.ts`
+- `client/src/utils/rubricUtils.test.ts`
+
+## TRACE_DISPLAY_SPEC
+
+### Playwright (E2E)
+
+- `client/tests/e2e/jsonpath-trace-display.spec.ts`
+- `client/tests/e2e/jsonpath-trace-display.spec.ts`
+- `client/tests/e2e/jsonpath-trace-display.spec.ts`
+- `client/tests/e2e/jsonpath-trace-display.spec.ts`
+- `client/tests/e2e/jsonpath-trace-display.spec.ts`
 
 ## UI_COMPONENTS_SPEC
 

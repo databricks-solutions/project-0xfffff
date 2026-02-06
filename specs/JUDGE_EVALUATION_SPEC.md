@@ -2,7 +2,7 @@
 
 ## Overview
 
-This specification defines the LLM judge evaluation system for the Human Evaluation Workshop, including judge creation, evaluation execution, alignment optimization, and inter-rater reliability (IRR) measurement. The system integrates with [MLflow GenAI](https://mlflow.org/docs/latest/genai/) for judge execution and alignment.
+This specification defines the LLM judge evaluation system for the Human Evaluation Workshop, including judge creation, evaluation execution, alignment optimization, auto-evaluation, re-evaluation, and inter-rater reliability (IRR) measurement. The system integrates with [MLflow GenAI](https://mlflow.org/docs/latest/genai/) for judge execution and alignment.
 
 ## MLflow Integration
 
@@ -147,42 +147,244 @@ FALLBACK: Converting 3.0 → 1.0 (>=3 = PASS)
 Extracted 10/10 evaluations
 ```
 
-## Alignment (SIMBA Optimizer)
+## Auto-Evaluation
 
 ### Purpose
 
-Align LLM judge outputs with human annotations using the SIMBA optimization algorithm.
+Automatically run LLM judge evaluation on traces in the background when the annotation phase begins. This enables immediate comparison of human ratings against LLM judge scores without requiring manual evaluation.
+
+### Trigger
+
+Auto-evaluation starts when the facilitator clicks "Start Annotation Phase" with auto-evaluation enabled.
+
+### Flow
+
+```
+1. Facilitator configures annotation phase (trace count, randomization, model selection)
+2. Facilitator enables auto-evaluation toggle and selects model
+3. System derives judge prompt from rubric questions
+4. Traces are tagged with 'eval' label in MLflow
+5. Background evaluation job starts
+6. Results appear in Judge Tuning / Results page
+```
+
+### Derived Judge Prompt
+
+The system automatically generates a judge prompt from the rubric:
+
+```python
+def derive_judge_prompt_from_rubric(workshop_id: str) -> str:
+    """Auto-derive judge prompt from rubric questions."""
+    rubric = get_rubric(workshop_id)
+    questions = parse_rubric_questions(rubric.question)
+
+    # Build prompt from question title and description
+    question = questions[0]  # Each question evaluated separately
+    prompt = f"""Evaluate the response based on the following criterion:
+
+**{question['title']}**
+{question['description']}
+
+{{ inputs }}
+{{ outputs }}
+"""
+    return prompt
+```
+
+### Per-Question Judge Type
+
+Rubric questions can have individual judge types (see [RUBRIC_SPEC](./RUBRIC_SPEC.md)):
+
+```
+Question 1 [JUDGE_TYPE:binary]
+Is the response factually accurate?
+|||QUESTION_SEPARATOR|||
+Question 2 [JUDGE_TYPE:likert]
+Rate the helpfulness of the response
+```
+
+The evaluation system parses `[JUDGE_TYPE:xxx]` from each question and uses the appropriate type for evaluation.
+
+### Data Model Additions
+
+```
+Workshop:
+  - auto_evaluation_job_id: Optional[string]   # Background job ID
+  - auto_evaluation_prompt: Optional[string]   # Derived judge prompt
+  - auto_evaluation_model: Optional[string]    # Model used (for re-evaluation consistency)
+```
+
+### API Endpoint
+
+```
+POST /workshops/{workshop_id}/begin-annotation
+{
+  "trace_limit": 10,
+  "randomize": false,
+  "evaluation_model_name": "databricks-gpt-5-2"  // null to disable auto-eval
+}
+
+Response:
+{
+  "message": "Annotation phase started",
+  "auto_evaluation_started": true,
+  "auto_evaluation_job_id": "uuid"
+}
+```
+
+### Model Selection
+
+Available models for auto-evaluation (via `MODEL_MAPPING`):
+
+| Display Name | Endpoint Name |
+|--------------|---------------|
+| GPT-5.2 | `databricks-gpt-5-2` |
+| GPT-5.1 | `databricks-gpt-5-1` |
+| Claude Opus 4.5 | `databricks-claude-opus-4-5` |
+| Claude Sonnet 4.5 | `databricks-claude-sonnet-4-5` |
+| Claude Sonnet 4 | `databricks-claude-sonnet-4` |
+| Gemini 3 Pro | `databricks-gemini-3-pro` |
+| Gemini 2.5 Flash | `databricks-gemini-2-5-flash` |
+| Llama 4 Maverick | `databricks-llama-4-maverick` |
+| Llama 3.3 70B Instruct | `databricks-meta-llama-3-3-70b-instruct` |
+
+## Re-Evaluation
+
+### Purpose
+
+Re-run LLM evaluation after alignment to compare pre-alignment and post-alignment judge accuracy. Uses the registered judge with aligned instructions (including semantic memory from MemAlign).
+
+### Flow
+
+```
+1. Complete alignment (which registers optimized judge in MLflow)
+2. Click "Re-evaluate" button in Judge Tuning page
+3. System loads registered judge with aligned instructions
+4. Evaluation runs on traces tagged with 'eval' label
+5. Results update in UI with new accuracy metrics
+```
+
+### Registered Judge Loading
+
+After alignment, the judge is registered in MLflow. Re-evaluation can load this registered judge:
+
+```python
+from mlflow.genai.scorers import get_scorer
+
+# Load the aligned judge with semantic memory
+judge = get_scorer(name=judge_name, experiment_id=experiment_id)
+
+# Judge includes:
+# - Original instructions + distilled guidelines (semantic memory)
+# - Note: Episodic memory (example retrieval) not persisted in registered judge
+```
+
+### API Endpoint
+
+```
+POST /workshops/{workshop_id}/re-evaluate
+{
+  "judge_prompt": "optional custom prompt",  // uses stored prompt if omitted
+  "judge_name": "workshop_judge",
+  "judge_type": "binary"  // auto-detected from rubric if omitted
+}
+
+Response:
+{
+  "job_id": "uuid",
+  "message": "Re-evaluation started"
+}
+```
+
+### Model Consistency
+
+Re-evaluation uses the same model stored during initial auto-evaluation (`auto_evaluation_model` field) to ensure fair comparison between pre-align and post-align results.
+
+### Tag Types
+
+| Tag | Purpose |
+|-----|---------|
+| `eval` | Traces for evaluation (applied when annotation starts) |
+| `align` | Traces for alignment (applied when human annotations complete) |
+
+Re-evaluation uses `tag_type='eval'` to evaluate the same trace set.
+
+## Alignment (MemAlign Optimizer)
+
+### Purpose
+
+Align LLM judge outputs with human annotations using the MemAlign optimization algorithm with dual memory systems.
+
+### MemAlign Architecture
+
+MemAlign uses two types of memory to improve judge alignment:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    MemAlign System                       │
+├─────────────────────────────────────────────────────────┤
+│                                                          │
+│  ┌──────────────────┐    ┌──────────────────┐          │
+│  │ Semantic Memory  │    │ Episodic Memory  │          │
+│  │ (Guidelines)     │    │ (Examples)       │          │
+│  └──────────────────┘    └──────────────────┘          │
+│           │                        │                    │
+│           │ Distills general       │ Retrieves similar │
+│           │ principles from        │ past examples     │
+│           │ human feedback         │ during evaluation │
+│           │                        │                    │
+│           └────────────┬───────────┘                   │
+│                        ▼                                │
+│              ┌──────────────────┐                       │
+│              │  Aligned Judge   │                       │
+│              │  (Instructions + │                       │
+│              │   Guidelines)    │                       │
+│              └──────────────────┘                       │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Memory Types
+
+| Memory Type | Purpose | Persistence |
+|-------------|---------|-------------|
+| **Semantic** | Distilled guidelines from feedback patterns | Included in registered judge instructions |
+| **Episodic** | Similar examples retrieved during evaluation | Not persisted (runtime only) |
 
 ### Flow
 
 ```
 1. Collect human annotations on traces
-2. Mark traces for alignment (include_in_alignment tag)
-3. Run alignment optimizer
-4. Generate optimized judge prompt
-5. Evaluate with optimized judge
+2. Mark traces with 'align' tag in MLflow
+3. Run MemAlign optimizer
+4. Distill semantic memory (guidelines)
+5. Build episodic memory (examples)
+6. Register aligned judge to MLflow
+7. Re-evaluate to compare pre/post alignment
 ```
 
 ### Alignment API
 
 ```python
-from mlflow.genai import align
+from mlflow.genai.judges.optimizers import MemAlignOptimizer
 
-alignment_result = align(
-    judge=current_judge,
-    traces=traces_with_feedback,
-    optimizer=SIMBAAlignmentOptimizer(),
+optimizer = MemAlignOptimizer(
+    reflection_lm="openai:/gpt-4o-mini",  # Model for guideline distillation
+    retrieval_k=5,  # Examples to retrieve
+    embedding_model="databricks:/databricks-gte-large-en",
 )
 
-optimized_judge = alignment_result.judge
+aligned_judge = judge.align(traces, optimizer)
+
+# Aligned judge has:
+# - aligned_judge.instructions (original + distilled guidelines)
+# - aligned_judge._semantic_memory (list of guidelines)
+# - aligned_judge._episodic_memory (list of examples - not persisted)
 ```
 
-### Scale-Specific Optimizers
+### Scale-Specific Behavior
 
-| Scale | Optimizer |
-|-------|-----------|
-| Likert (1-5) | `LikertSIMBAAlignmentOptimizer` |
-| Binary (0/1) | `SIMBAAlignmentOptimizer` (default) |
+MemAlign works universally across all judge types (binary, likert, freeform) without requiring type-specific configuration. The optimizer automatically adapts to the feedback patterns.
 
 ### Feedback Aggregation
 
@@ -379,10 +581,26 @@ Features:
 - [ ] Evaluation results persisted to database
 - [ ] Results reload correctly in UI
 
+### Auto-Evaluation
+- [ ] Auto-evaluation runs in background when annotation phase starts
+- [ ] Judge prompt auto-derived from rubric questions
+- [ ] Per-question judge_type parsed from rubric (`[JUDGE_TYPE:xxx]`)
+- [ ] Binary rubrics evaluated with 0/1 scale (not 1-5)
+- [ ] Auto-evaluation model stored for re-evaluation consistency
+- [ ] Results appear in Judge Tuning page
+
+### Re-Evaluation
+- [ ] Re-evaluate loads registered judge with aligned instructions
+- [ ] Uses same model as initial auto-evaluation
+- [ ] Spinner stops when re-evaluation completes
+- [ ] Results stored against correct prompt version
+- [ ] Pre-align and post-align scores directly comparable
+
 ### Alignment
 - [ ] Alignment jobs run asynchronously
-- [ ] Optimized prompt saved to judge
-- [ ] Alignment metrics reported
+- [ ] MemAlign distills semantic memory (guidelines)
+- [ ] Aligned judge registered to MLflow
+- [ ] Metrics reported (guideline count, example count)
 - [ ] Works for both Likert and Binary scales
 
 ### IRR
@@ -410,6 +628,28 @@ Causes:
 ### Alignment Fails
 
 Check that:
-- Traces have `include_in_alignment` tag
+- Traces have 'align' tag in MLflow
 - Human feedback exists for selected traces
 - Model endpoint accessible
+
+### Auto-Evaluation Not Starting
+
+Check that:
+1. MLflow configuration is set up (Databricks host, token)
+2. Rubric exists for the workshop
+3. Auto-evaluation toggle is enabled
+4. Model is selected in dropdown
+
+### Re-Evaluation Shows Wrong Scores
+
+Check that:
+1. Evaluations are stored against correct prompt version
+2. Re-evaluate uses `tag_type='eval'` (same traces as initial evaluation)
+3. Prompt version displayed matches expected version
+
+### Guideline Distillation Fails
+
+Databricks models may not support the JSON schema format required for guideline distillation. Options:
+1. Use OpenAI model (gpt-4o-mini) for `reflection_lm`
+2. Alignment will still work using episodic memory only
+3. Set `OPENAI_API_KEY` environment variable for automatic fallback

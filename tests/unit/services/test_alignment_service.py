@@ -32,3 +32,142 @@ def test_calculate_eval_metrics_simple_case():
     assert metrics["total_evaluations"] == 3
     assert 0.0 <= metrics["accuracy"] <= 1.0
     assert isinstance(metrics["confusion_matrix"], list)
+
+
+# === Binary Scale Tests (JUDGE_EVALUATION_SPEC lines 65-132) ===
+
+
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+def test_calculate_eval_metrics_binary_scale():
+    """Binary metrics use 2x2 confusion matrix and pass/fail agreement.
+
+    Spec: JUDGE_EVALUATION_SPEC lines 65-79
+    - Binary judges return values 0 or 1
+    - Metrics include pass/fail agreement
+    """
+    evaluations = [
+        {"human_rating": 1, "predicted_rating": 1},  # TP (True Positive - both pass)
+        {"human_rating": 0, "predicted_rating": 0},  # TN (True Negative - both fail)
+        {"human_rating": 1, "predicted_rating": 0},  # FN (False Negative - human pass, pred fail)
+    ]
+    metrics = AlignmentService._calculate_eval_metrics(evaluations, judge_type='binary')
+
+    assert metrics['judge_type'] == 'binary'
+    assert metrics['total_evaluations'] == 3
+    # 2x2 confusion matrix for binary
+    assert len(metrics['confusion_matrix']) == 2
+    assert len(metrics['confusion_matrix'][0]) == 2
+    # Pass/fail agreement keys
+    assert 'pass' in metrics['agreement_by_rating']
+    assert 'fail' in metrics['agreement_by_rating']
+
+
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+def test_calculate_eval_metrics_binary_all_pass():
+    """Binary metrics handle all-pass case with perfect agreement.
+
+    Spec: JUDGE_EVALUATION_SPEC lines 119-132
+    - When all values are the same and match, kappa should be 1.0
+    """
+    evaluations = [
+        {"human_rating": 1, "predicted_rating": 1},
+        {"human_rating": 1, "predicted_rating": 1},
+    ]
+    metrics = AlignmentService._calculate_eval_metrics(evaluations, judge_type='binary')
+
+    assert metrics['correlation'] == 1.0  # Perfect agreement
+    assert metrics['accuracy'] == 1.0
+
+
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+def test_calculate_eval_metrics_binary_all_fail():
+    """Binary metrics handle all-fail case with perfect agreement.
+
+    Spec: JUDGE_EVALUATION_SPEC lines 119-132
+    """
+    evaluations = [
+        {"human_rating": 0, "predicted_rating": 0},
+        {"human_rating": 0, "predicted_rating": 0},
+    ]
+    metrics = AlignmentService._calculate_eval_metrics(evaluations, judge_type='binary')
+
+    assert metrics['correlation'] == 1.0  # Perfect agreement
+    assert metrics['accuracy'] == 1.0
+
+
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+def test_calculate_eval_metrics_binary_mixed_ratings():
+    """Binary metrics calculate correctly for mixed ratings.
+
+    Spec: JUDGE_EVALUATION_SPEC lines 65-79
+    """
+    evaluations = [
+        {"human_rating": 1, "predicted_rating": 1},  # Match
+        {"human_rating": 0, "predicted_rating": 1},  # Mismatch
+        {"human_rating": 1, "predicted_rating": 0},  # Mismatch
+        {"human_rating": 0, "predicted_rating": 0},  # Match
+    ]
+    metrics = AlignmentService._calculate_eval_metrics(evaluations, judge_type='binary')
+
+    # 2/4 correct = 50% accuracy
+    assert metrics['accuracy'] == 0.5
+    assert metrics['total_evaluations'] == 4
+
+
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+def test_calculate_eval_metrics_binary_empty():
+    """Binary metrics handle empty evaluations.
+
+    Spec: JUDGE_EVALUATION_SPEC
+    """
+    metrics = AlignmentService._calculate_eval_metrics([], judge_type='binary')
+
+    assert metrics['judge_type'] == 'binary'
+    assert metrics['total_evaluations'] == 0
+    assert metrics['accuracy'] == 0.0
+    assert metrics['correlation'] == 0.0
+    assert metrics['confusion_matrix'] == [[0, 0], [0, 0]]
+
+
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+def test_calculate_eval_metrics_binary_threshold_conversion():
+    """Binary metrics convert float values using 0.5 threshold.
+
+    Spec: JUDGE_EVALUATION_SPEC lines 119-132
+    - Values >= 0.5 are treated as pass (1)
+    - Values < 0.5 are treated as fail (0)
+    """
+    evaluations = [
+        {"human_rating": 0.8, "predicted_rating": 0.9},  # Both pass
+        {"human_rating": 0.3, "predicted_rating": 0.2},  # Both fail
+        {"human_rating": 0.6, "predicted_rating": 0.4},  # Human pass, pred fail
+    ]
+    metrics = AlignmentService._calculate_eval_metrics(evaluations, judge_type='binary')
+
+    # 2/3 correct (first two match, third doesn't)
+    assert metrics['total_evaluations'] == 3
+    assert abs(metrics['accuracy'] - 0.6667) < 0.01
+
+
+# === Likert Scale Tests (JUDGE_EVALUATION_SPEC lines 45-64) ===
+
+
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+def test_calculate_eval_metrics_likert_default():
+    """Likert metrics use 5x5 confusion matrix by default.
+
+    Spec: JUDGE_EVALUATION_SPEC lines 45-64
+    """
+    evaluations = [
+        {"human_rating": 1, "predicted_rating": 1},
+        {"human_rating": 3, "predicted_rating": 3},
+        {"human_rating": 5, "predicted_rating": 5},
+    ]
+    metrics = AlignmentService._calculate_eval_metrics(evaluations)  # Default is likert
+
+    assert metrics.get('judge_type', 'likert') == 'likert'
+    assert len(metrics['confusion_matrix']) == 5
+    assert len(metrics['confusion_matrix'][0]) == 5
+    # All ratings 1-5 should be in agreement_by_rating
+    for rating in ['1', '2', '3', '4', '5']:
+        assert rating in metrics['agreement_by_rating']
