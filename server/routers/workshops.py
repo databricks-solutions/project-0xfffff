@@ -486,7 +486,14 @@ async def submit_finding(
     if not workshop:
         raise HTTPException(status_code=404, detail="Workshop not found")
 
-    return db_service.add_finding(workshop_id, finding)
+    try:
+        return db_service.add_finding(workshop_id, finding)
+    except Exception as e:
+        logger.error(f"Failed to save finding: {type(e).__name__}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to save finding: {str(e)}"
+        )
 
 
 @router.get("/{workshop_id}/findings")
