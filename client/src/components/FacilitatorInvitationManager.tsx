@@ -45,10 +45,10 @@ export const FacilitatorInvitationManager: React.FC = () => {
         const data = await response.json();
         setInvitations(data);
       } else {
-        
+        // no-op
       }
     } catch (error) {
-      
+      // no-op
     }
   };
 

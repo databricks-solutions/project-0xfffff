@@ -88,7 +88,7 @@ export const DatabricksModelTester: React.FC = () => {
         toast.error(`Connection failed: ${result.message}`);
       }
     } catch (error) {
-      toast.error(`Connection test failed: ${error}`);
+      toast.error(`Connection test failed: ${String(error)}`);
     }
   };
 
@@ -119,7 +119,7 @@ export const DatabricksModelTester: React.FC = () => {
         toast.error(`Endpoint call failed: ${result.error}`);
       }
     } catch (error) {
-      toast.error(`Failed to call endpoint: ${error}`);
+      toast.error(`Failed to call endpoint: ${String(error)}`);
     } finally {
       setIsLoading(false);
     }
@@ -151,7 +151,7 @@ export const DatabricksModelTester: React.FC = () => {
         toast.error(`Endpoint call failed: ${result.error}`);
       }
     } catch (error) {
-      toast.error(`Failed to call endpoint: ${error}`);
+      toast.error(`Failed to call endpoint: ${String(error)}`);
     } finally {
       setIsLoading(false);
     }
@@ -195,7 +195,7 @@ export const DatabricksModelTester: React.FC = () => {
         toast.error(`Chat completion failed: ${result.error}`);
       }
     } catch (error) {
-      toast.error(`Failed to complete chat: ${error}`);
+      toast.error(`Failed to complete chat: ${String(error)}`);
     } finally {
       setIsLoading(false);
     }

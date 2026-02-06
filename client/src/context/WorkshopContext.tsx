@@ -30,7 +30,7 @@ const getWorkshopIdFromUrl = (): string | null => {
   const search = window.location.search;
   
   // Try URL path pattern: /workshop/id
-  let workshopMatch = path.match(/\/workshop\/([a-f0-9-]{36})/);
+  const workshopMatch = path.match(/\/workshop\/([a-f0-9-]{36})/);
   if (workshopMatch) {
     const workshopId = workshopMatch[1];
     

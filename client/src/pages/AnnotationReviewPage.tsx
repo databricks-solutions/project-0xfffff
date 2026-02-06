@@ -58,8 +58,13 @@ export function AnnotationReviewPage({ onBack }: AnnotationReviewPageProps) {
   const { workshopId } = useWorkshopContext();
   const { user } = useUser();
   const [currentTraceIndex, setCurrentTraceIndex] = useState(0);
-  
-  // Check if user is logged in
+
+  // Fetch data - pass user ID for personalized trace ordering (must be before early returns)
+  const { data: traces, isLoading: tracesLoading } = useTraces(workshopId!, user?.id);
+  const { data: rubric, isLoading: rubricLoading } = useRubric(workshopId!);
+  const { data: userAnnotations } = useUserAnnotations(workshopId!, user);
+
+  // Check if user is logged in (after all hooks)
   if (!user || !user.id) {
     return (
       <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
@@ -74,11 +79,6 @@ export function AnnotationReviewPage({ onBack }: AnnotationReviewPageProps) {
       </div>
     );
   }
-
-  // Fetch data - pass user ID for personalized trace ordering
-  const { data: traces, isLoading: tracesLoading } = useTraces(workshopId!, user.id);
-  const { data: rubric, isLoading: rubricLoading } = useRubric(workshopId!);
-  const { data: userAnnotations } = useUserAnnotations(workshopId!, user);
   
   // Filter to only show traces that have annotations
   const annotatedTraces = traces?.filter(trace => 

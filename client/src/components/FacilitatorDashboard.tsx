@@ -50,34 +50,25 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
   const { data: annotations } = useFacilitatorAnnotations(workshopId!);
   const { data: annotationsWithUserDetails } = useFacilitatorAnnotationsWithUserDetails(workshopId!);
 
-  // Redirect non-facilitators
-  if (!isFacilitator) {
-    return (
-      <div className="p-8 flex items-center justify-center h-full">
-        <div className="text-center">
-          <AlertCircle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
-          <div className="text-lg font-medium text-slate-900 mb-2">
-            Facilitator Access Required
-          </div>
-          <div className="text-sm text-slate-600">
-            This dashboard is only available to workshop facilitators
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Additional traces functionality - separate state for each phase
+  const [discoveryTracesCount, setDiscoveryTracesCount] = React.useState<string>('');
+  const [annotationTracesCount, setAnnotationTracesCount] = React.useState<string>('');
+  const [isAddingTraces, setIsAddingTraces] = React.useState(false);
+  const [isReorderingTraces, setIsReorderingTraces] = React.useState(false);
+  const [isResettingDiscovery, setIsResettingDiscovery] = React.useState(false);
+  const [isResettingAnnotation, setIsResettingAnnotation] = React.useState(false);
 
   // Calculate progress metrics
   // For discovery: use active discovery traces count or all traces
-  const discoveryTraceCount = ((workshop?.current_phase === 'discovery' || focusPhase === 'discovery') && workshop?.active_discovery_trace_ids?.length) 
-    ? workshop.active_discovery_trace_ids.length 
+  const discoveryTraceCount = ((workshop?.current_phase === 'discovery' || focusPhase === 'discovery') && workshop?.active_discovery_trace_ids?.length)
+    ? workshop.active_discovery_trace_ids.length
     : (traces?.length || 0);
-  
-  // For annotation: use active annotation traces count or all traces  
+
+  // For annotation: use active annotation traces count or all traces
   const annotationTraceCount = (workshop?.current_phase === 'annotation' && workshop?.active_annotation_trace_ids?.length)
     ? workshop.active_annotation_trace_ids.length
     : (traces?.length || 0);
-    
+
   const totalTraces = traces?.length || 0; // Keep for general use
   const tracesWithFindings = allFindings ? new Set(allFindings.map(f => f.trace_id)) : new Set();
   const completedDiscoveryTraces = Math.min(tracesWithFindings.size, discoveryTraceCount);
@@ -85,15 +76,15 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
 
   // Get user participation stats with user names
   const activeUsers = allFindings ? new Set(allFindings.map(f => f.user_id)) : new Set();
-  
+
   // For annotation phase, use annotation-based active users
   const activeAnnotators = annotations ? new Set(annotations.map(a => a.user_id)) : new Set();
-  
+
   // Calculate user contributions based on phase
   const userContributions = React.useMemo(() => {
     if (focusPhase === 'annotation') {
       // Use annotations with user details
-      return annotationsWithUserDetails ? 
+      return annotationsWithUserDetails ?
         Object.entries(
           annotationsWithUserDetails.reduce((acc, annotation) => {
             const userId = annotation.user_id;
@@ -107,7 +98,7 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
         : [];
     } else {
       // Use discovery findings with user details (default)
-      return allFindingsWithUserDetails ? 
+      return allFindingsWithUserDetails ?
         Object.entries(
           allFindingsWithUserDetails.reduce((acc, finding) => {
             const userId = finding.user_id;
@@ -125,8 +116,8 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
   // Calculate trace coverage details
   const traceCoverageDetails = React.useMemo(() => {
     if (!traces || !allFindings) return [];
-    
-    
+
+
     // Filter traces based on focusPhase
     let relevantTraces = traces;
     if (focusPhase === 'discovery' && workshop?.active_discovery_trace_ids?.length) {
@@ -137,23 +128,23 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
         const annotatedTraceIds = new Set(annotations.map(a => a.trace_id));
         const activeTraceIds = new Set(workshop?.active_annotation_trace_ids || []);
         const allRelevantIds = new Set([...annotatedTraceIds, ...activeTraceIds]);
-        
+
         relevantTraces = traces.filter(trace => allRelevantIds.has(trace.id));
       } else if (workshop?.active_annotation_trace_ids?.length) {
         // Fallback: use active_annotation_trace_ids if no annotations yet
         relevantTraces = traces.filter(trace => workshop.active_annotation_trace_ids.includes(trace.id));
       }
     }
-    
+
     return relevantTraces.map(trace => {
       // Use different data source based on focus phase
       if (focusPhase === 'annotation' && annotations) {
         const annotationsForTrace = annotations.filter(a => a.trace_id === trace.id);
         const reviewerIds = new Set(annotationsForTrace.map(a => a.user_id));
-        
+
         // Use activeAnnotators instead of activeUsers for annotation phase
         const minReviewers = Math.min(2, activeAnnotators.size); // At least 2 reviewers for IRR
-        
+
         return {
           traceId: trace.mlflow_trace_id || trace.id,
           input: trace.input,
@@ -166,7 +157,7 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
         // Default to discovery findings
         const findingsForTrace = allFindings.filter(f => f.trace_id === trace.id);
         const reviewerIds = new Set(findingsForTrace.map(f => f.user_id));
-        
+
         return {
           traceId: trace.mlflow_trace_id || trace.id,
           input: trace.input,
@@ -195,7 +186,7 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
   // This must be computed before annotationMetrics since it depends on this
   const effectiveJudgeType = React.useMemo(() => {
     if (!rubric?.question) return rubric?.judge_type || 'likert';
-    
+
     // Parse the rubric questions to get per-question judge types
     const questions = parseRubricQuestions(rubric.question);
     if (questions.length > 0) {
@@ -207,14 +198,14 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
   // Annotation metrics for focused view
   const annotationMetrics = React.useMemo(() => {
     if (!annotations) return { smeCount: 0, participantCount: 0, avgRating: 0, ratingDistribution: {} };
-    
+
     // Use annotationsWithUserDetails if available (has user_role), otherwise fall back to basic annotations
     const annotationsToUse = annotationsWithUserDetails || annotations;
-    
+
     // Separate SME and participant annotations using actual role data
     const smeAnnotations = annotationsToUse.filter((a: any) => a.user_role === 'sme');
     const participantAnnotations = annotationsToUse.filter((a: any) => a.user_role !== 'sme');
-    
+
     // Helper to get the actual rating from annotation based on judge type
     const getRating = (a: any): number | null => {
       if (effectiveJudgeType === 'binary') {
@@ -233,18 +224,18 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
         return a.rating;
       }
     };
-    
+
     // Calculate average rating (only for valid ratings)
     const validRatings = annotationsToUse.map(getRating).filter(r => r !== null) as number[];
-    const avgRating = validRatings.length > 0 ? 
+    const avgRating = validRatings.length > 0 ?
       validRatings.reduce((sum, r) => sum + r, 0) / validRatings.length : 0;
-    
+
     // Rating distribution (based on actual ratings)
     const ratingDistribution = validRatings.reduce((dist, rating) => {
       dist[rating] = (dist[rating] || 0) + 1;
       return dist;
     }, {} as Record<number, number>);
-    
+
     return {
       smeCount: smeAnnotations.length,
       participantCount: participantAnnotations.length,
@@ -252,6 +243,23 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
       ratingDistribution
     };
   }, [annotations, annotationsWithUserDetails, effectiveJudgeType]);
+
+  // Redirect non-facilitators (after all hooks)
+  if (!isFacilitator) {
+    return (
+      <div className="p-8 flex items-center justify-center h-full">
+        <div className="text-center">
+          <AlertCircle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+          <div className="text-lg font-medium text-slate-900 mb-2">
+            Facilitator Access Required
+          </div>
+          <div className="text-sm text-slate-600">
+            This dashboard is only available to workshop facilitators
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Phase advancement logic
   const getNextPhase = () => {
@@ -315,14 +323,6 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
       toast.error(`Failed to start ${nextPhase} phase: ${error.message}`);
     }
   };
-
-  // Additional traces functionality - separate state for each phase
-  const [discoveryTracesCount, setDiscoveryTracesCount] = React.useState<string>('');
-  const [annotationTracesCount, setAnnotationTracesCount] = React.useState<string>('');
-  const [isAddingTraces, setIsAddingTraces] = React.useState(false);
-  const [isReorderingTraces, setIsReorderingTraces] = React.useState(false);
-  const [isResettingDiscovery, setIsResettingDiscovery] = React.useState(false);
-  const [isResettingAnnotation, setIsResettingAnnotation] = React.useState(false);
 
   const handleAddAdditionalTraces = async () => {
     const phase = focusPhase || currentPhase;

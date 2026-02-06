@@ -175,7 +175,7 @@ export const useTestDatabricksConnection = () => {
 
 export const useListDatabricksEndpoints = (config: DatabricksConfig | null) => {
   return useQuery({
-    queryKey: ['databricks', 'endpoints', config?.workspace_url],
+    queryKey: ['databricks', 'endpoints', config?.workspace_url, config],
     queryFn: () => listEndpoints(config!),
     enabled: !!config,
     staleTime: 5 * 60 * 1000, // 5 minutes
@@ -184,7 +184,7 @@ export const useListDatabricksEndpoints = (config: DatabricksConfig | null) => {
 
 export const useGetDatabricksEndpointInfo = (endpointName: string, config: DatabricksConfig | null) => {
   return useQuery({
-    queryKey: ['databricks', 'endpoint', endpointName, config?.workspace_url],
+    queryKey: ['databricks', 'endpoint', endpointName, config?.workspace_url, config],
     queryFn: () => getEndpointInfo(endpointName, config!),
     enabled: !!config && !!endpointName,
     staleTime: 5 * 60 * 1000, // 5 minutes

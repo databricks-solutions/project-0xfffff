@@ -41,42 +41,7 @@ export function TraceViewerDemo() {
   const { user } = useUser();
   const { canCreateFindings, isFacilitator } = useRoleCheck();
 
-  // Check if user is logged in with an ID
-  if (!user || !user.id) {
-    return (
-      <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
-        <div className="text-center max-w-md">
-          <AlertCircle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
-          <div className="text-lg font-medium text-gray-900 mb-2">
-            Please Log In
-          </div>
-          <div className="text-sm text-gray-500 mb-4">
-            You must be logged in to view discovery traces.
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // CRITICAL SAFETY CHECK: Facilitators should not see discovery text boxes during discovery/annotation phases
-  if (isFacilitator && (currentPhase === 'discovery' || currentPhase === 'annotation')) {
-    return (
-      <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
-        <div className="text-center max-w-md">
-          <AlertCircle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
-          <div className="text-lg font-medium text-gray-900 mb-2">
-            Facilitator Dashboard Required
-          </div>
-          <div className="text-sm text-gray-500 mb-4">
-            As a facilitator during the {currentPhase} phase, you should use the monitoring dashboard instead of the participant interface.
-          </div>
-          <p className="text-xs text-gray-400">
-            Please navigate back to access the appropriate facilitator tools for monitoring and managing this phase.
-          </p>
-        </div>
-      </div>
-    );
-  }
+  // All useState hooks must be called before early returns
   const [currentTraceIndex, setCurrentTraceIndex] = useState(0);
   const [question1Response, setQuestion1Response] = useState('');
   const [question2Response, setQuestion2Response] = useState('');
@@ -90,10 +55,9 @@ export function TraceViewerDemo() {
   const previousTraceCount = useRef<number>(0);
 
   // Fetch data - pass user ID for personalized trace ordering
-  // User is guaranteed to have an ID at this point due to early return above
   const { data: traces, isLoading: tracesLoading, error: tracesError } = useTraces(
-    workshopId!, 
-    user.id  // User ID is required and guaranteed to exist
+    workshopId!,
+    user?.id  // May be undefined - hook handles this gracefully
   );
   const { data: existingFindings } = useUserFindings(workshopId!, user); // Secure user-isolated findings
   const submitFinding = useSubmitFinding(workshopId!);

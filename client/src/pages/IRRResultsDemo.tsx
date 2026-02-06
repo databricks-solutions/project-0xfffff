@@ -233,8 +233,7 @@ export function IRRResultsDemo({ workshopId }: IRRResultsProps) {
       // The navigation will be handled by the WorkshopDemoLanding component
       // when it detects the phase change
     } catch (error) {
-      
-      
+      // no-op
     } finally {
       setIsAdvancing(false);
     }
