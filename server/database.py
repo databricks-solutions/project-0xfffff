@@ -438,16 +438,34 @@ def create_tables():
         # For PostgreSQL/Lakebase, create schema first if needed
         if DATABASE_BACKEND == DatabaseBackend.POSTGRESQL:
             schema_name = get_schema_name()
+            pg_user = os.getenv("PGUSER", "")
             if schema_name:
                 from sqlalchemy import text
                 with engine.connect() as conn:
                     conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}"'))
+                    if pg_user:
+                        conn.execute(text(f'GRANT ALL PRIVILEGES ON SCHEMA "{schema_name}" TO "{pg_user}"'))
                     conn.commit()
                     print(f'✅ Created/verified schema: {schema_name}')
 
         # Use checkfirst=True to avoid errors if tables already exist
         Base.metadata.create_all(bind=engine, checkfirst=True)
         print('✅ Database tables created successfully')
+
+        # Grant privileges on all tables to PGUSER (PostgreSQL only)
+        if DATABASE_BACKEND == DatabaseBackend.POSTGRESQL:
+            schema_name = get_schema_name()
+            pg_user = os.getenv("PGUSER", "")
+            if schema_name and pg_user:
+                try:
+                    from sqlalchemy import text
+                    with engine.connect() as conn:
+                        conn.execute(text(f'GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA "{schema_name}" TO "{pg_user}"'))
+                        conn.execute(text(f'GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA "{schema_name}" TO "{pg_user}"'))
+                        conn.commit()
+                        print(f'✅ Privileges granted to {pg_user} on schema {schema_name}')
+                except Exception as grant_err:
+                    print(f'ℹ️ Privilege grant skipped: {grant_err}')
     except Exception as e:
         # Handle case where tables already exist (common in production)
         error_msg = str(e).lower()

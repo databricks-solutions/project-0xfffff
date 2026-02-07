@@ -294,65 +294,8 @@ export function JudgeTuningPage() {
     }
   }, [workshopId]);
 
-  // Fetch auto-evaluation status and results on mount
-  // ALWAYS fetch results directly - don't depend only on status check
-  useEffect(() => {
-    if (!workshopId) return;
-
-    const fetchAutoEvalResults = async () => {
-      try {
-        console.log('[AutoEval] Fetching results for workshop:', workshopId);
-        const response = await fetch(`/workshops/${workshopId}/auto-evaluation-results`);
-        if (response.ok) {
-          const data = await response.json();
-          console.log('[AutoEval] Response:', { status: data.status, evalCount: data.evaluations?.length || 0, diagnostics: data.diagnostics });
-
-          // Set status from results endpoint
-          if (data.status) {
-            setAutoEvalStatus(data.status);
-          }
-          if (data.job_id) {
-            setAutoEvalJobId(data.job_id);
-          }
-          if (data.derived_prompt) {
-            setAutoEvalDerivedPrompt(data.derived_prompt);
-          }
-
-          if (data.evaluations && data.evaluations.length > 0) {
-            // Convert to expected format
-            const evalResults = data.evaluations.map((e: any) => ({
-              id: e.trace_id,
-              trace_id: e.trace_id,
-              mlflow_trace_id: e.mlflow_trace_id,
-              predicted_rating: e.predicted_rating,
-              human_rating: e.human_rating,
-              confidence: e.confidence,
-              reasoning: e.reasoning,
-            }));
-            console.log('[AutoEval] Setting evaluations:', evalResults.length, 'items');
-            console.log('[AutoEval] Sample evaluation:', evalResults[0]);
-            setEvaluations(evalResults);
-            setHasEvaluated(true);
-            setEvaluationComplete(evalResults.length >= 10);
-
-            if (data.metrics) {
-              setMetrics(data.metrics);
-            }
-          } else {
-            console.log('[AutoEval] No evaluations found in response');
-          }
-        } else {
-          console.log('[AutoEval] Response not ok:', response.status);
-        }
-      } catch (error) {
-        console.error('[AutoEval] Failed to fetch auto-evaluation results:', error);
-      }
-    };
-
-    // Fetch results immediately on mount
-    console.log('[AutoEval] useEffect triggered, workshopId:', workshopId);
-    fetchAutoEvalResults();
-  }, [workshopId]);
+  // NOTE: Auto-evaluation results are fetched at the end of loadInitialData()
+  // to avoid race conditions. See the fetchAutoEvalResults() call there.
 
   // Poll for auto-evaluation completion
   useEffect(() => {
@@ -391,6 +334,7 @@ export function JudgeTuningPage() {
                   human_rating: e.human_rating,
                   confidence: e.confidence,
                   reasoning: e.reasoning,
+                  predicted_feedback: e.judge_name || '',
                 }));
                 setEvaluations(evalResults);
                 setHasEvaluated(true);
@@ -398,6 +342,15 @@ export function JudgeTuningPage() {
                 if (resultsData.metrics) {
                   setMetrics(resultsData.metrics);
                 }
+                // Persist to localStorage so evaluations survive page navigation
+                try {
+                  const storageKey = `judge-evaluations-${workshopId}-q${selectedQuestionIndex}`;
+                  localStorage.setItem(storageKey, JSON.stringify({
+                    evaluations: evalResults,
+                    metrics: resultsData.metrics || null,
+                    timestamp: Date.now(),
+                  }));
+                } catch (_) { /* localStorage unavailable */ }
                 toast.success('Auto-evaluation complete! LLM judge scores are now available.');
               }
             }
@@ -601,9 +554,67 @@ export function JudgeTuningPage() {
         // if (latestPrompt.performance_metrics) {
         //   setMetrics(latestPrompt.performance_metrics as JudgePerformanceMetrics);
         // }
-        
-        // Load evaluations if they exist
-        loadEvaluations(latestPrompt.id);
+
+      }
+
+      // Fetch auto-evaluation results as the LAST step, after all other state is set.
+      // This must happen after rubric/prompts are loaded to avoid race conditions where
+      // other state updates could overwrite evaluation results.
+      try {
+        console.log('[AutoEval] Fetching results for workshop:', workshopId);
+        const autoEvalResponse = await fetch(`/workshops/${workshopId}/auto-evaluation-results`);
+        if (autoEvalResponse.ok) {
+          const autoEvalData = await autoEvalResponse.json();
+          console.log('[AutoEval] Response:', { status: autoEvalData.status, evalCount: autoEvalData.evaluations?.length || 0 });
+
+          if (autoEvalData.status) {
+            setAutoEvalStatus(autoEvalData.status);
+          }
+          if (autoEvalData.job_id) {
+            setAutoEvalJobId(autoEvalData.job_id);
+          }
+          if (autoEvalData.derived_prompt) {
+            setAutoEvalDerivedPrompt(autoEvalData.derived_prompt);
+          }
+
+          if (autoEvalData.evaluations && autoEvalData.evaluations.length > 0) {
+            const evalResults = autoEvalData.evaluations.map((e: any) => ({
+              id: e.trace_id,
+              trace_id: e.trace_id,
+              mlflow_trace_id: e.mlflow_trace_id,
+              predicted_rating: e.predicted_rating,
+              human_rating: e.human_rating,
+              confidence: e.confidence,
+              reasoning: e.reasoning,
+              predicted_feedback: e.judge_name || '',
+            }));
+            console.log('[AutoEval] Setting evaluations:', evalResults.length, 'items');
+            setEvaluations(evalResults);
+            setHasEvaluated(true);
+            setEvaluationComplete(evalResults.length >= 10);
+
+            if (autoEvalData.metrics) {
+              setMetrics(autoEvalData.metrics);
+            }
+
+            // Cache to localStorage so evaluations survive page navigation
+            try {
+              const storageKey = `judge-evaluations-${workshopId}-q0`;
+              localStorage.setItem(storageKey, JSON.stringify({
+                evaluations: evalResults,
+                metrics: autoEvalData.metrics || null,
+                timestamp: Date.now(),
+              }));
+            } catch (_) { /* localStorage unavailable */ }
+          }
+
+          // If auto-eval is currently running, start polling
+          if (autoEvalData.status === 'running') {
+            setIsPollingAutoEval(true);
+          }
+        }
+      } catch (autoEvalErr) {
+        console.error('[AutoEval] Failed to fetch auto-evaluation results:', autoEvalErr);
       }
 
     } catch (err: any) {
@@ -1240,6 +1251,7 @@ Think step by step about how well the output addresses the criteria, then provid
                   human_rating: e.human_rating,
                   confidence: e.confidence,
                   reasoning: e.reasoning,
+                  predicted_feedback: e.judge_name || '',
                 }));
                 setEvaluations(evalResults);
                 setAutoEvalStatus('completed');
@@ -1310,6 +1322,7 @@ Think step by step about how well the output addresses the criteria, then provid
                     human_rating: e.human_rating,
                     confidence: e.confidence,
                     reasoning: e.reasoning,
+                    predicted_feedback: e.judge_name || '',
                   }));
                   setEvaluations(evalResults);
                 }
@@ -1426,11 +1439,43 @@ Think step by step about how well the output addresses the criteria, then provid
                       setIsModified(false);
                     }
                     
-                    // Reset evaluation state for the new version (needs fresh evaluation)
-                    setEvaluations([]);
-                    setMetrics(null);
-                    setHasEvaluated(false);
-                    setEvaluationComplete(false);
+                    // Re-fetch evaluations from the server — auto-eval ran before alignment
+                    // and those results are still valid and stored in the DB.
+                    try {
+                      const evalResponse = await fetch(`/workshops/${workshopId}/auto-evaluation-results`);
+                      if (evalResponse.ok) {
+                        const evalData = await evalResponse.json();
+                        if (evalData.evaluations && evalData.evaluations.length > 0) {
+                          const evalResults = evalData.evaluations.map((e: any) => ({
+                            id: e.trace_id,
+                            trace_id: e.trace_id,
+                            mlflow_trace_id: e.mlflow_trace_id,
+                            predicted_rating: e.predicted_rating,
+                            human_rating: e.human_rating,
+                            confidence: e.confidence,
+                            reasoning: e.reasoning,
+                            predicted_feedback: e.judge_name || '',
+                          }));
+                          setEvaluations(evalResults);
+                          setHasEvaluated(true);
+                          setEvaluationComplete(evalResults.length >= 10);
+                          if (evalData.metrics) {
+                            setMetrics(evalData.metrics);
+                          }
+                        } else {
+                          setEvaluations([]);
+                          setMetrics(null);
+                          setHasEvaluated(false);
+                          setEvaluationComplete(false);
+                        }
+                      }
+                    } catch (evalFetchErr) {
+                      console.error('[ALIGN] Failed to re-fetch evaluations:', evalFetchErr);
+                      setEvaluations([]);
+                      setMetrics(null);
+                      setHasEvaluated(false);
+                      setEvaluationComplete(false);
+                    }
                   } catch (refreshErr) {
                     console.error('[ALIGN] Failed to refresh prompts:', refreshErr);
                   }
@@ -1986,27 +2031,37 @@ Think step by step about how well the output addresses the criteria, then provid
                           
                           // Find evaluation for this trace
                           // Match by: DB trace ID or MLflow trace ID
-                          // Debug: log on first trace only
+                          // When multiple rubric questions exist, also filter by predicted_feedback
+                          // (which stores the judge_name) to show only the selected question's evaluation
+                          const expectedJudgeName = selectedQuestion?.title
+                            ? selectedQuestion.title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') + '_judge'
+                            : '';
+                          const hasJudgeLabels = evaluations.some((e: any) => e.predicted_feedback);
+
                           if (index === 0) {
                             console.log('[EvalMatch] Evaluations count:', evaluations.length);
                             console.log('[EvalMatch] First trace ID:', trace.id);
-                            console.log('[EvalMatch] First trace mlflow_trace_id:', trace.mlflow_trace_id);
+                            console.log('[EvalMatch] Expected judge:', expectedJudgeName);
+                            console.log('[EvalMatch] Has judge labels:', hasJudgeLabels);
                             if (evaluations.length > 0) {
-                              console.log('[EvalMatch] First evaluation trace_id:', evaluations[0].trace_id);
-                              console.log('[EvalMatch] First evaluation mlflow_trace_id:', evaluations[0].mlflow_trace_id);
+                              console.log('[EvalMatch] First evaluation:', { trace_id: evaluations[0].trace_id, predicted_feedback: evaluations[0].predicted_feedback });
                             }
                           }
-                          const evaluation = evaluations.find(
-                            (e: any) => {
-                              // Match by DB trace_id (workshop internal ID)
-                              if (e.trace_id && e.trace_id === trace.id) return true;
-                              // Match by evaluation's mlflow_trace_id against trace's mlflow_trace_id
-                              if (e.mlflow_trace_id && trace.mlflow_trace_id && e.mlflow_trace_id === trace.mlflow_trace_id) return true;
-                              // Fallback: match evaluation trace_id against trace's mlflow_trace_id
-                              if (e.trace_id && trace.mlflow_trace_id && e.trace_id === trace.mlflow_trace_id) return true;
-                              return false;
-                            }
-                          );
+                          const matchesTrace = (e: any) => {
+                            if (e.trace_id && e.trace_id === trace.id) return true;
+                            if (e.mlflow_trace_id && trace.mlflow_trace_id && e.mlflow_trace_id === trace.mlflow_trace_id) return true;
+                            if (e.trace_id && trace.mlflow_trace_id && e.trace_id === trace.mlflow_trace_id) return true;
+                            return false;
+                          };
+                          // If evaluations have judge labels, filter by the selected question
+                          // Otherwise fall back to first match (legacy data without labels)
+                          let evaluation = hasJudgeLabels && expectedJudgeName
+                            ? evaluations.find((e: any) => matchesTrace(e) && e.predicted_feedback === expectedJudgeName)
+                            : evaluations.find((e: any) => matchesTrace(e));
+                          // Fallback: if no match with judge filter, try without (handles legacy data)
+                          if (!evaluation && hasJudgeLabels) {
+                            evaluation = evaluations.find((e: any) => matchesTrace(e));
+                          }
                           
                           const judgeRating = evaluation?.predicted_rating;
 

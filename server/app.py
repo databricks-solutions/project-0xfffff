@@ -80,6 +80,9 @@ async def lifespan(app: FastAPI):
             with engine.connect() as conn:
                 # Create the schema owned by the service principal
                 conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}" AUTHORIZATION "{pg_user}"'))
+                # Grant privileges on the schema to PGUSER
+                if pg_user:
+                    conn.execute(text(f'GRANT ALL PRIVILEGES ON SCHEMA "{schema_name}" TO "{pg_user}"'))
                 conn.commit()
                 print(f"✅ PostgreSQL schema '{schema_name}' ensured")
         except Exception as e:
@@ -96,6 +99,17 @@ async def lifespan(app: FastAPI):
             print(f"⚠️  PostgreSQL table creation failed: {e}")
             import traceback
             traceback.print_exc()
+
+        # Grant privileges on all tables in the schema to PGUSER
+        try:
+            if pg_user:
+                with engine.connect() as conn:
+                    conn.execute(text(f'GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA "{schema_name}" TO "{pg_user}"'))
+                    conn.execute(text(f'GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA "{schema_name}" TO "{pg_user}"'))
+                    conn.commit()
+                    print(f"✅ PostgreSQL privileges granted to '{pg_user}' on schema '{schema_name}'")
+        except Exception as e:
+            print(f"ℹ️  PostgreSQL privilege grant skipped: {e}")
 
         try:
             # Fix: make users.workshop_id nullable (facilitators don't have a workshop)

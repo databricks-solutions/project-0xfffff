@@ -3105,6 +3105,7 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
         human_rating=evaluation.human_rating,
         confidence=evaluation.confidence,
         reasoning=evaluation.reasoning,
+        predicted_feedback=evaluation.predicted_feedback,  # judge_name for per-question filtering
       )
       self.db.add(db_evaluation)
 
@@ -3126,6 +3127,7 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
         human_rating=db_eval.human_rating,
         confidence=db_eval.confidence,
         reasoning=db_eval.reasoning,
+        predicted_feedback=db_eval.predicted_feedback,
       )
       for db_eval in db_evaluations
     ]
@@ -3180,6 +3182,7 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
         human_rating=db_eval.human_rating,
         confidence=db_eval.confidence,
         reasoning=db_eval.reasoning,
+        predicted_feedback=db_eval.predicted_feedback,
       )
       for db_eval in db_evaluations
     ]

@@ -382,6 +382,11 @@ class PostgresManager:
                 f'CREATE SCHEMA IF NOT EXISTS "{self._schema_name}" '
                 f'AUTHORIZATION "{pg_user}"'
             )
+            # Grant privileges on the schema to PGUSER
+            if pg_user:
+                conn.execute(
+                    f'GRANT ALL PRIVILEGES ON SCHEMA "{self._schema_name}" TO "{pg_user}"'
+                )
             # Ensure search_path is set for this connection
             conn.execute(
                 f'SET search_path TO "{self._schema_name}", public'
@@ -396,6 +401,20 @@ class PostgresManager:
             logger.info(
                 f"All {len(_TABLE_DDL)} predefined tables created/verified"
             )
+
+            # Grant privileges on all tables and sequences to PGUSER
+            if pg_user:
+                try:
+                    conn.execute(
+                        f'GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA "{self._schema_name}" TO "{pg_user}"'
+                    )
+                    conn.execute(
+                        f'GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA "{self._schema_name}" TO "{pg_user}"'
+                    )
+                    conn.commit()
+                    logger.info(f"Privileges granted to {pg_user} on schema {self._schema_name}")
+                except Exception as grant_err:
+                    logger.warning(f"Privilege grant skipped: {grant_err}")
 
     # ------------------------------------------------------------------
     # Write operations

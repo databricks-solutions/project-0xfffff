@@ -1444,6 +1444,7 @@ async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Sessi
                                     all_evaluations = []
                                     for judge_result in successful:
                                         result = judge_result['result']
+                                        judge_name_tag = judge_result.get('judge_name', '')
                                         if 'evaluations' in result:
                                             for eval_data in result['evaluations']:
                                                 try:
@@ -1461,6 +1462,7 @@ async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Sessi
                                                             human_rating=int(eval_data.get('human_rating')) if eval_data.get('human_rating') is not None else None,
                                                             confidence=eval_data.get('confidence'),
                                                             reasoning=eval_data.get('reasoning'),
+                                                            predicted_feedback=judge_name_tag,  # Store judge/question name for per-question filtering
                                                         )
                                                     )
                                                 except Exception as inner_err:
@@ -3468,6 +3470,7 @@ async def start_evaluation_job(
                                             else 0,
                                             confidence=eval_data.get("confidence"),
                                             reasoning=eval_data.get("reasoning"),
+                                            predicted_feedback=request.judge_name,  # Store judge name for per-question filtering
                                         )
                                     )
                                 except Exception as inner_err:
@@ -4334,6 +4337,60 @@ async def restart_auto_evaluation(
                 successful = [r for r in all_results if r['result'].get('success')]
                 failed = [r for r in all_results if not r['result'].get('success')]
 
+                # Save evaluations to database
+                if successful:
+                    try:
+                        from server.models import JudgePromptCreate, JudgeEvaluation as JudgeEvalModel
+
+                        # Get or create prompt for storing evaluations
+                        existing_prompts = thread_db_service.get_judge_prompts(workshop_id)
+                        if existing_prompts:
+                            prompt_id_to_use = existing_prompts[0].id
+                        else:
+                            new_prompt_data = JudgePromptCreate(
+                                prompt_text=combined_prompt,
+                                few_shot_examples=[],
+                                model_name=evaluation_model_name,
+                                model_parameters={'mode': 'auto_evaluation'},
+                            )
+                            new_prompt = thread_db_service.create_judge_prompt(workshop_id, new_prompt_data)
+                            prompt_id_to_use = new_prompt.id
+
+                        all_evaluations = []
+                        for judge_result in successful:
+                            result = judge_result['result']
+                            judge_name_tag = judge_result.get('judge_name', '')
+                            if 'evaluations' in result:
+                                for eval_data in result['evaluations']:
+                                    try:
+                                        pred = eval_data.get('predicted_rating')
+                                        pred_val = int(round(float(pred))) if pred is not None else 0
+                                        trace_id_for_db = eval_data.get('workshop_uuid') or eval_data.get('trace_id')
+                                        all_evaluations.append(
+                                            JudgeEvalModel(
+                                                id=str(uuid.uuid4()),
+                                                workshop_id=workshop_id,
+                                                prompt_id=prompt_id_to_use,
+                                                trace_id=trace_id_for_db,
+                                                predicted_rating=pred_val,
+                                                human_rating=int(eval_data.get('human_rating')) if eval_data.get('human_rating') is not None else None,
+                                                confidence=eval_data.get('confidence'),
+                                                reasoning=eval_data.get('reasoning'),
+                                                predicted_feedback=judge_name_tag,
+                                            )
+                                        )
+                                    except Exception as inner_err:
+                                        logger.error(f"Error parsing evaluation: {inner_err}")
+
+                        if all_evaluations:
+                            thread_db_service.store_judge_evaluations(all_evaluations)
+                            job.add_log(f"✓ Saved {len(all_evaluations)} evaluations to database")
+                        else:
+                            job.add_log("⚠ No evaluations to save")
+                    except Exception as save_err:
+                        job.add_log(f"⚠ Warning: Could not save evaluations: {save_err}")
+                        logger.exception("Failed to save restart-auto-evaluation results")
+
                 job.result = {
                     'success': len(failed) == 0,
                     'total_judges': len(rubric_questions),
@@ -4394,16 +4451,22 @@ async def get_auto_evaluation_results(
     # Get the auto-evaluation job status first
     job_id = db_service.get_auto_evaluation_job_id(workshop_id)
     derived_prompt = db_service.get_auto_evaluation_prompt(workshop_id)
-    
+
     job_status = "not_started"
     if job_id:
         job = get_job(job_id)
         if job:
             job_status = job.status
-    
+
     # Get the latest evaluations from the database
     # These are stored when the auto-evaluation job completes
     evaluations = db_service.get_latest_evaluations(workshop_id)
+
+    # If we have evaluations in DB but job status is unknown (e.g., after app restart
+    # when /tmp job files are lost), report status as "completed" so the frontend
+    # displays the results instead of showing "not_started"
+    if evaluations and job_status in ("not_started", "not_found"):
+        job_status = "completed"
     
     # Get metrics if available
     metrics = None
@@ -4467,6 +4530,7 @@ async def get_auto_evaluation_results(
                 "human_rating": e.human_rating,
                 "confidence": e.confidence,
                 "reasoning": e.reasoning,
+                "judge_name": e.predicted_feedback or "",  # Rubric question identifier
             }
             for e in evaluations
         ] if evaluations else [],
@@ -4633,6 +4697,7 @@ async def re_evaluate(
                                             human_rating=int(eval_data["human_rating"]) if eval_data.get("human_rating") is not None else 0,
                                             confidence=eval_data.get("confidence"),
                                             reasoning=eval_data.get("reasoning"),
+                                            predicted_feedback=judge_name,  # Store judge name for per-question filtering
                                         )
                                     )
                                 except Exception as inner_err:

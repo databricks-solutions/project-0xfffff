@@ -103,15 +103,29 @@ def run_migrations_online() -> None:
             connection.execute(
                 text(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}" AUTHORIZATION "{pg_user}"')
             )
+            # Grant privileges on the schema to PGUSER
+            if pg_user:
+                connection.execute(
+                    text(f'GRANT ALL PRIVILEGES ON SCHEMA "{schema_name}" TO "{pg_user}"')
+                )
             connection.execute(text(f'SET search_path TO "{schema_name}", public'))
             connection.commit()
 
-        context.configure(
+        configure_kwargs = dict(
             connection=connection,
             target_metadata=target_metadata,
             render_as_batch=True,  # Required for SQLite, safe for PostgreSQL
             compare_type=True,
         )
+
+        # For PostgreSQL/Lakebase: place alembic_version in the app schema
+        # so it's accessible to the service principal (who may not have
+        # privileges on the public schema where a stale alembic_version
+        # from a previous owner could exist).
+        if not is_sqlite:
+            configure_kwargs["version_table_schema"] = schema_name
+
+        context.configure(**configure_kwargs)
 
         with context.begin_transaction():
             context.run_migrations()
