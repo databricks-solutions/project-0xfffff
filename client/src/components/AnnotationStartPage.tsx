@@ -46,7 +46,6 @@ export const AnnotationStartPage: React.FC<AnnotationStartPageProps> = ({ onStar
         randomize: randomizeTraces,
         evaluation_model_name: autoEvaluateEnabled ? evaluationModel : null,
       };
-      console.log('[AnnotationStartPage] Starting annotation with:', requestBody);
       
       const response = await fetch(`/workshops/${workshopId}/begin-annotation`, {
         method: 'POST',
@@ -62,7 +61,6 @@ export const AnnotationStartPage: React.FC<AnnotationStartPageProps> = ({ onStar
       }
       
       const result = await response.json();
-      console.log('[AnnotationStartPage] Response:', result);
       
       // Show success message with auto-evaluation status
       if (result.auto_evaluation_started) {

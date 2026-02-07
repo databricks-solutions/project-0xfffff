@@ -13,12 +13,12 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { MessageCircle, ChevronLeft, ChevronRight, Send, AlertCircle, CheckCircle, Settings, Table, RefreshCw } from 'lucide-react';
+import { MessageCircle, ChevronLeft, ChevronRight, Send, AlertCircle, CheckCircle, Settings, Table, RefreshCw, NotebookPen, Trash2 } from 'lucide-react';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useWorkflowContext } from '@/context/WorkflowContext';
 import { toast } from 'sonner';
 import { useUser, useRoleCheck } from '@/context/UserContext';
-import { useTraces, useUserFindings, useSubmitFinding, refetchAllWorkshopQueries } from '@/hooks/useWorkshopApi';
+import { useTraces, useUserFindings, useSubmitFinding, useParticipantNotes, useSubmitParticipantNote, useDeleteParticipantNote, useWorkshop, refetchAllWorkshopQueries } from '@/hooks/useWorkshopApi';
 import { useQueryClient } from '@tanstack/react-query';
 import { WorkshopsService } from '@/client';
 import type { Trace } from '@/client';
@@ -48,7 +48,6 @@ export function TraceViewerDemo() {
   const [submittedFindings, setSubmittedFindings] = useState<Set<string>>(new Set());
   const [isCompletingDiscovery, setIsCompletingDiscovery] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [isNavigating, setIsNavigating] = useState(false);
   const [showTableView, setShowTableView] = useState(false);
   const previousTraceId = useRef<string | null>(null);
   const hasAutoNavigated = useRef(false);
@@ -62,6 +61,16 @@ export function TraceViewerDemo() {
   const { data: existingFindings } = useUserFindings(workshopId!, user); // Secure user-isolated findings
   const submitFinding = useSubmitFinding(workshopId!);
   const queryClient = useQueryClient();
+  
+  // Workshop data (for show_participant_notes flag)
+  const { data: workshopData } = useWorkshop(workshopId!);
+  const notesEnabled = workshopData?.show_participant_notes ?? false;
+
+  // Participant notepad (only fetch when enabled)
+  const [noteContent, setNoteContent] = useState('');
+  const { data: participantNotes } = useParticipantNotes(workshopId!, user?.id, 'discovery');
+  const submitNote = useSubmitParticipantNote(workshopId!);
+  const deleteNote = useDeleteParticipantNote(workshopId!);
 
   // Convert traces to TraceData format - memoize to prevent infinite loops
   const traceData = useMemo(() => {
@@ -219,7 +228,6 @@ export function TraceViewerDemo() {
         lastError = error;
         if (attempt < maxRetries) {
           const delay = baseDelay * Math.pow(2, attempt); // Exponential backoff: 1s, 2s, 4s
-          console.log(`Save attempt ${attempt + 1} failed, retrying in ${delay}ms...`);
           await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
@@ -240,7 +248,6 @@ export function TraceViewerDemo() {
     
     // Check if this trace is already being saved (prevent duplicate saves)
     if (savingTracesRef.current.has(traceId)) {
-      console.warn(`Save already in progress for trace ${traceId}, skipping duplicate save`);
       return false;
     }
     
@@ -248,7 +255,6 @@ export function TraceViewerDemo() {
     if (!isBackground) {
       // Prevent concurrent user-initiated saves
       if (isSavingRef.current) {
-        console.warn('User-initiated save already in progress, skipping duplicate save');
         return false;
       }
       
@@ -257,7 +263,6 @@ export function TraceViewerDemo() {
       if (savedState) {
         const hasChanged = q1Trimmed !== savedState.q1 || q2Trimmed !== savedState.q2;
         if (!hasChanged) {
-          console.log(`No changes detected for trace ${traceId}, skipping save`);
           // Even though we skip the save, ensure the trace is marked as submitted
           // This fixes the issue where "Complete" doesn't record the last trace
           setSubmittedFindings(prev => new Set([...prev, traceId]));
@@ -279,7 +284,6 @@ export function TraceViewerDemo() {
     try {
       const content = `Quality Assessment: ${q1Trimmed}\n\nImprovement Analysis: ${q2Trimmed}`;
       
-      console.log('Saving finding:', { traceId, q1Length: q1Trimmed.length, q2Length: q2Trimmed.length, isBackground });
       
       // Use retry logic for background saves, direct call for user-initiated saves
       if (isBackground) {
@@ -304,7 +308,6 @@ export function TraceViewerDemo() {
         saveStatusRef.current.set(traceId, 'saved');
       }
       
-      console.log('Successfully saved finding for trace:', traceId);
       return true;
     } catch (error: any) {
       console.error('Failed to save finding after retries:', error);
@@ -351,7 +354,6 @@ export function TraceViewerDemo() {
         });
       }
       
-      console.warn(`Queued trace ${traceId} for retry (attempt ${(existingEntry?.attempts || 0) + 1})`);
       
       // Only show error toast for user-initiated saves (not background)
       if (!isBackground) {
@@ -387,7 +389,6 @@ export function TraceViewerDemo() {
         continue;
       }
       
-      console.log(`Retrying failed save for trace ${traceId} (attempt ${data.attempts + 1})`);
       
       // Update last attempt time
       data.lastAttempt = now;
@@ -411,7 +412,6 @@ export function TraceViewerDemo() {
         savedStateRef.current.set(traceId, { q1: data.q1, q2: data.q2 });
         saveStatusRef.current.set(traceId, 'saved');
         
-        console.log(`Successfully saved queued finding for trace ${traceId}`);
         
         // Only process one at a time to avoid overwhelming the backend
         break;
@@ -498,36 +498,28 @@ export function TraceViewerDemo() {
   // Navigate to next trace - save first, then navigate
   const nextTrace = async () => {
     if (!currentTrace) {
-      console.warn('nextTrace: No current trace');
       return;
     }
     
     // Use ref to prevent concurrent navigation (more reliable than React state)
     if (isNavigatingRef.current) {
-      console.warn('nextTrace: Already navigating (ref check)');
       return;
     }
     
     // Debounce rapid clicks to prevent overwhelming the backend
     const now = Date.now();
     if (now - lastNavigationTimeRef.current < NAVIGATION_DEBOUNCE_MS) {
-      console.warn('nextTrace: Navigation debounced', { 
-        timeSinceLastNav: now - lastNavigationTimeRef.current,
-        debounceMs: NAVIGATION_DEBOUNCE_MS 
-      });
       return;
     }
     lastNavigationTimeRef.current = now;
     
     // Check if we can navigate
     if (currentTraceIndex >= traceData.length - 1) {
-      console.log('nextTrace: Already at last trace', { currentTraceIndex, totalTraces: traceData.length });
       return; // Already at last trace
     }
     
-    // Set navigating flag immediately using ref
+    // Set navigating flag immediately using ref (no state update = no flash)
     isNavigatingRef.current = true;
-    setIsNavigating(true);
     
     try {
       // Store current trace data for save
@@ -536,13 +528,10 @@ export function TraceViewerDemo() {
       const q2ToSave = question2Response.trim();
       const hasContent = q1ToSave || q2ToSave;
       
-      console.log('nextTrace: Starting navigation', { currentTraceIndex, nextIndex: currentTraceIndex + 1, hasContent });
       
       // Save FIRST if there's content (await to ensure it completes)
       if (hasContent) {
-        console.log('nextTrace: Saving content before navigation', { traceId: currentTraceId });
         await saveFinding(q1ToSave, q2ToSave, currentTraceId, true);
-        console.log('nextTrace: Save completed for trace:', currentTraceId);
       }
       
       // Then navigate
@@ -550,12 +539,9 @@ export function TraceViewerDemo() {
       setQuestion1Response('');
       setQuestion2Response('');
       setCurrentTraceIndex(nextIndex);
-      console.log('nextTrace: Navigated to index', nextIndex);
       
     } finally {
-      // Clear navigating flags
       isNavigatingRef.current = false;
-      setIsNavigating(false);
     }
   };
 
@@ -593,36 +579,28 @@ export function TraceViewerDemo() {
   // Navigate to previous trace - save first, then navigate
   const prevTrace = async () => {
     if (!currentTrace) {
-      console.warn('prevTrace: No current trace');
       return;
     }
     
     // Use ref to prevent concurrent navigation (more reliable than React state)
     if (isNavigatingRef.current) {
-      console.warn('prevTrace: Already navigating (ref check)');
       return;
     }
     
     // Debounce rapid clicks to prevent overwhelming the backend
     const now = Date.now();
     if (now - lastNavigationTimeRef.current < NAVIGATION_DEBOUNCE_MS) {
-      console.warn('prevTrace: Navigation debounced', { 
-        timeSinceLastNav: now - lastNavigationTimeRef.current,
-        debounceMs: NAVIGATION_DEBOUNCE_MS 
-      });
       return;
     }
     lastNavigationTimeRef.current = now;
     
     // Check if we can navigate
     if (currentTraceIndex <= 0) {
-      console.log('prevTrace: Already at first trace');
       return; // Already at first trace
     }
     
-    // Set navigating flag immediately using ref
+    // Set navigating flag immediately using ref (no state update = no flash)
     isNavigatingRef.current = true;
-    setIsNavigating(true);
     
     try {
       // Store current trace data for save
@@ -631,13 +609,10 @@ export function TraceViewerDemo() {
       const q2ToSave = question2Response.trim();
       const hasContent = q1ToSave || q2ToSave;
       
-      console.log('prevTrace: Starting navigation', { currentTraceIndex, prevIndex: currentTraceIndex - 1, hasContent });
       
       // Save FIRST if there's content (await to ensure it completes)
       if (hasContent) {
-        console.log('prevTrace: Saving content before navigation', { traceId: currentTraceId });
         await saveFinding(q1ToSave, q2ToSave, currentTraceId, true);
-        console.log('prevTrace: Save completed for trace:', currentTraceId);
       }
       
       // Then navigate
@@ -645,12 +620,9 @@ export function TraceViewerDemo() {
       setQuestion1Response('');
       setQuestion2Response('');
       setCurrentTraceIndex(prevIndex);
-      console.log('prevTrace: Navigated to index', prevIndex);
       
     } finally {
-      // Clear navigating flags
       isNavigatingRef.current = false;
-      setIsNavigating(false);
     }
   };
 
@@ -924,6 +896,113 @@ export function TraceViewerDemo() {
           </CardContent>
         </Card>
 
+        {/* Participant Notepad - only shown when facilitator enables it */}
+        {notesEnabled && <Card className="border-purple-200">
+          <CardHeader className="bg-gradient-to-r from-purple-50 to-indigo-50">
+            <CardTitle className="flex items-center gap-2 text-purple-900">
+              <NotebookPen className="h-5 w-5 text-purple-600" />
+              My Notes
+              {participantNotes && participantNotes.length > 0 && (
+                <Badge variant="secondary" className="bg-purple-100 text-purple-700">
+                  {participantNotes.length}
+                </Badge>
+              )}
+            </CardTitle>
+            <p className="text-sm text-purple-700 mt-1">
+              Jot down insights or observations. These notes are shared with the facilitator to help build the evaluation rubric.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4 pt-4">
+            {/* Add note input */}
+            <div className="flex gap-2">
+              <Textarea
+                placeholder="Write a note about this trace or any general observation..."
+                value={noteContent}
+                onChange={(e) => setNoteContent(e.target.value)}
+                className="min-h-[60px] flex-1 border-purple-200 focus:border-purple-400"
+                disabled={!canCreateFindings}
+              />
+            </div>
+            <Button
+              size="sm"
+              onClick={async () => {
+                if (!noteContent.trim() || !user?.id) return;
+                try {
+                  await submitNote.mutateAsync({
+                    user_id: user.id,
+                    trace_id: currentTrace?.id || null,
+                    content: noteContent.trim(),
+                    phase: 'discovery',
+                  });
+                  setNoteContent('');
+                  toast.success('Note saved!');
+                } catch (error) {
+                  toast.error('Failed to save note');
+                }
+              }}
+              disabled={!noteContent.trim() || !canCreateFindings || submitNote.isPending}
+              className="bg-purple-600 hover:bg-purple-700 text-white"
+            >
+              {submitNote.isPending ? (
+                <>
+                  <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <NotebookPen className="h-3 w-3 mr-2" />
+                  Add Note
+                </>
+              )}
+            </Button>
+
+            {/* Existing notes */}
+            {participantNotes && participantNotes.length > 0 && (
+              <div className="space-y-2 pt-2 border-t border-purple-100">
+                <span className="text-xs font-medium text-purple-600 uppercase tracking-wider">Your Notes</span>
+                {participantNotes.map((note) => (
+                  <div
+                    key={note.id}
+                    className={`flex items-start justify-between gap-2 p-3 rounded-lg border ${
+                      note.trace_id === currentTrace?.id
+                        ? 'bg-purple-50 border-purple-200'
+                        : 'bg-gray-50 border-gray-200'
+                    }`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-800 whitespace-pre-wrap">{note.content}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        {note.trace_id && (
+                          <span className="text-xs text-purple-600">
+                            On trace {traceData.findIndex(t => t.id === note.trace_id) + 1 || '?'}
+                          </span>
+                        )}
+                        <span className="text-xs text-gray-400">
+                          {new Date(note.created_at).toLocaleTimeString()}
+                        </span>
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          await deleteNote.mutateAsync(note.id);
+                        } catch (error) {
+                          toast.error('Failed to delete note');
+                        }
+                      }}
+                      className="text-red-400 hover:text-red-600 h-6 w-6 p-0 flex-shrink-0"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>}
+
         {/* Navigation */}
         <Card>
           <CardContent className="pt-6">
@@ -931,20 +1010,11 @@ export function TraceViewerDemo() {
               <Button
                 variant="outline"
                 onClick={prevTrace}
-                disabled={currentTraceIndex === 0 || isNavigating}
+                disabled={currentTraceIndex === 0}
                 className="flex items-center gap-2"
               >
-                {isNavigating ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-gray-400/30 border-t-gray-600 rounded-full animate-spin" />
-                    Navigating...
-                  </>
-                ) : (
-                  <>
-                    <ChevronLeft className="h-4 w-4" />
-                    Previous
-                  </>
-                )}
+                <ChevronLeft className="h-4 w-4" />
+                Previous
               </Button>
               
               
@@ -967,18 +1037,15 @@ export function TraceViewerDemo() {
                   }
                 }}
                 disabled={
-                  isNavigating ||
                   isSaving ||
                   !canCreateFindings
-                  // Navigation is now optimistic - happens immediately
-                  // Save happens in background (async, non-blocking)
                 }
                 className="flex items-center gap-2"
               >
-                {isNavigating || isSaving ? (
+                {isSaving ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    {isSaving ? 'Saving...' : 'Navigating...'}
+                    Saving...
                   </>
                 ) : currentTraceIndex === traceData.length - 1 ? (
                   <>

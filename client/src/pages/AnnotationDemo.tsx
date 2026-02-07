@@ -23,11 +23,13 @@ import {
   Send,
   AlertCircle,
   Table,
-  RefreshCw
+  RefreshCw,
+  NotebookPen,
+  Trash2
 } from 'lucide-react';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useUser, useRoleCheck } from '@/context/UserContext';
-import { useTraces, useRubric, useUserAnnotations, useSubmitAnnotation, useMLflowConfig, refetchAllWorkshopQueries } from '@/hooks/useWorkshopApi';
+import { useTraces, useRubric, useUserAnnotations, useSubmitAnnotation, useMLflowConfig, refetchAllWorkshopQueries, useWorkshop, useParticipantNotes, useSubmitParticipantNote, useDeleteParticipantNote } from '@/hooks/useWorkshopApi';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Trace, Rubric, Annotation } from '@/client';
 import { parseRubricQuestions as parseQuestions } from '@/utils/rubricUtils';
@@ -211,7 +213,6 @@ export function AnnotationDemo() {
         lastError = error;
         if (attempt < maxRetries) {
           const delay = baseDelay * Math.pow(2, attempt); // Exponential backoff: 1s, 2s, 4s
-          console.log(`Save attempt ${attempt + 1} failed, retrying in ${delay}ms...`);
           await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
@@ -232,7 +233,15 @@ export function AnnotationDemo() {
   const submitAnnotation = useSubmitAnnotation(workshopId!);
   const queryClient = useQueryClient();
 
+  // Workshop data (for show_participant_notes flag)
+  const { data: workshopData } = useWorkshop(workshopId!);
+  const notesEnabled = workshopData?.show_participant_notes ?? false;
 
+  // Annotation notes (only fetch when enabled)
+  const [noteContent, setNoteContent] = useState('');
+  const { data: annotationNotes } = useParticipantNotes(workshopId!, user?.id, 'annotation');
+  const submitNote = useSubmitParticipantNote(workshopId!);
+  const deleteNote = useDeleteParticipantNote(workshopId!);
 
   // Convert traces to TraceData format
   const traceData = useMemo(
@@ -430,14 +439,6 @@ export function AnnotationDemo() {
           loadedRatings = { [firstQuestionId]: existingAnnotation.rating };
         }
         
-        // Debug: Log what we're loading
-        console.debug('Loading annotation:', {
-          traceId: currentTrace.id,
-          loadedRatings,
-          existingAnnotationRatings: existingAnnotation.ratings,
-          existingAnnotationRating: existingAnnotation.rating
-        });
-        
         // Parse comment to separate user comment from freeform responses
         const rawComment = existingAnnotation.comment || '';
         const { userComment, freeformData } = parseLoadedComment(rawComment);
@@ -583,7 +584,6 @@ export function AnnotationDemo() {
 
     // Check if this trace is already being saved (prevent duplicate saves)
     if (savingTracesRef.current.has(targetTraceId)) {
-      console.warn(`Save already in progress for trace ${targetTraceId}, skipping duplicate save`);
       return false;
     }
 
@@ -591,7 +591,6 @@ export function AnnotationDemo() {
     if (!isBackground) {
       // Prevent concurrent user-initiated saves
       if (isSavingRef.current) {
-        console.warn('User-initiated save already in progress, skipping duplicate save');
         return false;
       }
       
@@ -626,7 +625,6 @@ export function AnnotationDemo() {
         }
         
         if (!hasChanges) {
-          console.log(`No changes detected for trace ${targetTraceId}, skipping save`);
           // Even though we skip the save, ensure the trace is marked as submitted
           // This fixes the issue where "Complete" doesn't record the last trace
           setSubmittedAnnotations(prev => new Set([...prev, targetTraceId]));
@@ -653,12 +651,6 @@ export function AnnotationDemo() {
         comment: buildCombinedComment(commentToSave, freeformToSave)
       };
       
-      console.log('Saving annotation:', {
-        traceId: targetTraceId,
-        ratings: numericRatings,
-        isBackground
-      });
-      
       // Use retry logic for background saves, direct call for user-initiated saves
       if (isBackground) {
         await retryWithBackoff(() => submitAnnotation.mutateAsync(annotationData), 3, 1000); // 3 retries with exponential backoff
@@ -675,7 +667,6 @@ export function AnnotationDemo() {
         comment: commentToSave
       });
       
-      console.log('Successfully saved annotation for trace:', targetTraceId);
       return true;
     } catch (error: any) {
       console.error('Failed to save annotation after retries:', error);
@@ -721,7 +712,6 @@ export function AnnotationDemo() {
           });
         }
         
-        console.warn(`Queued trace ${targetTraceId} for retry (attempt ${attempts})`);
       } else {
         toast.error('Failed to save annotation. Please try again.');
       }
@@ -755,7 +745,6 @@ export function AnnotationDemo() {
         continue;
       }
       
-      console.log(`Retrying failed save for trace ${traceId} (attempt ${data.attempts + 1})`);
       
       // Update last attempt time
       data.lastAttempt = now;
@@ -800,7 +789,6 @@ export function AnnotationDemo() {
           comment: data.comment
         });
         
-        console.log(`Successfully saved queued annotation for trace ${traceId}`);
         
         // Only process one at a time to avoid overwhelming the backend
         break;
@@ -837,21 +825,15 @@ export function AnnotationDemo() {
 
   const nextTrace = async () => {
     if (!currentTrace) {
-      console.warn('nextTrace: No current trace');
       return;
     }
     if (isNavigating) {
-      console.warn('nextTrace: Already navigating', { isNavigating });
       return; // Prevent concurrent navigation
     }
     
     // Debounce rapid clicks to prevent overwhelming the backend
     const now = Date.now();
     if (now - lastNavigationTimeRef.current < NAVIGATION_DEBOUNCE_MS) {
-      console.warn('nextTrace: Navigation debounced', { 
-        timeSinceLastNav: now - lastNavigationTimeRef.current,
-        debounceMs: NAVIGATION_DEBOUNCE_MS 
-      });
       return;
     }
     lastNavigationTimeRef.current = now;
@@ -883,10 +865,8 @@ export function AnnotationDemo() {
       setIsNavigating(true);
       try {
         if (hasRatings) {
-          console.log('nextTrace: Saving final annotation (awaiting)', { traceId: currentTraceId });
           const success = await saveAnnotation(currentTraceId, false, ratingsToSave, freeformToSave, commentToSave);
           if (success) {
-            console.log('nextTrace: Final annotation saved successfully');
             toast.success('All traces annotated! Great work.');
           } else {
             toast.error('Failed to save annotation. Please try again.');
@@ -905,12 +885,10 @@ export function AnnotationDemo() {
       return;
     }
     
-    console.log('nextTrace: Starting optimistic navigation', { currentTraceIndex, nextIndex: currentTraceIndex + 1 });
     setIsNavigating(true);
     
     // Navigate immediately (optimistic)
     const nextIndex = currentTraceIndex + 1;
-    console.log('nextTrace: Navigating to index', nextIndex);
     
     setHasNavigatedManually(true);
     setCurrentTraceIndex(nextIndex);
@@ -924,16 +902,13 @@ export function AnnotationDemo() {
     
     // Save in background (async, non-blocking)
     if (hasRatings) {
-      console.log('nextTrace: Saving annotation in background', { traceId: currentTraceId });
       // Save with the stored values (before form was cleared)
       saveAnnotation(currentTraceId, true, ratingsToSave, freeformToSave, commentToSave)
         .then((success) => {
           if (success) {
-            console.log('nextTrace: Background save successful for trace:', currentTraceId);
           } else {
             // Save failed after retries - log but don't show intrusive toast
             // The retry logic should handle most transient failures
-            console.warn('nextTrace: Background save failed after retries for trace:', currentTraceId);
           }
         })
         .catch((error) => {
@@ -941,38 +916,29 @@ export function AnnotationDemo() {
           console.error('nextTrace: Unexpected background save error:', error);
         });
     } else {
-      console.log('nextTrace: No ratings to save');
     }
   };
 
   const prevTrace = () => {
     if (!currentTrace) {
-      console.warn('prevTrace: No current trace');
       return;
     }
     if (isNavigating) {
-      console.warn('prevTrace: Already navigating', { isNavigating });
       return; // Prevent concurrent navigation
     }
     
     // Debounce rapid clicks to prevent overwhelming the backend
     const now = Date.now();
     if (now - lastNavigationTimeRef.current < NAVIGATION_DEBOUNCE_MS) {
-      console.warn('prevTrace: Navigation debounced', { 
-        timeSinceLastNav: now - lastNavigationTimeRef.current,
-        debounceMs: NAVIGATION_DEBOUNCE_MS 
-      });
       return;
     }
     lastNavigationTimeRef.current = now;
     
     // Check if we can navigate
     if (currentTraceIndex <= 0) {
-      console.log('prevTrace: Already at first trace');
       return;
     }
     
-    console.log('prevTrace: Starting optimistic navigation', { currentTraceIndex, prevIndex: currentTraceIndex - 1 });
     setIsNavigating(true);
     
     // Store current trace data for background save
@@ -984,7 +950,6 @@ export function AnnotationDemo() {
     
     // Navigate immediately (optimistic)
     const prevIndex = currentTraceIndex - 1;
-    console.log('prevTrace: Navigating to index', prevIndex);
     
     setHasNavigatedManually(true);
     setCurrentTraceIndex(prevIndex);
@@ -994,15 +959,12 @@ export function AnnotationDemo() {
     
     // Save in background (async, non-blocking)
     if (hasRatings) {
-      console.log('prevTrace: Saving annotation in background', { traceId: currentTraceId });
       // Save with the stored values (before navigation)
       saveAnnotation(currentTraceId, true, ratingsToSave, freeformToSave, commentToSave)
         .then((success) => {
           if (success) {
-            console.log('prevTrace: Background save successful for trace:', currentTraceId);
           } else {
             // Save failed after retries - log but don't show intrusive toast
-            console.warn('prevTrace: Background save failed after retries for trace:', currentTraceId);
           }
         })
         .catch((error) => {
@@ -1010,7 +972,6 @@ export function AnnotationDemo() {
           console.error('prevTrace: Unexpected background save error:', error);
         });
     } else {
-      console.log('prevTrace: No ratings to save');
     }
   };
 
@@ -1444,6 +1405,115 @@ export function AnnotationDemo() {
             )}
           </CardContent>
         </Card>
+
+        {/* Annotation Notepad - only shown when facilitator enables it */}
+        {notesEnabled && (
+          <Card className="border-purple-200">
+            <CardHeader className="bg-gradient-to-r from-purple-50 to-indigo-50">
+              <CardTitle className="flex items-center gap-2 text-purple-900">
+                <NotebookPen className="h-5 w-5 text-purple-600" />
+                Observation &amp; Discussion Notes
+                {annotationNotes && annotationNotes.length > 0 && (
+                  <Badge variant="secondary" className="bg-purple-100 text-purple-700">
+                    {annotationNotes.length}
+                  </Badge>
+                )}
+              </CardTitle>
+              <p className="text-sm text-purple-700 mt-1">
+                Jot down observations or discussion points about this trace. These notes are shared with the facilitator.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4 pt-4">
+              {/* Add note input */}
+              <div className="flex gap-2">
+                <Textarea
+                  placeholder="Write an observation or discussion note about this trace..."
+                  value={noteContent}
+                  onChange={(e) => setNoteContent(e.target.value)}
+                  className="min-h-[60px] flex-1 border-purple-200 focus:border-purple-400"
+                  disabled={!canAnnotate}
+                />
+              </div>
+              <Button
+                size="sm"
+                onClick={async () => {
+                  if (!noteContent.trim() || !user?.id) return;
+                  try {
+                    await submitNote.mutateAsync({
+                      user_id: user.id,
+                      trace_id: currentTrace?.id || null,
+                      content: noteContent.trim(),
+                      phase: 'annotation',
+                    });
+                    setNoteContent('');
+                    toast.success('Note saved!');
+                  } catch (error) {
+                    toast.error('Failed to save note');
+                  }
+                }}
+                disabled={!noteContent.trim() || !canAnnotate || submitNote.isPending}
+                className="bg-purple-600 hover:bg-purple-700 text-white"
+              >
+                {submitNote.isPending ? (
+                  <>
+                    <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <NotebookPen className="h-3 w-3 mr-2" />
+                    Add Note
+                  </>
+                )}
+              </Button>
+
+              {/* Existing notes */}
+              {annotationNotes && annotationNotes.length > 0 && (
+                <div className="space-y-2 pt-2 border-t border-purple-100">
+                  <span className="text-xs font-medium text-purple-600 uppercase tracking-wider">Your Notes</span>
+                  {annotationNotes.map((note) => (
+                    <div
+                      key={note.id}
+                      className={`flex items-start justify-between gap-2 p-3 rounded-lg border ${
+                        note.trace_id === currentTrace?.id
+                          ? 'bg-purple-50 border-purple-200'
+                          : 'bg-gray-50 border-gray-200'
+                      }`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-800 whitespace-pre-wrap">{note.content}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          {note.trace_id && (
+                            <span className="text-xs text-purple-600">
+                              On trace {traceData.findIndex((t: TraceData) => t.id === note.trace_id) + 1 || '?'}
+                            </span>
+                          )}
+                          <span className="text-xs text-gray-400">
+                            {new Date(note.created_at).toLocaleTimeString()}
+                          </span>
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            await deleteNote.mutateAsync(note.id);
+                          } catch (error) {
+                            toast.error('Failed to delete note');
+                          }
+                        }}
+                        className="text-red-400 hover:text-red-600 h-6 w-6 p-0 flex-shrink-0"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Navigation */}
         <Card>

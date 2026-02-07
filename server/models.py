@@ -163,6 +163,7 @@ class Workshop(BaseModel):
   auto_evaluation_job_id: Optional[str] = None  # Job ID for auto-evaluation on annotation start
   auto_evaluation_prompt: Optional[str] = None  # Derived judge prompt used for auto-evaluation
   auto_evaluation_model: Optional[str] = None  # Model used for auto-evaluation
+  show_participant_notes: bool = False  # Facilitator toggle: show notepad to SMEs
   created_at: datetime = Field(default_factory=datetime.now)
 
 
@@ -422,6 +423,30 @@ class DBSQLExportResponse(BaseModel):
   tables_exported: Optional[List[Dict[str, Any]]] = Field(None, description='List of exported tables')
   total_rows: Optional[int] = Field(None, description='Total number of rows exported')
   errors: Optional[List[str]] = Field(None, description='List of errors encountered during export')
+
+
+# Participant Note Models
+class ParticipantNoteCreate(BaseModel):
+  """Request model for creating a participant note."""
+
+  user_id: str
+  trace_id: Optional[str] = None  # Nullable: note can be general or trace-specific
+  content: str
+  phase: str = "discovery"  # 'discovery' or 'annotation'
+
+
+class ParticipantNote(BaseModel):
+  """Participant note model."""
+
+  id: str
+  workshop_id: str
+  user_id: str
+  trace_id: Optional[str] = None
+  content: str
+  phase: str = "discovery"  # 'discovery' or 'annotation'
+  user_name: Optional[str] = None  # Populated when returning notes with user details
+  created_at: datetime = Field(default_factory=datetime.now)
+  updated_at: datetime = Field(default_factory=datetime.now)
 
 
 # User Trace Order Models
