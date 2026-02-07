@@ -344,7 +344,6 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
         additional_count: count,
         phase: phase === 'annotation' ? 'annotation' : 'discovery'
       };
-      console.log('[FacilitatorDashboard] Adding traces:', requestBody);
       
       // Use unified endpoint with explicit phase parameter
       const response = await fetch(`/workshops/${workshopId}/add-traces`, {
@@ -361,7 +360,6 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
       }
 
       const result = await response.json();
-      console.log('[FacilitatorDashboard] Add traces response:', result);
       
       // Clear the appropriate input and refresh data
       setCountValue('');

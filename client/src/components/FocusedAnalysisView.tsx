@@ -23,8 +23,11 @@ import {
   Hash,
   Download,
   ArrowLeft,
-  ArrowUpRight
+  ArrowUpRight,
+  Users,
+  User
 } from 'lucide-react';
+import type { ParticipantNote } from '@/hooks/useWorkshopApi';
 
 interface DiscoveryResponse {
   traceId: string;
@@ -55,9 +58,10 @@ interface FocusedAnalysisViewProps {
   discoveryResponses: DiscoveryResponse[];
   scratchPad: ScratchPadEntry[];
   setScratchPad: React.Dispatch<React.SetStateAction<ScratchPadEntry[]>>;
+  participantNotes?: ParticipantNote[];
 }
 
-export function FocusedAnalysisView({ discoveryResponses, scratchPad, setScratchPad }: FocusedAnalysisViewProps) {
+export function FocusedAnalysisView({ discoveryResponses, scratchPad, setScratchPad, participantNotes }: FocusedAnalysisViewProps) {
   const [currentTraceIndex, setCurrentTraceIndex] = useState(0);
   const [previousTraceIndex, setPreviousTraceIndex] = useState<number | null>(null);
   const [customNote, setCustomNote] = useState('');
@@ -416,8 +420,8 @@ export function FocusedAnalysisView({ discoveryResponses, scratchPad, setScratch
               <h3 className="font-semibold text-gray-900 flex items-center gap-2">
                 <NotebookPen className="h-5 w-5 text-gray-600" />
                 Scratch Pad
-                {scratchPad.length > 0 && (
-                  <Badge variant="secondary">{scratchPad.length}</Badge>
+                {(scratchPad.length + (participantNotes?.length || 0)) > 0 && (
+                  <Badge variant="secondary">{scratchPad.length + (participantNotes?.length || 0)}</Badge>
                 )}
               </h3>
               {scratchPad.length > 0 && (
@@ -452,9 +456,85 @@ export function FocusedAnalysisView({ discoveryResponses, scratchPad, setScratch
                 </Button>
               </div>
 
+              {/* Participant Notes from DB */}
+              {participantNotes && participantNotes.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Users className="h-4 w-4 text-purple-600" />
+                    <span className="text-xs font-semibold text-purple-700 uppercase tracking-wider">
+                      Participant Notes
+                    </span>
+                    <Badge variant="secondary" className="bg-purple-100 text-purple-700 text-xs">
+                      {participantNotes.length}
+                    </Badge>
+                  </div>
+                  <div className="space-y-2">
+                    {participantNotes.map((note) => {
+                      // Find trace index for this note
+                      const noteTraceIndex = note.trace_id 
+                        ? discoveryResponses.findIndex(r => r.traceId === note.trace_id) + 1
+                        : null;
+                      const isCurrentTrace = noteTraceIndex === currentTraceIndex + 1;
+                      const isAnnotationNote = note.phase === 'annotation';
+                      
+                      return (
+                        <Card 
+                          key={note.id} 
+                          className={`p-3 border-l-4 ${
+                            isAnnotationNote ? 'border-l-indigo-400' : 'border-l-purple-400'
+                          } ${
+                            isCurrentTrace ? 'bg-purple-50/50 border-purple-200' : 'bg-white'
+                          }`}
+                        >
+                          <div className="space-y-2">
+                            <p className="text-sm text-gray-700 whitespace-pre-wrap">{note.content}</p>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-1">
+                                  <User className="h-3 w-3 text-purple-500" />
+                                  <span className="text-xs text-purple-600 font-medium">
+                                    {note.user_name || note.user_id}
+                                  </span>
+                                </div>
+                                <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${
+                                  isAnnotationNote 
+                                    ? 'bg-indigo-50 text-indigo-600 border-indigo-200' 
+                                    : 'bg-purple-50 text-purple-600 border-purple-200'
+                                }`}>
+                                  {isAnnotationNote ? 'Annotation' : 'Discovery'}
+                                </Badge>
+                                {noteTraceIndex && noteTraceIndex > 0 && (
+                                  <button
+                                    onClick={() => jumpToTrace(noteTraceIndex - 1)}
+                                    className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                                  >
+                                    Trace {noteTraceIndex}
+                                    <ArrowUpRight className="h-3 w-3" />
+                                  </button>
+                                )}
+                              </div>
+                              <span className="text-xs text-gray-400">
+                                {new Date(note.created_at).toLocaleTimeString()}
+                              </span>
+                            </div>
+                          </div>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Pinned Items */}
+              {scratchPad.length > 0 && (
+                <div className="space-y-2">
+                  <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    Pinned Insights
+                  </span>
+                </div>
+              )}
               <div className="space-y-3">
-                {scratchPad.length === 0 ? (
+                {scratchPad.length === 0 && (!participantNotes || participantNotes.length === 0) ? (
                   <div className="text-center py-8 text-gray-500">
                     <NotebookPen className="h-12 w-12 mx-auto mb-3 text-gray-300" />
                     <p className="text-sm">No insights pinned yet.</p>

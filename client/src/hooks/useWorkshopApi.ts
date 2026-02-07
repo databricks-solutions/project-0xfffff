@@ -615,6 +615,130 @@ export function useAggregateAllFeedback(workshopId: string) {
   });
 }
 
+// Toggle participant notes visibility
+export function useToggleParticipantNotes(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`/workshops/${workshopId}/toggle-participant-notes`, {
+        method: 'PUT',
+      });
+      if (!response.ok) {
+        throw new Error('Failed to toggle participant notes');
+      }
+      return response.json();
+    },
+    onSuccess: (workshop) => {
+      queryClient.setQueryData(QUERY_KEYS.workshop(workshopId), workshop);
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.workshop(workshopId) });
+    },
+  });
+}
+
+// Participant Notes hooks
+
+export interface ParticipantNote {
+  id: string;
+  workshop_id: string;
+  user_id: string;
+  trace_id?: string | null;
+  content: string;
+  phase?: string; // 'discovery' or 'annotation'
+  user_name?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ParticipantNoteCreate {
+  user_id: string;
+  trace_id?: string | null;
+  content: string;
+  phase?: string; // 'discovery' or 'annotation'
+}
+
+export function useParticipantNotes(workshopId: string, userId?: string, phase?: string) {
+  return useQuery<ParticipantNote[]>({
+    queryKey: ['participant-notes', workshopId, userId, phase],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (userId) params.append('user_id', userId);
+      if (phase) params.append('phase', phase);
+      const queryString = params.toString();
+      const url = `/workshops/${workshopId}/participant-notes${queryString ? `?${queryString}` : ''}`;
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error('Failed to fetch participant notes');
+      }
+      return response.json();
+    },
+    enabled: !!workshopId,
+    staleTime: 10 * 1000,
+    refetchInterval: 10 * 1000, // Poll for new notes from other participants
+  });
+}
+
+export function useAllParticipantNotes(workshopId: string, phase?: string) {
+  return useQuery<ParticipantNote[]>({
+    queryKey: ['participant-notes', workshopId, 'all', phase],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (phase) params.append('phase', phase);
+      const queryString = params.toString();
+      const url = `/workshops/${workshopId}/participant-notes${queryString ? `?${queryString}` : ''}`;
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error('Failed to fetch participant notes');
+      }
+      return response.json();
+    },
+    enabled: !!workshopId,
+    staleTime: 5 * 1000,
+    refetchInterval: 5 * 1000, // Poll frequently so facilitator sees notes quickly
+  });
+}
+
+export function useSubmitParticipantNote(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (note: ParticipantNoteCreate) => {
+      const response = await fetch(`/workshops/${workshopId}/participant-notes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(note),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to save note' }));
+        throw new Error(error.detail || 'Failed to save note');
+      }
+      return response.json();
+    },
+    onSuccess: (_, note) => {
+      queryClient.invalidateQueries({ queryKey: ['participant-notes', workshopId] });
+    },
+  });
+}
+
+export function useDeleteParticipantNote(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (noteId: string) => {
+      const response = await fetch(`/workshops/${workshopId}/participant-notes/${noteId}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) {
+        throw new Error('Failed to delete note');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['participant-notes', workshopId] });
+    },
+  });
+}
+
 // JSONPath Settings hooks
 
 interface JsonPathSettings {

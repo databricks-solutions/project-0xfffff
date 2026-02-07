@@ -149,6 +149,8 @@ from server.models import (
     MLflowIntakeConfigCreate,
     MLflowIntakeStatus,
     MLflowTraceInfo,
+    ParticipantNote,
+    ParticipantNoteCreate,
     Rubric,
     RubricCreate,
     Trace,
@@ -520,6 +522,83 @@ async def get_findings_with_user_details(
         raise HTTPException(status_code=404, detail="Workshop not found")
 
     return db_service.get_findings_with_user_details(workshop_id, user_id)
+
+
+# ============================================================================
+# Participant Notes endpoints
+# ============================================================================
+
+
+@router.put("/{workshop_id}/toggle-participant-notes")
+async def toggle_participant_notes(workshop_id: str, db: Session = Depends(get_db)) -> Workshop:
+    """Toggle the show_participant_notes flag on a workshop.
+
+    When enabled, participants see a notepad in the discovery view.
+    """
+    db_service = DatabaseService(db)
+    workshop_db = db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if not workshop_db:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    current_value = getattr(workshop_db, 'show_participant_notes', False) or False
+    workshop_db.show_participant_notes = not current_value
+    db.commit()
+    db.refresh(workshop_db)
+
+    # Clear workshop cache so the next get_workshop returns fresh data
+    cache_key = db_service._get_cache_key('workshop', workshop_id)
+    db_service._cache.pop(cache_key, None)
+
+    return db_service._workshop_from_db(workshop_db)
+
+
+@router.post("/{workshop_id}/participant-notes")
+async def create_participant_note(
+    workshop_id: str, note_data: ParticipantNoteCreate, db: Session = Depends(get_db)
+) -> ParticipantNote:
+    """Create or update a participant note."""
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    try:
+        return db_service.add_participant_note(workshop_id, note_data)
+    except Exception as e:
+        logger.error(f"Failed to save participant note: {type(e).__name__}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to save participant note: {str(e)}"
+        )
+
+
+@router.get("/{workshop_id}/participant-notes")
+async def get_participant_notes(
+    workshop_id: str, user_id: Optional[str] = None, phase: Optional[str] = None, db: Session = Depends(get_db)
+) -> List[ParticipantNote]:
+    """Get participant notes for a workshop, optionally filtered by user and/or phase."""
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    return db_service.get_participant_notes(workshop_id, user_id, phase)
+
+
+@router.delete("/{workshop_id}/participant-notes/{note_id}")
+async def delete_participant_note(
+    workshop_id: str, note_id: str, db: Session = Depends(get_db)
+):
+    """Delete a participant note."""
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    deleted = db_service.delete_participant_note(note_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Note not found")
+    return {"status": "deleted"}
 
 
 @router.post("/{workshop_id}/rubric")

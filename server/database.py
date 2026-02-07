@@ -157,6 +157,7 @@ class WorkshopDB(Base):
     auto_evaluation_job_id = Column(String, nullable=True)  # Job ID for auto-evaluation on annotation start
     auto_evaluation_prompt = Column(Text, nullable=True)  # Derived judge prompt used for auto-evaluation
     auto_evaluation_model = Column(String, nullable=True)  # Model used for auto-evaluation
+    show_participant_notes = Column(Boolean, default=False)  # Facilitator toggle: show notepad to SMEs
     created_at = Column(DateTime, default=func.now())
 
     # Relationships
@@ -180,6 +181,9 @@ class WorkshopDB(Base):
     )
     custom_llm_provider = relationship(
         "CustomLLMProviderConfigDB", back_populates="workshop", uselist=False, cascade="all, delete-orphan"
+    )
+    participant_notes = relationship(
+        "ParticipantNoteDB", back_populates="workshop", cascade="all, delete-orphan"
     )
 
 
@@ -383,6 +387,30 @@ class UserTraceOrderDB(Base):
     workshop = relationship("WorkshopDB", back_populates="user_trace_orders")
 
 
+class ParticipantNoteDB(Base):
+    """Database model for participant notes during discovery.
+
+    Allows SMEs/participants to jot down notes while reviewing traces.
+    These notes appear in the facilitator's Scratch Pad during rubric creation.
+    """
+
+    __tablename__ = "participant_notes"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    trace_id = Column(String, ForeignKey("traces.id"), nullable=True)  # Nullable: note can be general
+    content = Column(Text, nullable=False)
+    phase = Column(String, default="discovery")  # 'discovery' or 'annotation'
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    # Relationships
+    workshop = relationship("WorkshopDB", back_populates="participant_notes")
+    user = relationship("UserDB")
+    trace = relationship("TraceDB")
+
+
 class CustomLLMProviderConfigDB(Base):
     """Database model for custom OpenAI-compatible LLM provider configuration.
 
@@ -576,6 +604,62 @@ def _apply_schema_updates():
                 print('✅ Database schema updated: added unique constraint to judge_evaluations')
             except Exception as e:
                 print(f'ℹ️ judge_evaluations unique constraint skipped (may already exist): {e}')
+
+            try:
+                # Add show_participant_notes column to workshops table
+                if is_postgres:
+                    conn.execute(text('ALTER TABLE workshops ADD COLUMN IF NOT EXISTS show_participant_notes BOOLEAN DEFAULT FALSE'))
+                else:
+                    conn.execute(text('ALTER TABLE workshops ADD COLUMN show_participant_notes BOOLEAN DEFAULT 0'))
+                conn.commit()
+                print('✅ Database schema updated for workshops (added show_participant_notes column)')
+            except Exception as e:
+                print(f'ℹ️ workshops show_participant_notes column skipped (may already exist): {e}')
+
+            try:
+                # Create participant_notes table if it doesn't exist
+                if is_postgres:
+                    conn.execute(text('''
+                        CREATE TABLE IF NOT EXISTS participant_notes (
+                            id VARCHAR PRIMARY KEY,
+                            workshop_id VARCHAR NOT NULL REFERENCES workshops(id) ON DELETE CASCADE,
+                            user_id VARCHAR NOT NULL REFERENCES users(id),
+                            trace_id VARCHAR REFERENCES traces(id),
+                            content TEXT NOT NULL,
+                            phase VARCHAR DEFAULT 'discovery' NOT NULL,
+                            created_at TIMESTAMP DEFAULT NOW(),
+                            updated_at TIMESTAMP DEFAULT NOW()
+                        )
+                    '''))
+                else:
+                    conn.execute(text('''
+                        CREATE TABLE IF NOT EXISTS participant_notes (
+                            id VARCHAR PRIMARY KEY,
+                            workshop_id VARCHAR NOT NULL REFERENCES workshops(id) ON DELETE CASCADE,
+                            user_id VARCHAR NOT NULL REFERENCES users(id),
+                            trace_id VARCHAR REFERENCES traces(id),
+                            content TEXT NOT NULL,
+                            phase VARCHAR DEFAULT 'discovery' NOT NULL,
+                            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                        )
+                    '''))
+                conn.execute(text('CREATE INDEX IF NOT EXISTS ix_participant_notes_workshop_user ON participant_notes (workshop_id, user_id)'))
+                conn.commit()
+                print('✅ Database schema updated: created participant_notes table')
+            except Exception as e:
+                print(f'ℹ️ participant_notes table creation skipped (may already exist): {e}')
+
+            try:
+                # Add phase column to participant_notes table
+                if is_postgres:
+                    conn.execute(text("ALTER TABLE participant_notes ADD COLUMN IF NOT EXISTS phase VARCHAR DEFAULT 'discovery' NOT NULL"))
+                else:
+                    conn.execute(text("ALTER TABLE participant_notes ADD COLUMN phase VARCHAR DEFAULT 'discovery' NOT NULL"))
+                conn.commit()
+                print('✅ Database schema updated for participant_notes (added phase column)')
+            except Exception as e:
+                print(f'ℹ️ participant_notes phase column skipped (may already exist): {e}')
 
     except Exception as e:
         # Schema updates are optional, don't fail if they error

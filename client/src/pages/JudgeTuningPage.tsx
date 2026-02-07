@@ -516,7 +516,6 @@ export function JudgeTuningPage() {
         );
         
         if (needsRegeneration) {
-          console.log(`Prompt mismatch detected - rubric: ${currentRubricJudgeType}, metadata: ${promptMetadataJudgeType}, content: ${promptContentJudgeType}. Regenerating...`);
           const updatedPrompt = createDefaultPrompt(rubricData.question, selectedQuestionIndex);
           setCurrentPrompt(updatedPrompt);
           setOriginalPromptText(updatedPrompt);
@@ -561,12 +560,9 @@ export function JudgeTuningPage() {
       // This must happen after rubric/prompts are loaded to avoid race conditions where
       // other state updates could overwrite evaluation results.
       try {
-        console.log('[AutoEval] Fetching results for workshop:', workshopId);
         const autoEvalResponse = await fetch(`/workshops/${workshopId}/auto-evaluation-results`);
         if (autoEvalResponse.ok) {
           const autoEvalData = await autoEvalResponse.json();
-          console.log('[AutoEval] Response:', { status: autoEvalData.status, evalCount: autoEvalData.evaluations?.length || 0 });
-
           if (autoEvalData.status) {
             setAutoEvalStatus(autoEvalData.status);
           }
@@ -588,7 +584,6 @@ export function JudgeTuningPage() {
               reasoning: e.reasoning,
               predicted_feedback: e.judge_name || '',
             }));
-            console.log('[AutoEval] Setting evaluations:', evalResults.length, 'items');
             setEvaluations(evalResults);
             setHasEvaluated(true);
             setEvaluationComplete(evalResults.length >= 10);
@@ -980,7 +975,6 @@ Think step by step about how well the output addresses the criteria, then provid
             judge_type: judgeType, // Pass the selected question's judge type
           };
 
-      console.log(`[EVAL] Starting ${evaluationMode} evaluation with polling approach...`);
       const startResponse = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -993,7 +987,6 @@ Think step by step about how well the output addresses the criteria, then provid
       }
 
       const { job_id } = await startResponse.json();
-      console.log('[EVAL] Job started with ID:', job_id);
       updateAlignmentLogs(prev => [...prev, `Evaluation job started (ID: ${job_id.substring(0, 8)}...)`]);
 
       // Step 2: Poll for status updates
@@ -1024,7 +1017,6 @@ Think step by step about how well the output addresses the criteria, then provid
           
           // Check if job is complete
           if (status.status === 'completed') {
-            console.log('[EVAL] Job completed!', status.result);
             if (status.result?.success) {
               setMetrics(status.result.metrics || null);
               setEvaluations(status.result.evaluations || []);
@@ -1207,7 +1199,6 @@ Think step by step about how well the output addresses the criteria, then provid
   };
 
   const handleRunAlignment = async () => {
-    console.log('[ALIGN] ===== FUNCTION CALLED =====');
 
     // Validation
     if (!workshopId || !currentPrompt.trim()) {
@@ -1237,7 +1228,6 @@ Think step by step about how well the output addresses the criteria, then provid
         if (statusCheck.ok) {
           const statusData = await statusCheck.json();
           if (statusData.status === 'completed') {
-            console.log('[ALIGN] Auto-evaluation already completed on server, fetching results...');
             // Auto-eval already done, just fetch the results
             const resultsResponse = await fetch(`/workshops/${workshopId}/auto-evaluation-results`);
             if (resultsResponse.ok) {
@@ -1256,7 +1246,6 @@ Think step by step about how well the output addresses the criteria, then provid
                 setEvaluations(evalResults);
                 setAutoEvalStatus('completed');
                 needsAutoEval = false;
-                console.log(`[ALIGN] Loaded ${evalResults.length} existing evaluations`);
               }
             }
           }
@@ -1268,7 +1257,6 @@ Think step by step about how well the output addresses the criteria, then provid
 
     // Only trigger auto-evaluation if it hasn't run yet
     if (needsAutoEval) {
-      console.log('[ALIGN] Auto-evaluation incomplete, triggering first...');
       setIsRunningAlignment(true);
       updateAlignmentLogs([`Auto-evaluation needed (${evaluations.length}/${annotatedTraceCount} evaluated)`, 'Starting auto-evaluation...']);
       setShowAlignmentLogs(true);
@@ -1350,7 +1338,6 @@ Think step by step about how well the output addresses the criteria, then provid
       updateAlignmentLogs(prev => [...prev, 'Proceeding with alignment...']);
     }
 
-    console.log('[ALIGN] Starting alignment with polling approach...');
     if (!isRunningAlignment) {
       setIsRunningAlignment(true);
       updateAlignmentLogs(['Starting alignment job...']);
@@ -1380,7 +1367,6 @@ Think step by step about how well the output addresses the criteria, then provid
       }
 
       const { job_id } = await startResponse.json();
-      console.log('[ALIGN] Job started with ID:', job_id);
       updateAlignmentLogs(prev => [...prev, `Alignment job started (ID: ${job_id.substring(0, 8)}...)`]);
 
       // Step 2: Poll for status updates
@@ -1411,7 +1397,6 @@ Think step by step about how well the output addresses the criteria, then provid
           
           // Check if job is complete
           if (status.status === 'completed') {
-            console.log('[ALIGN] Job completed!', status.result);
             if (status.result) {
               setAlignmentResult(status.result);
               if (status.result.success) {
@@ -1822,7 +1807,6 @@ Think step by step about how well the output addresses the criteria, then provid
               workshopId={workshopId!}
               onConfigChange={(config) => {
                 // Track when custom provider is configured for model dropdown
-                console.log('Custom LLM provider config changed:', config);
               }}
             />
           </div>
@@ -2038,15 +2022,6 @@ Think step by step about how well the output addresses the criteria, then provid
                             : '';
                           const hasJudgeLabels = evaluations.some((e: any) => e.predicted_feedback);
 
-                          if (index === 0) {
-                            console.log('[EvalMatch] Evaluations count:', evaluations.length);
-                            console.log('[EvalMatch] First trace ID:', trace.id);
-                            console.log('[EvalMatch] Expected judge:', expectedJudgeName);
-                            console.log('[EvalMatch] Has judge labels:', hasJudgeLabels);
-                            if (evaluations.length > 0) {
-                              console.log('[EvalMatch] First evaluation:', { trace_id: evaluations[0].trace_id, predicted_feedback: evaluations[0].predicted_feedback });
-                            }
-                          }
                           const matchesTrace = (e: any) => {
                             if (e.trace_id && e.trace_id === trace.id) return true;
                             if (e.mlflow_trace_id && trace.mlflow_trace_id && e.mlflow_trace_id === trace.mlflow_trace_id) return true;
@@ -2065,10 +2040,6 @@ Think step by step about how well the output addresses the criteria, then provid
                           
                           const judgeRating = evaluation?.predicted_rating;
 
-                          // Debug: log predicted_rating for first trace
-                          if (index === 0 && evaluation) {
-                            console.log('[EvalMatch] First evaluation predicted_rating:', evaluation.predicted_rating, 'type:', typeof evaluation.predicted_rating);
-                          }
 
                           // Calculate diff and match if both ratings exist
                           // Note: Check for !== null (not just truthy) to handle 0 values correctly
