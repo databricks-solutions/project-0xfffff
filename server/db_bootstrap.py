@@ -214,6 +214,42 @@ def _interprocess_lock(lock_path: str, timeout_s: float) -> Iterator[None]:
             pass
 
 
+def _widen_alembic_version_column(database_url: str) -> None:
+    """Widen the alembic_version.version_num column if it's too narrow.
+
+    Alembic defaults to VARCHAR(32), but our revision slugs can exceed that
+    (e.g. '0007_add_custom_llm_provider_config' is 35 chars). This must run
+    BEFORE any Alembic command so the UPDATE that records the new revision
+    doesn't fail with StringDataRightTruncation.
+    """
+    try:
+        from sqlalchemy import create_engine, text
+
+        schema_name = _get_postgres_schema_name()
+        engine = create_engine(database_url)
+        with engine.connect() as conn:
+            # Try to widen in the app schema
+            conn.execute(
+                text(
+                    f'ALTER TABLE IF EXISTS "{schema_name}".alembic_version '
+                    f"ALTER COLUMN version_num TYPE VARCHAR(128)"
+                )
+            )
+            # Also try public schema in case alembic_version landed there
+            conn.execute(
+                text(
+                    "ALTER TABLE IF EXISTS public.alembic_version "
+                    "ALTER COLUMN version_num TYPE VARCHAR(128)"
+                )
+            )
+            conn.commit()
+            print(f"✅ Widened alembic_version.version_num to VARCHAR(128)")
+        engine.dispose()
+    except Exception as e:
+        # Table may not exist yet — that's fine
+        print(f"ℹ️  alembic_version column widen skipped: {e}")
+
+
 def _run_alembic_upgrade_head(database_url: str) -> None:
     # Import lazily so the app can still start if Alembic isn't installed
     # (though the fallback bootstrap won't work without it).
@@ -251,7 +287,11 @@ def _bootstrap_if_missing_postgres(plan: BootstrapPlan) -> None:
     Handles edge cases where:
     - Tables exist but alembic_version doesn't (created by Base.metadata.create_all)
     - _list_postgres_tables silently fails and returns [] even though tables exist
+    - alembic_version.version_num column is too narrow for our revision slugs
     """
+    # Always widen the alembic_version column first (safe no-op if table doesn't exist)
+    _widen_alembic_version_column(plan.database_url)
+
     tables = _list_postgres_tables(plan.database_url)
 
     if tables:
@@ -260,15 +300,14 @@ def _bootstrap_if_missing_postgres(plan: BootstrapPlan) -> None:
         print(f"✅ PostgreSQL database already has {len(user_tables)} tables (alembic_version: {has_alembic})")
 
         if user_tables and not has_alembic:
-            # Tables exist but Alembic doesn't know about them — stamp to baseline
-            print("📌 Tables exist without alembic_version — stamping to baseline...")
+            # Tables exist but Alembic doesn't know — stamp to head since
+            # Base.metadata.create_all creates the LATEST schema (all columns).
+            print("📌 Tables exist without alembic_version — stamping to head...")
             try:
-                _run_alembic_stamp_baseline(plan.database_url, revision="0001_baseline")
-                print("🔄 Applying pending migrations after stamp...")
-                _run_alembic_upgrade_head(plan.database_url)
-                print("✅ Migrations completed!")
+                _run_alembic_stamp_baseline(plan.database_url, revision="head")
+                print("✅ Stamped to head — Alembic now tracks current state")
             except Exception as e:
-                print(f"⚠️  Stamp + upgrade failed (non-fatal): {e}")
+                print(f"⚠️  Stamp to head failed (non-fatal): {e}")
         return
 
     # No tables found — try to create via migrations, but handle the case
@@ -280,17 +319,18 @@ def _bootstrap_if_missing_postgres(plan: BootstrapPlan) -> None:
         print("✅ Database created successfully!")
     except Exception as e:
         error_str = str(e).lower()
-        if "already exists" in error_str or "duplicatetable" in error_str:
+        if "already exists" in error_str or "duplicatetable" in error_str or "stringdataright" in error_str:
+            # Tables already exist (listing failed earlier) — stamp to head
+            # since Base.metadata.create_all creates the full latest schema.
             print(
                 "⚠️  Tables already exist (listing may have failed earlier). "
-                "Stamping Alembic to baseline and applying pending migrations..."
+                "Stamping Alembic to head..."
             )
             try:
-                _run_alembic_stamp_baseline(plan.database_url, revision="0001_baseline")
-                _run_alembic_upgrade_head(plan.database_url)
-                print("✅ Recovery successful — migrations applied!")
+                _run_alembic_stamp_baseline(plan.database_url, revision="head")
+                print("✅ Recovery successful — stamped to head")
             except Exception as recovery_err:
-                print(f"⚠️  Recovery stamp+upgrade also failed (non-fatal): {recovery_err}")
+                print(f"⚠️  Recovery stamp to head also failed (non-fatal): {recovery_err}")
         else:
             raise
 
@@ -330,33 +370,38 @@ def _bootstrap_full_sqlite(plan: BootstrapPlan) -> None:
 
 def _bootstrap_full_postgres(plan: BootstrapPlan) -> None:
     """Full bootstrap for PostgreSQL database."""
+    # Always widen the alembic_version column first
+    _widen_alembic_version_column(plan.database_url)
+
     tables = _list_postgres_tables(plan.database_url)
     has_alembic_version = "alembic_version" in tables
     user_tables = [t for t in tables if t != "alembic_version"]
 
     if not tables:
-        # Empty database: create via migrations (with DuplicateTable recovery)
+        # Empty database: create via migrations (with recovery)
         print("📦 Creating new PostgreSQL database via migrations...")
         try:
             _run_alembic_upgrade_head(plan.database_url)
             print("✅ Database created successfully!")
         except Exception as e:
             error_str = str(e).lower()
-            if "already exists" in error_str or "duplicatetable" in error_str:
+            if "already exists" in error_str or "duplicatetable" in error_str or "stringdataright" in error_str:
                 print(
                     "⚠️  Tables already exist (listing may have failed). "
-                    "Stamping to baseline and upgrading..."
+                    "Stamping to head..."
                 )
-                _run_alembic_stamp_baseline(plan.database_url, revision="0001_baseline")
-                _run_alembic_upgrade_head(plan.database_url)
-                print("✅ Recovery successful!")
+                _run_alembic_stamp_baseline(plan.database_url, revision="head")
+                print("✅ Recovery successful — stamped to head!")
             else:
                 raise
         return
 
     if user_tables and not has_alembic_version:
-        print("📌 Stamping legacy database to baseline revision (0001_baseline)...")
-        _run_alembic_stamp_baseline(plan.database_url, revision="0001_baseline")
+        # Tables created by Base.metadata.create_all — stamp to head
+        print("📌 Stamping database to head (tables created outside Alembic)...")
+        _run_alembic_stamp_baseline(plan.database_url, revision="head")
+        print("✅ Stamped to head!")
+        return
 
     print("🔄 Applying pending migrations...")
     _run_alembic_upgrade_head(plan.database_url)
