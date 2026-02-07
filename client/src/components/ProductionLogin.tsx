@@ -42,7 +42,6 @@ export const ProductionLogin: React.FC = () => {
         });
         if (response.ok) {
           const data = await response.json();
-          console.log('[ProductionLogin] Fetched workshops:', data.length, data);
           setWorkshops(data);
           
           // If there's only one workshop, auto-select it
@@ -174,7 +173,6 @@ export const ProductionLogin: React.FC = () => {
                     <Select 
                       value={selectedWorkshopId} 
                       onValueChange={(value) => {
-                        console.log('[ProductionLogin] Workshop selected:', value);
                         setSelectedWorkshopId(value);
                       }}
                     >
@@ -237,7 +235,6 @@ export const ProductionLogin: React.FC = () => {
                     <Select 
                       value={selectedWorkshopId} 
                       onValueChange={(value) => {
-                        console.log('[ProductionLogin] Facilitator workshop selected:', value);
                         setSelectedWorkshopId(value);
                       }}
                     >

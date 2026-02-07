@@ -17,6 +17,7 @@ from server.database import (
   JudgeEvaluationDB,
   JudgePromptDB,
   MLflowIntakeConfigDB,
+  ParticipantNoteDB,
   RubricDB,
   TraceDB,
   UserDB,
@@ -38,6 +39,8 @@ from server.models import (
   JudgeType,
   MLflowIntakeConfig,
   MLflowIntakeStatus,
+  ParticipantNote,
+  ParticipantNoteCreate,
   Rubric,
   RubricCreate,
   Trace,
@@ -174,6 +177,7 @@ class DatabaseService:
       auto_evaluation_job_id=getattr(db_workshop, 'auto_evaluation_job_id', None),
       auto_evaluation_prompt=getattr(db_workshop, 'auto_evaluation_prompt', None),
       auto_evaluation_model=getattr(db_workshop, 'auto_evaluation_model', None),
+      show_participant_notes=getattr(db_workshop, 'show_participant_notes', False) or False,
       created_at=db_workshop.created_at,
     )
 
@@ -914,6 +918,76 @@ class DatabaseService:
       }
       for finding, user in results
     ]
+
+  # Participant notes operations
+  def add_participant_note(self, workshop_id: str, note_data: ParticipantNoteCreate) -> ParticipantNote:
+    """Add a new participant note (always appends, never overwrites)."""
+    db_note = ParticipantNoteDB(
+      id=str(uuid.uuid4()),
+      workshop_id=workshop_id,
+      user_id=note_data.user_id,
+      trace_id=note_data.trace_id,
+      content=note_data.content,
+      phase=getattr(note_data, 'phase', 'discovery') or 'discovery',
+    )
+    self.db.add(db_note)
+    self.db.commit()
+    self.db.refresh(db_note)
+
+    # Get user name for the response
+    user = self.db.query(UserDB).filter(UserDB.id == db_note.user_id).first()
+
+    return ParticipantNote(
+      id=db_note.id,
+      workshop_id=db_note.workshop_id,
+      user_id=db_note.user_id,
+      trace_id=db_note.trace_id,
+      content=db_note.content,
+      phase=getattr(db_note, 'phase', 'discovery') or 'discovery',
+      user_name=user.name if user else None,
+      created_at=db_note.created_at,
+      updated_at=db_note.updated_at or db_note.created_at,
+    )
+
+  def get_participant_notes(self, workshop_id: str, user_id: Optional[str] = None, phase: Optional[str] = None) -> List[ParticipantNote]:
+    """Get participant notes for a workshop, optionally filtered by user and/or phase."""
+    query = (
+      self.db.query(ParticipantNoteDB, UserDB)
+      .outerjoin(UserDB, ParticipantNoteDB.user_id == UserDB.id)
+      .filter(ParticipantNoteDB.workshop_id == workshop_id)
+    )
+
+    if user_id:
+      query = query.filter(ParticipantNoteDB.user_id == user_id)
+
+    if phase:
+      query = query.filter(ParticipantNoteDB.phase == phase)
+
+    results = query.order_by(ParticipantNoteDB.created_at.desc()).all()
+
+    return [
+      ParticipantNote(
+        id=note.id,
+        workshop_id=note.workshop_id,
+        user_id=note.user_id,
+        trace_id=note.trace_id,
+        content=note.content,
+        phase=getattr(note, 'phase', 'discovery') or 'discovery',
+        user_name=user.name if user else None,
+        created_at=note.created_at,
+        updated_at=note.updated_at or note.created_at,
+      )
+      for note, user in results
+    ]
+
+  def delete_participant_note(self, note_id: str) -> bool:
+    """Delete a participant note by ID."""
+    note = self.db.query(ParticipantNoteDB).filter(ParticipantNoteDB.id == note_id).first()
+    if note:
+      self.db.delete(note)
+      self.db.commit()
+      return True
+    return False
 
   # Rubric operations
   def create_rubric(self, workshop_id: str, rubric_data: RubricCreate) -> Rubric:

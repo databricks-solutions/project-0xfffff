@@ -28,7 +28,8 @@ export const FacilitatorUserManager: React.FC = () => {
   const { workshopId } = useWorkshopContext();
   const { data: workshop } = useWorkshop(workshopId!);
   const [users, setUsers] = useState<User[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -49,7 +50,7 @@ export const FacilitatorUserManager: React.FC = () => {
   const loadUsers = async () => {
     if (!workshopId) return;
     
-    setIsLoading(true);
+    setIsLoadingUsers(true);
     setError(null);
     try {
       const response = await UsersService.listWorkshopUsersUsersWorkshopsWorkshopIdUsersGet(workshopId);
@@ -58,7 +59,7 @@ export const FacilitatorUserManager: React.FC = () => {
     } catch (error: any) {
       setError(`Failed to load users: ${error.message || 'Unknown error'}`);
     } finally {
-      setIsLoading(false);
+      setIsLoadingUsers(false);
     }
   };
 
@@ -66,7 +67,7 @@ export const FacilitatorUserManager: React.FC = () => {
     e.preventDefault();
     if (!workshopId) return;
 
-    setIsLoading(true);
+    setIsSubmitting(true);
     setError(null);
     setSuccess(null);
 
@@ -87,7 +88,7 @@ export const FacilitatorUserManager: React.FC = () => {
     } catch (error: any) {
       setError(error.response?.data?.detail || 'Failed to add user');
     } finally {
-      setIsLoading(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -220,8 +221,8 @@ export const FacilitatorUserManager: React.FC = () => {
                   </Alert>
                 )}
 
-                <Button type="submit" className="w-full" disabled={isLoading}>
-                  {isLoading ? 'Adding User...' : 'Add User'}
+                <Button type="submit" className="w-full" disabled={isSubmitting}>
+                  {isSubmitting ? 'Adding User...' : 'Add User'}
                 </Button>
               </form>
             </CardContent>
@@ -292,7 +293,7 @@ export const FacilitatorUserManager: React.FC = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {isLoading ? (
+            {isLoadingUsers ? (
               <div className="text-center py-8">Loading users...</div>
             ) : error ? (
               <div className="text-center py-8">

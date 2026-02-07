@@ -12,6 +12,14 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { 
   Plus, 
   Trash2, 
@@ -26,13 +34,14 @@ import {
   Edit,
   Grid3x3,
   Focus,
-  RefreshCw,
-  Loader2
+  Loader2,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useWorkflowContext } from '@/context/WorkflowContext';
 import { useUser, useRoleCheck } from '@/context/UserContext';
-import { useRubric, useCreateRubric, useUpdateRubric, useUserFindings, useFacilitatorFindingsWithUserDetails, useAllTraces } from '@/hooks/useWorkshopApi';
+import { useRubric, useCreateRubric, useUpdateRubric, useUserFindings, useFacilitatorFindingsWithUserDetails, useAllTraces, useAllParticipantNotes, useWorkshop, useToggleParticipantNotes } from '@/hooks/useWorkshopApi';
 import { FocusedAnalysisView, ScratchPadEntry } from '@/components/FocusedAnalysisView';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useQueryClient } from '@tanstack/react-query';
@@ -177,6 +186,13 @@ export function RubricCreationDemo() {
     description: '',
     judgeType: 'likert'
   });
+  // Structured description fields for the dialog
+  const [newDefinition, setNewDefinition] = useState('');
+  const [newPositiveDirection, setNewPositiveDirection] = useState('');
+  const [newNegativeDirection, setNewNegativeDirection] = useState('');
+  const [newExamples, setNewExamples] = useState('');
+  // Editing existing question via dialog (null = adding new, string = editing that question id)
+  const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
   const [isEditingExisting, setIsEditingExisting] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'focused'>('focused');
   const [scratchPad, setScratchPadState] = useState<ScratchPadEntry[]>([]);
@@ -198,6 +214,11 @@ export function RubricCreationDemo() {
     : useUserFindings(workshopId!, user);
   const createRubric = useCreateRubric(workshopId!);
   const updateRubric = useUpdateRubric(workshopId!);
+  // Fetch all participant notes for the scratch pad (facilitator sees all)
+  const { data: participantNotes } = useAllParticipantNotes(workshopId!);
+  // Workshop data for show_participant_notes toggle
+  const { data: workshopData } = useWorkshop(workshopId!);
+  const toggleParticipantNotes = useToggleParticipantNotes(workshopId!);
   
   // SECURITY: Block access if no valid user
   if (!user || !user.id) {
@@ -279,64 +300,122 @@ export function RubricCreationDemo() {
     }
   }, [rubric, isEditingExisting]);
 
-  const addQuestion = () => {
-    console.log('addQuestion called, isSavingQuestion:', isSavingQuestion, 'rubric:', rubric);
-    if (newQuestion.title.trim() && newQuestion.description.trim()) {
-      if (isSavingQuestion) {
-        console.log('Already saving, skipping');
-        return;
+  // Build combined description from structured fields
+  const buildDescription = () => {
+    const parts: string[] = [];
+    if (newDefinition.trim()) parts.push(newDefinition.trim());
+    if (newPositiveDirection.trim()) parts.push(`Positive: ${newPositiveDirection.trim()}`);
+    if (newNegativeDirection.trim()) parts.push(`Negative: ${newNegativeDirection.trim()}`);
+    if (newExamples.trim()) parts.push(`Examples: ${newExamples.trim()}`);
+    return parts.join('\n');
+  };
+
+  const resetDialogFields = () => {
+    setNewQuestion({ title: '', description: '', judgeType: 'likert' });
+    setNewDefinition('');
+    setNewPositiveDirection('');
+    setNewNegativeDirection('');
+    setNewExamples('');
+    setEditingQuestionId(null);
+  };
+
+  // Parse a stored description string back into structured fields
+  const parseDescription = (description: string) => {
+    let definition = '';
+    let positive = '';
+    let negative = '';
+    let examples = '';
+    
+    const lines = description.split('\n');
+    const definitionLines: string[] = [];
+    
+    for (const line of lines) {
+      if (line.startsWith('Positive: ')) {
+        positive = line.replace('Positive: ', '');
+      } else if (line.startsWith('Negative: ')) {
+        negative = line.replace('Negative: ', '');
+      } else if (line.startsWith('Examples: ')) {
+        examples = line.replace('Examples: ', '');
+      } else {
+        definitionLines.push(line);
       }
-      setIsSavingQuestion(true);
-      setIsEditingExisting(true);
-      
-      const newQuestionForRubric = {
-        ...newQuestion,
-        id: 'temp'
-      };
-      const updatedQuestions = [...questions, newQuestionForRubric];
-      const combinedQuestionText = formatRubricQuestions(updatedQuestions);
-      
-      const apiRubric = {
-        question: combinedQuestionText,
-        created_by: 'facilitator',
-        judge_type: judgeType,
-        binary_labels: judgeType === 'binary' ? binaryLabels : undefined,
-        rating_scale: 5
-      };
-      
-      const method = rubric ? 'PUT' : 'POST';
-      const url = `/workshops/${workshopId}/rubric`;
-      
-      console.log('Starting fetch:', method, url);
-      fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(apiRubric),
-      })
-        .then(response => {
-          console.log('Fetch response received:', response.status);
-          if (!response.ok) throw new Error('Failed');
-          return response.json();
-        })
-        .then(savedRubric => {
-          console.log('Rubric saved:', savedRubric);
-          setNewQuestion({ title: '', description: '', judgeType: 'likert' });
-          setIsAddingQuestion(false);
-          if (savedRubric && savedRubric.id) {
-            queryClient.setQueryData(['rubric', workshopId], savedRubric);
-            setQuestions(convertApiRubricToQuestions(savedRubric));
-          }
-          toast.success('Question added successfully');
-        })
-        .catch(error => {
-          console.error('Error:', error);
-          toast.error('Failed to add question');
-        })
-        .finally(() => {
-          setIsSavingQuestion(false);
-          setIsEditingExisting(false);
-        });
     }
+    
+    definition = definitionLines.join('\n').trim();
+    return { definition, positive, negative, examples };
+  };
+
+  // Open the dialog in edit mode for an existing question
+  const openEditDialog = (question: RubricQuestion) => {
+    const parsed = parseDescription(question.description);
+    setNewQuestion({ title: question.title, description: question.description, judgeType: question.judgeType || 'likert' });
+    setNewDefinition(parsed.definition);
+    setNewPositiveDirection(parsed.positive);
+    setNewNegativeDirection(parsed.negative);
+    setNewExamples(parsed.examples);
+    setEditingQuestionId(question.id);
+    setIsAddingQuestion(true);
+  };
+
+  const canSaveQuestion = () => {
+    return newQuestion.title.trim() && newDefinition.trim();
+  };
+
+  const addQuestion = () => {
+    if (!canSaveQuestion()) return;
+    if (isSavingQuestion) return;
+
+    // Build description from structured fields
+    const description = buildDescription();
+      
+    setIsSavingQuestion(true);
+    setIsEditingExisting(true);
+      
+    const newQuestionForRubric = {
+      ...newQuestion,
+      description,
+      id: 'temp'
+    };
+    const updatedQuestions = [...questions, newQuestionForRubric];
+    const combinedQuestionText = formatRubricQuestions(updatedQuestions);
+    
+    const apiRubric = {
+      question: combinedQuestionText,
+      created_by: 'facilitator',
+      judge_type: judgeType,
+      binary_labels: judgeType === 'binary' ? binaryLabels : undefined,
+      rating_scale: 5
+    };
+    
+    const method = rubric ? 'PUT' : 'POST';
+    const url = `/workshops/${workshopId}/rubric`;
+    
+    fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(apiRubric),
+    })
+      .then(response => {
+        if (!response.ok) throw new Error('Failed');
+        return response.json();
+      })
+      .then(savedRubric => {
+        resetDialogFields();
+        setIsAddingQuestion(false);
+        if (savedRubric && savedRubric.id) {
+          queryClient.setQueryData(['rubric', workshopId], savedRubric);
+          setQuestions(convertApiRubricToQuestions(savedRubric));
+        }
+        toast.success('Question added successfully');
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        toast.error('Failed to add question');
+      })
+      .finally(() => {
+        setIsSavingQuestion(false);
+        setIsEditingExisting(false);
+      });
   };
 
   const deleteQuestion = async (id: string) => {
@@ -522,15 +601,25 @@ export function RubricCreationDemo() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => {
-                        refetchFindings();
-                        refetchTraces();
-                      }}
-                      disabled={isRefetchingFindings}
-                      className="flex items-center gap-2"
+                      onClick={() => toggleParticipantNotes.mutate()}
+                      disabled={toggleParticipantNotes.isPending}
+                      className={`flex items-center gap-2 ${
+                        workshopData?.show_participant_notes
+                          ? 'border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100'
+                          : ''
+                      }`}
                     >
-                      <RefreshCw className={`h-4 w-4 ${isRefetchingFindings ? 'animate-spin' : ''}`} />
-                      Refresh
+                      {workshopData?.show_participant_notes ? (
+                        <>
+                          <EyeOff className="h-4 w-4" />
+                          Disable SME Notes
+                        </>
+                      ) : (
+                        <>
+                          <Eye className="h-4 w-4" />
+                          Enable SME Notes
+                        </>
+                      )}
                     </Button>
                     <Button
                       variant={viewMode === 'grid' ? 'default' : 'outline'}
@@ -682,6 +771,7 @@ export function RubricCreationDemo() {
                   discoveryResponses={discoveryResponses}
                   scratchPad={scratchPad}
                   setScratchPad={setScratchPad}
+                  participantNotes={participantNotes}
                 />
               ) : (
                 <div className="text-center py-12">
@@ -774,279 +864,271 @@ export function RubricCreationDemo() {
               </div>
             )}
 
-            {questions.map((question, index) => (
-              <div key={question.id} className="border rounded-xl p-6 bg-gradient-to-br from-white to-green-50 border-green-200">
+            {questions.map((question, index) => {
+              const parsed = parseDescription(question.description);
+              return (
+              <div key={question.id} className="border rounded-xl p-5 bg-gradient-to-br from-white to-green-50 border-green-200">
                 <div className="flex items-start gap-4">
                   <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
                     <span className="text-green-600 font-medium">{index + 1}</span>
                   </div>
                   
-                  <div className="flex-1 space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <Label htmlFor={`title-${question.id}`} className="text-sm font-medium text-gray-700 mb-1 block">
-                          Question Title
-                        </Label>
-                        <Input
-                          id={`title-${question.id}`}
-                          value={question.title}
-                          onChange={(e) => updateQuestion(question.id, { title: e.target.value })}
-                          placeholder="e.g., Response Accuracy"
-                          className="font-medium"
-                        />
+                  <div className="flex-1 min-w-0">
+                    {/* Header row: title + type badge + actions */}
+                    <div className="flex items-start justify-between gap-3 mb-3">
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <h3 className="text-base font-semibold text-gray-900">{question.title}</h3>
+                        <Badge 
+                          variant="outline" 
+                          className={
+                            question.judgeType === 'likert' ? 'bg-green-50 text-green-700 border-green-200' :
+                            question.judgeType === 'binary' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                            'bg-purple-50 text-purple-700 border-purple-200'
+                          }
+                        >
+                          {question.judgeType === 'likert' ? 'Likert Scale' : question.judgeType === 'binary' ? 'Binary' : 'Free-form'}
+                        </Badge>
                       </div>
-                      <div>
-                        <Label htmlFor={`desc-${question.id}`} className="text-sm font-medium text-gray-700 mb-1 block">
-                          Question Description
-                        </Label>
-                        <Textarea
-                          id={`desc-${question.id}`}
-                          value={question.description}
-                          onChange={(e) => updateQuestion(question.id, { description: e.target.value })}
-                          placeholder="e.g., This response is factually accurate and well-supported."
-                          className="min-h-[80px]"
-                        />
+                      <div className="flex gap-1 flex-shrink-0">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openEditDialog(question)}
+                          className="text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                          title="Edit this criterion"
+                        >
+                          <Edit className="h-4 w-4" />
+                          Edit
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => deleteQuestion(question.id)}
+                          className="text-red-600 hover:text-red-800 hover:bg-red-50"
+                          title="Remove this question from the rubric"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Delete
+                        </Button>
                       </div>
-                      <div>
-                        <Label className="text-sm font-medium text-gray-700 mb-1 block">
-                          Evaluation Type
-                        </Label>
-                        <div className="flex flex-col gap-1">
-                          <Badge 
-                            variant={question.judgeType === 'likert' ? 'default' : 'outline'}
-                            className="cursor-pointer justify-center py-1.5"
-                            onClick={() => updateQuestion(question.id, { judgeType: 'likert' })}
-                          >
-                            Likert Scale
-                          </Badge>
-                          <Badge 
-                            variant={question.judgeType === 'binary' ? 'default' : 'outline'}
-                            className="cursor-pointer justify-center py-1.5"
-                            onClick={() => updateQuestion(question.id, { judgeType: 'binary' })}
-                          >
-                            Binary
-                          </Badge>
-                          <Badge 
-                            variant={question.judgeType === 'freeform' ? 'default' : 'outline'}
-                            className="cursor-pointer justify-center py-1.5"
-                            onClick={() => updateQuestion(question.id, { judgeType: 'freeform' })}
-                          >
-                            Free-form
-                          </Badge>
+                    </div>
+
+                    {/* Structured description display */}
+                    <div className="space-y-2 text-sm">
+                      {parsed.definition && (
+                        <div>
+                          <span className="font-medium text-gray-700">Definition: </span>
+                          <span className="text-gray-600">{parsed.definition}</span>
                         </div>
-                      </div>
-                    </div>
-
-                    {/* Scale/Response Preview - varies by question's judge type */}
-                    <div className="bg-white border border-green-200 rounded-lg p-4">
-                      {question.judgeType === 'likert' && (
-                        <>
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="text-sm font-medium text-gray-700">Likert Scale Preview</div>
-                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                              1-5 Scale
-                            </Badge>
-                          </div>
-                          <div className="grid grid-cols-5 gap-4">
-                            {[1, 2, 3, 4, 5].map((value) => {
-                              const labels = [
-                                '', // placeholder for value 0
-                                'Strongly Disagree',
-                                'Disagree', 
-                                'Neutral',
-                                'Agree',
-                                'Strongly Agree'
-                              ];
-                              
-                              return (
-                                <div key={value} className="flex flex-col items-center gap-2">
-                                  <div className="w-5 h-5 rounded-full border-2 border-green-300 bg-white" />
-                                  <label className="text-xs text-center text-gray-600 leading-tight">
-                                    {labels[value]}
-                                  </label>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </>
                       )}
-                      
-                      {question.judgeType === 'binary' && (
-                        <>
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="text-sm font-medium text-gray-700">Binary Choice Preview</div>
-                            <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                              {binaryLabels.pass}/{binaryLabels.fail}
-                            </Badge>
+                      {parsed.positive && (
+                        <div className="flex items-start gap-1.5">
+                          <CheckCircle className="h-3.5 w-3.5 text-green-600 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <span className="font-medium text-green-700">Positive: </span>
+                            <span className="text-gray-600">{parsed.positive}</span>
                           </div>
-                          <div className="flex justify-center gap-8">
-                            <div className="flex flex-col items-center gap-2">
-                              <div className="w-12 h-12 rounded-lg border-2 border-green-400 bg-green-50 flex items-center justify-center">
-                                <CheckCircle className="w-6 h-6 text-green-600" />
-                              </div>
-                              <label className="text-sm font-medium text-green-700">{binaryLabels.pass}</label>
-                            </div>
-                            <div className="flex flex-col items-center gap-2">
-                              <div className="w-12 h-12 rounded-lg border-2 border-red-400 bg-red-50 flex items-center justify-center">
-                                <AlertCircle className="w-6 h-6 text-red-600" />
-                              </div>
-                              <label className="text-sm font-medium text-red-700">{binaryLabels.fail}</label>
-                            </div>
-                          </div>
-                        </>
+                        </div>
                       )}
-                      
-                      {question.judgeType === 'freeform' && (
-                        <>
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="text-sm font-medium text-gray-700">Free-form Feedback Preview</div>
-                            <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
-                              Open Text
-                            </Badge>
+                      {parsed.negative && (
+                        <div className="flex items-start gap-1.5">
+                          <AlertCircle className="h-3.5 w-3.5 text-red-600 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <span className="font-medium text-red-700">Negative: </span>
+                            <span className="text-gray-600">{parsed.negative}</span>
                           </div>
-                          <div className="border-2 border-dashed border-purple-200 rounded-lg p-4 bg-purple-50/30">
-                            <p className="text-sm text-gray-500 italic">
-                              Annotators will provide detailed written feedback based on this focus area...
-                            </p>
+                        </div>
+                      )}
+                      {parsed.examples && (
+                        <div className="flex items-start gap-1.5">
+                          <Lightbulb className="h-3.5 w-3.5 text-amber-500 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <span className="font-medium text-amber-700">Examples: </span>
+                            <span className="text-gray-600">{parsed.examples}</span>
                           </div>
-                        </>
+                        </div>
+                      )}
+                      {/* Fallback: if no structured fields were parsed, show raw description */}
+                      {!parsed.definition && !parsed.positive && !parsed.negative && !parsed.examples && question.description && (
+                        <div className="text-gray-600 whitespace-pre-wrap">{question.description}</div>
                       )}
                     </div>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => updateIndividualQuestion(question.id)}
-                      className={
-                        lastUpdatedQuestionId === question.id 
-                          ? "text-green-600 hover:text-green-800 hover:bg-green-50" 
-                          : "text-blue-600 hover:text-blue-800 hover:bg-blue-50"
-                      }
-                      disabled={updatingQuestionId === question.id || updateRubric.isPending}
-                      title="Save changes to this question to the database"
-                    >
-                      {updatingQuestionId === question.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : lastUpdatedQuestionId === question.id ? (
-                        <CheckCircle className="h-4 w-4" />
-                      ) : (
-                        <RefreshCw className="h-4 w-4" />
-                      )}
-                      {updatingQuestionId === question.id ? 'Updating...' : lastUpdatedQuestionId === question.id ? 'Updated!' : 'Update'}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => deleteQuestion(question.id)}
-                      className="text-red-600 hover:text-red-800 hover:bg-red-50"
-                      title="Remove this question from the rubric"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      Delete
-                    </Button>
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
 
-            {/* Add Question Form */}
-            {isAddingQuestion && (
-              <div className="border-2 border-dashed border-blue-300 rounded-xl p-6 bg-blue-50">
-                <div className="flex items-center gap-2 mb-4">
-                  <Plus className="h-5 w-5 text-blue-600" />
-                  <h3 className="font-medium text-blue-900">Add New Evaluation Criterion</h3>
-                </div>
-                
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <Label htmlFor="new-title" className="text-sm font-medium text-gray-700 mb-1 block">
-                        Title
+            {/* Add / Edit Evaluation Criterion Dialog */}
+            <Dialog open={isAddingQuestion} onOpenChange={(open) => {
+              if (!open) {
+                resetDialogFields();
+              }
+              setIsAddingQuestion(open);
+            }}>
+              <DialogContent className="sm:max-w-[640px] max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    {editingQuestionId ? (
+                      <><Edit className="h-5 w-5 text-blue-600" /> Edit Evaluation Criterion</>
+                    ) : (
+                      <><Plus className="h-5 w-5 text-purple-600" /> Add Evaluation Criterion</>
+                    )}
+                  </DialogTitle>
+                  <DialogDescription>
+                    {editingQuestionId 
+                      ? 'Modify the definition, scoring direction, and examples for this evaluation criterion.'
+                      : 'Define a new evaluation criterion with a clear definition, scoring direction, and examples to guide annotators.'}
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-5 py-2">
+                  {/* Title */}
+                  <div className="space-y-2">
+                    <Label htmlFor="new-title" className="text-sm font-semibold text-gray-800">
+                      Title <span className="text-red-500">*</span>
+                    </Label>
+                    <Input
+                      id="new-title"
+                      value={newQuestion.title}
+                      onChange={(e) => setNewQuestion({ ...newQuestion, title: e.target.value })}
+                      placeholder="e.g., Response Helpfulness"
+                      className="bg-white"
+                    />
+                  </div>
+
+                  {/* Definition */}
+                  <div className="space-y-2">
+                    <Label htmlFor="new-definition" className="text-sm font-semibold text-gray-800">
+                      Definition <span className="text-red-500">*</span>
+                    </Label>
+                    <p className="text-xs text-muted-foreground -mt-1">
+                      What does this criterion measure? Provide a clear, concise description.
+                    </p>
+                    <Textarea
+                      id="new-definition"
+                      value={newDefinition}
+                      onChange={(e) => setNewDefinition(e.target.value)}
+                      placeholder="e.g., This criterion evaluates whether the response is helpful in addressing the user's specific needs and resolving their question."
+                      className="min-h-[70px] bg-white"
+                    />
+                  </div>
+
+                  {/* Positive & Negative Direction - side by side */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="new-positive" className="text-sm font-semibold text-green-700 flex items-center gap-1.5">
+                        <CheckCircle className="h-3.5 w-3.5" />
+                        Positive Direction
                       </Label>
-                      <Input
-                        id="new-title"
-                        value={newQuestion.title}
-                        onChange={(e) => setNewQuestion({ ...newQuestion, title: e.target.value })}
-                        placeholder="e.g., Response Helpfulness"
-                        className="bg-white"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="new-description" className="text-sm font-medium text-gray-700 mb-1 block">
-                        Description
-                      </Label>
+                      <p className="text-xs text-muted-foreground -mt-1">
+                        What does a high-quality response look like?
+                      </p>
                       <Textarea
-                        id="new-description"
-                        value={newQuestion.description}
-                        onChange={(e) => setNewQuestion({ ...newQuestion, description: e.target.value })}
-                        placeholder="e.g., This response is helpful in addressing the user's needs."
-                        className="min-h-[80px] bg-white"
+                        id="new-positive"
+                        value={newPositiveDirection}
+                        onChange={(e) => setNewPositiveDirection(e.target.value)}
+                        placeholder="e.g., The response directly addresses the user's question, provides actionable steps, and anticipates follow-up needs."
+                        className="min-h-[80px] bg-white border-green-200 focus:border-green-400"
                       />
                     </div>
-                    <div>
-                      <Label className="text-sm font-medium text-gray-700 mb-1 block">
-                        Evaluation Type
+                    <div className="space-y-2">
+                      <Label htmlFor="new-negative" className="text-sm font-semibold text-red-700 flex items-center gap-1.5">
+                        <AlertCircle className="h-3.5 w-3.5" />
+                        Negative Direction
                       </Label>
-                      <div className="flex flex-col gap-1">
-                        <Badge 
-                          variant={newQuestion.judgeType === 'likert' ? 'default' : 'outline'}
-                          className={`cursor-pointer justify-center py-1.5 ${newQuestion.judgeType !== 'likert' ? 'bg-white' : ''}`}
-                          onClick={() => setNewQuestion({ ...newQuestion, judgeType: 'likert' })}
-                        >
-                          Likert Scale
-                        </Badge>
-                        <Badge 
-                          variant={newQuestion.judgeType === 'binary' ? 'default' : 'outline'}
-                          className={`cursor-pointer justify-center py-1.5 ${newQuestion.judgeType !== 'binary' ? 'bg-white' : ''}`}
-                          onClick={() => setNewQuestion({ ...newQuestion, judgeType: 'binary' })}
-                        >
-                          Binary
-                        </Badge>
-                        <Badge 
-                          variant={newQuestion.judgeType === 'freeform' ? 'default' : 'outline'}
-                          className={`cursor-pointer justify-center py-1.5 ${newQuestion.judgeType !== 'freeform' ? 'bg-white' : ''}`}
-                          onClick={() => setNewQuestion({ ...newQuestion, judgeType: 'freeform' })}
-                        >
-                          Free-form
-                        </Badge>
-                      </div>
+                      <p className="text-xs text-muted-foreground -mt-1">
+                        What does a poor response look like?
+                      </p>
+                      <Textarea
+                        id="new-negative"
+                        value={newNegativeDirection}
+                        onChange={(e) => setNewNegativeDirection(e.target.value)}
+                        placeholder="e.g., The response is vague, off-topic, or fails to address the core question, requiring the user to seek help elsewhere."
+                        className="min-h-[80px] bg-white border-red-200 focus:border-red-400"
+                      />
                     </div>
                   </div>
-                  
-                  {/* Preview based on selected judge type */}
-                  <div className="bg-white border border-blue-200 rounded-lg p-4">
+
+                  {/* Examples */}
+                  <div className="space-y-2">
+                    <Label htmlFor="new-examples" className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
+                      <Lightbulb className="h-3.5 w-3.5 text-amber-500" />
+                      Examples
+                    </Label>
+                    <p className="text-xs text-muted-foreground -mt-1">
+                      Provide concrete examples of good and/or bad responses to calibrate annotators.
+                    </p>
+                    <Textarea
+                      id="new-examples"
+                      value={newExamples}
+                      onChange={(e) => setNewExamples(e.target.value)}
+                      placeholder={"Good: \"Here are 3 steps to resolve your issue: 1) ...\"\nBad: \"I'm not sure, maybe try searching online.\""}
+                      className="min-h-[80px] bg-white"
+                    />
+                  </div>
+
+                  {/* Evaluation Type */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold text-gray-800">
+                      Evaluation Type
+                    </Label>
+                    <div className="flex gap-2">
+                      <Badge 
+                        variant={newQuestion.judgeType === 'likert' ? 'default' : 'outline'}
+                        className={`cursor-pointer px-4 py-1.5 ${newQuestion.judgeType !== 'likert' ? 'bg-white hover:bg-gray-50' : ''}`}
+                        onClick={() => setNewQuestion({ ...newQuestion, judgeType: 'likert' })}
+                      >
+                        Likert Scale
+                      </Badge>
+                      <Badge 
+                        variant={newQuestion.judgeType === 'binary' ? 'default' : 'outline'}
+                        className={`cursor-pointer px-4 py-1.5 ${newQuestion.judgeType !== 'binary' ? 'bg-white hover:bg-gray-50' : ''}`}
+                        onClick={() => setNewQuestion({ ...newQuestion, judgeType: 'binary' })}
+                      >
+                        Binary
+                      </Badge>
+                      <Badge 
+                        variant={newQuestion.judgeType === 'freeform' ? 'default' : 'outline'}
+                        className={`cursor-pointer px-4 py-1.5 ${newQuestion.judgeType !== 'freeform' ? 'bg-white hover:bg-gray-50' : ''}`}
+                        onClick={() => setNewQuestion({ ...newQuestion, judgeType: 'freeform' })}
+                      >
+                        Free-form
+                      </Badge>
+                    </div>
+                  </div>
+
+                  {/* Preview */}
+                  <div className="bg-gray-50 border rounded-lg p-4">
                     {newQuestion.judgeType === 'likert' && (
                       <>
-                        <div className="text-sm font-medium text-gray-700 mb-3">Likert Scale Preview:</div>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="text-sm font-medium text-gray-700">Likert Scale Preview</div>
+                          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                            1-5 Scale
+                          </Badge>
+                        </div>
                         <div className="grid grid-cols-5 gap-4">
                           {[1, 2, 3, 4, 5].map((value) => {
-                            const labels = [
-                              '', // placeholder for value 0
-                              'Strongly Disagree',
-                              'Disagree', 
-                              'Neutral',
-                              'Agree',
-                              'Strongly Agree'
-                            ];
-                            
+                            const labels = ['', 'Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree'];
                             return (
                               <div key={value} className="flex flex-col items-center gap-2">
                                 <div className="w-5 h-5 rounded-full border-2 border-blue-300 bg-white" />
-                                <label className="text-xs text-center text-gray-600 leading-tight">
-                                  {labels[value]}
-                                </label>
+                                <label className="text-xs text-center text-gray-600 leading-tight">{labels[value]}</label>
                               </div>
                             );
                           })}
                         </div>
                       </>
                     )}
-                    
                     {newQuestion.judgeType === 'binary' && (
                       <>
-                        <div className="text-sm font-medium text-gray-700 mb-3">Binary Choice Preview:</div>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="text-sm font-medium text-gray-700">Binary Choice Preview</div>
+                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                            {binaryLabels.pass}/{binaryLabels.fail}
+                          </Badge>
+                        </div>
                         <div className="flex justify-center gap-8">
                           <div className="flex flex-col items-center gap-2">
                             <div className="w-12 h-12 rounded-lg border-2 border-green-400 bg-green-50 flex items-center justify-center">
@@ -1063,10 +1145,14 @@ export function RubricCreationDemo() {
                         </div>
                       </>
                     )}
-                    
                     {newQuestion.judgeType === 'freeform' && (
                       <>
-                        <div className="text-sm font-medium text-gray-700 mb-3">Free-form Response Preview:</div>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="text-sm font-medium text-gray-700">Free-form Feedback Preview</div>
+                          <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+                            Open Text
+                          </Badge>
+                        </div>
                         <div className="border-2 border-dashed border-purple-200 rounded-lg p-4 bg-purple-50/30">
                           <p className="text-sm text-gray-500 italic">
                             Annotators will provide detailed written feedback for this focus area...
@@ -1075,26 +1161,73 @@ export function RubricCreationDemo() {
                       </>
                     )}
                   </div>
-                  
-                  <div className="flex gap-3 pt-2">
-                    <Button 
-                      onClick={addQuestion} 
+                </div>
+
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      resetDialogFields();
+                      setIsAddingQuestion(false);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  {editingQuestionId ? (
+                    <Button
+                      onClick={() => {
+                        if (!canSaveQuestion()) return;
+                        const description = buildDescription();
+                        // Update the question in local state
+                        updateQuestion(editingQuestionId, {
+                          title: newQuestion.title,
+                          description,
+                          judgeType: newQuestion.judgeType,
+                        });
+                        // Save to server
+                        setUpdatingQuestionId(editingQuestionId);
+                        fetch(`/workshops/${workshopId}/rubric/questions/${editingQuestionId}`, {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            title: newQuestion.title,
+                            description,
+                            judge_type: newQuestion.judgeType,
+                          }),
+                        })
+                          .then(response => {
+                            if (!response.ok) throw new Error('Failed');
+                            queryClient.invalidateQueries({ queryKey: ['rubric', workshopId] });
+                            toast.success('Criterion updated successfully');
+                          })
+                          .catch(() => {
+                            toast.error('Failed to update criterion. Please try again.');
+                          })
+                          .finally(() => {
+                            setUpdatingQuestionId(null);
+                          });
+                        resetDialogFields();
+                        setIsAddingQuestion(false);
+                      }}
+                      disabled={!canSaveQuestion() || updatingQuestionId === editingQuestionId}
                       className="flex items-center gap-2"
-                      disabled={!newQuestion.title.trim() || !newQuestion.description.trim() || isSavingQuestion}
+                    >
+                      <Save className="h-4 w-4" />
+                      {updatingQuestionId === editingQuestionId ? 'Saving...' : 'Save Changes'}
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={addQuestion}
+                      disabled={!canSaveQuestion() || isSavingQuestion}
+                      className="flex items-center gap-2"
                     >
                       <Plus className="h-4 w-4" />
-                      {isSavingQuestion ? 'Saving...' : 'Save'}
+                      {isSavingQuestion ? 'Saving...' : 'Add Criterion'}
                     </Button>
-                    <Button 
-                      variant="outline" 
-                      onClick={() => setIsAddingQuestion(false)}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )}
+                  )}
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
 
             {questions.length > 0 && (
               <div className="bg-green-50 border border-green-200 rounded-lg p-4">

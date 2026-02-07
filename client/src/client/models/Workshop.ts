@@ -21,6 +21,7 @@ export type Workshop = {
     judge_name?: string;
     input_jsonpath?: (string | null);
     output_jsonpath?: (string | null);
+    show_participant_notes?: boolean;
     created_at?: string;
 };
 

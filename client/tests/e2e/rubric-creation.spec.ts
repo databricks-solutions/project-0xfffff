@@ -156,40 +156,27 @@ test('rubric creation: facilitator can advance from discovery and create a rubri
   const description = `How helpful is the response in resolving the user's issue? (${runId})`;
 
   await page.locator('#new-title').fill(title);
-  await page.locator('#new-description').fill(description);
+  await page.locator('#new-definition').fill(description);
 
   await Promise.all([
     page.waitForResponse(
       (resp) =>
-        resp.request().method() === 'POST' &&
+        (resp.request().method() === 'POST' || resp.request().method() === 'PUT') &&
         resp.url().includes(`/workshops/${workshopId}/rubric`) &&
         resp.status() >= 200 &&
         resp.status() < 300,
     ),
-    page.getByRole('button', { name: /^Save$/i }).click(),
+    page.getByRole('button', { name: /Add Criterion/i }).click(),
   ]);
 
   // Assert UI shows evaluation summary (rubric was created)
   await expect(page.getByText(/Evaluation Summary/i)).toBeVisible();
-  await expect
-    .poll(async () => {
-      return page.locator('input').evaluateAll(
-        (els, expected) =>
-          els.some((el) => (el as HTMLInputElement).value === expected),
-        title,
-      );
-    })
-    .toBeTruthy();
 
-  await expect
-    .poll(async () => {
-      return page.locator('textarea').evaluateAll(
-        (els, expected) =>
-          els.some((el) => (el as HTMLTextAreaElement).value === expected),
-        description,
-      );
-    })
-    .toBeTruthy();
+  // Question title should be visible as text in the question card
+  await expect(page.getByText(title)).toBeVisible();
+
+  // Description (definition) should be visible as text in the question card
+  await expect(page.getByText(description)).toBeVisible();
 
   // Assert rubric persisted via API
   await expect
