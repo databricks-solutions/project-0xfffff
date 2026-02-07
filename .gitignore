@@ -20,3 +20,10 @@ workshop.db
 *.db-wal
 *.csv
 .databricks/
+.pytest_cache/
+
+# Test results (JSON reports for LLM agents)
+.test-results/
+htmlcov/
+coverage/
+.coverage
