@@ -6,6 +6,8 @@ Those DBs were previously patched at runtime via ad-hoc ALTER TABLE statements.
 Now that schema is managed by Alembic, we apply the equivalent upgrades here.
 This migration is written to be safe on fresh databases as well (it checks for
 column existence before adding).
+
+Supports both SQLite and PostgreSQL (Lakebase) backends.
 """
 
 from __future__ import annotations
@@ -20,15 +22,34 @@ branch_labels = None
 depends_on = None
 
 
-def _sqlite_has_column(table: str, column: str) -> bool:
+def _is_postgres() -> bool:
+    """Check if the current database is PostgreSQL."""
     bind = op.get_bind()
-    rows = bind.execute(sa.text(f"PRAGMA table_info({table})")).fetchall()
-    # PRAGMA table_info returns: cid, name, type, notnull, dflt_value, pk
-    return any(r[1] == column for r in rows)
+    return bind.dialect.name == "postgresql"
+
+
+def _has_column(table: str, column: str) -> bool:
+    """Check if a column exists in a table (works for both SQLite and PostgreSQL)."""
+    bind = op.get_bind()
+    if _is_postgres():
+        # PostgreSQL: use information_schema
+        result = bind.execute(
+            sa.text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = :table AND column_name = :column"
+            ),
+            {"table": table, "column": column}
+        ).fetchone()
+        return result is not None
+    else:
+        # SQLite: use PRAGMA table_info
+        rows = bind.execute(sa.text(f"PRAGMA table_info({table})")).fetchall()
+        # PRAGMA table_info returns: cid, name, type, notnull, dflt_value, pk
+        return any(r[1] == column for r in rows)
 
 
 def _add_column_if_missing(table: str, column: sa.Column) -> None:
-    if _sqlite_has_column(table, column.name):
+    if _has_column(table, column.name):
         return
     with op.batch_alter_table(table) as batch_op:
         batch_op.add_column(column)
@@ -58,9 +79,11 @@ def upgrade() -> None:
     )
 
     # traces.include_in_alignment / sme_feedback (alignment filtering + concatenated feedback)
+    # Use dialect-specific default for boolean: 1 for SQLite, TRUE for PostgreSQL
+    bool_default = sa.text("TRUE") if _is_postgres() else sa.text("1")
     _add_column_if_missing(
         "traces",
-        sa.Column("include_in_alignment", sa.Boolean(), server_default=sa.text("1")),
+        sa.Column("include_in_alignment", sa.Boolean(), server_default=bool_default),
     )
     _add_column_if_missing(
         "traces",

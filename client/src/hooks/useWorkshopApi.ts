@@ -281,8 +281,20 @@ export function useSubmitFinding(workshopId: string) {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: (finding: DiscoveryFindingCreate) => 
+    mutationFn: (finding: DiscoveryFindingCreate) =>
       WorkshopsService.submitFindingWorkshopsWorkshopIdFindingsPost(workshopId, finding),
+    // Retry on server errors (503 Service Unavailable due to database contention, or 500)
+    retry: (failureCount, error: any) => {
+      if (error?.status === 503 || error?.status === 500) {
+        return failureCount < 5;
+      }
+      return false;
+    },
+    retryDelay: (attemptIndex) => {
+      const baseDelay = Math.min(1000 * Math.pow(2, attemptIndex), 16000);
+      const jitter = Math.random() * 1000;
+      return baseDelay + jitter;
+    },
     onMutate: async (newFinding) => {
       // Cancel any outgoing refetches
       await queryClient.cancelQueries({ queryKey: ['findings', workshopId, newFinding.user_id] });

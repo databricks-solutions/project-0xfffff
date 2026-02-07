@@ -43,7 +43,7 @@ def upgrade() -> None:
         sa.Column("email", sa.String(), nullable=False),
         sa.Column("name", sa.String(), nullable=False),
         sa.Column("role", sa.String(), nullable=False),
-        sa.Column("workshop_id", sa.String(), nullable=False),
+        sa.Column("workshop_id", sa.String(), nullable=True),
         sa.Column("status", sa.String(), nullable=True),
         sa.Column("password_hash", sa.String(), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=True),
