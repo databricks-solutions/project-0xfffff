@@ -161,12 +161,12 @@ test('rubric creation: facilitator can advance from discovery and create a rubri
   await Promise.all([
     page.waitForResponse(
       (resp) =>
-        resp.request().method() === 'POST' &&
+        (resp.request().method() === 'POST' || resp.request().method() === 'PUT') &&
         resp.url().includes(`/workshops/${workshopId}/rubric`) &&
         resp.status() >= 200 &&
         resp.status() < 300,
     ),
-    page.getByRole('button', { name: /^Save$/i }).click(),
+    page.getByRole('button', { name: /Add Criterion/i }).click(),
   ]);
 
   // Assert UI shows evaluation summary (rubric was created)
