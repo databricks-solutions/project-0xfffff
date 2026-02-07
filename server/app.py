@@ -13,6 +13,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from server.config import ServerConfig
 from server.db_bootstrap import maybe_bootstrap_db_on_startup
+from server.db_config import DatabaseBackend, detect_database_backend
 from server.routers import router
 from server.sqlite_rescue import (
     backup_to_volume,
@@ -29,37 +30,104 @@ async def lifespan(app: FastAPI):
     """Manage application lifespan with proper startup and shutdown."""
     print("🚀 Application startup - lifespan function called!")
 
-    # SQLite Rescue: Restore from Unity Catalog Volume if configured
-    # This MUST happen before database bootstrap/migrations
-    rescue_status = get_rescue_status()
-    if rescue_status["configured"]:
-        print(f"📦 SQLite rescue configured: {rescue_status['volume_backup_path']}")
-        if restore_from_volume():
-            print("✅ Database restored from Unity Catalog Volume")
-        else:
-            print("ℹ️  No backup to restore (starting fresh or backup not found)")
+    # Detect database backend
+    db_backend = detect_database_backend()
+    using_sqlite = db_backend == DatabaseBackend.SQLITE
 
-        # Install signal handlers for graceful shutdown backup
-        install_shutdown_handlers()
-
-        # Start periodic background backup timer (every 10 minutes by default)
-        start_backup_timer()
-        backup_interval = rescue_status.get("backup_interval_minutes", 10)
-        print(f"⏰ Periodic backup timer started (every {backup_interval} minutes)")
+    if db_backend == DatabaseBackend.POSTGRESQL:
+        print("🐘 Using Lakebase (PostgreSQL) - data persists automatically")
+        rescue_status = {"configured": False}  # SQLite rescue not needed for PostgreSQL
     else:
-        print("⚠️  SQLITE_VOLUME_BACKUP_PATH not configured - database will NOT persist across container restarts")
+        print("📁 Using SQLite database backend")
+        # SQLite Rescue: Restore from Unity Catalog Volume if configured
+        # This MUST happen before database bootstrap/migrations
+        rescue_status = get_rescue_status()
+        if rescue_status["configured"]:
+            print(f"📦 SQLite rescue configured: {rescue_status['volume_backup_path']}")
+            if restore_from_volume():
+                print("✅ Database restored from Unity Catalog Volume")
+            else:
+                print("ℹ️  No backup to restore (starting fresh or backup not found)")
+
+            # Install signal handlers for graceful shutdown backup
+            install_shutdown_handlers()
+
+            # Start periodic background backup timer (every 10 minutes by default)
+            start_backup_timer()
+            backup_interval = rescue_status.get("backup_interval_minutes", 10)
+            print(f"⏰ Periodic backup timer started (every {backup_interval} minutes)")
+        else:
+            print("⚠️  SQLITE_VOLUME_BACKUP_PATH not configured - database will NOT persist across container restarts")
 
     # NOTE: This is a *fallback* safety net for deployments that don't run `just db-bootstrap`.
     # It is designed to be safe under multi-process servers (e.g., gunicorn with multiple
     # Uvicorn workers) via an inter-process lock.
     maybe_bootstrap_db_on_startup()
 
+    # For PostgreSQL/Lakebase: ensure schema and tables exist.
+    # Lakebase requires tables in a schema owned by the service principal.
+    if db_backend == DatabaseBackend.POSTGRESQL:
+        from sqlalchemy import text
+
+        from server.database import Base, engine
+        from server.db_config import LakebaseConfig
+
+        lakebase_cfg = LakebaseConfig.from_env()
+        schema_name = lakebase_cfg.app_name.replace("-", "_") if lakebase_cfg else "human_eval_workshop"
+        pg_user = os.getenv("PGUSER", "")
+
+        try:
+            with engine.connect() as conn:
+                # Create the schema owned by the service principal
+                conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}" AUTHORIZATION "{pg_user}"'))
+                # Grant privileges on the schema to PGUSER
+                if pg_user:
+                    conn.execute(text(f'GRANT ALL PRIVILEGES ON SCHEMA "{schema_name}" TO "{pg_user}"'))
+                conn.commit()
+                print(f"✅ PostgreSQL schema '{schema_name}' ensured")
+        except Exception as e:
+            print(f"⚠️  PostgreSQL schema creation failed: {e}")
+            import traceback
+            traceback.print_exc()
+
+        try:
+            # Create tables — search_path is set via connect_args options in
+            # create_engine_for_backend, so tables land in the app schema.
+            Base.metadata.create_all(bind=engine, checkfirst=True)
+            print("✅ PostgreSQL tables verified/created via SQLAlchemy metadata")
+        except Exception as e:
+            print(f"⚠️  PostgreSQL table creation failed: {e}")
+            import traceback
+            traceback.print_exc()
+
+        # Grant privileges on all tables in the schema to PGUSER
+        try:
+            if pg_user:
+                with engine.connect() as conn:
+                    conn.execute(text(f'GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA "{schema_name}" TO "{pg_user}"'))
+                    conn.execute(text(f'GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA "{schema_name}" TO "{pg_user}"'))
+                    conn.commit()
+                    print(f"✅ PostgreSQL privileges granted to '{pg_user}' on schema '{schema_name}'")
+        except Exception as e:
+            print(f"ℹ️  PostgreSQL privilege grant skipped: {e}")
+
+        try:
+            # Fix: make users.workshop_id nullable (facilitators don't have a workshop)
+            # This is needed for existing tables created with NOT NULL constraint
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE users ALTER COLUMN workshop_id DROP NOT NULL"))
+                conn.commit()
+                print("✅ PostgreSQL users.workshop_id made nullable")
+        except Exception as e:
+            # Non-critical — column may already be nullable
+            print(f"ℹ️  users.workshop_id nullable fix skipped: {e}")
+
     print("✅ Application startup complete!")
     yield
 
-    # SQLite Rescue: Backup to Unity Catalog Volume on shutdown
+    # Shutdown: Backup SQLite to Unity Catalog Volume if configured
     print("🔄 Application shutting down...")
-    if rescue_status["configured"]:
+    if using_sqlite and rescue_status["configured"]:
         # Stop the periodic backup timer first
         stop_backup_timer()
         print("⏰ Periodic backup timer stopped")

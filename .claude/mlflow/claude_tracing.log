@@ -1,0 +1,87 @@
+2026-02-04 17:19:26,830 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=02ebf1a9-f352-4402-a96f-3f98969d6a06, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/02ebf1a9-f352-4402-a96f-3f98969d6a06.jsonl
+2026-02-04 17:19:26,833 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 02ebf1a9-f352-4402-a96f-3f98969d6a06
+2026-02-04 17:19:28,526 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-ef3ac716aa163acf6b60dd017409be83
+2026-02-05 22:20:01,754 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=06754070-5dd0-4ad7-87c2-1457d1c66852, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/06754070-5dd0-4ad7-87c2-1457d1c66852.jsonl
+2026-02-05 22:20:01,765 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 06754070-5dd0-4ad7-87c2-1457d1c66852
+2026-02-05 22:20:04,036 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-3be2d7ccb60dbd9dcd6fa69c36ad4f5a
+2026-02-05 23:00:48,142 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=06754070-5dd0-4ad7-87c2-1457d1c66852, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/06754070-5dd0-4ad7-87c2-1457d1c66852.jsonl
+2026-02-05 23:00:48,149 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 06754070-5dd0-4ad7-87c2-1457d1c66852
+2026-02-05 23:00:51,148 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-383a79c0e54d47760287f2d20c9d85fb
+2026-02-05 23:11:18,823 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=06754070-5dd0-4ad7-87c2-1457d1c66852, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/06754070-5dd0-4ad7-87c2-1457d1c66852.jsonl
+2026-02-05 23:11:18,835 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 06754070-5dd0-4ad7-87c2-1457d1c66852
+2026-02-05 23:11:21,596 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-25a1936d3ca50f57bacf9430b90b373c
+2026-02-05 23:29:55,189 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=06754070-5dd0-4ad7-87c2-1457d1c66852, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/06754070-5dd0-4ad7-87c2-1457d1c66852.jsonl
+2026-02-05 23:29:55,198 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 06754070-5dd0-4ad7-87c2-1457d1c66852
+2026-02-05 23:29:57,441 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-25ee0a64c7c67a1d7d3d5ca023f7b4b4
+2026-02-05 23:38:04,430 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=06754070-5dd0-4ad7-87c2-1457d1c66852, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/06754070-5dd0-4ad7-87c2-1457d1c66852.jsonl
+2026-02-05 23:38:04,449 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 06754070-5dd0-4ad7-87c2-1457d1c66852
+2026-02-05 23:38:06,740 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-cb15092ec98107e3c8f5f877761587b2
+2026-02-05 23:45:55,939 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=06754070-5dd0-4ad7-87c2-1457d1c66852, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/06754070-5dd0-4ad7-87c2-1457d1c66852.jsonl
+2026-02-05 23:45:55,957 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 06754070-5dd0-4ad7-87c2-1457d1c66852
+2026-02-05 23:45:57,878 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-9df5fe61162951fea4cbde5d794df3a5
+2026-02-05 23:54:23,312 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=06754070-5dd0-4ad7-87c2-1457d1c66852, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/06754070-5dd0-4ad7-87c2-1457d1c66852.jsonl
+2026-02-05 23:54:23,325 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 06754070-5dd0-4ad7-87c2-1457d1c66852
+2026-02-05 23:54:26,381 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-ab5dd9ae6ec3b46c092ebffb8d11215c
+2026-02-06 00:11:13,173 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=06754070-5dd0-4ad7-87c2-1457d1c66852, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/06754070-5dd0-4ad7-87c2-1457d1c66852.jsonl
+2026-02-06 00:11:13,199 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 06754070-5dd0-4ad7-87c2-1457d1c66852
+2026-02-06 00:11:16,381 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-24443c49442a50015aa8eec4965b9bca
+2026-02-06 00:13:30,078 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=06754070-5dd0-4ad7-87c2-1457d1c66852, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/06754070-5dd0-4ad7-87c2-1457d1c66852.jsonl
+2026-02-06 00:13:30,104 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 06754070-5dd0-4ad7-87c2-1457d1c66852
+2026-02-06 00:13:32,122 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-9df81f5fb0383d78b4171363308a8cdc
+2026-02-06 00:31:34,535 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=06754070-5dd0-4ad7-87c2-1457d1c66852, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/06754070-5dd0-4ad7-87c2-1457d1c66852.jsonl
+2026-02-06 00:31:34,552 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 06754070-5dd0-4ad7-87c2-1457d1c66852
+2026-02-06 00:31:36,643 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-6379b5d2258f6130d1606eab86b79da4
+2026-02-06 00:31:59,072 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=06754070-5dd0-4ad7-87c2-1457d1c66852, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/06754070-5dd0-4ad7-87c2-1457d1c66852.jsonl
+2026-02-06 00:31:59,091 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 06754070-5dd0-4ad7-87c2-1457d1c66852
+2026-02-06 00:32:01,034 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-35ae8a64b741edbcc7f3db5505583ea3
+2026-02-06 08:03:36,523 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=9a1dfc12-0f93-433a-bb40-6423b4e9f808, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/9a1dfc12-0f93-433a-bb40-6423b4e9f808.jsonl
+2026-02-06 08:03:36,528 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 9a1dfc12-0f93-433a-bb40-6423b4e9f808
+2026-02-06 08:03:38,494 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-ba9ff92e89b806f1d09365eac27dd84c
+2026-02-06 08:42:31,751 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=9a1dfc12-0f93-433a-bb40-6423b4e9f808, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/9a1dfc12-0f93-433a-bb40-6423b4e9f808.jsonl
+2026-02-06 08:42:31,760 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 9a1dfc12-0f93-433a-bb40-6423b4e9f808
+2026-02-06 08:42:34,982 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-c12b214ac58384994f5c53e554bacb75
+2026-02-06 08:45:46,216 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=9a1dfc12-0f93-433a-bb40-6423b4e9f808, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/9a1dfc12-0f93-433a-bb40-6423b4e9f808.jsonl
+2026-02-06 08:45:46,236 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 9a1dfc12-0f93-433a-bb40-6423b4e9f808
+2026-02-06 08:45:48,156 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-7b128d5253f7cb483b176ea51f97cff8
+2026-02-06 08:47:22,781 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=9a1dfc12-0f93-433a-bb40-6423b4e9f808, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/9a1dfc12-0f93-433a-bb40-6423b4e9f808.jsonl
+2026-02-06 08:47:22,800 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 9a1dfc12-0f93-433a-bb40-6423b4e9f808
+2026-02-06 08:47:25,052 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-120ef7274c4c4b518b4ceda028571d45
+2026-02-06 08:51:39,909 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=9a1dfc12-0f93-433a-bb40-6423b4e9f808, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/9a1dfc12-0f93-433a-bb40-6423b4e9f808.jsonl
+2026-02-06 08:51:39,922 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 9a1dfc12-0f93-433a-bb40-6423b4e9f808
+2026-02-06 08:51:42,327 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-d5ef145ff9423dc4fc7db408bffa873b
+2026-02-06 08:59:23,752 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=9a1dfc12-0f93-433a-bb40-6423b4e9f808, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/9a1dfc12-0f93-433a-bb40-6423b4e9f808.jsonl
+2026-02-06 08:59:23,772 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 9a1dfc12-0f93-433a-bb40-6423b4e9f808
+2026-02-06 08:59:25,958 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-cb40b8d924ef70929e5fa8b7ff1c4909
+2026-02-06 09:05:04,645 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=9a1dfc12-0f93-433a-bb40-6423b4e9f808, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/9a1dfc12-0f93-433a-bb40-6423b4e9f808.jsonl
+2026-02-06 09:05:04,663 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 9a1dfc12-0f93-433a-bb40-6423b4e9f808
+2026-02-06 09:05:09,781 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-f162e392506296fb25d56457a01480a1
+2026-02-06 09:09:48,402 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=9a1dfc12-0f93-433a-bb40-6423b4e9f808, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/9a1dfc12-0f93-433a-bb40-6423b4e9f808.jsonl
+2026-02-06 09:09:48,429 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 9a1dfc12-0f93-433a-bb40-6423b4e9f808
+2026-02-06 09:10:06,421 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-03ab432d0eb4cda4142db3c2f7fc7cec
+2026-02-06 10:43:14,051 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=9a1dfc12-0f93-433a-bb40-6423b4e9f808, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/9a1dfc12-0f93-433a-bb40-6423b4e9f808.jsonl
+2026-02-06 10:43:14,102 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 9a1dfc12-0f93-433a-bb40-6423b4e9f808
+2026-02-06 10:43:16,356 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-e71c587715c4d104ececde71656f5ae0
+2026-02-06 14:21:06,010 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=9a1dfc12-0f93-433a-bb40-6423b4e9f808, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/9a1dfc12-0f93-433a-bb40-6423b4e9f808.jsonl
+2026-02-06 14:21:06,049 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 9a1dfc12-0f93-433a-bb40-6423b4e9f808
+2026-02-06 14:21:08,930 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-6dc55464e9e5cee809e13cbb94866e9d
+2026-02-06 15:36:51,647 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=19737d40-195f-4f30-9f28-25b154c1b8c0, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/19737d40-195f-4f30-9f28-25b154c1b8c0.jsonl
+2026-02-06 15:36:51,650 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 19737d40-195f-4f30-9f28-25b154c1b8c0
+2026-02-06 15:36:58,220 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-37c2491c1e5a6c0a8ee01836360b5b85
+2026-02-06 18:29:54,869 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=19737d40-195f-4f30-9f28-25b154c1b8c0, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/19737d40-195f-4f30-9f28-25b154c1b8c0.jsonl
+2026-02-06 18:29:54,883 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 19737d40-195f-4f30-9f28-25b154c1b8c0
+2026-02-06 18:29:57,664 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-7cb61eec91c3a9a2f3a4d7a408efa113
+2026-02-06 19:10:34,159 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=19737d40-195f-4f30-9f28-25b154c1b8c0, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/19737d40-195f-4f30-9f28-25b154c1b8c0.jsonl
+2026-02-06 19:10:34,190 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 19737d40-195f-4f30-9f28-25b154c1b8c0
+2026-02-06 19:10:37,031 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-c31f1304ba5f6b13ebb6e50bc74e8f11
+2026-02-06 20:56:45,276 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=19737d40-195f-4f30-9f28-25b154c1b8c0, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/19737d40-195f-4f30-9f28-25b154c1b8c0.jsonl
+2026-02-06 20:56:45,321 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 19737d40-195f-4f30-9f28-25b154c1b8c0
+2026-02-06 20:56:47,716 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-d224bc7c038c59a23620c430c0dcd7f8
+2026-02-06 21:00:01,799 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=19737d40-195f-4f30-9f28-25b154c1b8c0, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/19737d40-195f-4f30-9f28-25b154c1b8c0.jsonl
+2026-02-06 21:00:01,846 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 19737d40-195f-4f30-9f28-25b154c1b8c0
+2026-02-06 21:00:04,144 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-70dc97595227a8ee8f76d73c551b994d
+2026-02-06 21:18:04,215 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=19737d40-195f-4f30-9f28-25b154c1b8c0, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/19737d40-195f-4f30-9f28-25b154c1b8c0.jsonl
+2026-02-06 21:18:04,268 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 19737d40-195f-4f30-9f28-25b154c1b8c0
+2026-02-06 21:18:06,934 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-a5c92a1bf22cf5094ec848b635c9d0f1
+2026-02-06 21:55:40,250 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=19737d40-195f-4f30-9f28-25b154c1b8c0, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/19737d40-195f-4f30-9f28-25b154c1b8c0.jsonl
+2026-02-06 21:55:40,294 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 19737d40-195f-4f30-9f28-25b154c1b8c0
+2026-02-06 21:55:42,363 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-1a7a9f1dc0c87ff118fabc90e86cf414

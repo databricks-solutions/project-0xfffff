@@ -44,6 +44,6 @@
   "environment": {
     "MLFLOW_CLAUDE_TRACING_ENABLED": "true",
     "MLFLOW_TRACKING_URI": "databricks",
-    "MLFLOW_EXPERIMENT_ID": ""
+    "MLFLOW_EXPERIMENT_ID": "3606709772586465"
   }
 }
