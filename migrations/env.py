@@ -125,6 +125,27 @@ def run_migrations_online() -> None:
         if not is_sqlite:
             configure_kwargs["version_table_schema"] = schema_name
 
+            # Widen the alembic_version.version_num column if it exists and is
+            # too narrow for our revision IDs (Alembic default is VARCHAR(32),
+            # but some revision slugs exceed that).
+            try:
+                from sqlalchemy import text as _text
+
+                connection.execute(
+                    _text(
+                        f'ALTER TABLE IF EXISTS "{schema_name}".alembic_version '
+                        f"ALTER COLUMN version_num TYPE VARCHAR(128)"
+                    )
+                )
+                connection.commit()
+            except Exception:
+                # Table may not exist yet (first run) — that's fine, Alembic
+                # will create it with the size specified below.
+                connection.rollback()
+
+        # Use a wider version_num column (128) so long revision slugs fit.
+        configure_kwargs["version_num_width"] = 128
+
         context.configure(**configure_kwargs)
 
         with context.begin_transaction():

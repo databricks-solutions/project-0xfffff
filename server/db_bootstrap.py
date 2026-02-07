@@ -84,16 +84,26 @@ def _list_postgres_tables(database_url: str) -> list[str]:
         schema_name = _get_postgres_schema_name()
         engine = create_engine(database_url)
         with engine.connect() as conn:
+            # Check both the app schema and public schema for tables
             result = conn.execute(
                 text(
                     "SELECT table_name FROM information_schema.tables "
-                    "WHERE table_schema = :app_schema"
+                    "WHERE table_schema = :app_schema "
+                    "UNION "
+                    "SELECT table_name FROM information_schema.tables "
+                    "WHERE table_schema = 'public' AND table_name IN "
+                    "('alembic_version', 'workshops', 'users', 'traces')"
                 ),
                 {"app_schema": schema_name},
             )
-            return [r[0] for r in result.fetchall()]
+            tables = [r[0] for r in result.fetchall()]
+            if tables:
+                print(f"📋 Found {len(tables)} tables in schema '{schema_name}'")
+            return tables
     except Exception as e:
         print(f"⚠️ Could not list PostgreSQL tables: {e}")
+        import traceback
+        traceback.print_exc()
         return []
 
 
@@ -236,16 +246,53 @@ def _bootstrap_if_missing_sqlite(plan: BootstrapPlan) -> None:
 
 
 def _bootstrap_if_missing_postgres(plan: BootstrapPlan) -> None:
-    """Bootstrap PostgreSQL database if tables are missing."""
+    """Bootstrap PostgreSQL database if tables are missing.
+
+    Handles edge cases where:
+    - Tables exist but alembic_version doesn't (created by Base.metadata.create_all)
+    - _list_postgres_tables silently fails and returns [] even though tables exist
+    """
     tables = _list_postgres_tables(plan.database_url)
 
     if tables:
-        print(f"✅ PostgreSQL database already has {len(tables)} tables")
+        has_alembic = "alembic_version" in tables
+        user_tables = [t for t in tables if t != "alembic_version"]
+        print(f"✅ PostgreSQL database already has {len(user_tables)} tables (alembic_version: {has_alembic})")
+
+        if user_tables and not has_alembic:
+            # Tables exist but Alembic doesn't know about them — stamp to baseline
+            print("📌 Tables exist without alembic_version — stamping to baseline...")
+            try:
+                _run_alembic_stamp_baseline(plan.database_url, revision="0001_baseline")
+                print("🔄 Applying pending migrations after stamp...")
+                _run_alembic_upgrade_head(plan.database_url)
+                print("✅ Migrations completed!")
+            except Exception as e:
+                print(f"⚠️  Stamp + upgrade failed (non-fatal): {e}")
         return
 
-    print("📦 PostgreSQL database empty; creating via migrations...")
-    _run_alembic_upgrade_head(plan.database_url)
-    print("✅ Database created successfully!")
+    # No tables found — try to create via migrations, but handle the case
+    # where _list_postgres_tables returned [] due to a transient error
+    # while tables actually exist.
+    print("📦 PostgreSQL database appears empty; creating via migrations...")
+    try:
+        _run_alembic_upgrade_head(plan.database_url)
+        print("✅ Database created successfully!")
+    except Exception as e:
+        error_str = str(e).lower()
+        if "already exists" in error_str or "duplicatetable" in error_str:
+            print(
+                "⚠️  Tables already exist (listing may have failed earlier). "
+                "Stamping Alembic to baseline and applying pending migrations..."
+            )
+            try:
+                _run_alembic_stamp_baseline(plan.database_url, revision="0001_baseline")
+                _run_alembic_upgrade_head(plan.database_url)
+                print("✅ Recovery successful — migrations applied!")
+            except Exception as recovery_err:
+                print(f"⚠️  Recovery stamp+upgrade also failed (non-fatal): {recovery_err}")
+        else:
+            raise
 
 
 def _bootstrap_if_missing(plan: BootstrapPlan) -> None:
@@ -288,10 +335,23 @@ def _bootstrap_full_postgres(plan: BootstrapPlan) -> None:
     user_tables = [t for t in tables if t != "alembic_version"]
 
     if not tables:
-        # Empty database: create via migrations
+        # Empty database: create via migrations (with DuplicateTable recovery)
         print("📦 Creating new PostgreSQL database via migrations...")
-        _run_alembic_upgrade_head(plan.database_url)
-        print("✅ Database created successfully!")
+        try:
+            _run_alembic_upgrade_head(plan.database_url)
+            print("✅ Database created successfully!")
+        except Exception as e:
+            error_str = str(e).lower()
+            if "already exists" in error_str or "duplicatetable" in error_str:
+                print(
+                    "⚠️  Tables already exist (listing may have failed). "
+                    "Stamping to baseline and upgrading..."
+                )
+                _run_alembic_stamp_baseline(plan.database_url, revision="0001_baseline")
+                _run_alembic_upgrade_head(plan.database_url)
+                print("✅ Recovery successful!")
+            else:
+                raise
         return
 
     if user_tables and not has_alembic_version:
