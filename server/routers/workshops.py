@@ -3514,6 +3514,15 @@ async def start_evaluation_job(
 
     mlflow_config.databricks_token = databricks_token
 
+    # IMPORTANT: Re-sync annotations to MLflow before evaluation
+    # This ensures all annotations have the 'align' tag and feedback entries in MLflow,
+    # even if the inline sync during annotation save failed due to transient errors.
+    try:
+        resync_result = db_service.resync_annotations_to_mlflow(workshop_id)
+        logger.info(f"MLflow re-sync before evaluation: {resync_result}")
+    except Exception as e:
+        logger.warning(f"MLflow re-sync failed before evaluation (non-critical): {e}")
+
     # Create job (reusing AlignmentJob class for evaluation too)
     job_id = str(uuid.uuid4())
     job = create_job(job_id, workshop_id)

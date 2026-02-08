@@ -2,7 +2,7 @@ import React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertCircle, Loader2 } from 'lucide-react';
+import { AlertCircle, Loader2, PanelLeftOpen } from 'lucide-react';
 import { WorkshopHeader } from '@/components/WorkshopHeader';
 import { useUser, useRoleCheck } from '@/context/UserContext';
 import { useWorkflowContext } from '@/context/WorkflowContext';
@@ -63,6 +63,7 @@ export function WorkshopDemoLanding() {
   // State hooks - MUST be before any conditional returns
   const [isManualNavigation, setIsManualNavigation] = React.useState(false);
   const [currentView, setCurrentView] = React.useState<string>('loading'); // Initialize with loading
+  const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
   
   // Helper function that accepts explicit state values to avoid race conditions
   const getViewForPhaseWithState = (
@@ -305,7 +306,18 @@ export function WorkshopDemoLanding() {
       setCurrentView(view);
     }
   }, [user, workshop, currentPhase, currentView]);
-  
+
+  // Auto-collapse sidebar during participant-facing phases (discovery, annotation)
+  // Keep sidebar visible for SME users so they can navigate workflow steps
+  React.useEffect(() => {
+    const participantViews = ['discovery-participate', 'annotation-participate'];
+    if (participantViews.includes(currentView) && !isSME) {
+      setSidebarCollapsed(true);
+    } else {
+      setSidebarCollapsed(false);
+    }
+  }, [currentView, isSME]);
+
   // ========================================
   // CONDITIONAL LOGIC AND EARLY RETURNS
   // ========================================
@@ -568,20 +580,35 @@ export function WorkshopDemoLanding() {
   return (
     <div className="h-screen flex overflow-hidden bg-background">
       {/* Sidebar */}
-      <AppSidebar 
-        onNavigate={handleNavigation} 
+      <AppSidebar
+        onNavigate={handleNavigation}
         showUserSwitching={DEBUG_ENABLE_USER_SWITCHING}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(prev => !prev)}
       />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Workshop Header */}
-        <WorkshopHeader 
-          showDescription={true}
-          showPhase={true}
-          showParticipantCount={false}
-          variant="default"
-        />
+        <div className="flex items-center">
+          {sidebarCollapsed && (
+            <button
+              onClick={() => setSidebarCollapsed(false)}
+              className="flex items-center justify-center h-full px-3 border-r border-b bg-background hover:bg-gray-50 transition-colors"
+              title="Show sidebar"
+            >
+              <PanelLeftOpen className="h-4 w-4 text-gray-500" />
+            </button>
+          )}
+          <div className="flex-1">
+            <WorkshopHeader
+              showDescription={!sidebarCollapsed}
+              showPhase={true}
+              showParticipantCount={false}
+              variant="default"
+            />
+          </div>
+        </div>
         
         {/* Main Content - scrollable, contained */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden pb-8">

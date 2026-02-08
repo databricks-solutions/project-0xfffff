@@ -14,15 +14,17 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { RoleBasedWorkflow } from '@/components/RoleBasedWorkflow';
-import { ChevronDown, LogOut, Settings, User } from 'lucide-react';
+import { ChevronDown, LogOut, Settings, User, PanelLeftClose } from 'lucide-react';
 import appIcon from '../../assets/favicon-48x48.png';
 
 interface AppSidebarProps {
   onNavigate: (phase: string) => void;
   showUserSwitching?: boolean;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
-export function AppSidebar({ onNavigate, showUserSwitching = false }: AppSidebarProps) {
+export function AppSidebar({ onNavigate, showUserSwitching = false, collapsed = false, onToggleCollapse }: AppSidebarProps) {
   const { user, setUser } = useUser();
   const { isFacilitator, isSME } = useRoleCheck();
 
@@ -49,14 +51,25 @@ export function AppSidebar({ onNavigate, showUserSwitching = false }: AppSidebar
   };
 
   return (
-    <div className="flex h-screen w-64 flex-col border-r bg-background">
+    <div className={`flex h-screen flex-col border-r bg-background transition-all duration-300 ${collapsed ? 'w-0 overflow-hidden border-r-0' : 'w-64'}`}>
       {/* Logo Section */}
-      <div className="flex h-14 items-center gap-2.5 border-b px-5">
-        <img src={appIcon} alt="LLM Workshop" className="h-8 w-8 rounded-lg" />
-        <div className="flex flex-col">
-          <span className="text-sm font-semibold leading-none text-gray-900">LLM Judge Workshop</span>
-          <span className="text-[11px] text-gray-500 mt-0.5">Calibration Tool</span>
+      <div className="flex h-14 items-center justify-between border-b px-5 min-w-[16rem]">
+        <div className="flex items-center gap-2.5">
+          <img src={appIcon} alt="LLM Workshop" className="h-8 w-8 rounded-lg" />
+          <div className="flex flex-col">
+            <span className="text-sm font-semibold leading-none text-gray-900">LLM Judge Workshop</span>
+            <span className="text-[11px] text-gray-500 mt-0.5">Calibration Tool</span>
+          </div>
         </div>
+        {onToggleCollapse && (
+          <button
+            onClick={onToggleCollapse}
+            className="p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+            title="Collapse sidebar"
+          >
+            <PanelLeftClose className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
       {/* Workflow Steps - Scrollable */}

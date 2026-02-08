@@ -142,9 +142,21 @@ class RubricGenerationService:
         trace_count = len(set(f.get('trace_id') for f in findings if f.get('trace_id')))
         participant_count = len(set(f.get('user_id') for f in findings if f.get('user_id')))
 
+        # Get workshop use case description
+        use_case_section = ""
+        try:
+            workshop = self.db_service.get_workshop(workshop_id)
+            if workshop and workshop.description:
+                use_case_section = f"""## Use Case
+{workshop.description}
+
+"""
+        except Exception as e:
+            logger.warning(f"Could not fetch workshop description: {e}")
+
         prompt = f"""Analyze the following participant feedback from a discovery phase and suggest evaluation criteria.
 
-## Discovery Findings
+{use_case_section}## Discovery Findings
 These are participant assessments of AI response quality:
 
 {formatted_findings}
@@ -158,7 +170,7 @@ These are freeform observations shared by participants:
 - Traces analyzed: {trace_count}
 - Participants: {participant_count}
 
-Task: Generate 3-5 evaluation criteria as a JSON array. Focus on recurring themes, quality concerns, and actionable distinctions between good and bad responses."""
+Task: Generate 3-5 evaluation criteria as a JSON array. Focus on the use case context above, recurring themes, quality concerns, and actionable distinctions between good and bad responses."""
 
         return prompt
 

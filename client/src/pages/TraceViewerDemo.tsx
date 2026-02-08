@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { MessageCircle, ChevronLeft, ChevronRight, Send, AlertCircle, CheckCircle, Settings, RefreshCw, NotebookPen, Trash2, Lightbulb, Clock, User } from 'lucide-react';
+import { MessageCircle, ChevronLeft, ChevronRight, Send, AlertCircle, CheckCircle, Settings, RefreshCw, NotebookPen, Trash2, Lightbulb } from 'lucide-react';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useWorkflowContext } from '@/context/WorkflowContext';
 import { toast } from 'sonner';
@@ -809,112 +809,48 @@ export function TraceViewerDemo() {
 
   return (
     <div className="p-6">
-      <div className="max-w-4xl mx-auto space-y-6">
-        {/* Progress Header */}
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2" data-testid="discovery-phase-title">Discovery Phase</h2>
-          <p className="text-gray-600 mb-4">Review LLM responses and share your insights</p>
-
-          {/* Progress Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            {/* Completion Progress */}
-            <Card className={`border-l-4 ${isDiscoveryComplete ? 'border-green-500' : 'border-blue-500'}`}>
-              <CardContent className="py-4">
-                <div className="flex items-center gap-3">
-                  {isDiscoveryComplete ? (
-                    <CheckCircle className="h-8 w-8 text-green-600" />
-                  ) : (
-                    <Clock className="h-8 w-8 text-blue-600" />
-                  )}
-                  <div className="flex-1">
-                    <div className="text-sm font-medium text-gray-600 mb-1">
-                      {isDiscoveryComplete ? 'Complete' : 'In Progress'}
-                    </div>
-                    <Badge variant="outline" className={
-                      isDiscoveryComplete
-                        ? 'bg-green-50 text-green-700 border-green-200'
-                        : 'bg-blue-50 text-blue-700 border-blue-200'
-                    }>
-                      {submittedFindings.size}/{traceData.length} Complete
-                    </Badge>
-                    <div className="w-full bg-gray-200 rounded-full h-1.5 mt-2">
-                      <div
-                        className={`h-1.5 rounded-full transition-all duration-300 ${
-                          isDiscoveryComplete ? 'bg-green-500' : 'bg-blue-500'
-                        }`}
-                        style={{ width: `${(submittedFindings.size / traceData.length) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Current Trace */}
-            <Card className={`border-l-4 ${submittedFindings.has(currentTrace.id) ? 'border-green-500' : 'border-gray-300'}`}>
-              <CardContent className="py-4">
-                <div className="flex items-center gap-3">
-                  {submittedFindings.has(currentTrace.id) ? (
-                    <CheckCircle className="h-8 w-8 text-green-600" />
-                  ) : (
-                    <User className="h-8 w-8 text-gray-400" />
-                  )}
-                  <div className="flex-1">
-                    <div className="text-sm font-medium text-gray-600 mb-1">Current Trace</div>
-                    <Badge variant="outline" data-testid="trace-number" className={
-                      submittedFindings.has(currentTrace.id)
-                        ? 'bg-green-50 text-green-700 border-green-200'
-                        : 'bg-gray-50 text-gray-700 border-gray-200'
-                    }>
-                      {currentTraceIndex + 1} of {traceData.length}
-                    </Badge>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Save Status */}
-            {failedSaveCount > 0 ? (
-              <Card className="border-l-4 border-amber-500">
-                <CardContent className="py-4">
-                  <div className="flex items-center gap-3">
-                    <AlertCircle className="h-8 w-8 text-amber-600" />
-                    <div className="flex-1">
-                      <div className="text-sm font-medium text-gray-600 mb-1">Pending Saves</div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={retryAllFailedSaves}
-                        className="text-amber-600 border-amber-300 hover:bg-amber-50"
-                      >
-                        <RefreshCw className="h-4 w-4 mr-2" />
-                        Retry {failedSaveCount} Save{failedSaveCount > 1 ? 's' : ''}
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card className="border-l-4 border-green-500">
-                <CardContent className="py-4">
-                  <div className="flex items-center gap-3">
-                    <CheckCircle className="h-8 w-8 text-green-600" />
-                    <div className="flex-1">
-                      <div className="text-sm font-medium text-gray-600 mb-1">All Saved</div>
-                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                        No Pending Saves
-                      </Badge>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+      <div className="max-w-7xl mx-auto space-y-6">
+        {/* Compact Progress Bar */}
+        <div className="flex items-center gap-4 px-1" data-testid="discovery-phase-title">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-sm font-medium text-gray-700 whitespace-nowrap">
+              Trace <span data-testid="trace-number">{currentTraceIndex + 1}/{traceData.length}</span>
+            </span>
+            {submittedFindings.has(currentTrace.id) && (
+              <CheckCircle className="h-4 w-4 text-green-500 flex-shrink-0" />
             )}
           </div>
+          <div className="flex-1 flex items-center gap-2">
+            <div className="flex-1 bg-gray-200 rounded-full h-1.5">
+              <div
+                className={`h-1.5 rounded-full transition-all duration-300 ${isDiscoveryComplete ? 'bg-green-500' : 'bg-blue-500'}`}
+                style={{ width: `${(submittedFindings.size / traceData.length) * 100}%` }}
+              />
+            </div>
+            <span className="text-xs text-gray-500 whitespace-nowrap">{submittedFindings.size}/{traceData.length}</span>
+          </div>
+          {failedSaveCount > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={retryAllFailedSaves}
+              className="text-amber-600 hover:bg-amber-50 h-7 px-2 gap-1"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              <span className="text-xs">Retry {failedSaveCount}</span>
+            </Button>
+          )}
         </div>
 
-        {/* Current Trace Display */}
-        <TraceViewer trace={currentTrace} />
+        {/* Side-by-side: Trace (left 60%) + Questions (right 40%) */}
+        <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-6">
+          {/* Left Column: Trace */}
+          <div className="lg:sticky lg:top-6 lg:self-start">
+            <TraceViewer trace={currentTrace} />
+          </div>
 
+          {/* Right Column: Questions + Navigation + Notes */}
+          <div className="space-y-4">
         {/* Discovery Questions */}
         <Card className="border-l-4 border-blue-500">
           <CardContent className="p-4 space-y-4">
@@ -963,81 +899,74 @@ export function TraceViewerDemo() {
         </Card>
 
         {/* Navigation */}
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <Button
-                variant="outline"
-                onClick={prevTrace}
-                disabled={currentTraceIndex === 0}
-                className="flex items-center gap-2"
-              >
-                <ChevronLeft className="h-4 w-4" />
-                Previous
-              </Button>
+        <div className="flex items-center justify-between">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={prevTrace}
+            disabled={currentTraceIndex === 0}
+            className="flex items-center gap-1 h-7 text-xs"
+          >
+            <ChevronLeft className="h-3 w-3" />
+            Prev
+          </Button>
 
-
-              <Button
-                onClick={async () => {
-                  // On last trace, save current content then show completion state
-                  if (currentTraceIndex === traceData.length - 1 && currentTrace) {
-                    const q1 = question1Response.trim();
-                    const q2 = question2Response.trim();
-                    if (q1 || q2) {
-                      setIsSaving(true);
-                      const success = await saveFinding(q1, q2, currentTrace.id, false);
-                      setIsSaving(false);
-                      if (success) {
-                        toast.success('Response saved', { description: 'Your finding has been recorded.' });
-                      }
-                    }
-                  } else {
-                    nextTrace();
+          <Button
+            size="sm"
+            onClick={async () => {
+              // On last trace, save current content then show completion state
+              if (currentTraceIndex === traceData.length - 1 && currentTrace) {
+                const q1 = question1Response.trim();
+                const q2 = question2Response.trim();
+                if (q1 || q2) {
+                  setIsSaving(true);
+                  const success = await saveFinding(q1, q2, currentTrace.id, false);
+                  setIsSaving(false);
+                  if (success) {
+                    toast.success('Response saved', { description: 'Your finding has been recorded.' });
                   }
-                }}
-                disabled={
-                  isSaving ||
-                  !canCreateFindings
                 }
-                className="flex items-center gap-2"
-              >
-                {isSaving ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Saving...
-                  </>
-                ) : currentTraceIndex === traceData.length - 1 ? (
-                  <>
-                    <Send className="h-4 w-4" />
-                    Complete
-                  </>
-                ) : (
-                  <>
-                    <ChevronRight className="h-4 w-4" />
-                    Next
-                  </>
-                )}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+              } else {
+                nextTrace();
+              }
+            }}
+            disabled={
+              isSaving ||
+              !canCreateFindings
+            }
+            className="flex items-center gap-1 h-7 text-xs"
+          >
+            {isSaving ? (
+              <>
+                <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Saving...
+              </>
+            ) : currentTraceIndex === traceData.length - 1 ? (
+              <>
+                <Send className="h-3 w-3" />
+                Complete
+              </>
+            ) : (
+              <>
+                <ChevronRight className="h-3 w-3" />
+                Next
+              </>
+            )}
+          </Button>
+        </div>
 
         {/* Participant Notepad - only shown when facilitator enables it */}
-        {notesEnabled && <Card className="border-l-4 border-purple-500">
-          <CardContent className="p-4 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
-                <NotebookPen className="w-4 h-4 text-purple-600" />
-                My Notes
+        {notesEnabled && <Card>
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <NotebookPen className="w-3.5 h-3.5 text-purple-600 flex-shrink-0" />
+              <span className="text-sm font-semibold text-gray-900">My Notes</span>
               {participantNotes && participantNotes.length > 0 && (
-                <Badge variant="secondary" className="bg-purple-50 text-purple-700 border border-purple-200 text-xs">
+                <Badge variant="secondary" className="bg-purple-50 text-purple-700 border border-purple-200 text-[10px] h-4 px-1.5">
                   {participantNotes.length}
                 </Badge>
               )}
-            </h3>
-            <p className="text-xs text-gray-500 mt-1">
-              Jot down insights or observations. These notes are shared with the facilitator to help build the evaluation rubric.
-            </p>
+              <span className="text-[11px] text-gray-400">— Share observations with the facilitator</span>
           </div>
             {/* Add note input */}
             <div className="flex gap-2">
@@ -1067,16 +996,16 @@ export function TraceViewerDemo() {
                 }
               }}
               disabled={!noteContent.trim() || !canCreateFindings || submitNote.isPending}
-              className="bg-purple-600 hover:bg-purple-700 text-white"
+              className="bg-purple-600 hover:bg-purple-700 text-white h-7 text-xs"
             >
               {submitNote.isPending ? (
                 <>
-                  <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
+                  <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin mr-1" />
                   Saving...
                 </>
               ) : (
                 <>
-                  <NotebookPen className="h-3 w-3 mr-2" />
+                  <NotebookPen className="h-3 w-3 mr-1" />
                   Add Note
                 </>
               )}
@@ -1162,6 +1091,8 @@ export function TraceViewerDemo() {
             </CardContent>
           </Card>
         )}
+          </div>{/* End right column */}
+        </div>{/* End grid */}
       </div>
     </div>
   );
