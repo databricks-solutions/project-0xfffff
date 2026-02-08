@@ -4866,6 +4866,20 @@ async def re_evaluate(
             thread_db = SessionLocal()
             try:
                 thread_db_service = DatabaseService(thread_db)
+
+                # Check if workshop has MLflow traces - if not, provide helpful error
+                traces = thread_db_service.get_traces(workshop_id)
+                has_mlflow_traces = any(t.mlflow_trace_id for t in traces if t.mlflow_trace_id)
+
+                if not has_mlflow_traces:
+                    job.set_status("failed")
+                    job.error = "No MLflow traces found. This workshop appears to use Simple Model Serving mode."
+                    job.add_log("ERROR: No MLflow traces found with mlflow_trace_id.")
+                    job.add_log("This workshop doesn't have MLflow integration.")
+                    job.add_log("Solution: Switch to 'Simple Model Serving' mode and click 'Run Evaluation' instead.")
+                    job.save()
+                    return
+
                 alignment_service = AlignmentService(thread_db_service)
 
                 job.add_log("Initializing re-evaluation service...")
