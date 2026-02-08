@@ -851,7 +851,10 @@ Think step by step about how well the output addresses the criteria, then provid
         judge_type: judgeType, // Include judge type to ensure correct template association
         few_shot_examples: [],
         model_name: getBackendModelName(selectedEvaluationModel),
-        model_parameters: selectedEvaluationModel === 'demo' ? null : { temperature: 0.0, max_tokens: 10 }
+        model_parameters: {
+          ...(selectedEvaluationModel === 'demo' ? {} : { temperature: 0.0, max_tokens: 10 }),
+          judge_name: judgeName, // Associate prompt with current judge for per-judge versioning
+        }
       };
 
       const newPrompt = await WorkshopsService.createJudgePromptWorkshopsWorkshopIdJudgePromptsPost(
