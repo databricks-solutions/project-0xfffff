@@ -1,5 +1,5 @@
 import React from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -10,7 +10,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useRubric, useAllTraces } from '@/hooks/useWorkshopApi';
 import { WorkshopsService } from '@/client';
-import { Play, Users, Star, ClipboardList, ChevronRight, CheckCircle, Settings, Database, Scale, Binary, MessageSquareText, Shuffle, Brain, Zap } from 'lucide-react';
+import { Play, Users, Star, ClipboardList, CheckCircle, Settings, Database, Scale, Binary, MessageSquareText, Shuffle, Brain, Lightbulb } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 import { parseRubricQuestions } from '@/utils/rubricUtils';
@@ -31,22 +31,23 @@ export const AnnotationStartPage: React.FC<AnnotationStartPageProps> = ({ onStar
   const [autoEvaluateEnabled, setAutoEvaluateEnabled] = React.useState<boolean>(true);
   const { data: rubric } = useRubric(workshopId!);
   const { data: traces } = useAllTraces(workshopId!);
-  
+
   const totalTraces = traces?.length || 0;
+  const rubricQuestions = rubric ? parseRubricQuestions(rubric.question) : [];
 
   const startAnnotationPhase = async () => {
     try {
       setIsStarting(true);
-      
+
       // Determine trace limit based on user selection
       const traceLimit = traceOption === 'all' ? -1 : parseInt(customTraceCount) || 10;
-      
-      const requestBody = { 
-        trace_limit: traceLimit, 
+
+      const requestBody = {
+        trace_limit: traceLimit,
         randomize: randomizeTraces,
         evaluation_model_name: autoEvaluateEnabled ? evaluationModel : null,
       };
-      
+
       const response = await fetch(`/workshops/${workshopId}/begin-annotation`, {
         method: 'POST',
         headers: {
@@ -54,191 +55,165 @@ export const AnnotationStartPage: React.FC<AnnotationStartPageProps> = ({ onStar
         },
         body: JSON.stringify(requestBody)
       });
-      
+
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.detail || 'Failed to start annotation phase');
       }
-      
+
       const result = await response.json();
-      
+
       // Show success message with auto-evaluation status
       if (result.auto_evaluation_started) {
-        toast.success(`${result.message} Auto-evaluation started with ${evaluationModel}.`);
+        toast.success('Annotation started', { description: `Auto-evaluation started with ${evaluationModel}.` });
       } else if (autoEvaluateEnabled) {
         // User wanted auto-eval but it didn't start - show warning
-        toast.warning(`${result.message} Auto-evaluation could not start - check MLflow/Databricks configuration.`);
+        toast.warning('Annotation started', { description: 'Auto-evaluation could not start. Check MLflow/Databricks configuration.' });
         console.warn('[AnnotationStartPage] Auto-evaluation requested but did not start:', result);
       } else {
-        toast.success(result.message || 'Annotation phase started successfully!');
+        toast.success('Annotation started', { description: 'SMEs can now begin rating traces.' });
       }
-      
+
       // Set fresh start flag so AnnotationDemo starts from trace 1
       localStorage.setItem(`annotation-fresh-start-${workshopId}`, 'true');
-      
+
       // Add a small delay to ensure backend has processed the change
       await new Promise(resolve => setTimeout(resolve, 500));
-      
+
       // Clear all workshop-related queries from cache
       queryClient.removeQueries({ queryKey: ['workshop', workshopId] });
       queryClient.removeQueries({ queryKey: ['annotations', workshopId] });
       queryClient.removeQueries({ queryKey: ['rubric', workshopId] });
-      
+
       // Force a fresh refetch of the workshop data
       await queryClient.refetchQueries({ queryKey: ['workshop', workshopId] });
       await queryClient.refetchQueries({ queryKey: ['annotations', workshopId] });
       await queryClient.refetchQueries({ queryKey: ['rubric', workshopId] });
-      
+
       // Navigate to annotation monitor if callback provided
       if (onStartAnnotation) {
         onStartAnnotation();
       }
-      
+
     } catch (error: any) {
-      
-      toast.error('Failed to start annotation phase. Please try again.');
+
+      toast.error('Could not start annotation', { description: 'Please try again.' });
     } finally {
       setIsStarting(false);
     }
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-6">
+    <div className="max-w-3xl mx-auto p-6 space-y-5">
       {/* Header */}
-      <div className="text-center space-y-3">
-        <div className="w-16 h-16 bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl flex items-center justify-center mx-auto">
-          <Star className="w-8 h-8 text-white" />
+      <div className="flex items-center gap-3 pb-2">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-orange-600">
+          <Star className="w-4 h-4 text-white" />
         </div>
-        <h1 className="text-3xl font-bold text-slate-900">Ready to Start Annotation Phase</h1>
-        <p className="text-lg text-slate-600 max-w-2xl mx-auto">
-          Begin the systematic annotation process where SMEs will rate traces using 
-          the evaluation rubric created from discovery insights.
-        </p>
+        <div>
+          <h1 className="text-xl font-semibold text-gray-900">Start Annotation Phase</h1>
+          <p className="text-sm text-gray-500">
+            SMEs rate traces using the evaluation rubric.
+          </p>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          {totalTraces > 0 && (
+            <Badge className="bg-blue-50 text-blue-700 border border-blue-200">
+              <Database className="w-3 h-3 mr-1" />
+              {totalTraces} traces
+            </Badge>
+          )}
+          {rubric && (
+            <Badge className="bg-green-50 text-green-700 border border-green-200">
+              <CheckCircle className="w-3 h-3 mr-1" />
+              {rubricQuestions.length} criteria
+            </Badge>
+          )}
+        </div>
       </div>
-
-      {/* Trace Count Display */}
-      <Card className="border-purple-200 bg-gradient-to-br from-purple-50 to-indigo-50">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-center gap-3">
-            <Database className="w-6 h-6 text-purple-600" />
-            <div className="text-center">
-              <span className="text-2xl font-bold text-purple-900">{totalTraces}</span>
-              <span className="text-base font-medium text-purple-700 ml-2">Traces Available</span>
-              {totalTraces === 0 && (
-                <div className="text-sm text-purple-600 mt-1">No traces available</div>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Rubric Preview */}
       {rubric && (
-        <Card className="border-green-200 bg-gradient-to-br from-green-50 to-emerald-50">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CheckCircle className="w-5 h-5 text-green-600" />
-              Evaluation Rubric Ready
-            </CardTitle>
-            <CardDescription>
-              The rubric created from discovery insights will guide the annotation process
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="bg-white border border-green-200 rounded-lg p-4">
-              <div className="flex items-center gap-3 mb-3">
-                <ClipboardList className="w-5 h-5 text-green-600" />
-                <div>
-                  <h4 className="font-semibold text-slate-900">Evaluation Criteria</h4>
-                  <p className="text-sm text-slate-600">{parseRubricQuestions(rubric.question).length} question(s)</p>
-                </div>
-              </div>
-              <div className="space-y-2">
-                {parseRubricQuestions(rubric.question).map((q, index) => (
-                  <div key={q.id} className="bg-slate-50 rounded-md p-3">
-                    <div className="flex items-center gap-2 mb-1">
-                      {q.judgeType === 'likert' && <Scale className="w-3 h-3 text-blue-500" />}
-                      {q.judgeType === 'binary' && <Binary className="w-3 h-3 text-green-500" />}
-                      {q.judgeType === 'freeform' && <MessageSquareText className="w-3 h-3 text-purple-500" />}
-                      <p className="text-sm font-medium text-slate-700">{q.title}</p>
-                      <Badge variant="outline" className="text-xs ml-auto">
-                        {q.judgeType === 'likert' ? '1-5 Scale' : q.judgeType === 'binary' ? 'Pass/Fail' : 'Free-form'}
-                      </Badge>
-                    </div>
-                    {q.description && (
-                      <p className="text-sm text-slate-600 ml-5">{q.description}</p>
-                    )}
+        <Card className="border-l-4 border-green-500">
+          <CardContent className="p-4">
+            <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2 mb-3">
+              <ClipboardList className="w-4 h-4 text-green-600" />
+              Evaluation Rubric
+            </h3>
+            <div className="space-y-2">
+              {rubricQuestions.map((q) => (
+                <div key={q.id} className="flex items-center gap-2.5 text-sm">
+                  <div className="flex h-6 w-6 items-center justify-center rounded bg-gray-100">
+                    {q.judgeType === 'likert' && <Scale className="w-3 h-3 text-blue-600" />}
+                    {q.judgeType === 'binary' && <Binary className="w-3 h-3 text-green-600" />}
+                    {q.judgeType === 'freeform' && <MessageSquareText className="w-3 h-3 text-purple-600" />}
                   </div>
-                ))}
-              </div>
+                  <span className="font-medium text-gray-900">{q.title}</span>
+                  <Badge variant="secondary" className="text-[10px] ml-auto">
+                    {q.judgeType === 'likert' ? '1-5' : q.judgeType === 'binary' ? 'Binary' : 'Text'}
+                  </Badge>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Trace Count Selection */}
-      <Card className="border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Settings className="w-5 h-5 text-amber-600" />
-            Annotation Configuration
-          </CardTitle>
-          <CardDescription>
-            Choose how many of the {totalTraces} available traces to include in the annotation phase
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <RadioGroup 
-            value={traceOption} 
-            onValueChange={(value: 'limited' | 'all') => setTraceOption(value)}
-            className="space-y-4"
-          >
-            <div className="flex items-start space-x-3">
-              <RadioGroupItem value="limited" id="limited" className="mt-1" />
-              <div className="flex-1">
-                <Label htmlFor="limited" className="text-base font-medium cursor-pointer">
-                  Start with a subset of traces
+      {/* Configuration */}
+      <Card className="border-l-4 border-amber-500">
+        <CardContent className="p-4 space-y-4">
+          <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+            <Settings className="w-4 h-4 text-amber-600" />
+            Configuration
+          </h3>
+
+          <div className="space-y-2">
+            <Label className="text-xs font-medium text-gray-600">Trace Selection</Label>
+            <RadioGroup
+              value={traceOption}
+              onValueChange={(value: 'limited' | 'all') => setTraceOption(value)}
+              className="space-y-2"
+            >
+              <div className="flex items-center space-x-3 p-2.5 rounded-md border border-gray-200 hover:border-gray-300 transition-colors">
+                <RadioGroupItem value="limited" id="limited" />
+                <Label htmlFor="limited" className="flex-1 cursor-pointer">
+                  <div className="text-sm font-medium">Subset of traces</div>
+                  <div className="text-xs text-gray-500">Recommended for focused sessions</div>
                 </Label>
-                <p className="text-sm text-slate-600 mt-1">
-                  Recommended for focused annotation sessions. You can add more traces later.
-                </p>
-                {traceOption === 'limited' && (
-                  <div className="mt-3 flex items-center gap-3">
-                    <Label htmlFor="traceCount" className="text-sm">Number of traces:</Label>
-                    <Input
-                      id="traceCount"
-                      type="number"
-                      min="1"
-                      max={totalTraces}
-                      value={customTraceCount}
-                      onChange={(e) => setCustomTraceCount(e.target.value)}
-                      className="w-24"
-                    />
-                    <span className="text-sm text-slate-600">
-                      (max: {totalTraces})
-                    </span>
-                  </div>
-                )}
+              </div>
+              <div className="flex items-center space-x-3 p-2.5 rounded-md border border-gray-200 hover:border-gray-300 transition-colors">
+                <RadioGroupItem value="all" id="all" />
+                <Label htmlFor="all" className="flex-1 cursor-pointer">
+                  <div className="text-sm font-medium">All traces</div>
+                  <div className="text-xs text-gray-500">Use all {totalTraces} traces</div>
+                </Label>
+              </div>
+            </RadioGroup>
+          </div>
+
+          {traceOption === 'limited' && (
+            <div className="p-3 bg-gray-50 rounded-md border border-gray-200">
+              <Label htmlFor="traceCount" className="text-xs font-medium text-gray-700">
+                Number of traces
+              </Label>
+              <Input
+                id="traceCount"
+                type="number"
+                min="1"
+                max={totalTraces}
+                value={customTraceCount}
+                onChange={(e) => setCustomTraceCount(e.target.value)}
+                className="mt-1.5 h-8"
+              />
+              <div className="text-xs text-gray-500 mt-1">
+                Max: {totalTraces} available
               </div>
             </div>
-            
-            <div className="flex items-start space-x-3">
-              <RadioGroupItem value="all" id="all" className="mt-1" />
-              <div className="flex-1">
-                <Label htmlFor="all" className="text-base font-medium cursor-pointer">
-                  Use all available traces ({totalTraces} traces)
-                </Label>
-                <p className="text-sm text-slate-600 mt-1">
-                  Include all traces from the start. Best for comprehensive annotation sessions.
-                </p>
-              </div>
-            </div>
-          </RadioGroup>
-          
-          {/* Randomization Toggle */}
-          <div className="mt-4 pt-3 border-t border-amber-200 flex items-center justify-between">
-            <Label htmlFor="annotation-randomize-toggle" className="text-sm text-slate-600 cursor-pointer flex items-center gap-2">
-              <Shuffle className="w-4 h-4 text-amber-600" />
+          )}
+
+          <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+            <Label htmlFor="annotation-randomize-toggle" className="text-sm text-gray-600 cursor-pointer flex items-center gap-2">
+              <Shuffle className="w-3.5 h-3.5 text-gray-400" />
               Randomize trace order
             </Label>
             <Switch
@@ -247,53 +222,42 @@ export const AnnotationStartPage: React.FC<AnnotationStartPageProps> = ({ onStar
               onCheckedChange={setRandomizeTraces}
             />
           </div>
-          
-          <div className="mt-4 p-3 bg-purple-100 rounded-lg">
-            <p className="text-sm text-purple-800">
-              <strong>Selected:</strong> {
-                traceOption === 'all' 
-                  ? `All ${totalTraces} traces`
-                  : `${Math.min(parseInt(customTraceCount) || 10, totalTraces)} traces`
-              }
-              {randomizeTraces && ' (randomized per SME)'}
-            </p>
+
+          {/* Summary */}
+          <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-50 rounded-md px-3 py-2">
+            <span className="font-medium text-gray-700">Summary:</span>
+            {traceOption === 'all'
+              ? `All ${totalTraces} traces`
+              : `${Math.min(parseInt(customTraceCount) || 10, totalTraces)} traces`
+            }
+            {randomizeTraces && ' · randomized per SME'}
           </div>
         </CardContent>
       </Card>
 
-      {/* Auto-Evaluation Configuration */}
-      <Card className="border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Brain className="w-5 h-5 text-blue-600" />
-            Auto-Evaluation (LLM Judge)
-          </CardTitle>
-          <CardDescription>
-            Automatically run LLM evaluation on traces when annotation begins
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Auto-Evaluate Toggle */}
+      {/* Auto-Evaluation */}
+      <Card className="border-l-4 border-purple-500">
+        <CardContent className="p-4 space-y-4">
           <div className="flex items-center justify-between">
-            <Label htmlFor="auto-evaluate-toggle" className="text-sm text-slate-700 cursor-pointer flex items-center gap-2">
-              <Zap className="w-4 h-4 text-blue-600" />
-              Enable auto-evaluation
-            </Label>
+            <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+              <Brain className="w-4 h-4 text-purple-600" />
+              LLM Auto-Evaluation
+            </h3>
             <Switch
               id="auto-evaluate-toggle"
               checked={autoEvaluateEnabled}
               onCheckedChange={setAutoEvaluateEnabled}
             />
           </div>
-          
+
           {autoEvaluateEnabled && (
-            <div className="space-y-3 pt-3 border-t border-blue-200">
-              <div>
-                <Label htmlFor="evaluation-model" className="text-sm font-medium text-slate-700 mb-2 block">
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor="evaluation-model" className="text-xs font-medium text-gray-600">
                   Evaluation Model
                 </Label>
                 <Select value={evaluationModel} onValueChange={setEvaluationModel}>
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger className="h-9">
                     <SelectValue placeholder="Select a model" />
                   </SelectTrigger>
                   <SelectContent>
@@ -304,134 +268,140 @@ export const AnnotationStartPage: React.FC<AnnotationStartPageProps> = ({ onStar
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-slate-500 mt-1">
-                  The LLM model used to automatically evaluate traces
+                <p className="text-xs text-gray-500">
+                  Model for automated trace evaluation
                 </p>
               </div>
-              
-              <div className="p-3 bg-blue-100 rounded-lg">
-                <p className="text-sm text-blue-800">
-                  <strong>How it works:</strong> When annotation begins, the LLM judge will automatically 
-                  evaluate all selected traces in the background. Results will appear in the Results page.
+
+              <div className="bg-purple-50 rounded-md px-3 py-2 border border-purple-100">
+                <p className="text-xs text-purple-700">
+                  The LLM judge will automatically evaluate all selected traces. Results appear in the Results page.
                 </p>
               </div>
-            </div>
+            </>
           )}
-          
+
           {!autoEvaluateEnabled && (
-            <div className="p-3 bg-slate-100 rounded-lg">
-              <p className="text-sm text-slate-600">
-                Auto-evaluation disabled. You can manually run evaluation from the Results page.
+            <div className="bg-gray-50 rounded-md px-3 py-2 border border-gray-200">
+              <p className="text-xs text-gray-600">
+                Auto-evaluation disabled. Run evaluation manually from Results page later.
               </p>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* What Happens Next */}
-      <Card className="border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Star className="w-5 h-5 text-amber-600" />
-            What Happens When You Start Annotation
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid md:grid-cols-2 gap-6">
-            <div className="space-y-3">
-              <h4 className="font-semibold text-slate-900 flex items-center gap-2">
-                <Users className="w-4 h-4 text-blue-600" />
-                For SMEs (Subject Matter Experts)
+      {/* What Happens */}
+      <Card className="border-l-4 border-blue-500">
+        <CardContent className="p-4">
+          <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2 mb-3">
+            <Lightbulb className="w-4 h-4 text-blue-600" />
+            What happens when annotation starts
+          </h3>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <h4 className="text-xs font-semibold text-blue-700 uppercase tracking-wide flex items-center gap-1.5">
+                <Users className="w-3 h-3" />
+                SMEs
               </h4>
-              <ul className="space-y-2 text-sm text-slate-700">
-                <li className="flex items-start gap-2">
-                  <ChevronRight className="w-3 h-3 mt-0.5 text-slate-400" />
-                  Access to annotation interface with rubric criteria
+              <ul className="space-y-1 text-sm text-gray-600">
+                <li className="flex items-start gap-1.5">
+                  <span className="text-gray-300 mt-1.5 text-[6px]">●</span>
+                  Access annotation interface with rubric
                 </li>
-                <li className="flex items-start gap-2">
-                  <ChevronRight className="w-3 h-3 mt-0.5 text-slate-400" />
-                  Rate traces on 1-5 scale with detailed comments
+                <li className="flex items-start gap-1.5">
+                  <span className="text-gray-300 mt-1.5 text-[6px]">●</span>
+                  Rate traces and provide feedback
                 </li>
-                <li className="flex items-start gap-2">
-                  <ChevronRight className="w-3 h-3 mt-0.5 text-slate-400" />
-                  Progress through traces systematically
+                <li className="flex items-start gap-1.5">
+                  <span className="text-gray-300 mt-1.5 text-[6px]">●</span>
+                  Progress tracked automatically
                 </li>
               </ul>
             </div>
-            <div className="space-y-3">
-              <h4 className="font-semibold text-slate-900 flex items-center gap-2">
-                <ClipboardList className="w-4 h-4 text-amber-600" />
-                For You (Facilitator)
+            <div className="space-y-1.5">
+              <h4 className="text-xs font-semibold text-orange-700 uppercase tracking-wide flex items-center gap-1.5">
+                <ClipboardList className="w-3 h-3" />
+                Facilitator
               </h4>
-              <ul className="space-y-2 text-sm text-slate-700">
-                <li className="flex items-start gap-2">
-                  <ChevronRight className="w-3 h-3 mt-0.5 text-slate-400" />
-                  Monitor annotation progress across all SMEs
+              <ul className="space-y-1 text-sm text-gray-600">
+                <li className="flex items-start gap-1.5">
+                  <span className="text-gray-300 mt-1.5 text-[6px]">●</span>
+                  Monitor progress across SMEs
                 </li>
-                <li className="flex items-start gap-2">
-                  <ChevronRight className="w-3 h-3 mt-0.5 text-slate-400" />
-                  View real-time completion statistics
+                <li className="flex items-start gap-1.5">
+                  <span className="text-gray-300 mt-1.5 text-[6px]">●</span>
+                  View real-time completion stats
                 </li>
-                <li className="flex items-start gap-2">
-                  <ChevronRight className="w-3 h-3 mt-0.5 text-slate-400" />
-                  Prepare for IRR analysis once complete
+                <li className="flex items-start gap-1.5">
+                  <span className="text-gray-300 mt-1.5 text-[6px]">●</span>
+                  Prepare for IRR analysis
                 </li>
               </ul>
+            </div>
+          </div>
+
+          <div className="mt-3 pt-3 border-t border-gray-100">
+            <div className="flex items-start gap-2 text-xs text-gray-500">
+              <Users className="w-3.5 h-3.5 text-blue-500 shrink-0 mt-0.5" />
+              <p>
+                <span className="font-medium text-gray-700">Participants</span> can observe but won't actively annotate.
+              </p>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Participant Note */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-slate-700">Note for Participants</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="bg-slate-50 border-2 border-slate-200 rounded-lg p-4">
-            <div className="flex items-center gap-3 mb-2">
-              <Users className="w-5 h-5 text-slate-500" />
-              <p className="font-medium text-slate-700">Regular participants will observe this phase</p>
+      {/* No Rubric Warning */}
+      {!rubric && (
+        <Card className="border-l-4 border-red-500">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <ClipboardList className="h-5 w-5 text-red-600" />
+              <div>
+                <h3 className="text-sm font-semibold text-red-900">Rubric required</h3>
+                <p className="text-xs text-red-700">
+                  Create a rubric before starting annotation phase.
+                </p>
+              </div>
             </div>
-            <p className="text-sm text-slate-600">
-              During annotation, participants can watch the process but won't actively annotate. 
-              This maintains the integrity of the SME evaluation while keeping everyone engaged in the learning process.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Start Button */}
-      <div className="flex justify-center pt-4">
+      <div className="flex flex-col items-center gap-2 pt-2">
         <Button
           onClick={startAnnotationPhase}
-          disabled={isStarting || !rubric}
+          disabled={isStarting || !rubric || totalTraces === 0}
           size="lg"
-          className="bg-gradient-to-r from-amber-600 to-orange-700 hover:from-amber-700 hover:to-orange-800 text-white px-8 py-3 text-lg font-semibold shadow-lg hover:shadow-xl transition-all duration-200"
+          className="px-8 bg-orange-600 hover:bg-orange-700"
         >
           {isStarting ? (
             <>
-              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
-              Starting Annotation...
+              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
+              Starting...
+            </>
+          ) : totalTraces === 0 ? (
+            <>
+              <Database className="w-4 h-4 mr-2" />
+              No Traces Available
+            </>
+          ) : !rubric ? (
+            <>
+              <ClipboardList className="w-4 h-4 mr-2" />
+              Rubric Required
             </>
           ) : (
             <>
-              <Play className="w-5 h-5 mr-2" />
+              <Play className="w-4 h-4 mr-2" />
               Start Annotation Phase
             </>
           )}
         </Button>
-      </div>
-
-      {!rubric && (
-        <div className="text-center text-sm text-red-600">
-          <p>A rubric must be created before starting the annotation phase.</p>
-        </div>
-      )}
-
-      {/* Info Footer */}
-      <div className="text-center text-sm text-slate-500">
-        <p>Once started, SMEs will immediately access the annotation interface with the evaluation rubric.</p>
+        <span className="text-xs text-gray-400">
+          SMEs will access the annotation interface immediately.
+        </span>
       </div>
     </div>
   );

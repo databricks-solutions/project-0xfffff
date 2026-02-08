@@ -153,6 +153,8 @@ from server.models import (
     ParticipantNoteCreate,
     Rubric,
     RubricCreate,
+    RubricGenerationRequest,
+    RubricSuggestion,
     Trace,
     TraceUpload,
     Workshop,
@@ -1964,6 +1966,78 @@ async def generate_rubric_test_data(workshop_id: str, db: Session = Depends(get_
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to generate rubric data: {str(e)}")
+
+
+@router.post("/{workshop_id}/generate-rubric-suggestions")
+async def generate_rubric_suggestions(
+    workshop_id: str,
+    request: "RubricGenerationRequest",
+    db: Session = Depends(get_db)
+) -> List["RubricSuggestion"]:
+    """Generate rubric suggestions using AI analysis of discovery feedback.
+
+    This endpoint uses a Databricks model serving endpoint to analyze
+    discovery findings and participant notes, then generates suggested
+    rubric criteria for the facilitator to review.
+
+    Args:
+        workshop_id: Workshop ID to generate suggestions for
+        request: Generation parameters (endpoint_name, temperature, include_notes)
+        db: Database session
+
+    Returns:
+        List of rubric suggestions with title, description, judge type, etc.
+
+    Raises:
+        HTTPException 404: Workshop not found
+        HTTPException 400: No discovery feedback available
+        HTTPException 500: Generation or parsing failed
+    """
+    logger = logging.getLogger(__name__)
+    logger.info(f"Generating rubric suggestions for workshop {workshop_id}")
+
+    # Get workshop and validate
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    # Note: No phase restriction - facilitators can generate rubric suggestions
+    # at any time to refine or add evaluation criteria
+
+    try:
+        # Initialize services
+        from server.services.databricks_service import DatabricksService
+        from server.services.rubric_generation_service import RubricGenerationService
+
+        databricks_service = DatabricksService(
+            workshop_id=workshop_id,
+            db_service=db_service
+        )
+        generation_service = RubricGenerationService(db_service, databricks_service)
+
+        # Generate suggestions
+        suggestions = await generation_service.generate_rubric_suggestions(
+            workshop_id=workshop_id,
+            endpoint_name=request.endpoint_name,
+            temperature=request.temperature,
+            include_notes=request.include_notes
+        )
+
+        logger.info(f"Generated {len(suggestions)} rubric suggestions for workshop {workshop_id}")
+        return suggestions
+
+    except ValueError as e:
+        # User-facing error (e.g., no discovery data)
+        logger.warning(f"Cannot generate suggestions: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        # Unexpected error
+        logger.error(f"Error generating rubric suggestions: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate suggestions: {str(e)}"
+        )
 
 
 @router.post("/{workshop_id}/generate-annotation-data")

@@ -795,3 +795,43 @@ export function usePreviewJsonPath(workshopId: string) {
     },
   });
 }
+
+// Rubric Generation hooks
+
+export interface RubricSuggestion {
+  title: string;
+  description: string;
+  positive?: string;
+  negative?: string;
+  examples?: string;
+  judgeType: 'likert' | 'binary' | 'freeform';
+}
+
+interface RubricGenerationRequest {
+  endpoint_name?: string;
+  temperature?: number;
+  include_notes?: boolean;
+}
+
+export function useGenerateRubricSuggestions(workshopId: string) {
+  return useMutation({
+    mutationFn: async (request?: RubricGenerationRequest): Promise<RubricSuggestion[]> => {
+      const response = await fetch(`/workshops/${workshopId}/generate-rubric-suggestions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request || {
+          endpoint_name: 'claude-opus-4-5',
+          temperature: 0.3,
+          include_notes: true
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to generate suggestions' }));
+        throw new Error(error.detail || 'Failed to generate suggestions');
+      }
+
+      return response.json();
+    },
+  });
+}
