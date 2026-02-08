@@ -1718,12 +1718,12 @@ Think step by step about how well the output addresses the criteria, then provid
         <div className="lg:col-span-1 space-y-4">
           
           {/* Prompt History Dropdown - shows only current judge's prompts */}
-          {judgeSpecificPrompts.length > 0 && (
-            <div className="bg-white rounded-lg border-l-4 border-blue-400 p-3 shadow-sm">
-              <label className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-2 uppercase tracking-wide">
-                <Clock className="h-4 w-4 text-blue-600" />
-                Prompt History
-              </label>
+          <div className="bg-white rounded-lg border-l-4 border-blue-400 p-3 shadow-sm">
+            <label className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-2 uppercase tracking-wide">
+              <Clock className="h-4 w-4 text-blue-600" />
+              Prompt History
+            </label>
+            {judgeSpecificPrompts.length > 0 ? (
               <Select
                 value={selectedPromptId || undefined}
                 onValueChange={(value) => {
@@ -1788,8 +1788,10 @@ Think step by step about how well the output addresses the criteria, then provid
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-          )}
+            ) : (
+              <p className="text-xs text-gray-500 italic">No saved versions for this judge yet. Run alignment to create the first version.</p>
+            )}
+          </div>
 
           {/* Prompt Editor */}
           <Card className="flex-1 flex flex-col border-l-4 border-blue-500">
