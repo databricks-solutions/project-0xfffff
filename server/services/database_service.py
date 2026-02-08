@@ -3003,10 +3003,25 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
   # Judge Tuning operations
   def create_judge_prompt(self, workshop_id: str, prompt_data: JudgePromptCreate) -> JudgePrompt:
     """Create a new judge prompt."""
-    # Get current version number
+    # Get current version number - per judge if judge_name is specified in model_parameters
     existing_prompts = self.db.query(JudgePromptDB).filter(JudgePromptDB.workshop_id == workshop_id).all()
 
-    next_version = max([p.version for p in existing_prompts], default=0) + 1
+    # Extract judge_name from model_parameters if present
+    judge_name = None
+    if prompt_data.model_parameters and isinstance(prompt_data.model_parameters, dict):
+      judge_name = prompt_data.model_parameters.get('judge_name')
+
+    # Calculate version per-judge if judge_name is specified, otherwise global
+    if judge_name:
+      # Filter to prompts for this specific judge
+      judge_specific_prompts = [
+        p for p in existing_prompts
+        if p.model_parameters and isinstance(p.model_parameters, dict) and p.model_parameters.get('judge_name') == judge_name
+      ]
+      next_version = max([p.version for p in judge_specific_prompts], default=0) + 1
+    else:
+      # Global versioning for prompts without judge_name
+      next_version = max([p.version for p in existing_prompts], default=0) + 1
 
     prompt_id = str(uuid.uuid4())
     db_prompt = JudgePromptDB(

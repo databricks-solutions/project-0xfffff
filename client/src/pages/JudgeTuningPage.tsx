@@ -570,25 +570,34 @@ export function JudgeTuningPage() {
         }
         
         setSelectedPromptId(latestPrompt.id);
-        
+
         // Sync model selection with saved prompt
+        // For evaluation model: use model_name (the model used for judge creation)
+        // For alignment model: use model_parameters.alignment_model if available, otherwise default to Opus 4.5
         if (latestPrompt.model_name) {
           const frontendModel = getFrontendModelName(latestPrompt.model_name);
-          // Validate that the model is actually in our dropdown options
           const isValidOption = modelOptions.some(opt => opt.value === frontendModel);
-          
+
           if (isValidOption) {
             setSelectedEvaluationModel(frontendModel);
-            setSelectedAlignmentModel(frontendModel);
           } else {
-            // Fall back to default if saved model isn't recognized (e.g., 'demo')
             setSelectedEvaluationModel(defaultModel);
-            setSelectedAlignmentModel(defaultModel);
           }
         } else {
-          // No model saved - use default
           setSelectedEvaluationModel(defaultModel);
-          setSelectedAlignmentModel(defaultModel);
+        }
+
+        // Alignment model: extract from model_parameters.alignment_model if this is an aligned prompt
+        if (latestPrompt.model_parameters && typeof latestPrompt.model_parameters === 'object' && latestPrompt.model_parameters.alignment_model) {
+          const alignmentModel = getFrontendModelName(latestPrompt.model_parameters.alignment_model);
+          const isValidOption = modelOptions.some(opt => opt.value === alignmentModel);
+          if (isValidOption) {
+            setSelectedAlignmentModel(alignmentModel);
+          } else {
+            setSelectedAlignmentModel('Claude Opus 4.5'); // Default to Opus 4.5 for alignment
+          }
+        } else {
+          setSelectedAlignmentModel('Claude Opus 4.5'); // Default to Opus 4.5 for alignment
         }
         
         // Don't auto-load metrics from saved prompts - only show metrics after running evaluation
