@@ -130,15 +130,24 @@ export function JudgeTuningPage() {
       const snakeCase = title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
       return `${snakeCase}_judge`;
     }
-    
+
     // If saved name exists and is not default, use it as fallback
     if (workshop?.judge_name && workshop.judge_name !== 'workshop_judge') {
       return workshop.judge_name;
     }
-    
+
     // Fallback to default
     return 'workshop_judge';
   }, [selectedQuestion?.title, workshop?.judge_name]);
+
+  // Filter prompts to show only the current judge's prompts in the history dropdown
+  const judgeSpecificPrompts = useMemo(() => {
+    return prompts.filter(p =>
+      p.model_parameters &&
+      typeof p.model_parameters === 'object' &&
+      p.model_parameters.judge_name === judgeName
+    );
+  }, [prompts, judgeName]);
 
   const logsStorageKey = useMemo(
     () => (workshopId ? `judge-alignment-logs-${workshopId}` : 'judge-alignment-logs'),
@@ -1708,18 +1717,18 @@ Think step by step about how well the output addresses the criteria, then provid
         {/* Left Column - Prompt Editor (1/3) */}
         <div className="lg:col-span-1 space-y-4">
           
-          {/* Prompt History Dropdown */}
-          {prompts.length > 0 && (
+          {/* Prompt History Dropdown - shows only current judge's prompts */}
+          {judgeSpecificPrompts.length > 0 && (
             <div className="bg-white rounded-lg border-l-4 border-blue-400 p-3 shadow-sm">
               <label className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-2 uppercase tracking-wide">
                 <Clock className="h-4 w-4 text-blue-600" />
                 Prompt History
               </label>
-              <Select 
+              <Select
                 value={selectedPromptId || undefined}
                 onValueChange={(value) => {
                   setSelectedPromptId(value);
-                  const prompt = prompts.find(p => p.id === value);
+                  const prompt = judgeSpecificPrompts.find(p => p.id === value);
                   if (prompt) {
                     setCurrentPrompt(prompt.prompt_text);
                     setOriginalPromptText(prompt.prompt_text); // Track original for modification detection
@@ -1727,7 +1736,13 @@ Think step by step about how well the output addresses the criteria, then provid
                     if (prompt.model_name) {
                         const frontendModel = getFrontendModelName(prompt.model_name);
                         setSelectedEvaluationModel(frontendModel);
-                        setSelectedAlignmentModel(frontendModel);
+                    }
+                    // Set alignment model from model_parameters if available, otherwise default to Opus 4.5
+                    if (prompt.model_parameters && typeof prompt.model_parameters === 'object' && prompt.model_parameters.alignment_model) {
+                        const alignmentModel = getFrontendModelName(prompt.model_parameters.alignment_model);
+                        setSelectedAlignmentModel(alignmentModel);
+                    } else {
+                        setSelectedAlignmentModel('Claude Opus 4.5');
                     }
                     // Clear evaluation state when switching prompts
                     setHasEvaluated(false);
@@ -1744,7 +1759,7 @@ Think step by step about how well the output addresses the criteria, then provid
                   } />
                 </SelectTrigger>
                 <SelectContent>
-                  {prompts.map((prompt) => (
+                  {judgeSpecificPrompts.map((prompt) => (
                     <SelectItem key={prompt.id} value={prompt.id}>
                       <div className="flex items-center justify-between w-full">
                         <div className="flex items-center gap-2">
