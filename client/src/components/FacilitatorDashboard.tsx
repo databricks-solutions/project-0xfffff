@@ -838,20 +838,16 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
 
         {/* Ready for Review/Tuning Banner - Show when annotation is complete */}
         {annotationProgress === 100 && currentPhase === 'annotation' && focusPhase === 'annotation' && (
-          <div className="mb-6">
-            <Card className="border-l-4 border-green-500 bg-gradient-to-r from-green-50 to-emerald-50 shadow-md">
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center shadow-sm">
-                    <CheckCircle className="w-6 h-6 text-green-600" />
+          <div className="mb-4">
+            <Card className="border-l-4 border-green-500 bg-gradient-to-r from-green-50 to-emerald-50">
+              <CardContent className="py-3 px-4">
+                <div className="flex items-center gap-3">
+                  <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <span className="font-medium text-green-900 text-sm">Ready for Results Review & Judge Tuning</span>
+                    <span className="text-xs text-green-600 ml-2">— Use the sidebar to review IRR results and proceed to judge tuning.</span>
                   </div>
-                  <div className="flex-1">
-                    <h4 className="font-semibold text-green-900 text-lg mb-1">Ready for Results Review & Judge Tuning</h4>
-                    <p className="text-sm text-green-700">
-                      Annotation phase complete! Use the sidebar workflow to review IRR results and proceed to judge tuning.
-                    </p>
-                  </div>
-                  <Badge className="bg-green-100 text-green-700 border-green-200 text-sm px-3 py-1">
+                  <Badge className="bg-green-100 text-green-700 border-green-200 text-xs px-2 py-0.5">
                     Complete
                   </Badge>
                 </div>

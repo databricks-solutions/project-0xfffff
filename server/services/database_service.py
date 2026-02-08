@@ -3063,6 +3063,8 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
         prompt_text=db_prompt.prompt_text,
         version=db_prompt.version,
         few_shot_examples=db_prompt.few_shot_examples,
+        model_name=db_prompt.model_name,
+        model_parameters=db_prompt.model_parameters,
         created_by=db_prompt.created_by,
         created_at=db_prompt.created_at,
         performance_metrics=db_prompt.performance_metrics,

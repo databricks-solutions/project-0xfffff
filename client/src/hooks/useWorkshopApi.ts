@@ -422,7 +422,7 @@ export function useUserAnnotations(workshopId: string, user: any) {
       );
     },
     enabled: !!workshopId && !!user?.id, // REQUIRE user to be logged in
-    staleTime: 30 * 1000, // Data is fresh for 30 seconds
+    staleTime: 10 * 1000, // Short stale time so navigation picks up recently saved scores
     refetchInterval: false, // Disable automatic refetching to avoid issues
     retry: 3, // Retry failed requests 3 times
   });
@@ -502,10 +502,21 @@ export function useSubmitAnnotation(workshopId: string) {
           trace_id: newAnnotation.trace_id,
           user_id: newAnnotation.user_id,
           rating: newAnnotation.rating,
+          ratings: newAnnotation.ratings,
           comment: newAnnotation.comment,
           created_at: new Date().toISOString(),
         };
-        return old ? [...old, optimisticAnnotation] : [optimisticAnnotation];
+        if (!old) return [optimisticAnnotation];
+        // Update existing annotation for this trace instead of appending a duplicate
+        const existingIndex = old.findIndex(
+          (a: any) => a.trace_id === newAnnotation.trace_id && a.user_id === newAnnotation.user_id
+        );
+        if (existingIndex >= 0) {
+          const updated = [...old];
+          updated[existingIndex] = { ...updated[existingIndex], ...optimisticAnnotation };
+          return updated;
+        }
+        return [...old, optimisticAnnotation];
       });
       
       return { previousAnnotations };

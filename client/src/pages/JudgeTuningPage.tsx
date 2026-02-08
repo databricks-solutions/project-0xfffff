@@ -141,12 +141,13 @@ export function JudgeTuningPage() {
   }, [selectedQuestion?.title, workshop?.judge_name]);
 
   // Filter prompts to show only the current judge's prompts in the history dropdown
+  // Include prompts that match this judge OR have no judge_name (legacy/default prompts)
   const judgeSpecificPrompts = useMemo(() => {
-    const filtered = prompts.filter(p =>
-      p.model_parameters &&
-      typeof p.model_parameters === 'object' &&
-      p.model_parameters.judge_name === judgeName
-    );
+    const filtered = prompts.filter(p => {
+      const pJudgeName = p.model_parameters?.judge_name;
+      // Include if: matches current judge, OR has no judge_name (default/legacy prompt)
+      return pJudgeName === judgeName || !pJudgeName;
+    });
     console.log(`[JudgeTuning] Filtering prompts for judge "${judgeName}":`, {
       totalPrompts: prompts.length,
       judgeName,
@@ -1807,19 +1808,23 @@ Think step by step about how well the output addresses the criteria, then provid
                     <SelectItem key={prompt.id} value={prompt.id}>
                       <div className="flex items-center justify-between w-full">
                         <div className="flex items-center gap-2">
-                          <span className="font-semibold">v{prompt.version}</span>
+                          <span className="font-semibold">v{(prompt.model_parameters as any)?.judge_name ? prompt.version : 0}</span>
                           <Badge className={`text-xs ${
                             (prompt.model_parameters as any)?.aligned
                               ? 'bg-purple-100 text-purple-700 border-purple-300'
-                              : prompt.model_name === 'demo'
-                                ? 'bg-orange-100 text-orange-700 border-orange-300'
-                                : 'bg-blue-100 text-blue-700 border-blue-300'
+                              : !(prompt.model_parameters as any)?.judge_name
+                                ? 'bg-gray-100 text-gray-700 border-gray-300'
+                                : prompt.model_name === 'demo'
+                                  ? 'bg-orange-100 text-orange-700 border-orange-300'
+                                  : 'bg-blue-100 text-blue-700 border-blue-300'
                           }`}>
                             {(prompt.model_parameters as any)?.aligned
                               ? 'Aligned'
-                              : prompt.model_name === 'demo'
-                                ? 'Demo'
-                                : getDisplayName(getFrontendModelName(prompt.model_name || ''))}
+                              : !(prompt.model_parameters as any)?.judge_name
+                                ? 'Default'
+                                : prompt.model_name === 'demo'
+                                  ? 'Demo'
+                                  : getDisplayName(getFrontendModelName(prompt.model_name || ''))}
                           </Badge>
                         </div>
                         {prompt.performance_metrics && (
