@@ -4862,14 +4862,14 @@ async def re_evaluate(
         try:
             from server.services.alignment_service import AlignmentService
             from server.database import SessionLocal
-            
+
             thread_db = SessionLocal()
             try:
                 thread_db_service = DatabaseService(thread_db)
                 alignment_service = AlignmentService(thread_db_service)
-                
+
                 job.add_log("Initializing re-evaluation service...")
-                
+
                 result = None
                 for message in alignment_service.run_evaluation_with_answer_sheet(
                     workshop_id=workshop_id,

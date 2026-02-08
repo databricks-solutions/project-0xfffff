@@ -1156,7 +1156,7 @@ Think step by step about how well the output addresses the criteria, then provid
     }
   };
 
-  // Re-evaluate handler - calls the /re-evaluate endpoint
+  // Re-evaluate handler - calls different endpoints based on evaluation mode
   const handleReEvaluate = async () => {
     if (!workshopId) {
       toast.error('Workshop not found');
@@ -1176,12 +1176,41 @@ Think step by step about how well the output addresses the criteria, then provid
     setShowAlignmentLogs(true);
 
     try {
-      // Don't pass evaluation_model_name - backend will use the original model from auto-evaluation
+      // For Simple Model Serving mode, call start-simple-evaluation instead of re-evaluate
+      if (evaluationMode === 'simple') {
+        const response = await fetch(`/workshops/${workshopId}/start-simple-evaluation`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            judge_prompt: promptToUse,
+            endpoint_name: simpleEndpointName,
+            judge_name: judgeName,
+            prompt_id: selectedPromptId || undefined,
+            judge_type: judgeType,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Failed to start evaluation: ${response.status} ${errorText}`);
+        }
+
+        const { job_id } = await response.json();
+        setAutoEvalJobId(job_id);
+        setAutoEvalStatus('running');
+        setIsPollingAutoEval(true);
+        toast.info('Evaluation started. Polling for results...');
+        return;
+      }
+
+      // MLflow mode - use re-evaluate endpoint
       const response = await fetch(`/workshops/${workshopId}/re-evaluate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           judge_prompt: promptToUse,
+          judge_name: judgeName,
+          judge_type: judgeType,
         }),
       });
 
