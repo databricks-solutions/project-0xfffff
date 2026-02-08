@@ -29,7 +29,9 @@ import {
   ExternalLink,
   Database,
   RefreshCw,
-  Link
+  Link,
+  Copy,
+  Check
 } from "lucide-react";
 import { toast } from 'sonner';
 import { useInvalidateTraces, useWorkshop } from '@/hooks/useWorkshopApi';
@@ -262,16 +264,6 @@ const tryParseJson = (str: string): { success: boolean; data: any } => {
     }
     return { success: true, data };
   } catch {
-    // Try fixing malformed content JSON (common issue with judge outputs)
-    try {
-      const fixed = fixMalformedContentJson(cleanStr);
-      if (fixed !== cleanStr) {
-        const data = JSON.parse(fixed);
-        return { success: true, data };
-      }
-    } catch {
-      // Still failed after fix attempt
-    }
     // Continue to try other alternatives
   }
 
@@ -460,7 +452,7 @@ const isBrokenValue = (value: any): boolean => {
 };
 
 /**
- * Collapsible section for any content - clean, user-friendly design
+ * Collapsible section for any content - clean, user-friendly design with enhanced visual feedback
  */
 const CollapsibleSection: React.FC<{
   title: string;
@@ -471,27 +463,27 @@ const CollapsibleSection: React.FC<{
   const [expanded, setExpanded] = useState(defaultExpanded);
 
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
+    <Card className="border-l-4 border-gray-300 shadow-sm">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between p-3 text-left hover:bg-gray-50 transition-colors"
+        className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-all duration-200"
       >
         <div className="flex items-center gap-2">
           <span className="font-medium text-gray-700">{title}</span>
           {itemCount !== undefined && itemCount > 0 && (
-            <span className="text-xs text-gray-500">
-              ({itemCount})
+            <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+              {itemCount}
             </span>
           )}
         </div>
-        <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
       </button>
       {expanded && (
-        <div className="border-t border-gray-100 bg-gray-50/50 p-4 max-h-[500px] overflow-auto">
+        <div className="border-t border-gray-100 bg-gray-50/30 p-4 max-h-[500px] overflow-auto scrollbar-thin">
           {children}
         </div>
       )}
-    </div>
+    </Card>
   );
 };
 
@@ -704,27 +696,27 @@ const SmartObjectField: React.FC<{
 
   if (shouldCollapse) {
     return (
-      <div className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
+      <Card className="border-l-4 border-gray-300 shadow-sm">
         <button
           onClick={() => setExpanded(!expanded)}
-          className="w-full flex items-center justify-between p-3 text-left hover:bg-gray-50 transition-colors"
+          className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-all duration-200"
         >
           <div className="flex items-center gap-2">
             <span className="font-medium text-gray-700">{formatFieldName(fieldKey)}</span>
             {itemCount !== undefined && (
-              <span className="text-xs text-gray-500">
-                ({itemCount})
+              <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+                {itemCount}
               </span>
             )}
           </div>
-          <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+          <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
         </button>
         {expanded && (
-          <div className="border-t border-gray-100 bg-gray-50/50 p-4 max-h-[500px] overflow-auto">
+          <div className="border-t border-gray-100 bg-gray-50/30 p-4 max-h-[500px] overflow-auto scrollbar-thin">
             <SmartValueRenderer value={value} fieldName={fieldKey} depth={depth} />
           </div>
         )}
-      </div>
+      </Card>
     );
   }
 
@@ -1084,19 +1076,20 @@ const LLMContentRenderer: React.FC<{
         )}
       </div>
 
-      {/* Collapsible metadata section */}
+      {/* Collapsible metadata section with enhanced styling */}
       {metadata && (
-        <div className="border-t border-gray-200 pt-2 mt-3">
+        <div className="border-t border-gray-200 pt-3 mt-4">
           <button
             onClick={() => setShowMetadata(!showMetadata)}
-            className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-700"
+            className="flex items-center gap-2 text-xs text-gray-600 hover:text-gray-900 font-medium transition-colors"
           >
-            <ChevronDown className={`h-3 w-3 transition-transform ${showMetadata ? 'rotate-180' : ''}`} />
-            Response Metadata
+            <Database className="h-3 w-3" />
+            <span>Response Metadata</span>
+            <ChevronDown className={`h-3 w-3 transition-transform duration-200 ${showMetadata ? 'rotate-180' : ''}`} />
           </button>
           {showMetadata && (
-            <div className="mt-2 bg-gray-50 p-2 rounded text-xs text-gray-600">
-              <pre className="whitespace-pre-wrap">
+            <div className="mt-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
+              <pre className="whitespace-pre-wrap text-xs text-gray-700 font-mono">
                 {JSON.stringify(metadata, null, 2)}
               </pre>
             </div>
@@ -1186,43 +1179,88 @@ const SmartJsonRenderer: React.FC<{
     return <>{fallbackRenderer(data)}</>;
   }
 
-  return <span className="text-gray-800 whitespace-pre-wrap">{data}</span>;
+  return <span className="text-gray-800 whitespace-pre-wrap break-words">{data}</span>;
+};
+
+/**
+ * Copy button with visual feedback
+ */
+const CopyButton: React.FC<{
+  text: string;
+  label?: string;
+}> = ({ text, label = "Copy" }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      toast.success('Copied to clipboard');
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      toast.error('Failed to copy');
+    }
+  };
+
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={handleCopy}
+      className="h-8 gap-2 text-gray-600 hover:text-gray-900"
+      title={label}
+    >
+      {copied ? (
+        <>
+          <Check className="h-4 w-4 text-green-600" />
+          <span className="text-xs text-green-600">Copied!</span>
+        </>
+      ) : (
+        <>
+          <Copy className="h-4 w-4" />
+          <span className="text-xs">{label}</span>
+        </>
+      )}
+    </Button>
+  );
 };
 
 // ============================================================================
 // LEGACY COMPONENTS (kept for backward compatibility)
 // ============================================================================
 
-// Citations display component
+// Citations display component with enhanced styling
 const CitationsDisplay: React.FC<{
   citations: Array<{ url: string; title: string; type?: string }>;
 }> = ({ citations }) => {
   const [expanded, setExpanded] = useState(true);
-  
+
   if (!citations || citations.length === 0) return null;
 
   return (
-    <div className="border rounded-lg overflow-hidden border-blue-200 bg-blue-50/50">
-      <Button
-        variant="ghost"
+    <Card className="border-l-4 border-blue-500 shadow-sm">
+      <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between p-3 h-auto text-blue-700 hover:bg-blue-100"
+        className="w-full flex items-center justify-between p-4 text-left hover:bg-blue-50 transition-all duration-200"
       >
         <div className="flex items-center gap-2">
-          <Link className="h-4 w-4" />
-          <span className="font-medium text-sm">Citations ({citations.length})</span>
+          <Link className="h-5 w-5 text-blue-600" />
+          <span className="font-medium text-blue-800">Citations</span>
+          <span className="text-xs text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
+            {citations.length}
+          </span>
         </div>
-        {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-      </Button>
+        <ChevronDown className={`h-4 w-4 text-blue-400 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
+      </button>
       {expanded && (
-        <div className="border-t border-blue-200 p-3 space-y-2">
+        <div className="border-t border-blue-100 bg-blue-50/30 p-4 space-y-2">
           {citations.map((citation, idx) => (
             <a
               key={idx}
               href={citation.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-start gap-2 p-2 rounded hover:bg-blue-100 transition-colors group"
+              className="flex items-start gap-2 p-3 rounded-lg hover:bg-blue-100 transition-colors group border border-blue-200"
             >
               <ExternalLink className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
               <div className="flex-1 min-w-0">
@@ -1230,7 +1268,7 @@ const CitationsDisplay: React.FC<{
                   {citation.title || citation.url}
                 </div>
                 {citation.type && (
-                  <span className="text-xs text-blue-500 bg-blue-100 px-1.5 py-0.5 rounded">
+                  <span className="text-xs text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded mt-1 inline-block">
                     {citation.type}
                   </span>
                 )}
@@ -1239,7 +1277,7 @@ const CitationsDisplay: React.FC<{
           ))}
         </div>
       )}
-    </div>
+    </Card>
   );
 };
 
@@ -1422,29 +1460,29 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({
   };
 
   return (
-    <Card className="w-full max-w-4xl mx-auto">
-      <CardHeader>
+    <Card className="w-full max-w-4xl mx-auto border-l-4 border-indigo-500 shadow-lg">
+      <CardHeader className="bg-gradient-to-r from-indigo-50 to-transparent">
         <CardTitle className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-lg">
-            <MessageCircle className="h-5 w-5" />
-            Trace {trace.mlflow_trace_id || trace.id}
+          <div className="flex items-center gap-3 text-lg">
+            <MessageCircle className="h-5 w-5 text-indigo-600" />
+            <span className="text-indigo-900">Trace {trace.mlflow_trace_id || trace.id}</span>
           </div>
           <div className="flex items-center gap-2">
             <Button
               variant="ghost"
               size="sm"
               onClick={handleRefresh}
-              className="flex items-center gap-2"
+              className="flex items-center gap-2 hover:bg-indigo-100"
               title="Refresh trace data"
             >
-              <RefreshCw className="h-4 w-4" />
+              <RefreshCw className="h-4 w-4 text-indigo-600" />
             </Button>
             {trace.mlflow_trace_id && (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleMLflowLink}
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 border-indigo-200 hover:bg-indigo-50 text-indigo-700"
               >
                 <Database className="h-4 w-4" />
                 View in MLflow
@@ -1457,31 +1495,35 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({
       <CardContent className="space-y-6">
         {/* Context sections */}
         {trace.context?.conversation_history && (
-          <div className="space-y-3">
-            <Button
-              variant="ghost"
+          <Card className="border-l-4 border-purple-500 shadow-sm">
+            <button
               onClick={() => setShowConversationHistory(!showConversationHistory)}
-              className="flex items-center gap-2 p-0 h-auto text-purple-600 hover:text-purple-800"
+              className="w-full flex items-center justify-between p-4 text-left hover:bg-purple-50 transition-all duration-200"
             >
-              <History className="h-4 w-4" />
-              <span className="font-medium">Conversation History</span>
-              {showConversationHistory ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            </Button>
+              <div className="flex items-center gap-2">
+                <History className="h-5 w-5 text-purple-600" />
+                <span className="font-medium text-purple-800">Conversation History</span>
+                <span className="text-xs text-purple-600 bg-purple-100 px-2 py-0.5 rounded-full">
+                  {trace.context.conversation_history.length}
+                </span>
+              </div>
+              <ChevronDown className={`h-4 w-4 text-purple-400 transition-transform duration-200 ${showConversationHistory ? 'rotate-180' : ''}`} />
+            </button>
             {showConversationHistory && (
-              <div className="bg-purple-50 border-l-4 border-purple-400 p-4 rounded-r-lg">
-                <div className="space-y-3">
+              <div className="border-t border-purple-100 bg-purple-50/30 p-4">
+                <div className="space-y-4">
                   {trace.context.conversation_history.map((turn, index) => (
-                    <div key={index} className="flex items-start gap-2">
+                    <div key={index} className="flex items-start gap-3 p-3 bg-white rounded-lg border border-purple-100">
                       {turn.role === 'user' ? (
-                        <User className="h-4 w-4 text-blue-600 mt-0.5" />
+                        <User className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
                       ) : (
-                        <Bot className="h-4 w-4 text-green-600 mt-0.5" />
+                        <Bot className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
                       )}
-                      <div className="flex-1">
-                        <span className="text-xs font-medium text-gray-600 uppercase">
+                      <div className="flex-1 min-w-0">
+                        <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
                           {turn.role}
                         </span>
-                        <div className="text-sm text-gray-800 mt-1 prose prose-sm max-w-none">
+                        <div className="text-sm text-gray-800 mt-2 prose prose-sm max-w-none">
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>
                             {turn.content}
                           </ReactMarkdown>
@@ -1492,22 +1534,23 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({
                 </div>
               </div>
             )}
-          </div>
+          </Card>
         )}
 
         {trace.context?.retrieved_content && (
-          <div className="space-y-3">
-            <Button
-              variant="ghost"
+          <Card className="border-l-4 border-orange-500 shadow-sm">
+            <button
               onClick={() => setShowRetrievedContent(!showRetrievedContent)}
-              className="flex items-center gap-2 p-0 h-auto text-orange-600 hover:text-orange-800"
+              className="w-full flex items-center justify-between p-4 text-left hover:bg-orange-50 transition-all duration-200"
             >
-              <FileText className="h-4 w-4" />
-              <span className="font-medium">Retrieved Content</span>
-              {showRetrievedContent ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            </Button>
+              <div className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-orange-600" />
+                <span className="font-medium text-orange-800">Retrieved Content</span>
+              </div>
+              <ChevronDown className={`h-4 w-4 text-orange-400 transition-transform duration-200 ${showRetrievedContent ? 'rotate-180' : ''}`} />
+            </button>
             {showRetrievedContent && (
-              <div className="bg-orange-50 border-l-4 border-orange-400 p-4 rounded-r-lg">
+              <div className="border-t border-orange-100 bg-orange-50/30 p-4">
                 <div className="text-gray-800 leading-relaxed text-sm prose prose-sm max-w-none">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>
                     {trace.context.retrieved_content}
@@ -1515,65 +1558,93 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({
                 </div>
               </div>
             )}
-          </div>
+          </Card>
         )}
 
         {/* Input */}
-        <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <User className="h-4 w-4 text-blue-600" />
-            <span className="font-medium text-blue-800">Input</span>
-            {isInputJson && (
-              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
-                Structured
-              </span>
-            )}
-          </div>
-          <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg">
-            <SmartJsonRenderer data={displayInput} />
-          </div>
-        </div>
+        <Card className="border-l-4 border-blue-500 shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center justify-between text-base">
+              <div className="flex items-center gap-2">
+                <User className="h-5 w-5 text-blue-600" />
+                <span className="text-blue-900">Input</span>
+                {isInputJson && (
+                  <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-normal">
+                    Structured
+                  </span>
+                )}
+              </div>
+              <CopyButton text={displayInput} label="Copy Input" />
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="bg-blue-50/50 p-4 rounded-lg border border-blue-100">
+              <SmartJsonRenderer data={displayInput} />
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Output */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Bot className="h-4 w-4 text-green-600" />
-              <span className="font-medium text-green-800">Output</span>
-              {isOutputJson && (
-                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
-                  Structured
-                </span>
+        <Card className="border-l-4 border-green-500 shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center justify-between text-base">
+              <div className="flex items-center gap-2">
+                <Bot className="h-5 w-5 text-green-600" />
+                <span className="text-green-900">Output</span>
+                {isOutputJson && (
+                  <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-normal">
+                    Structured
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowRawOutput(!showRawOutput)}
+                  className="text-xs text-gray-600 hover:text-gray-900 h-8"
+                >
+                  {showRawOutput ? 'Show Formatted' : 'Show Raw JSON'}
+                </Button>
+                <CopyButton
+                  text={showRawOutput
+                    ? (typeof trace.output === 'string'
+                        ? (() => {
+                            try {
+                              return JSON.stringify(JSON.parse(trace.output), null, 2);
+                            } catch {
+                              return trace.output;
+                            }
+                          })()
+                        : JSON.stringify(trace.output, null, 2))
+                    : displayOutput
+                  }
+                  label="Copy Output"
+                />
+              </div>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="bg-green-50/50 p-4 rounded-lg border border-green-100">
+              {showRawOutput ? (
+                <pre className="text-sm text-gray-800 whitespace-pre-wrap overflow-x-auto font-mono bg-white p-3 rounded border border-green-200">
+                  {typeof trace.output === 'string'
+                    ? (() => {
+                        try {
+                          return JSON.stringify(JSON.parse(trace.output), null, 2);
+                        } catch {
+                          return trace.output;
+                        }
+                      })()
+                    : JSON.stringify(trace.output, null, 2)
+                  }
+                </pre>
+              ) : (
+                <OutputRenderer rawOutput={trace.output} displayOutput={displayOutput} />
               )}
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowRawOutput(!showRawOutput)}
-              className="text-xs text-gray-500 hover:text-gray-700"
-            >
-              {showRawOutput ? 'Show Formatted' : 'Show Raw JSON'}
-            </Button>
-          </div>
-          <div className="bg-green-50 border-l-4 border-green-400 p-4 rounded-r-lg">
-            {showRawOutput ? (
-              <pre className="text-sm text-gray-800 whitespace-pre-wrap overflow-x-auto font-mono">
-                {typeof trace.output === 'string'
-                  ? (() => {
-                      try {
-                        return JSON.stringify(JSON.parse(trace.output), null, 2);
-                      } catch {
-                        return trace.output;
-                      }
-                    })()
-                  : JSON.stringify(trace.output, null, 2)
-                }
-              </pre>
-            ) : (
-              <OutputRenderer rawOutput={trace.output} displayOutput={displayOutput} />
-            )}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </CardContent>
     </Card>
   );

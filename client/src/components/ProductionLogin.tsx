@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, Plus } from 'lucide-react';
+import { Loader2, Plus, Lock, LogIn, AlertCircle, CheckCircle } from 'lucide-react';
 import type { Workshop } from '@/client';
 
 export const ProductionLogin: React.FC = () => {
@@ -116,23 +116,32 @@ export const ProductionLogin: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold">Workshop Portal</CardTitle>
-          <CardDescription>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-blue-50 p-4">
+      <Card className="w-full max-w-md border-l-4 border-blue-500 shadow-lg">
+        <CardHeader className="text-center space-y-3">
+          <div className="flex justify-center">
+            <div className="p-3 bg-blue-100 rounded-full">
+              <Lock className="h-6 w-6 text-blue-600" />
+            </div>
+          </div>
+          <CardTitle className="text-2xl font-bold flex items-center justify-center gap-2">
+            Workshop Portal
+          </CardTitle>
+          <CardDescription className="text-base">
             Sign in to access your workshop
           </CardDescription>
-          <div className="mt-3 text-sm text-slate-600 bg-blue-50 p-3 rounded-lg">
-            <strong>Participants & SMEs:</strong> Enter your email only (leave password blank)<br/>
-            <strong>Facilitators:</strong> Enter both email and password
+          <div className="mt-3 text-sm text-slate-700 bg-blue-50 p-4 rounded-lg border border-blue-200 text-left">
+            <div className="space-y-1">
+              <div><strong className="text-blue-700">Participants & SMEs:</strong> Enter your email only (leave password blank)</div>
+              <div><strong className="text-blue-700">Facilitators:</strong> Enter both email and password</div>
+            </div>
           </div>
         </CardHeader>
         
         <CardContent>
-          <form onSubmit={handleLogin} className="space-y-4">
+          <form onSubmit={handleLogin} className="space-y-5">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email" className="text-sm font-medium">Email</Label>
               <Input
                 id="email"
                 data-testid="email"
@@ -141,42 +150,49 @@ export const ProductionLogin: React.FC = () => {
                 value={loginData.email}
                 onChange={(e) => setLoginData({ ...loginData, email: e.target.value })}
                 required
+                className="h-10"
               />
             </div>
-            
+
             <div className="space-y-2">
-              <Label htmlFor="password">Password <span className="text-slate-500">(facilitators only)</span></Label>
+              <Label htmlFor="password" className="text-sm font-medium">
+                Password <span className="text-slate-500 font-normal">(facilitators only)</span>
+              </Label>
               <Input
                 id="password"
                 type="password"
                 placeholder="Leave blank for participants/SMEs"
                 value={loginData.password}
                 onChange={(e) => setLoginData({ ...loginData, password: e.target.value })}
+                className="h-10"
               />
             </div>
 
             {/* Workshop Selection for Participants/SMEs */}
             {!loginData.password && (
               <div className="space-y-2">
-                <Label htmlFor="workshop">Select Workshop</Label>
+                <Label htmlFor="workshop" className="text-sm font-medium">Select Workshop</Label>
                 {isLoadingWorkshops ? (
-                  <div className="flex items-center justify-center py-2">
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    <span className="text-sm text-gray-500">Loading workshops...</span>
+                  <div className="flex items-center justify-center py-3 bg-blue-50 rounded-lg border border-blue-200">
+                    <Loader2 className="h-4 w-4 animate-spin mr-2 text-blue-600" />
+                    <span className="text-sm text-blue-700">Loading workshops...</span>
                   </div>
                 ) : workshops.length === 0 ? (
-                  <div className="text-sm text-amber-600 bg-amber-50 p-3 rounded-lg">
-                    No workshops available. Please wait for a facilitator to create one.
-                  </div>
+                  <Alert className="border-amber-200 bg-amber-50">
+                    <AlertCircle className="h-4 w-4 text-amber-600" />
+                    <AlertDescription className="text-amber-700">
+                      No workshops available. Please wait for a facilitator to create one.
+                    </AlertDescription>
+                  </Alert>
                 ) : (
                   <>
-                    <Select 
-                      value={selectedWorkshopId} 
+                    <Select
+                      value={selectedWorkshopId}
                       onValueChange={(value) => {
                         setSelectedWorkshopId(value);
                       }}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger className="h-10">
                         <SelectValue placeholder="Select a workshop to join" />
                       </SelectTrigger>
                       <SelectContent>
@@ -187,7 +203,8 @@ export const ProductionLogin: React.FC = () => {
                         ))}
                       </SelectContent>
                     </Select>
-                    <div className="text-xs text-gray-500">
+                    <div className="flex items-center gap-1 text-xs text-gray-600 mt-1">
+                      <CheckCircle className="h-3 w-3 text-green-600" />
                       {workshops.length} workshop{workshops.length !== 1 ? 's' : ''} available
                     </div>
                   </>
@@ -198,15 +215,15 @@ export const ProductionLogin: React.FC = () => {
             {/* Workshop Selection for Facilitators */}
             {loginData.password && (
               <div className="space-y-3">
-                <Label>Workshop</Label>
-                
+                <Label className="text-sm font-medium">Workshop</Label>
+
                 {/* Toggle between existing and new */}
                 <div className="flex gap-2">
                   <Button
                     type="button"
                     variant={!createNewWorkshop && workshops.length > 0 ? "default" : "outline"}
                     size="sm"
-                    className="flex-1"
+                    className="flex-1 h-9"
                     onClick={() => setCreateNewWorkshop(false)}
                     disabled={isLoadingWorkshops || workshops.length === 0}
                   >
@@ -216,7 +233,7 @@ export const ProductionLogin: React.FC = () => {
                     type="button"
                     variant={createNewWorkshop || workshops.length === 0 ? "default" : "outline"}
                     size="sm"
-                    className="flex-1"
+                    className="flex-1 h-9"
                     onClick={() => setCreateNewWorkshop(true)}
                   >
                     <Plus className="h-4 w-4 mr-1" />
@@ -227,18 +244,18 @@ export const ProductionLogin: React.FC = () => {
                 {!createNewWorkshop && workshops.length > 0 ? (
                   // Existing workshop selection
                   isLoadingWorkshops ? (
-                    <div className="flex items-center justify-center py-2">
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      <span className="text-sm text-gray-500">Loading workshops...</span>
+                    <div className="flex items-center justify-center py-3 bg-blue-50 rounded-lg border border-blue-200">
+                      <Loader2 className="h-4 w-4 animate-spin mr-2 text-blue-600" />
+                      <span className="text-sm text-blue-700">Loading workshops...</span>
                     </div>
                   ) : (
-                    <Select 
-                      value={selectedWorkshopId} 
+                    <Select
+                      value={selectedWorkshopId}
                       onValueChange={(value) => {
                         setSelectedWorkshopId(value);
                       }}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger className="h-10">
                         <SelectValue placeholder="Select a workshop" />
                       </SelectTrigger>
                       <SelectContent>
@@ -252,29 +269,43 @@ export const ProductionLogin: React.FC = () => {
                   )
                 ) : (
                   // New workshop indicator
-                  <div className="text-sm text-green-600 bg-green-50 p-3 rounded-lg">
-                    A new workshop will be created after you sign in.
-                  </div>
+                  <Alert className="border-green-200 bg-green-50">
+                    <CheckCircle className="h-4 w-4 text-green-600" />
+                    <AlertDescription className="text-green-700">
+                      A new workshop will be created after you sign in.
+                    </AlertDescription>
+                  </Alert>
                 )}
               </div>
             )}
 
             {error && (
-              <Alert variant="destructive">
+              <Alert variant="destructive" className="border-red-200">
+                <AlertCircle className="h-4 w-4" />
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
 
-            <Button 
-              type="submit" 
-              className="w-full" 
-              disabled={isLoading || (!loginData.password && !selectedWorkshopId) || (loginData.password && !createNewWorkshop && !selectedWorkshopId && workshops.length > 0)}
+            <Button
+              type="submit"
+              className="w-full h-11 text-base font-medium"
+              disabled={isLoading || (!loginData.password && selectedWorkshopId === '') || (loginData.password && !createNewWorkshop && selectedWorkshopId === '' && workshops.length > 0)}
             >
-              {isLoading ? 'Signing in...' : createNewWorkshop ? 'Sign In & Create Workshop' : 'Sign In'}
+              {isLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Signing in...
+                </>
+              ) : (
+                <>
+                  <LogIn className="h-4 w-4 mr-2" />
+                  {createNewWorkshop ? 'Sign In & Create Workshop' : 'Sign In'}
+                </>
+              )}
             </Button>
           </form>
 
-          <div className="mt-4 text-center text-sm text-gray-600">
+          <div className="mt-6 text-center text-sm text-gray-600 border-t pt-4">
             <p>Need help? Contact your workshop facilitator.</p>
           </div>
         </CardContent>

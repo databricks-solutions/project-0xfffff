@@ -32,7 +32,10 @@ test('rubric creation: facilitator can advance from discovery and create a rubri
 
   await page.locator('button[type="submit"]').click();
 
-  await expect(page.getByText(/Welcome, Facilitator!/i)).toBeVisible();
+  await expect(page.getByText(/Welcome, Facilitator/i)).toBeVisible();
+
+  // Fill required Use Case Description before creating
+  await page.locator('#description').fill('E2E test workshop for rubric creation');
 
   await Promise.all([
     page.waitForResponse(
@@ -41,7 +44,7 @@ test('rubric creation: facilitator can advance from discovery and create a rubri
         resp.url().includes('/workshops') &&
         resp.status() === 201,
     ),
-    page.getByRole('button', { name: /Create New Workshop/i }).click(),
+    page.getByRole('button', { name: /Create Workshop/i }).click(),
   ]);
 
   await expect(page).toHaveURL(/\?workshop=[a-f0-9-]{36}/i);
@@ -141,15 +144,15 @@ test('rubric creation: facilitator can advance from discovery and create a rubri
   await expect(page.getByRole('tab', { name: /Rubric Questions/i })).toBeVisible({ timeout: 15000 });
   await page.getByRole('tab', { name: /Rubric Questions/i }).click();
 
-  // The page can render *both* buttons ("Add Question" in header + "Create First Question" empty state),
+  // The page can render *both* buttons ("Add Criterion" in header + "Create First Criterion" empty state),
   // so avoid strict-mode click by selecting deterministically.
-  const createFirstQuestion = page.getByRole('button', {
-    name: /Create First Question/i,
+  const createFirstCriterion = page.getByRole('button', {
+    name: /Create First Criterion/i,
   });
-  if (await createFirstQuestion.isVisible().catch(() => false)) {
-    await createFirstQuestion.click();
+  if (await createFirstCriterion.isVisible().catch(() => false)) {
+    await createFirstCriterion.click();
   } else {
-    await page.getByRole('button', { name: /Add Question/i }).click();
+    await page.getByRole('button', { name: /Add Criterion/i }).first().click();
   }
 
   const title = `Response Helpfulness ${runId}`;

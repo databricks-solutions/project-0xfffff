@@ -226,8 +226,8 @@ test.describe('JSONPath Trace Display Customization', { tag }, () => {
     // Wait for preview results
     await expect(page.getByText('Preview Results')).toBeVisible();
 
-    // Should show "Showing original" badges indicating fallback
-    await expect(page.getByText('Showing original').first()).toBeVisible();
+    // Should show "Original" badges indicating fallback
+    await expect(page.getByText('Original').first()).toBeVisible();
 
     await scenario.cleanup();
   });

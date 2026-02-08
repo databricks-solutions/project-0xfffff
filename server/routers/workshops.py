@@ -153,6 +153,8 @@ from server.models import (
     ParticipantNoteCreate,
     Rubric,
     RubricCreate,
+    RubricGenerationRequest,
+    RubricSuggestion,
     Trace,
     TraceUpload,
     Workshop,
@@ -1444,6 +1446,40 @@ async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Sessi
 
                             job.add_log("Initializing auto-evaluation service...")
 
+                            # Wait for MLflow tag indexing (eventual consistency)
+                            # Tags were just set via mlflow.set_trace_tag but search_traces
+                            # may not find them immediately due to index lag
+                            import time as _time
+                            import os as _os
+                            try:
+                                import mlflow as _mlflow
+                                _os.environ['DATABRICKS_HOST'] = mlflow_config.databricks_host.rstrip('/')
+                                has_oauth = bool(_os.environ.get('DATABRICKS_CLIENT_ID') and _os.environ.get('DATABRICKS_CLIENT_SECRET'))
+                                if not has_oauth:
+                                    _os.environ['DATABRICKS_TOKEN'] = mlflow_config.databricks_token
+                                _mlflow.set_tracking_uri('databricks')
+
+                                job.add_log("Waiting for MLflow tag indexing...")
+                                tag_verified = False
+                                for wait_attempt in range(5):  # Up to 10 seconds (5 x 2s)
+                                    _time.sleep(2)
+                                    try:
+                                        test_df = _mlflow.search_traces(
+                                            experiment_ids=[mlflow_config.experiment_id],
+                                            filter_string=f"tags.label = 'eval' AND tags.workshop_id = '{workshop_id}'",
+                                            return_type="pandas",
+                                        )
+                                        if test_df is not None and not test_df.empty:
+                                            job.add_log(f"MLflow tags verified after {(wait_attempt + 1) * 2}s ({len(test_df)} traces found)")
+                                            tag_verified = True
+                                            break
+                                    except Exception as search_err:
+                                        logger.debug("Tag verification attempt %d failed: %s", wait_attempt + 1, search_err)
+                                if not tag_verified:
+                                    job.add_log("WARNING: MLflow tags not yet indexed after 10s, proceeding anyway")
+                            except Exception as tag_wait_err:
+                                job.add_log(f"WARNING: Could not verify MLflow tags: {tag_wait_err}")
+
                             # Get rubric questions again in thread context
                             questions_to_eval = thread_db_service.get_rubric_questions_for_evaluation(workshop_id)
                             if not questions_to_eval:
@@ -1499,6 +1535,7 @@ async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Sessi
                             failed = [r for r in all_results if not r['result'].get('success')]
 
                             # Save evaluations to database
+                            save_succeeded = False
                             if successful:
                                 try:
                                     from server.models import JudgePromptCreate, JudgeEvaluation
@@ -1548,8 +1585,20 @@ async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Sessi
                                                     logger.error(f"Error parsing evaluation: {inner_err}")
 
                                     if all_evaluations:
-                                        thread_db_service.store_judge_evaluations(all_evaluations)
-                                        job.add_log(f"✓ Saved {len(all_evaluations)} evaluations to database")
+                                        # Retry save up to 3 times to handle transient DB errors
+                                        import time as _time
+                                        for save_attempt in range(3):
+                                            try:
+                                                thread_db_service.store_judge_evaluations(all_evaluations)
+                                                job.add_log(f"✓ Saved {len(all_evaluations)} evaluations to database")
+                                                save_succeeded = True
+                                                break
+                                            except Exception as retry_err:
+                                                if save_attempt < 2:
+                                                    job.add_log(f"⚠ Save attempt {save_attempt + 1} failed, retrying in 1s...")
+                                                    _time.sleep(1)
+                                                else:
+                                                    raise retry_err
                                     else:
                                         job.add_log("⚠ No evaluations to save")
                                 except Exception as save_err:
@@ -1557,7 +1606,7 @@ async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Sessi
                                     logger.exception("Failed to save auto-evaluation results")
 
                             job.result = {
-                                'success': len(failed) == 0,
+                                'success': len(failed) == 0 and save_succeeded,
                                 'total_judges': len(questions_to_eval),
                                 'successful_judges': len(successful),
                                 'failed_judges': len(failed),
@@ -1566,13 +1615,16 @@ async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Sessi
                             }
                             job.save()
 
-                            if len(failed) == 0:
+                            if len(failed) == 0 and save_succeeded:
                                 job.set_status("completed")
                                 job.add_log(f"\n✓ All {len(questions_to_eval)} judges completed successfully!")
                                 job.add_log(f"Total evaluations: {total_evaluated}")
-                            elif len(successful) > 0:
+                            elif len(successful) > 0 and save_succeeded:
                                 job.set_status("completed")  # Partial success
                                 job.add_log(f"\n⚠ {len(successful)}/{len(questions_to_eval)} judges succeeded")
+                            elif len(successful) > 0 and not save_succeeded:
+                                job.set_status("failed")
+                                job.add_log(f"\n✗ Evaluation succeeded but database save failed. Click 'Run Align()' to retry.")
                             else:
                                 job.set_status("failed")
                                 job.add_log(f"\n✗ All judges failed")
@@ -1964,6 +2016,78 @@ async def generate_rubric_test_data(workshop_id: str, db: Session = Depends(get_
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to generate rubric data: {str(e)}")
+
+
+@router.post("/{workshop_id}/generate-rubric-suggestions")
+async def generate_rubric_suggestions(
+    workshop_id: str,
+    request: RubricGenerationRequest,
+    db: Session = Depends(get_db)
+) -> List[RubricSuggestion]:
+    """Generate rubric suggestions using AI analysis of discovery feedback.
+
+    This endpoint uses a Databricks model serving endpoint to analyze
+    discovery findings and participant notes, then generates suggested
+    rubric criteria for the facilitator to review.
+
+    Args:
+        workshop_id: Workshop ID to generate suggestions for
+        request: Generation parameters (endpoint_name, temperature, include_notes)
+        db: Database session
+
+    Returns:
+        List of rubric suggestions with title, description, judge type, etc.
+
+    Raises:
+        HTTPException 404: Workshop not found
+        HTTPException 400: No discovery feedback available
+        HTTPException 500: Generation or parsing failed
+    """
+    logger = logging.getLogger(__name__)
+    logger.info(f"Generating rubric suggestions for workshop {workshop_id}")
+
+    # Get workshop and validate
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    # Note: No phase restriction - facilitators can generate rubric suggestions
+    # at any time to refine or add evaluation criteria
+
+    try:
+        # Initialize services
+        from server.services.databricks_service import DatabricksService
+        from server.services.rubric_generation_service import RubricGenerationService
+
+        databricks_service = DatabricksService(
+            workshop_id=workshop_id,
+            db_service=db_service
+        )
+        generation_service = RubricGenerationService(db_service, databricks_service)
+
+        # Generate suggestions
+        suggestions = await generation_service.generate_rubric_suggestions(
+            workshop_id=workshop_id,
+            endpoint_name=request.endpoint_name,
+            temperature=request.temperature,
+            include_notes=request.include_notes
+        )
+
+        logger.info(f"Generated {len(suggestions)} rubric suggestions for workshop {workshop_id}")
+        return suggestions
+
+    except ValueError as e:
+        # User-facing error (e.g., no discovery data)
+        logger.warning(f"Cannot generate suggestions: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        # Unexpected error
+        logger.error(f"Error generating rubric suggestions: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate suggestions: {str(e)}"
+        )
 
 
 @router.post("/{workshop_id}/generate-annotation-data")
@@ -3308,7 +3432,7 @@ async def start_alignment_job(
                                 prompt_text=aligned_instructions,
                                 few_shot_examples=[],
                                 model_name=request.evaluation_model_name,
-                                model_parameters={"aligned": True, "alignment_model": request.alignment_model_name},
+                                model_parameters={"aligned": True, "alignment_model": request.alignment_model_name, "judge_name": request.judge_name},
                             )
                             new_prompt = thread_db_service.create_judge_prompt(workshop_id, new_prompt_data)
                             result["saved_prompt_id"] = new_prompt.id
@@ -3439,6 +3563,15 @@ async def start_evaluation_job(
         raise HTTPException(status_code=400, detail="Databricks token not found")
 
     mlflow_config.databricks_token = databricks_token
+
+    # IMPORTANT: Re-sync annotations to MLflow before evaluation
+    # This ensures all annotations have the 'align' tag and feedback entries in MLflow,
+    # even if the inline sync during annotation save failed due to transient errors.
+    try:
+        resync_result = db_service.resync_annotations_to_mlflow(workshop_id)
+        logger.info(f"MLflow re-sync before evaluation: {resync_result}")
+    except Exception as e:
+        logger.warning(f"MLflow re-sync failed before evaluation (non-critical): {e}")
 
     # Create job (reusing AlignmentJob class for evaluation too)
     job_id = str(uuid.uuid4())
@@ -4417,6 +4550,7 @@ async def restart_auto_evaluation(
                 failed = [r for r in all_results if not r['result'].get('success')]
 
                 # Save evaluations to database
+                save_succeeded = False
                 if successful:
                     try:
                         from server.models import JudgePromptCreate, JudgeEvaluation as JudgeEvalModel
@@ -4462,8 +4596,20 @@ async def restart_auto_evaluation(
                                         logger.error(f"Error parsing evaluation: {inner_err}")
 
                         if all_evaluations:
-                            thread_db_service.store_judge_evaluations(all_evaluations)
-                            job.add_log(f"✓ Saved {len(all_evaluations)} evaluations to database")
+                            # Retry save up to 3 times to handle transient DB errors
+                            import time as _time
+                            for save_attempt in range(3):
+                                try:
+                                    thread_db_service.store_judge_evaluations(all_evaluations)
+                                    job.add_log(f"✓ Saved {len(all_evaluations)} evaluations to database")
+                                    save_succeeded = True
+                                    break
+                                except Exception as retry_err:
+                                    if save_attempt < 2:
+                                        job.add_log(f"⚠ Save attempt {save_attempt + 1} failed, retrying in 1s...")
+                                        _time.sleep(1)
+                                    else:
+                                        raise retry_err
                         else:
                             job.add_log("⚠ No evaluations to save")
                     except Exception as save_err:
@@ -4471,7 +4617,7 @@ async def restart_auto_evaluation(
                         logger.exception("Failed to save restart-auto-evaluation results")
 
                 job.result = {
-                    'success': len(failed) == 0,
+                    'success': len(failed) == 0 and save_succeeded,
                     'total_judges': len(rubric_questions),
                     'successful_judges': len(successful),
                     'failed_judges': len(failed),
@@ -4480,15 +4626,21 @@ async def restart_auto_evaluation(
                 }
                 job.save()
 
-                if len(failed) == 0:
+                if len(failed) == 0 and save_succeeded:
                     job.set_status("completed")
                     job.add_log(f"\n✓ All {len(rubric_questions)} judges completed successfully!")
                     job.add_log(f"Total evaluations: {total_evaluated}")
-                else:
+                elif len(successful) > 0 and save_succeeded:
                     job.set_status("completed")  # Partial success
                     job.add_log(f"\n⚠ {len(successful)}/{len(rubric_questions)} judges succeeded")
                     for f in failed:
                         job.add_log(f"  Failed: {f['judge_name']}")
+                elif len(successful) > 0 and not save_succeeded:
+                    job.set_status("failed")
+                    job.add_log(f"\n✗ Evaluation succeeded but database save failed. Click 'Run Align()' to retry.")
+                else:
+                    job.set_status("failed")
+                    job.add_log(f"\n✗ All judges failed")
 
             finally:
                 thread_db.close()
@@ -4710,14 +4862,28 @@ async def re_evaluate(
         try:
             from server.services.alignment_service import AlignmentService
             from server.database import SessionLocal
-            
+
             thread_db = SessionLocal()
             try:
                 thread_db_service = DatabaseService(thread_db)
+
+                # Check if workshop has MLflow traces - if not, provide helpful error
+                traces = thread_db_service.get_traces(workshop_id)
+                has_mlflow_traces = any(t.mlflow_trace_id for t in traces if t.mlflow_trace_id)
+
+                if not has_mlflow_traces:
+                    job.set_status("failed")
+                    job.error = "No MLflow traces found. This workshop appears to use Simple Model Serving mode."
+                    job.add_log("ERROR: No MLflow traces found with mlflow_trace_id.")
+                    job.add_log("This workshop doesn't have MLflow integration.")
+                    job.add_log("Solution: Switch to 'Simple Model Serving' mode and click 'Run Evaluation' instead.")
+                    job.save()
+                    return
+
                 alignment_service = AlignmentService(thread_db_service)
-                
+
                 job.add_log("Initializing re-evaluation service...")
-                
+
                 result = None
                 for message in alignment_service.run_evaluation_with_answer_sheet(
                     workshop_id=workshop_id,

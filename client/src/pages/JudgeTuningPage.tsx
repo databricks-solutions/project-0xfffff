@@ -32,7 +32,6 @@ import { getModelOptions, getBackendModelName, getFrontendModelName, getDisplayN
 import { parseRubricQuestions } from '@/utils/rubricUtils';
 import { Pagination } from '@/components/Pagination';
 import { TraceDataViewer } from '@/components/TraceDataViewer';
-import { CustomLLMProviderConfig } from '@/components/CustomLLMProviderConfig';
 import { toast } from 'sonner';
 
 import type { 
@@ -131,15 +130,32 @@ export function JudgeTuningPage() {
       const snakeCase = title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
       return `${snakeCase}_judge`;
     }
-    
+
     // If saved name exists and is not default, use it as fallback
     if (workshop?.judge_name && workshop.judge_name !== 'workshop_judge') {
       return workshop.judge_name;
     }
-    
+
     // Fallback to default
     return 'workshop_judge';
   }, [selectedQuestion?.title, workshop?.judge_name]);
+
+  // Filter prompts to show only the current judge's prompts in the history dropdown
+  // Include prompts that match this judge OR have no judge_name (legacy/default prompts)
+  const judgeSpecificPrompts = useMemo(() => {
+    const filtered = prompts.filter(p => {
+      const pJudgeName = p.model_parameters?.judge_name;
+      // Include if: matches current judge, OR has no judge_name (default/legacy prompt)
+      return pJudgeName === judgeName || !pJudgeName;
+    });
+    console.log(`[JudgeTuning] Filtering prompts for judge "${judgeName}":`, {
+      totalPrompts: prompts.length,
+      judgeName,
+      filtered: filtered.length,
+      allJudgeNames: prompts.map(p => p.model_parameters?.judge_name).filter(Boolean),
+    });
+    return filtered;
+  }, [prompts, judgeName]);
 
   const logsStorageKey = useMemo(
     () => (workshopId ? `judge-alignment-logs-${workshopId}` : 'judge-alignment-logs'),
@@ -282,10 +298,42 @@ export function JudgeTuningPage() {
       setMetrics(null);
       // Don't clear evaluations here - auto-eval results should persist across question switches
       // setEvaluations([]);
-      
+
+      // Load the judge-specific prompt if available
+      if (prompts.length > 0 && selectedQuestion) {
+        const currentJudgeName = selectedQuestion.title
+          ? selectedQuestion.title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') + '_judge'
+          : 'workshop_judge';
+
+        // Find prompts for this specific judge
+        const judgePrompts = prompts.filter(p =>
+          p.model_parameters &&
+          typeof p.model_parameters === 'object' &&
+          p.model_parameters.judge_name === currentJudgeName
+        );
+
+        if (judgePrompts.length > 0) {
+          // Use the latest judge-specific prompt
+          const judgePrompt = judgePrompts[0];
+          setCurrentPrompt(judgePrompt.prompt_text);
+          setOriginalPromptText(judgePrompt.prompt_text);
+          setSelectedPromptId(judgePrompt.id);
+          setIsModified(false);
+        } else {
+          // No judge-specific prompt - create default from rubric
+          if (rubric) {
+            const defaultPrompt = createDefaultPrompt(rubric.question, selectedQuestionIndex);
+            setCurrentPrompt(defaultPrompt);
+            setOriginalPromptText(defaultPrompt);
+            setSelectedPromptId(null);
+            setIsModified(false);
+          }
+        }
+      }
+
       prevQuestionIndexRef.current = selectedQuestionIndex;
     }
-  }, [selectedQuestionIndex, selectedQuestion, workshopId]);
+  }, [selectedQuestionIndex, selectedQuestion, workshopId, prompts, rubric]);
 
   // Load initial data
   useEffect(() => {
@@ -488,16 +536,28 @@ export function JudgeTuningPage() {
         const defaultPrompt = createDefaultPrompt(rubricData.question, selectedQuestionIndex);
         setCurrentPrompt(defaultPrompt);
         setOriginalPromptText(defaultPrompt); // Track original for new prompt
-        
+
         // Set default models when no prompts exist
         setSelectedEvaluationModel(defaultModel);
         setSelectedAlignmentModel(defaultModel);
-        
+
         // Don't auto-create baseline - let user create it manually
         // This prevents the v2 issue where auto-creation makes first manual save become v2
       } else if (promptsData.length > 0) {
-        // Select the latest prompt (first in array since ordered by version desc)
-        const latestPrompt = promptsData[0];
+        // Get the judge name for the current question to find judge-specific prompt
+        const currentJudgeName = selectedQuestion?.title
+          ? selectedQuestion.title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') + '_judge'
+          : 'workshop_judge';
+
+        // Try to find the latest prompt for this specific judge (check model_parameters.judge_name)
+        const judgePrompts = promptsData.filter(p =>
+          p.model_parameters &&
+          typeof p.model_parameters === 'object' &&
+          p.model_parameters.judge_name === currentJudgeName
+        );
+
+        // Use judge-specific prompt if available, otherwise fall back to latest prompt
+        const latestPrompt = judgePrompts.length > 0 ? judgePrompts[0] : promptsData[0];
         
         // Check if prompt judge_type matches current rubric question's judge_type
         // If rubric changed (e.g., from Likert to Binary), update prompt template
@@ -527,25 +587,34 @@ export function JudgeTuningPage() {
         }
         
         setSelectedPromptId(latestPrompt.id);
-        
+
         // Sync model selection with saved prompt
+        // For evaluation model: use model_name (the model used for judge creation)
+        // For alignment model: use model_parameters.alignment_model if available, otherwise default to Opus 4.5
         if (latestPrompt.model_name) {
           const frontendModel = getFrontendModelName(latestPrompt.model_name);
-          // Validate that the model is actually in our dropdown options
           const isValidOption = modelOptions.some(opt => opt.value === frontendModel);
-          
+
           if (isValidOption) {
             setSelectedEvaluationModel(frontendModel);
-            setSelectedAlignmentModel(frontendModel);
           } else {
-            // Fall back to default if saved model isn't recognized (e.g., 'demo')
             setSelectedEvaluationModel(defaultModel);
-            setSelectedAlignmentModel(defaultModel);
           }
         } else {
-          // No model saved - use default
           setSelectedEvaluationModel(defaultModel);
-          setSelectedAlignmentModel(defaultModel);
+        }
+
+        // Alignment model: extract from model_parameters.alignment_model if this is an aligned prompt
+        if (latestPrompt.model_parameters && typeof latestPrompt.model_parameters === 'object' && latestPrompt.model_parameters.alignment_model) {
+          const alignmentModel = getFrontendModelName(latestPrompt.model_parameters.alignment_model);
+          const isValidOption = modelOptions.some(opt => opt.value === alignmentModel);
+          if (isValidOption) {
+            setSelectedAlignmentModel(alignmentModel);
+          } else {
+            setSelectedAlignmentModel('Claude Opus 4.5'); // Default to Opus 4.5 for alignment
+          }
+        } else {
+          setSelectedAlignmentModel('Claude Opus 4.5'); // Default to Opus 4.5 for alignment
         }
         
         // Don't auto-load metrics from saved prompts - only show metrics after running evaluation
@@ -606,6 +675,12 @@ export function JudgeTuningPage() {
           // If auto-eval is currently running, start polling
           if (autoEvalData.status === 'running') {
             setIsPollingAutoEval(true);
+          }
+
+          // Warn if auto-eval reported completed but no evaluations were saved
+          if (autoEvalData.status === 'completed' && (!autoEvalData.evaluations || autoEvalData.evaluations.length === 0)) {
+            console.warn('[AutoEval] Status is completed but no evaluations found - possible save failure');
+            toast.warning('Auto-evaluation completed but results were not saved. Click "Run Align()" to retry evaluation.');
           }
         }
       } catch (autoEvalErr) {
@@ -784,7 +859,10 @@ Think step by step about how well the output addresses the criteria, then provid
         judge_type: judgeType, // Include judge type to ensure correct template association
         few_shot_examples: [],
         model_name: getBackendModelName(selectedEvaluationModel),
-        model_parameters: selectedEvaluationModel === 'demo' ? null : { temperature: 0.0, max_tokens: 10 }
+        model_parameters: {
+          ...(selectedEvaluationModel === 'demo' ? {} : { temperature: 0.0, max_tokens: 10 }),
+          judge_name: judgeName, // Associate prompt with current judge for per-judge versioning
+        }
       };
 
       const newPrompt = await WorkshopsService.createJudgePromptWorkshopsWorkshopIdJudgePromptsPost(
@@ -1089,7 +1167,7 @@ Think step by step about how well the output addresses the criteria, then provid
     }
   };
 
-  // Re-evaluate handler - calls the /re-evaluate endpoint
+  // Re-evaluate handler - calls different endpoints based on evaluation mode
   const handleReEvaluate = async () => {
     if (!workshopId) {
       toast.error('Workshop not found');
@@ -1109,12 +1187,41 @@ Think step by step about how well the output addresses the criteria, then provid
     setShowAlignmentLogs(true);
 
     try {
-      // Don't pass evaluation_model_name - backend will use the original model from auto-evaluation
+      // For Simple Model Serving mode, call start-simple-evaluation instead of re-evaluate
+      if (evaluationMode === 'simple') {
+        const response = await fetch(`/workshops/${workshopId}/start-simple-evaluation`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            judge_prompt: promptToUse,
+            endpoint_name: simpleEndpointName,
+            judge_name: judgeName,
+            prompt_id: selectedPromptId || undefined,
+            judge_type: judgeType,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Failed to start evaluation: ${response.status} ${errorText}`);
+        }
+
+        const { job_id } = await response.json();
+        setAutoEvalJobId(job_id);
+        setAutoEvalStatus('running');
+        setIsPollingAutoEval(true);
+        toast.info('Evaluation started. Polling for results...');
+        return;
+      }
+
+      // MLflow mode - use re-evaluate endpoint
       const response = await fetch(`/workshops/${workshopId}/re-evaluate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           judge_prompt: promptToUse,
+          judge_name: judgeName,
+          judge_type: judgeType,
         }),
       });
 
@@ -1412,16 +1519,21 @@ Think step by step about how well the output addresses the criteria, then provid
                 // Refresh prompts list and select the new aligned version
                 if (status.result.saved_prompt_id) {
                   try {
+                    // Refresh prompts list to show the new aligned version
                     const updatedPrompts = await WorkshopsService.getJudgePromptsWorkshopsWorkshopIdJudgePromptsGet(workshopId);
                     setPrompts(updatedPrompts);
                     setSelectedPromptId(status.result.saved_prompt_id);
-                    
+
                     // Load the aligned prompt text from the database to ensure consistency
                     const alignedPrompt = updatedPrompts.find(p => p.id === status.result.saved_prompt_id);
                     if (alignedPrompt) {
                       setCurrentPrompt(alignedPrompt.prompt_text);
                       setOriginalPromptText(alignedPrompt.prompt_text);
                       setIsModified(false);
+                      // Load metrics from the aligned prompt if available
+                      if (alignedPrompt.performance_metrics) {
+                        setMetrics(alignedPrompt.performance_metrics as JudgePerformanceMetrics);
+                      }
                     }
                     
                     // Re-fetch evaluations from the server — auto-eval ran before alignment
@@ -1561,35 +1673,41 @@ Think step by step about how well the output addresses the criteria, then provid
   return (
     <div className="h-full bg-gray-50 p-6 space-y-6">
       {/* Header */}
-      <div className="mb-6">
-        <div className="flex items-center gap-3 mb-2">
-          <Brain className="h-8 w-8 text-blue-600" />
-          <h1 className="text-3xl font-bold text-gray-900">Judge Tuning</h1>
-          <div className="ml-auto">
-            {prompts.length > 0 && (
-              <Badge variant="outline">
-                {prompts.length} Prompt{prompts.length === 1 ? '' : 's'}
-              </Badge>
-            )}
+      <div className="flex items-center justify-between gap-3 mb-6">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-100">
+            <Brain className="w-5 h-5 text-purple-600" />
+          </div>
+          <div>
+            <h1 className="text-xl font-semibold text-gray-900">Judge Tuning</h1>
+            <p className="text-sm text-gray-500">
+              Create and refine AI judges using human annotation data.
+            </p>
           </div>
         </div>
-        <div className="flex items-center justify-between">
-          <p className="text-gray-600">
-            Create and refine AI judges using your workshop's human annotation data.
-          </p>
-          <div className="text-sm">
-            {mlflowConfig ? (
-              <Badge className="bg-green-100 text-green-800">
-                <Database className="h-3 w-3 mr-1" />
-                MLflow Connected
-              </Badge>
-            ) : (
-              <Badge className="bg-yellow-100 text-yellow-800">
-                <AlertCircle className="h-3 w-3 mr-1" />
-                MLflow Not Configured
-              </Badge>
-            )}
-          </div>
+        <div className="flex items-center gap-2">
+          {prompts.length > 0 && (
+            <Badge variant="outline" className="text-xs">
+              {prompts.length} prompt{prompts.length === 1 ? '' : 's'}
+            </Badge>
+          )}
+          {mlflowConfig ? (
+            <Badge className="bg-green-50 text-green-700 border border-green-200">
+              <Database className="h-3 w-3 mr-1" />
+              MLflow Connected
+            </Badge>
+          ) : (
+            <Badge className="bg-amber-50 text-amber-700 border border-amber-200">
+              <AlertCircle className="h-3 w-3 mr-1" />
+              MLflow Not Configured
+            </Badge>
+          )}
+          {annotatedTraceCount > 0 && (
+            <Badge className="bg-blue-50 text-blue-700 border border-blue-200">
+              <Users className="h-3 w-3 mr-1" />
+              {annotatedTraceCount} annotated
+            </Badge>
+          )}
         </div>
       </div>
 
@@ -1602,11 +1720,15 @@ Think step by step about how well the output addresses the criteria, then provid
 
       {/* Rubric Question Selector */}
       {parsedRubricQuestions.length > 1 && (
-        <div className="mb-6">
-          <label className="text-sm font-medium text-gray-700 mb-2 block">
-            Select Judge to Tune ({parsedRubricQuestions.length} available)
+        <div className="mb-6 bg-white rounded-lg border-l-4 border-indigo-500 p-4 shadow-sm">
+          <label className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-2 uppercase tracking-wide">
+            <Target className="h-4 w-4 text-indigo-600" />
+            Select Judge to Tune
+            <Badge className="bg-indigo-100 text-indigo-700 border-indigo-300">
+              {parsedRubricQuestions.length} available
+            </Badge>
           </label>
-          <Select 
+          <Select
             value={String(selectedQuestionIndex)}
             onValueChange={(value) => setSelectedQuestionIndex(Number(value))}
           >
@@ -1618,7 +1740,11 @@ Think step by step about how well the output addresses the criteria, then provid
                 <SelectItem key={question.id || index} value={String(index)}>
                   <div className="flex items-center gap-2">
                     <span className="font-medium">{index + 1}. {question.title}</span>
-                    <Badge variant="outline" className="text-xs">
+                    <Badge variant="outline" className={`text-xs ${
+                      question.judgeType === 'likert' ? 'bg-blue-50 text-blue-700 border-blue-300' :
+                      question.judgeType === 'binary' ? 'bg-green-50 text-green-700 border-green-300' :
+                      'bg-purple-50 text-purple-700 border-purple-300'
+                    }`}>
                       {question.judgeType === 'likert' && 'Likert'}
                       {question.judgeType === 'binary' && 'Binary'}
                       {question.judgeType === 'freeform' && 'Free-form'}
@@ -1636,15 +1762,18 @@ Think step by step about how well the output addresses the criteria, then provid
         {/* Left Column - Prompt Editor (1/3) */}
         <div className="lg:col-span-1 space-y-4">
           
-          {/* Prompt History Dropdown */}
-          {prompts.length > 0 && (
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-2 block">Prompt History</label>
-              <Select 
+          {/* Prompt History Dropdown - shows only current judge's prompts */}
+          <div className="bg-white rounded-lg border-l-4 border-blue-400 p-3 shadow-sm">
+            <label className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-2 uppercase tracking-wide">
+              <Clock className="h-4 w-4 text-blue-600" />
+              Prompt History
+            </label>
+            {judgeSpecificPrompts.length > 0 ? (
+              <Select
                 value={selectedPromptId || undefined}
                 onValueChange={(value) => {
                   setSelectedPromptId(value);
-                  const prompt = prompts.find(p => p.id === value);
+                  const prompt = judgeSpecificPrompts.find(p => p.id === value);
                   if (prompt) {
                     setCurrentPrompt(prompt.prompt_text);
                     setOriginalPromptText(prompt.prompt_text); // Track original for modification detection
@@ -1652,7 +1781,13 @@ Think step by step about how well the output addresses the criteria, then provid
                     if (prompt.model_name) {
                         const frontendModel = getFrontendModelName(prompt.model_name);
                         setSelectedEvaluationModel(frontendModel);
-                        setSelectedAlignmentModel(frontendModel);
+                    }
+                    // Set alignment model from model_parameters if available, otherwise default to Opus 4.5
+                    if (prompt.model_parameters && typeof prompt.model_parameters === 'object' && prompt.model_parameters.alignment_model) {
+                        const alignmentModel = getFrontendModelName(prompt.model_parameters.alignment_model);
+                        setSelectedAlignmentModel(alignmentModel);
+                    } else {
+                        setSelectedAlignmentModel('Claude Opus 4.5');
                     }
                     // Clear evaluation state when switching prompts
                     setHasEvaluated(false);
@@ -1669,17 +1804,27 @@ Think step by step about how well the output addresses the criteria, then provid
                   } />
                 </SelectTrigger>
                 <SelectContent>
-                  {prompts.map((prompt) => (
+                  {judgeSpecificPrompts.map((prompt) => (
                     <SelectItem key={prompt.id} value={prompt.id}>
                       <div className="flex items-center justify-between w-full">
                         <div className="flex items-center gap-2">
-                          <span>v{prompt.version}</span>
-                          <Badge variant="outline" className="text-xs">
-                            {(prompt.model_parameters as any)?.aligned 
-                              ? 'Aligned' 
-                              : prompt.model_name === 'demo' 
-                                ? 'Demo' 
-                                : getDisplayName(getFrontendModelName(prompt.model_name || ''))}
+                          <span className="font-semibold">v{(prompt.model_parameters as any)?.judge_name ? prompt.version : 0}</span>
+                          <Badge className={`text-xs ${
+                            (prompt.model_parameters as any)?.aligned
+                              ? 'bg-purple-100 text-purple-700 border-purple-300'
+                              : !(prompt.model_parameters as any)?.judge_name
+                                ? 'bg-gray-100 text-gray-700 border-gray-300'
+                                : prompt.model_name === 'demo'
+                                  ? 'bg-orange-100 text-orange-700 border-orange-300'
+                                  : 'bg-blue-100 text-blue-700 border-blue-300'
+                          }`}>
+                            {(prompt.model_parameters as any)?.aligned
+                              ? 'Aligned'
+                              : !(prompt.model_parameters as any)?.judge_name
+                                ? 'Default'
+                                : prompt.model_name === 'demo'
+                                  ? 'Demo'
+                                  : getDisplayName(getFrontendModelName(prompt.model_name || ''))}
                           </Badge>
                         </div>
                         {prompt.performance_metrics && (
@@ -1692,15 +1837,22 @@ Think step by step about how well the output addresses the criteria, then provid
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-          )}
+            ) : (
+              <p className="text-xs text-gray-500 italic">No saved versions for this judge yet. Run alignment to create the first version.</p>
+            )}
+          </div>
 
           {/* Prompt Editor */}
-          <Card className="flex-1 flex flex-col">
+          <Card className="flex-1 flex flex-col border-l-4 border-blue-500">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-lg">
-                <Zap className="h-4 w-4" />
+                <Zap className="h-5 w-5 text-blue-600" />
                 Judge Prompt
+                {isModified && (
+                  <Badge variant="secondary" className="bg-amber-100 text-amber-700 ml-auto">
+                    Modified
+                  </Badge>
+                )}
               </CardTitle>
               <CardDescription className="text-xs">
                 The prompt in the textbox below is what gets evaluated. Use {'{input}'} and {'{output}'} as placeholders.
@@ -1788,11 +1940,16 @@ Think step by step about how well the output addresses the criteria, then provid
 
           {/* Databricks Configuration Warning */}
           {!mlflowConfig && selectedEvaluationModel !== 'demo' && annotations.length > 0 && (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
+            <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-l-4 border-amber-500 rounded-lg p-4 mb-4 shadow-sm">
               <div className="flex gap-3">
-                <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <AlertCircle className="h-6 w-6 text-amber-600 flex-shrink-0 mt-0.5" />
                 <div>
-                  <h4 className="font-medium text-amber-900">Databricks Configuration Required</h4>
+                  <h4 className="font-semibold text-amber-900 flex items-center gap-2">
+                    Databricks Configuration Required
+                    <Badge className="bg-amber-100 text-amber-700 border-amber-300">
+                      Action Needed
+                    </Badge>
+                  </h4>
                   <p className="text-sm text-amber-800 mt-1">
                     Configure your Databricks workspace connection in the Intake phase to use AI judges.
                   </p>
@@ -1801,68 +1958,58 @@ Think step by step about how well the output addresses the criteria, then provid
             </div>
           )}
 
-          {/* Custom LLM Provider Configuration */}
-          <div className="mb-4">
-            <CustomLLMProviderConfig
-              workshopId={workshopId!}
-              onConfigChange={(config) => {
-                // Track when custom provider is configured for model dropdown
-              }}
-            />
-          </div>
-
           {/* Performance Metrics Bar - Only show after evaluation has been run */}
           {metrics && hasEvaluated && (() => {
             const agreementByRating = metrics.agreement_by_rating || {};
             return (
-              <div className="bg-white rounded-lg border p-4 mb-4">
+              <div className="bg-gradient-to-br from-green-50 to-blue-50 rounded-lg border-l-4 border-green-500 p-4 mb-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-6">
                   {/* Evaluation Mode Badge */}
-                  <div>
-                    <span className="text-sm text-gray-500">Mode</span>
-                    <div className="flex items-center gap-2">
+                  <div className="bg-white rounded-lg p-3 shadow-sm">
+                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Mode</span>
+                    <div className="flex items-center gap-2 mt-1">
                       {selectedEvaluationModel === 'demo' ? (
-                        <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
+                        <Badge className="bg-orange-100 text-orange-700 border-orange-300">
                           <TestTube className="h-3 w-3 mr-1" />
                           Demo
                         </Badge>
                       ) : evaluationMode === 'simple' ? (
-                        <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+                        <Badge className="bg-purple-100 text-purple-700 border-purple-300">
                           <Cloud className="h-3 w-3 mr-1" />
                           Simple
                         </Badge>
                       ) : (
-                        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                        <Badge className="bg-blue-100 text-blue-700 border-blue-300">
                           <Zap className="h-3 w-3 mr-1" />
                           MLflow
                         </Badge>
                       )}
                     </div>
                   </div>
-                  <div>
-                    <span className="text-sm text-gray-500">
+                  <div className="bg-white rounded-lg p-3 shadow-sm">
+                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                       Cohen's κ
                       {metrics.total_evaluations < 3 && (
                         <span className="text-xs text-amber-600 ml-1">(limited data)</span>
                       )}
                     </span>
-                    <div className={`text-xl font-bold ${getMetricColor(metrics.correlation, 'correlation')}`}>
+                    <div className={`text-2xl font-bold mt-1 ${getMetricColor(metrics.correlation, 'correlation')}`}>
                       {(metrics.correlation * 100).toFixed(1)}%
                       {metrics.total_evaluations < 3 && (
                         <span className="text-xs text-amber-600 ml-1">*</span>
                       )}
                     </div>
                   </div>
-                  <div>
-                    <span className="text-sm text-gray-500">Accuracy</span>
-                    <div className={`text-xl font-bold ${getMetricColor(metrics.accuracy, 'accuracy')}`}>
+                  <div className="bg-white rounded-lg p-3 shadow-sm">
+                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Accuracy</span>
+                    <div className={`text-2xl font-bold mt-1 ${getMetricColor(metrics.accuracy, 'accuracy')}`}>
                       {(metrics.accuracy * 100).toFixed(1)}%
                     </div>
                   </div>
-                  <div>
-                    <span className="text-sm text-gray-500">Total</span>
-                    <div className="text-xl font-bold text-blue-600">
+                  <div className="bg-white rounded-lg p-3 shadow-sm">
+                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total</span>
+                    <div className="text-2xl font-bold text-blue-600 mt-1">
                       {metrics.total_evaluations}
                       {(metrics as any).total_evaluations_all && (metrics as any).total_evaluations_all > metrics.total_evaluations && (
                         <span className="text-xs text-gray-400 ml-1">
@@ -1878,35 +2025,50 @@ Think step by step about how well the output addresses the criteria, then provid
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {[1, 2, 3, 4, 5].map(rating => (
-                    <div key={rating} className="text-center">
-                      <div className="text-xs text-gray-500">{rating}★</div>
-                      <div className={`text-sm font-semibold ${
-                        (agreementByRating[rating.toString()] || 0) >= 0.8 ? 'text-green-600' :
-                        (agreementByRating[rating.toString()] || 0) >= 0.6 ? 'text-yellow-600' :
-                        'text-red-600'
+                  {[1, 2, 3, 4, 5].map(rating => {
+                    const agreement = agreementByRating[rating.toString()] || 0;
+                    const isHigh = agreement >= 0.8;
+                    const isMedium = agreement >= 0.6 && agreement < 0.8;
+                    return (
+                      <div key={rating} className={`text-center bg-white rounded-lg p-2 shadow-sm ${
+                        isHigh ? 'border-l-2 border-green-500' :
+                        isMedium ? 'border-l-2 border-amber-500' :
+                        'border-l-2 border-red-500'
                       }`}>
-                        {((agreementByRating[rating.toString()] || 0) * 100).toFixed(0)}%
+                        <div className="text-xs text-gray-500 font-medium">{rating}★</div>
+                        <div className={`text-sm font-bold ${
+                          isHigh ? 'text-green-600' :
+                          isMedium ? 'text-amber-600' :
+                          'text-red-600'
+                        }`}>
+                          {(agreement * 100).toFixed(0)}%
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
               
               {/* Small sample warning */}
               {metrics.total_evaluations < 3 && (
-                <div className="mt-3 text-xs text-amber-700 bg-amber-50 px-3 py-2 rounded">
-                  <strong>Note:</strong> Cohen's kappa with fewer than 3 evaluations shows simple agreement rate instead of statistical kappa. 
-                  Get more annotation data for reliable inter-rater agreement metrics.
+                <div className="mt-3 text-xs text-amber-700 bg-amber-50 border-l-2 border-amber-400 px-3 py-2 rounded flex items-start gap-2">
+                  <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <strong>Note:</strong> Cohen's kappa with fewer than 3 evaluations shows simple agreement rate instead of statistical kappa.
+                    Get more annotation data for reliable inter-rater agreement metrics.
+                  </div>
                 </div>
               )}
-              
+
               {/* Missing ratings warning */}
               {(metrics as any).total_evaluations_all && (metrics as any).total_evaluations_all > metrics.total_evaluations && (
-                <div className="mt-3 text-xs text-orange-700 bg-orange-50 px-3 py-2 rounded">
-                  <strong>Warning:</strong> {(metrics as any).total_evaluations_all - metrics.total_evaluations} out of {(metrics as any).total_evaluations_all} evaluations have missing or invalid judge ratings. 
-                  These may have been rejected due to invalid responses (e.g., MLflow returning 3.0 for binary judges). 
-                  Only evaluations with both valid human and judge ratings are included in the metrics.
+                <div className="mt-3 text-xs text-orange-700 bg-orange-50 border-l-2 border-orange-400 px-3 py-2 rounded flex items-start gap-2">
+                  <XCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <strong>Warning:</strong> {(metrics as any).total_evaluations_all - metrics.total_evaluations} out of {(metrics as any).total_evaluations_all} evaluations have missing or invalid judge ratings.
+                    These may have been rejected due to invalid responses (e.g., MLflow returning 3.0 for binary judges).
+                    Only evaluations with both valid human and judge ratings are included in the metrics.
+                  </div>
                 </div>
               )}
             </div>
@@ -1914,17 +2076,23 @@ Think step by step about how well the output addresses the criteria, then provid
           })()}
 
           {/* Evaluation Grid */}
-          <Card className="flex flex-col">
+          <Card className="flex flex-col border-l-4 border-green-500">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="flex items-center gap-2 text-lg">
-                  <Target className="h-4 w-4" />
+                  <Target className="h-5 w-5 text-green-600" />
                   Evaluation Results
                 </CardTitle>
                 <div className="flex items-center gap-2">
                   {evaluations.length > 0 && (
-                    <Badge variant="outline">
+                    <Badge className="bg-green-100 text-green-700 border-green-300">
+                      <CheckCircle className="h-3 w-3 mr-1" />
                       {evaluations.length} evaluations
+                    </Badge>
+                  )}
+                  {hasEvaluated && evaluationComplete && (
+                    <Badge className="bg-blue-100 text-blue-700 border-blue-300">
+                      Complete
                     </Badge>
                   )}
                 </div>
@@ -2033,10 +2201,9 @@ Think step by step about how well the output addresses the criteria, then provid
                           let evaluation = hasJudgeLabels && expectedJudgeName
                             ? evaluations.find((e: any) => matchesTrace(e) && e.predicted_feedback === expectedJudgeName)
                             : evaluations.find((e: any) => matchesTrace(e));
-                          // Fallback: if no match with judge filter, try without (handles legacy data)
-                          if (!evaluation && hasJudgeLabels) {
-                            evaluation = evaluations.find((e: any) => matchesTrace(e));
-                          }
+                          // REMOVED fallback: Don't show other judges' scores when filtering by judge name
+                          // Each judge must have its own evaluation results; showing another judge's
+                          // score is confusing (e.g., binary scores appearing for Likert questions)
                           
                           const judgeRating = evaluation?.predicted_rating;
 
@@ -2202,131 +2369,109 @@ Think step by step about how well the output addresses the criteria, then provid
       </div>
 
       {/* Judge Alignment & Evaluation */}
-      <Card className="border-purple-200 bg-gradient-to-br from-purple-50 to-indigo-50">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Brain className="h-5 w-5 text-purple-600" />
-            Judge Alignment
-          </CardTitle>
-          <CardDescription>
-            {evaluationMode === 'mlflow' 
+      <Card className="border-l-4 border-purple-500">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Brain className="h-5 w-5 text-purple-600" />
+              Judge Alignment
+            </CardTitle>
+            {alignmentResult && (
+              <Badge className="bg-purple-50 text-purple-700 border border-purple-200">
+                <CheckCircle className="h-3 w-3 mr-1" />
+                Aligned
+              </Badge>
+            )}
+          </div>
+          <CardDescription className="text-xs">
+            {evaluationMode === 'mlflow'
               ? 'Run mlflow.genai.evaluate() and align() using the prompt and model above. Ensure traces are tagged for alignment in Results Review.'
               : 'Use simple Databricks Model Serving to evaluate your judge prompt against human annotations.'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Evaluation Mode Toggle */}
-          <div className="flex items-center gap-4 p-3 bg-white border border-purple-200 rounded-lg">
-            <span className="text-sm font-medium text-gray-700">Evaluation Mode:</span>
-            <div className="flex gap-2">
+          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-md border border-gray-200">
+            <span className="text-xs font-medium text-gray-600">Evaluation Mode:</span>
+            <div className="flex gap-1 bg-white rounded-md p-1 border border-gray-200">
               <Button
-                variant={evaluationMode === 'mlflow' ? 'default' : 'outline'}
+                variant={evaluationMode === 'mlflow' ? 'default' : 'ghost'}
                 size="sm"
                 onClick={() => setEvaluationMode('mlflow')}
-                className={evaluationMode === 'mlflow' ? 'bg-purple-600 hover:bg-purple-700' : ''}
+                className="h-7"
               >
-                <Database className="h-4 w-4 mr-1" />
+                <Database className="h-3.5 w-3.5 mr-1.5" />
                 MLflow
               </Button>
               <Button
-                variant={evaluationMode === 'simple' ? 'default' : 'outline'}
+                variant={evaluationMode === 'simple' ? 'default' : 'ghost'}
                 size="sm"
                 onClick={() => setEvaluationMode('simple')}
-                className={evaluationMode === 'simple' ? 'bg-blue-600 hover:bg-blue-700' : ''}
+                className="h-7"
               >
-                <Cloud className="h-4 w-4 mr-1" />
+                <Cloud className="h-3.5 w-3.5 mr-1.5" />
                 Simple Model Serving
               </Button>
             </div>
-            <span className="text-xs text-gray-500 ml-auto">
-              {evaluationMode === 'mlflow' 
+            <span className="text-xs text-gray-400 ml-auto">
+              {evaluationMode === 'mlflow'
                 ? 'Full MLflow integration with metrics tracking'
                 : 'Direct endpoint calls (no MLflow required)'}
             </span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <span className="text-sm font-medium text-gray-700">Traces Included</span>
-              <div className="px-3 py-2 bg-white border border-gray-200 rounded-md mt-1">
-                <span className="text-lg font-bold text-purple-600">
-                  {annotatedTraceCount}
-                </span>
-                <span className="text-sm text-gray-600 ml-2">
-                  SME-annotated trace{annotatedTraceCount === 1 ? '' : 's'}
-                </span>
-              </div>
-            </div>
-            <div>
-              <span className="text-sm font-medium text-gray-700">Alignment Status</span>
-              <div className="mt-2">
-                {alignmentResult ? (
-                  <Badge className="bg-indigo-100 text-indigo-800">
-                    <CheckCircle className="h-3 w-3 mr-1" />
-                    Alignment complete
-                  </Badge>
-                ) : annotatedTraceCount >= 10 ? (
-                  <Badge className="bg-green-100 text-green-800">
-                    <CheckCircle className="h-3 w-3 mr-1" />
-                    Ready for alignment
-                  </Badge>
-                ) : (
-                  <Badge className="bg-amber-100 text-amber-800">
-                    {annotatedTraceCount}/10 annotations
-                  </Badge>
-                )}
-              </div>
-              {hasEvaluated && (
-                <p className="text-xs text-gray-500 mt-1">
-                  Auto-evaluated: {evaluations.length} traces
-                </p>
-              )}
-            </div>
-          </div>
-
           {/* MLflow Mode Options */}
           {evaluationMode === 'mlflow' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-2 block">Alignment LLM</label>
-                <Select 
-                  value={selectedAlignmentModel} 
+              <div className="bg-purple-50 rounded-lg p-4 shadow-sm border-l-4 border-purple-500">
+                <label className="text-xs font-semibold text-purple-800 mb-2 flex items-center gap-2 uppercase tracking-wide">
+                  <Brain className="h-4 w-4 text-purple-600" />
+                  Alignment LLM
+                </label>
+                <Select
+                  value={selectedAlignmentModel}
                   onValueChange={setSelectedAlignmentModel}
                 >
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger className="w-full bg-white">
                     <SelectValue placeholder="Choose alignment model" />
                   </SelectTrigger>
                   <SelectContent>
                     {getModelOptions(!!mlflowConfig).map((option) => (
-                      <SelectItem 
-                        key={option.value} 
+                      <SelectItem
+                        key={option.value}
                         value={option.value}
                         disabled={option.disabled}
                       >
                         <div className="flex items-center justify-between w-full">
                           <span>{option.label}</span>
                           {option.requiresDatabricks && !mlflowConfig && (
-                            <span className="text-xs text-gray-500 ml-2">(Requires Databricks)</span>
+                            <Badge className="bg-amber-100 text-amber-700 border-amber-300 ml-2 text-xs">
+                              Requires Databricks
+                            </Badge>
                           )}
                         </div>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
+                  <Zap className="h-3 w-3" />
                   Used for SIMBA optimizer
                 </p>
               </div>
-              
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-2 block">Judge Name</label>
+
+              <div className="bg-white rounded-lg p-4 shadow-sm border-l-2 border-indigo-400">
+                <label className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-2 uppercase tracking-wide">
+                  <Target className="h-4 w-4 text-indigo-600" />
+                  Judge Name
+                </label>
                 <Input
                   value={judgeName}
                   readOnly
-                  className="bg-gray-50"
+                  className="bg-gray-50 font-mono text-sm"
                   placeholder="workshop_judge"
                 />
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-500 mt-2">
                   Derived from rubric question: "{selectedQuestion?.title}"
                 </p>
               </div>
@@ -2336,9 +2481,10 @@ Think step by step about how well the output addresses the criteria, then provid
           {/* Simple Model Serving Mode Options */}
           {evaluationMode === 'simple' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-2 block">
-                  Databricks Model Serving Endpoint
+              <div className="bg-white rounded-lg p-4 shadow-sm border-l-2 border-blue-400">
+                <label className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-2 uppercase tracking-wide">
+                  <Cloud className="h-4 w-4 text-blue-600" />
+                  Model Serving Endpoint
                 </label>
                 <Select
                   value={simpleEndpointName}
@@ -2355,19 +2501,23 @@ Think step by step about how well the output addresses the criteria, then provid
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-gray-500 mt-1">
-                  Select a Databricks model serving endpoint
+                <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
+                  <Database className="h-3 w-3" />
+                  Databricks model endpoint
                 </p>
               </div>
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-2 block">Judge Name</label>
+              <div className="bg-white rounded-lg p-4 shadow-sm border-l-2 border-indigo-400">
+                <label className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-2 uppercase tracking-wide">
+                  <Target className="h-4 w-4 text-indigo-600" />
+                  Judge Name
+                </label>
                 <Input
                   value={judgeName}
                   readOnly
-                  className="bg-gray-50"
+                  className="bg-gray-50 font-mono text-sm"
                   placeholder="workshop_judge"
                 />
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-500 mt-2">
                   Derived from rubric question: "{selectedQuestion?.title}"
                 </p>
               </div>
@@ -2378,11 +2528,11 @@ Think step by step about how well the output addresses the criteria, then provid
 
           {/* Auto-evaluation status messages */}
           {autoEvalStatus === 'completed' && hasEvaluated && !alignmentResult && (
-            <Alert className="mb-4 border-green-200 bg-green-50">
-              <CheckCircle className="h-4 w-4 text-green-600" />
+            <Alert className="mb-4 border-l-4 border-green-500 bg-gradient-to-r from-green-50 to-emerald-50 shadow-sm">
+              <CheckCircle className="h-5 w-5 text-green-600" />
               <AlertDescription className="text-green-800">
-                <strong>Auto-evaluation complete</strong> - LLM judge scores are available below. 
-                {annotatedTraceCount >= 10 
+                <strong className="font-semibold">Auto-evaluation complete</strong> - LLM judge scores are available below.
+                {annotatedTraceCount >= 10
                   ? ' Ready to run alignment!'
                   : ` Need ${10 - annotatedTraceCount} more human annotations before alignment.`}
               </AlertDescription>
@@ -2390,10 +2540,10 @@ Think step by step about how well the output addresses the criteria, then provid
           )}
 
           {alignmentResult && (
-            <Alert className="mb-4 border-indigo-200 bg-indigo-50">
-              <Brain className="h-4 w-4 text-indigo-600" />
+            <Alert className="mb-4 border-l-4 border-indigo-500 bg-gradient-to-r from-indigo-50 to-purple-50 shadow-sm">
+              <Brain className="h-5 w-5 text-indigo-600" />
               <AlertDescription className="text-indigo-800">
-                <strong>Alignment complete</strong> - Judge has been optimized. 
+                <strong className="font-semibold">Alignment complete</strong> - Judge has been optimized.
                 You can now re-evaluate to see improved scores, or run alignment again with different settings.
               </AlertDescription>
             </Alert>
@@ -2515,21 +2665,31 @@ Think step by step about how well the output addresses the criteria, then provid
 
             {/* Status messages */}
             {evaluationMode === 'mlflow' && annotatedTraceCount < 10 && autoEvalStatus !== 'running' && (
-              <span className="text-sm text-gray-500">
-                ⚠️ Need {10 - annotatedTraceCount} more human-annotated traces for alignment
-              </span>
+              <Badge className="bg-amber-100 text-amber-700 border-amber-300">
+                <AlertCircle className="h-3 w-3 mr-1" />
+                Need {10 - annotatedTraceCount} more annotations
+              </Badge>
             )}
-            
+
             {evaluationMode === 'simple' && (
-              <span className="text-sm text-blue-600">
-                💡 Simple mode: Direct evaluation via Model Serving (no alignment available)
-              </span>
+              <Badge className="bg-blue-100 text-blue-700 border-blue-300">
+                <Cloud className="h-3 w-3 mr-1" />
+                Simple mode: No alignment available
+              </Badge>
             )}
           </div>
 
-          <div className="mt-4">
+          <div className="mt-4 bg-white rounded-lg p-4 shadow-sm border-l-2 border-gray-400">
             <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium text-gray-700">Execution Logs</label>
+              <label className="text-xs font-semibold text-gray-700 flex items-center gap-2 uppercase tracking-wide">
+                <Database className="h-4 w-4 text-gray-600" />
+                Execution Logs
+                {alignmentLogs.length > 0 && (
+                  <Badge className="bg-gray-100 text-gray-700 border-gray-300">
+                    {alignmentLogs.length} entries
+                  </Badge>
+                )}
+              </label>
               <Button
                 variant="ghost"
                 size="sm"
@@ -2539,7 +2699,7 @@ Think step by step about how well the output addresses the criteria, then provid
               </Button>
             </div>
             {showAlignmentLogs && (
-              <div className="bg-gray-900 rounded-lg p-4 max-h-[300px] overflow-y-auto">
+              <div className="bg-gray-900 rounded-lg p-4 max-h-[300px] overflow-y-auto border border-gray-700 shadow-inner">
                 {alignmentLogs.length === 0 ? (
                   <p className="text-sm text-gray-400 font-mono">No logs yet.</p>
                 ) : (
@@ -2556,12 +2716,16 @@ Think step by step about how well the output addresses the criteria, then provid
           </div>
 
           {alignmentResult && alignmentResult.success && (
-            <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+            <div className="mt-4 p-4 bg-gradient-to-br from-green-50 to-emerald-50 border-l-4 border-green-500 rounded-lg shadow-sm">
               <div className="flex items-center gap-2 mb-2">
-                <CheckCircle className="h-5 w-5 text-green-600" />
-                <span className="font-medium text-green-800">Alignment Successful</span>
+                <CheckCircle className="h-6 w-6 text-green-600" />
+                <span className="font-semibold text-green-800 text-lg">Alignment Successful</span>
+                <Badge className="bg-green-100 text-green-700 border-green-300 ml-auto">
+                  <Zap className="h-3 w-3 mr-1" />
+                  Ready to Deploy
+                </Badge>
               </div>
-              <p className="text-sm text-green-700">
+              <p className="text-sm text-green-700 font-medium">
                 Judge "{alignmentResult.judge_name}" tuned on {alignmentResult.trace_count} traces.
                 {alignmentResult.saved_prompt_version && (
                   <span className="ml-1">(Saved as v{alignmentResult.saved_prompt_version})</span>

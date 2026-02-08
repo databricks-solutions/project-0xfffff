@@ -150,7 +150,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
     if (currentPhase === 'intake') {
       steps.push({
         title: 'Intake Phase',
-        description: isFacilitator ? 'Configure and pull MLflow traces' : 'Waiting for facilitator to load traces',
+        description: isFacilitator ? 'Pull MLflow traces' : 'Waiting for traces',
         status: isFacilitator ? 'in_progress' : 'waiting',
         action: () => onNavigate('intake'),
         accessible: isFacilitator  // Only facilitator can click
@@ -159,19 +159,19 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
       // Intake is completed
       steps.push({
         title: 'Intake Phase',
-        description: 'MLflow traces loaded and ready',
+        description: 'Traces loaded and ready',
         status: 'completed',
         action: () => onNavigate('intake'),
         accessible: isFacilitator  // Only facilitator can click
       });
     }
-    
+
     // Phase 1: Discovery Phase
     if (currentPhase === 'intake') {
       // Pre-discovery: Show waiting for everyone, facilitator gets special treatment in main content
       steps.push({
         title: 'Discovery Phase',
-        description: isFacilitator ? 'Ready to begin discovery phase' : 'Waiting for facilitator to start discovery phase',
+        description: isFacilitator ? 'Ready to begin' : 'Waiting for facilitator',
         status: isFacilitator ? 'available' : 'waiting',
         action: () => onNavigate('discovery'),
         accessible: true
@@ -179,26 +179,26 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
     } else {
       // Discovery is available or completed
       let discoveryStatus = 'upcoming';
-      let discoveryDescription = 'Explore traces and provide insights';
-      
+      let discoveryDescription = 'Explore traces and share insights';
+
       if (shouldMarkDiscoveryComplete) {
         discoveryStatus = 'completed';
-        discoveryDescription = 'Discovery phase completed for all participants';
+        discoveryDescription = 'All participants completed';
       } else if (userDiscoveryComplete) {
         discoveryStatus = 'completed';
-        discoveryDescription = 'You have completed discovery - waiting for others';
+        discoveryDescription = 'Done — waiting for others';
       } else {
         discoveryStatus = 'in_progress';
-        discoveryDescription = 'Explore traces and provide insights';
+        discoveryDescription = 'Explore traces and share insights';
       }
-      
+
       // Force discovery to be completed if we're in rubric phase or beyond
       const finalDiscoveryStatus = currentPhase === 'rubric' ? 'completed' : discoveryStatus;
-      const finalDiscoveryDescription = currentPhase === 'rubric' ? 'Discovery phase completed for all participants' : discoveryDescription;
-      
+      const finalDiscoveryDescription = currentPhase === 'rubric' ? 'All participants completed' : discoveryDescription;
+
       steps.push({
         title: 'Discovery Phase',
-        description: isFacilitator ? 'Monitor discovery progress and review findings' : finalDiscoveryDescription,
+        description: isFacilitator ? 'Monitor progress and findings' : finalDiscoveryDescription,
         status: finalDiscoveryStatus,
         action: () => onNavigate('discovery'),
         accessible: true
@@ -210,7 +210,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
       // Facilitator can create rubric once discovery is done
       steps.push({
         title: 'Rubric Creation',
-        description: 'Create evaluation rubric for the annotation phase',
+        description: 'Create evaluation criteria',
         status: 'available',
         action: () => onNavigate('rubric'),
         accessible: isFacilitator  // Only facilitator can click
@@ -219,7 +219,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
       // Non-facilitators wait for rubric to be created
       steps.push({
         title: 'Rubric Creation',
-        description: 'Facilitator preparing evaluation criteria',
+        description: 'Facilitator preparing criteria',
         status: 'pending',
         action: () => onNavigate('rubric'),
         accessible: isFacilitator  // Only facilitator can click
@@ -228,7 +228,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
       // Rubric exists but annotation phase hasn't started - show as completed for everyone
       steps.push({
         title: 'Rubric Creation',
-        description: isFacilitator ? 'Rubric created - ready to start annotation phase' : 'Evaluation criteria ready - click to view',
+        description: isFacilitator ? 'Ready for annotation phase' : 'Criteria ready — click to view',
         status: 'completed',
         action: () => onNavigate('rubric'),
         accessible: isFacilitator  // Only facilitator can click
@@ -237,7 +237,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
       // Annotation phase started - rubric is now completed
       steps.push({
         title: 'Rubric Creation',
-        description: isFacilitator ? 'View or edit the evaluation rubric' : 'View the evaluation rubric',
+        description: isFacilitator ? 'View or edit rubric' : 'View the rubric',
         status: 'completed',
         action: () => onNavigate('rubric'),
         accessible: isFacilitator  // Only facilitator can click
@@ -246,7 +246,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
       // Discovery not complete yet
       steps.push({
         title: 'Rubric Creation',
-        description: 'Complete discovery phase first',
+        description: 'Complete discovery first',
         status: 'upcoming',
         action: () => onNavigate('rubric'),
         accessible: isFacilitator  // Only facilitator can click
@@ -257,7 +257,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
     if (currentPhase === 'discovery' && shouldMarkDiscoveryComplete && isRubricAvailable && isFacilitator) {
       steps.push({
         title: 'Annotation Phase',
-        description: 'Ready to start annotation phase - use discovery dashboard to begin',
+        description: 'Ready to start annotations',
         status: 'available',
         action: () => onNavigate('annotation'),
         accessible: true
@@ -266,7 +266,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
       if (isSME) {
         steps.push({
           title: 'Annotation Phase',
-          description: 'Rate traces using the rubric',
+          description: 'Rate traces using rubric',
           status: isAnnotationComplete ? 'completed' : 'in_progress',
           action: () => onNavigate('annotation'),
           accessible: true
@@ -274,7 +274,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
       } else if (isFacilitator) {
         steps.push({
           title: 'Annotation Phase',
-          description: 'Monitor annotation progress (SMEs only)',
+          description: 'Monitor annotation progress',
           status: isAnnotationComplete ? 'completed' : 'in_progress',
           action: () => onNavigate('annotation'),
           accessible: true
@@ -282,7 +282,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
       } else {
         steps.push({
           title: 'Annotation Phase',
-          description: 'SMEs are currently annotating the traces',
+          description: 'SMEs annotating traces',
           status: 'in_progress',
           action: () => onNavigate('annotation'),
           accessible: true
@@ -299,7 +299,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
     } else {
       steps.push({
         title: 'Annotation Phase',
-        description: isSME ? 'SMEs will annotate traces using the rubric' : 'SMEs will annotate traces (you will observe)',
+        description: isSME ? 'Annotate traces with rubric' : 'SMEs will annotate traces',
         status: 'upcoming',
         action: () => onNavigate('annotation'),
         accessible: true
@@ -311,7 +311,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
       if (isFacilitator) {
         steps.push({
           title: 'Results Review',
-          description: 'View analysis and IRR results (share screen with participants)',
+          description: 'View IRR analysis and results',
           status: isResultsComplete ? 'completed' : (currentPhase === 'results' ? 'in_progress' : 'available'),
           action: () => onNavigate('results'),
           accessible: true
@@ -319,7 +319,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
       } else {
         steps.push({
           title: 'Results Review',
-          description: 'Workshop complete! Facilitator will share the IRR results',
+          description: 'Facilitator will share results',
           status: isResultsComplete ? 'completed' : 'waiting',
           action: () => onNavigate('results'),
           accessible: true
@@ -328,7 +328,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
     } else {
       steps.push({
         title: 'Results Review',
-        description: isFacilitator ? 'Review IRR results and share with participants' : 'Facilitator will share results',
+        description: isFacilitator ? 'Review and share IRR results' : 'Facilitator will share results',
         status: 'upcoming',
         action: () => onNavigate('results'),
         accessible: isFacilitator  // Only facilitator can click
@@ -339,8 +339,8 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
     if (isAnnotationComplete && isFacilitator) {
       steps.push({
         title: 'Judge Tuning',
-        description: 'Create and refine AI judges using annotation data',
-        status: currentPhase === 'judge_tuning' ? 'in_progress' : 
+        description: 'Create AI judges from data',
+        status: currentPhase === 'judge_tuning' ? 'in_progress' :
                 (currentPhase === 'dbsql_export' || isJudgeTuningComplete) ? 'completed' : 'available',
         action: () => onNavigate('judge_tuning'),
         accessible: isFacilitator  // Only facilitator can click
@@ -348,7 +348,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
     } else if (isAnnotationComplete && !isFacilitator) {
       steps.push({
         title: 'Judge Tuning',
-        description: 'Facilitator is creating AI judges (advanced feature)',
+        description: 'Facilitator creating AI judges',
         status: (currentPhase === 'dbsql_export' || isJudgeTuningComplete) ? 'completed' : 'waiting',
         action: () => onNavigate('judge_tuning'),
         accessible: isFacilitator  // Only facilitator can click
@@ -356,7 +356,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
     } else {
       steps.push({
         title: 'Judge Tuning',
-        description: isFacilitator ? 'Create AI judges from human annotations' : 'AI judge creation (facilitator only)',
+        description: isFacilitator ? 'Create AI judges' : 'AI judge creation',
         status: 'upcoming',
         action: () => onNavigate('judge_tuning'),
         accessible: isFacilitator  // Only facilitator can click
@@ -367,24 +367,24 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
     if (currentPhase === 'unity_volume') {
       // If we're in Unity volume phase, show it as in progress
       steps.push({
-        title: 'Manage Workshop Data',
-        description: 'Upload to Unity Volume or download workshop data',
+        title: 'Manage Data',
+        description: 'Upload or download data',
         status: 'in_progress',
         action: () => onNavigate('unity_volume'),
         accessible: true
       });
     } else if (isJudgeTuningComplete) {
       steps.push({
-        title: 'Manage Workshop Data',
-        description: 'Upload to Unity Volume or download workshop data',
+        title: 'Manage Data',
+        description: 'Upload or download data',
         status: 'available',
         action: () => onNavigate('unity_volume'),
         accessible: true  // All users can access data management
       });
     } else {
       steps.push({
-        title: 'Manage Workshop Data',
-        description: 'Upload to Unity Volume or download workshop data after judge tuning',
+        title: 'Manage Data',
+        description: 'Available after judge tuning',
         status: 'upcoming',
         action: () => onNavigate('unity_volume'),
         accessible: true  // All users can access data management
@@ -399,8 +399,9 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
       case 'completed':
         return <CheckCircle className="w-4 h-4" />;
       case 'in_progress':
-      case 'available':
         return <Clock className="w-4 h-4" />;
+      case 'available':
+        return <Play className="w-4 h-4" />;
       case 'action_required':
         return <Play className="w-4 h-4" />;
       case 'waiting':
@@ -417,20 +418,59 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'completed':
-        return 'bg-green-100 text-green-800';
+        return 'bg-green-50 text-green-600';
       case 'in_progress':
+        return 'bg-amber-100 text-amber-700';
       case 'available':
-        return 'bg-blue-100 text-blue-800';
+        return 'bg-blue-50 text-blue-600';
       case 'action_required':
-        return 'bg-purple-100 text-purple-800';
+        return 'bg-purple-100 text-purple-700';
       case 'waiting':
-        return 'bg-yellow-100 text-yellow-800';
+        return 'bg-amber-100 text-amber-700';
       case 'pending':
         return 'bg-gray-100 text-gray-600';
       case 'upcoming':
         return 'bg-gray-100 text-gray-600';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-gray-100 text-gray-600';
+    }
+  };
+
+  const getStatusBorderColor = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return 'border-green-500';
+      case 'in_progress':
+        return 'border-amber-500';
+      case 'available':
+        return 'border-blue-500';
+      case 'action_required':
+        return 'border-purple-500';
+      case 'waiting':
+        return 'border-amber-500';
+      default:
+        return 'border-transparent';
+    }
+  };
+
+  const getStatusBadgeText = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return 'Completed';
+      case 'in_progress':
+        return 'In Progress';
+      case 'available':
+        return 'Available';
+      case 'action_required':
+        return 'Action Required';
+      case 'waiting':
+        return 'Waiting';
+      case 'pending':
+        return 'Pending';
+      case 'upcoming':
+        return 'Upcoming';
+      default:
+        return status;
     }
   };
 
@@ -457,30 +497,26 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
 
       {/* Facilitator Management Section */}
       {isFacilitator && (
-        <div className="rounded-lg border bg-card p-3 space-y-2">
-          <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
-            <Users className="w-3.5 h-3.5" />
+        <div className="rounded-lg border border-gray-200 bg-white shadow-sm p-3 space-y-2">
+          <div className="flex items-center gap-2 text-xs font-bold text-gray-700 uppercase tracking-wide">
+            <Settings className="w-4 h-4" />
             Management
           </div>
-          <div className="flex flex-col gap-1.5">
-            <Button
-              variant="ghost"
-              size="sm"
+          <div className="flex flex-col gap-1">
+            <button
               onClick={() => onNavigate('user-management')}
-              className="justify-start h-8 px-2 text-xs"
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-blue-50 transition-all border-l-3 border-transparent hover:border-blue-500 text-left group"
             >
-              <Users className="w-3.5 h-3.5 mr-2" />
-              Invite Participants
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
+              <Users className="w-4 h-4 text-gray-600 group-hover:text-blue-600 transition-colors" />
+              <span className="text-xs font-medium text-gray-700 group-hover:text-blue-900">Invite Participants</span>
+            </button>
+            <button
               onClick={() => onNavigate('dashboard-general')}
-              className="justify-start h-8 px-2 text-xs"
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-blue-50 transition-all border-l-3 border-transparent hover:border-blue-500 text-left group"
             >
-              <Settings className="w-3.5 h-3.5 mr-2" />
-              Dashboard
-            </Button>
+              <Eye className="w-4 h-4 text-gray-600 group-hover:text-blue-600 transition-colors" />
+              <span className="text-xs font-medium text-gray-700 group-hover:text-blue-900">Dashboard</span>
+            </button>
           </div>
         </div>
       )}
@@ -491,7 +527,8 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
           const isActive = step.status === 'in_progress' || step.status === 'action_required';
           const isCompleted = step.status === 'completed';
           const isWaiting = step.status === 'waiting';
-          
+          const isAvailable = step.status === 'available';
+
           // Simplified current phase detection - direct string matching
           const isCurrentPhase = (() => {
             const title = step.title.toLowerCase();
@@ -501,64 +538,89 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
             if (title.includes('results')) return currentPhase === 'results';
             if (title.includes('judge')) return currentPhase === 'judge_tuning';
             if (title.includes('dbsql')) return currentPhase === 'dbsql_export';
+            if (title.includes('unity')) return currentPhase === 'unity_volume';
             return false;
           })();
-          
+
           return (
             <button
               key={index}
               onClick={() => {
-                if (!isStartingPhase) {
+                if (!isStartingPhase && step.accessible) {
                   step.action();
                 }
               }}
-              className={`relative w-full rounded-lg border p-3 text-left transition-all ${
+              disabled={!step.accessible}
+              className={`relative w-full rounded-lg border-l-4 p-2.5 text-left transition-all group ${
                 isCurrentPhase && !isCompleted
-                  ? 'border-primary bg-primary/5 shadow-sm ring-2 ring-primary/20'
-                  : isActive
-                  ? 'border-primary/50 bg-primary/5'
+                  ? 'bg-blue-50/50 border-blue-400 shadow-sm ring-1 ring-blue-100'
                   : isCompleted
-                  ? 'border-emerald-200 bg-emerald-50/50'
+                  ? 'bg-green-50/30 border-green-400 hover:bg-green-50/50 hover:shadow-sm'
+                  : isActive || isAvailable
+                  ? 'bg-amber-50/50 border-amber-500 hover:bg-amber-50 hover:shadow-sm'
                   : isWaiting
-                  ? 'border-amber-200 bg-amber-50/50'
-                  : 'border-border bg-card hover:bg-accent'
-              }`}
+                  ? 'bg-amber-50/30 border-amber-400'
+                  : 'bg-white border-gray-200 hover:bg-gray-50 hover:border-gray-300 hover:shadow-sm'
+              } ${!step.accessible ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
             >
-              <div className="flex items-start gap-3">
+              <div className="flex items-start gap-2.5">
                 <div
-                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
                     isCompleted
-                      ? 'bg-emerald-100 text-emerald-700'
-                      : isActive
-                      ? 'bg-primary/10 text-primary'
-                      : isWaiting
+                      ? 'bg-green-100/70 text-green-600'
+                      : isActive || isAvailable
                       ? 'bg-amber-100 text-amber-700'
-                      : 'bg-muted text-muted-foreground'
+                      : isCurrentPhase
+                      ? 'bg-blue-100/70 text-blue-600'
+                      : isWaiting
+                      ? 'bg-amber-100 text-amber-600'
+                      : 'bg-gray-100 text-gray-500'
                   }`}
                 >
                   {getStatusIcon(step.status)}
                 </div>
 
-                <div className="flex-1 min-w-0 space-y-1">
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-xs font-semibold leading-none">
+                <div className="flex-1 min-w-0 space-y-0.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className={`text-sm font-semibold leading-none ${
+                      isCurrentPhase ? 'text-blue-800' :
+                      isCompleted ? 'text-green-700' :
+                      isActive || isAvailable ? 'text-amber-900' :
+                      'text-gray-800'
+                    }`}>
                       {step.title}
                     </h4>
-                    {isCurrentPhase && !isCompleted && (
-                      <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                        Current
-                      </span>
+                    {(isCurrentPhase || isActive || isAvailable || isCompleted || isWaiting) && (
+                      <Badge
+                        variant="secondary"
+                        className={`text-[10px] font-semibold px-2 py-0 h-5 ${getStatusColor(step.status)}`}
+                      >
+                        {getStatusBadgeText(step.status)}
+                      </Badge>
                     )}
                   </div>
-                  <p className="text-[11px] leading-snug text-muted-foreground line-clamp-2">
+                  <p className="text-[11px] text-gray-500 leading-snug">
                     {step.description}
                   </p>
                 </div>
+
+                {step.accessible && (
+                  <ChevronRight className={`w-4 h-4 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity ${
+                    isCurrentPhase ? 'text-blue-500' :
+                    isCompleted ? 'text-green-500' :
+                    isActive || isAvailable ? 'text-amber-600' :
+                    'text-gray-400'
+                  }`} />
+                )}
               </div>
 
               {/* Progress connector line */}
               {index < getWorkshopSteps().length - 1 && (
-                <div className="absolute left-[22px] top-10 h-3 w-px bg-border" />
+                <div className={`absolute left-[17px] top-10 h-3 w-px ${
+                  isCompleted ? 'bg-green-200' :
+                  isActive || isCurrentPhase ? 'bg-amber-300' :
+                  'bg-gray-200'
+                }`} />
               )}
             </button>
           );

@@ -6,12 +6,12 @@ import { useWorkshop } from '@/hooks/useWorkshopApi';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { AlertCircle, RefreshCw } from 'lucide-react';
+import { AlertCircle, RefreshCw, UserPlus, Users, Info } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface User {
@@ -150,27 +150,37 @@ export const FacilitatorUserManager: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-6xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Facilitator Dashboard</h1>
-          <p className="text-gray-600 mt-2">
-            Manage your workshop and participants
-          </p>
+      <div className="max-w-5xl mx-auto space-y-5">
+        {/* Header */}
+        <div className="flex items-center gap-3 pb-1">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-100">
+            <Users className="w-5 h-5 text-violet-600" />
+          </div>
+          <div>
+            <h1 className="text-xl font-semibold text-gray-900">Invite Participants</h1>
+            <p className="text-sm text-gray-500">Manage workshop users and roles</p>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <Badge className="bg-blue-50 text-blue-700 border border-blue-200">
+              {users.length} user{users.length !== 1 ? 's' : ''}
+            </Badge>
+            <Badge className="bg-green-50 text-green-700 border border-green-200">
+              {users.filter(u => u.role === 'sme').length} SMEs
+            </Badge>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
           {/* Add User Form */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Add New User</CardTitle>
-              <CardDescription>
-                Add SMEs and participants to your workshop
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleAddUser} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
+          <Card className="border-l-4 border-indigo-500 lg:col-span-2">
+            <CardContent className="p-4">
+              <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2 mb-3">
+                <UserPlus className="w-4 h-4 text-indigo-600" />
+                Add New User
+              </h3>
+              <form onSubmit={handleAddUser} className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="email" className="text-xs font-medium text-gray-600">Email</Label>
                   <Input
                     id="email"
                     type="email"
@@ -178,11 +188,12 @@ export const FacilitatorUserManager: React.FC = () => {
                     value={newUser.email}
                     onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
                     required
+                    className="h-9"
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="name">Name</Label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="name" className="text-xs font-medium text-gray-600">Name</Label>
                   <Input
                     id="name"
                     type="text"
@@ -190,16 +201,17 @@ export const FacilitatorUserManager: React.FC = () => {
                     value={newUser.name}
                     onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
                     required
+                    className="h-9"
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="role">Role</Label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="role" className="text-xs font-medium text-gray-600">Role</Label>
                   <Select
                     value={newUser.role}
                     onValueChange={(value: 'sme' | 'participant') => setNewUser({ ...newUser, role: value })}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="h-9">
                       <SelectValue placeholder="Select role" />
                     </SelectTrigger>
                     <SelectContent>
@@ -211,73 +223,71 @@ export const FacilitatorUserManager: React.FC = () => {
 
                 {error && (
                   <Alert variant="destructive">
-                    <AlertDescription>{error}</AlertDescription>
+                    <AlertDescription className="text-xs">{error}</AlertDescription>
                   </Alert>
                 )}
 
                 {success && (
                   <Alert>
-                    <AlertDescription>{success}</AlertDescription>
+                    <AlertDescription className="text-xs">{success}</AlertDescription>
                   </Alert>
                 )}
 
-                <Button type="submit" className="w-full" disabled={isSubmitting}>
-                  {isSubmitting ? 'Adding User...' : 'Add User'}
+                <Button type="submit" size="sm" className="w-full" disabled={isSubmitting}>
+                  {isSubmitting ? 'Adding...' : 'Add User'}
                 </Button>
               </form>
             </CardContent>
           </Card>
 
           {/* Workshop Info */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Workshop Information</CardTitle>
-              <CardDescription>
-                Current workshop details
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
+          <Card className="border-l-4 border-blue-500 lg:col-span-3">
+            <CardContent className="p-4">
+              <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2 mb-3">
+                <Info className="w-4 h-4 text-blue-600" />
+                Workshop Information
+              </h3>
+              <div className="space-y-3">
                 {workshop ? (
                   <>
                     <div>
-                      <Label className="text-sm font-medium text-gray-500">Workshop Name</Label>
-                      <p className="text-lg font-semibold text-gray-900">{workshop.name}</p>
+                      <span className="text-xs text-gray-500">Workshop Name</span>
+                      <p className="text-sm font-semibold text-gray-900">{workshop.name}</p>
                     </div>
                     {workshop.description && (
                       <div>
-                        <Label className="text-sm font-medium text-gray-500">Description</Label>
+                        <span className="text-xs text-gray-500">Description</span>
                         <p className="text-sm text-gray-600">{workshop.description}</p>
                       </div>
                     )}
-                    <div>
-                      <Label className="text-sm font-medium text-gray-500">Current Phase</Label>
-                      <Badge variant="outline" className="capitalize">
-                        {workshop.current_phase?.replace('_', ' ') || 'Unknown'}
-                      </Badge>
+                    <div className="flex items-center gap-4">
+                      <div>
+                        <span className="text-xs text-gray-500">Phase</span>
+                        <div className="mt-0.5">
+                          <Badge variant="outline" className="capitalize text-xs">
+                            {workshop.current_phase?.replace('_', ' ') || 'Unknown'}
+                          </Badge>
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-xs text-gray-500">Users</span>
+                        <div className="flex gap-1.5 mt-0.5">
+                          <Badge className="bg-green-50 text-green-700 border border-green-200 text-xs">
+                            {users.filter(u => u.role === 'sme').length} SMEs
+                          </Badge>
+                          <Badge className="bg-gray-50 text-gray-700 border border-gray-200 text-xs">
+                            {users.filter(u => u.role === 'participant').length} Participants
+                          </Badge>
+                        </div>
+                      </div>
                     </div>
                   </>
                 ) : (
                   <div className="text-sm text-gray-500">Loading workshop information...</div>
                 )}
                 <div>
-                  <Label className="text-sm font-medium text-gray-500">Workshop ID</Label>
-                  <p className="text-sm font-mono bg-gray-100 p-2 rounded">{workshopId}</p>
-                </div>
-                <div>
-                  <Label className="text-sm font-medium text-gray-500">Total Users</Label>
-                  <p className="text-2xl font-bold">{users.length}</p>
-                </div>
-                <div>
-                  <Label className="text-sm font-medium text-gray-500">User Breakdown</Label>
-                  <div className="flex gap-2 mt-1">
-                    <Badge variant="secondary">
-                      {users.filter(u => u.role === 'sme').length} SMEs
-                    </Badge>
-                    <Badge variant="secondary">
-                      {users.filter(u => u.role === 'participant').length} Participants
-                    </Badge>
-                  </div>
+                  <span className="text-xs text-gray-500">Workshop ID</span>
+                  <p className="text-xs font-mono text-gray-500 bg-gray-50 px-2 py-1.5 rounded border border-gray-100 mt-0.5">{workshopId}</p>
                 </div>
               </div>
             </CardContent>
@@ -285,14 +295,12 @@ export const FacilitatorUserManager: React.FC = () => {
         </div>
 
         {/* Users Table */}
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle>Workshop Users</CardTitle>
-            <CardDescription>
-              All users in your workshop
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-base font-semibold text-gray-900">Workshop Users</h3>
+              <Badge variant="secondary" className="text-xs">{users.length} total</Badge>
+            </div>
             {isLoadingUsers ? (
               <div className="text-center py-8">Loading users...</div>
             ) : error ? (

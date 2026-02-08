@@ -1,118 +1,113 @@
 import React from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Clock, Star, Users, ClipboardList, Eye } from 'lucide-react';
+import { Clock, Star, Users, ClipboardList, Eye, CheckCircle } from 'lucide-react';
 
 export const AnnotationPendingPage: React.FC = () => {
   return (
-    <div className="max-w-3xl mx-auto p-6 space-y-6">
+    <div className="max-w-2xl mx-auto p-6 space-y-5">
       {/* Header */}
-      <div className="text-center space-y-3">
-        <div className="w-16 h-16 bg-gradient-to-br from-amber-400 to-orange-500 rounded-2xl flex items-center justify-center mx-auto">
-          <Clock className="w-8 h-8 text-white" />
+      <div className="flex items-center gap-3 pb-2">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-600">
+          <Clock className="w-4 h-4 text-white" />
         </div>
-        <h1 className="text-3xl font-bold text-slate-900">Annotation Phase Pending</h1>
-        <p className="text-lg text-slate-600 max-w-2xl mx-auto">
-          Waiting for the facilitator to start the annotation phase. SMEs will begin rating traces once it begins.
-        </p>
-        <Badge className="bg-amber-100 text-amber-800 px-3 py-1">
+        <div>
+          <h1 className="text-xl font-semibold text-gray-900">Annotation Phase Pending</h1>
+          <p className="text-sm text-gray-500">
+            Waiting for the facilitator to start annotation. SMEs will begin rating traces once it begins.
+          </p>
+        </div>
+        <Badge className="ml-auto bg-amber-50 text-amber-700 border border-amber-200">
           <Clock className="w-3 h-3 mr-1" />
-          Waiting for Facilitator
+          Waiting
         </Badge>
       </div>
 
       {/* What Happens During Annotation */}
-      <Card className="border-purple-200 bg-gradient-to-br from-purple-50 to-indigo-50">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Star className="w-5 h-5 text-purple-600" />
-            What Happens During Annotation
-          </CardTitle>
-          <CardDescription>
-            Understanding the annotation process and your role as an observer
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-3">
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                <Users className="w-4 h-4 text-blue-600" />
-              </div>
-              <div>
-                <h4 className="font-semibold text-slate-900">SMEs Lead the Rating Process</h4>
-                <p className="text-sm text-slate-600 mt-1">
-                  Subject Matter Experts will systematically rate traces using the evaluation rubric created from discovery insights.
-                </p>
-              </div>
+      <Card className="border-l-4 border-purple-500">
+        <CardContent className="p-4">
+          <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2 mb-3">
+            <Star className="w-4 h-4 text-purple-600" />
+            What happens during annotation
+          </h3>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <h4 className="text-xs font-semibold text-blue-700 uppercase tracking-wide flex items-center gap-1.5">
+                <Users className="w-3 h-3" />
+                SMEs
+              </h4>
+              <ul className="space-y-1 text-sm text-gray-600">
+                <li className="flex items-start gap-1.5">
+                  <span className="text-gray-300 mt-1.5 text-[6px]">●</span>
+                  Rate traces using the evaluation rubric
+                </li>
+                <li className="flex items-start gap-1.5">
+                  <span className="text-gray-300 mt-1.5 text-[6px]">●</span>
+                  Score on 1-5 scale with detailed comments
+                </li>
+                <li className="flex items-start gap-1.5">
+                  <span className="text-gray-300 mt-1.5 text-[6px]">●</span>
+                  Create consistent evaluation data
+                </li>
+              </ul>
             </div>
-            
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                <ClipboardList className="w-4 h-4 text-green-600" />
-              </div>
-              <div>
-                <h4 className="font-semibold text-slate-900">Structured Evaluation</h4>
-                <p className="text-sm text-slate-600 mt-1">
-                  Each trace is rated on a 1-5 scale with detailed comments, creating consistent evaluation data for analysis.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                <Eye className="w-4 h-4 text-amber-600" />
-              </div>
-              <div>
-                <h4 className="font-semibold text-slate-900">You Observe & Learn</h4>
-                <p className="text-sm text-slate-600 mt-1">
-                  As a participant, you'll observe the annotation process, gaining insights into systematic LLM evaluation methods.
-                </p>
-              </div>
+            <div className="space-y-1.5">
+              <h4 className="text-xs font-semibold text-amber-700 uppercase tracking-wide flex items-center gap-1.5">
+                <Eye className="w-3 h-3" />
+                Participants
+              </h4>
+              <ul className="space-y-1 text-sm text-gray-600">
+                <li className="flex items-start gap-1.5">
+                  <span className="text-gray-300 mt-1.5 text-[6px]">●</span>
+                  Observe the annotation process
+                </li>
+                <li className="flex items-start gap-1.5">
+                  <span className="text-gray-300 mt-1.5 text-[6px]">●</span>
+                  Learn systematic evaluation methods
+                </li>
+                <li className="flex items-start gap-1.5">
+                  <span className="text-gray-300 mt-1.5 text-[6px]">●</span>
+                  Prepare for IRR results analysis
+                </li>
+              </ul>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Prerequisites Check */}
-      <Card className="border-green-200 bg-gradient-to-br from-green-50 to-emerald-50">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ClipboardList className="w-5 h-5 text-green-600" />
-            Prerequisites for Annotation
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            <div className="flex items-center gap-3 p-3 bg-white border border-green-200 rounded-lg">
-              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-              <div>
-                <p className="font-medium text-slate-900">Discovery Phase Completed</p>
-                <p className="text-sm text-slate-600">All participants have contributed insights</p>
-              </div>
+      {/* Prerequisites */}
+      <Card className="border-l-4 border-green-500">
+        <CardContent className="p-4 space-y-3">
+          <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+            <ClipboardList className="w-4 h-4 text-green-600" />
+            Prerequisites
+          </h3>
+          <div className="flex items-start gap-3">
+            <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-gray-900">Discovery Phase Completed</p>
+              <p className="text-xs text-gray-600">All participants have contributed insights</p>
             </div>
-            <div className="flex items-center gap-3 p-3 bg-white border border-green-200 rounded-lg">
-              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-              <div>
-                <p className="font-medium text-slate-900">Evaluation Rubric Created</p>
-                <p className="text-sm text-slate-600">Facilitator has built rubric from discovery findings</p>
-              </div>
+          </div>
+          <div className="flex items-start gap-3">
+            <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-gray-900">Evaluation Rubric Created</p>
+              <p className="text-xs text-gray-600">Facilitator has built rubric from discovery findings</p>
             </div>
           </div>
         </CardContent>
       </Card>
 
       {/* Current Status */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-slate-700">Current Workshop Status</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border-2 border-slate-200">
+      <Card className="border-l-4 border-amber-500">
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-3 h-3 bg-amber-400 rounded-full animate-pulse"></div>
               <div>
-                <p className="font-medium text-slate-900">Preparing for Annotation</p>
-                <p className="text-sm text-slate-600">The facilitator will start annotation when ready</p>
+                <p className="text-sm font-semibold text-gray-900">Preparing for Annotation</p>
+                <p className="text-xs text-gray-600">The facilitator will start annotation when ready</p>
               </div>
             </div>
             <Badge variant="outline" className="text-amber-700 border-amber-300">
@@ -122,32 +117,10 @@ export const AnnotationPendingPage: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* Your Role */}
-      <Card className="border-slate-200">
-        <CardHeader>
-          <CardTitle className="text-slate-700">Your Role During This Phase</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3 text-sm text-slate-600">
-            <div className="flex items-start gap-2">
-              <div className="w-1.5 h-1.5 bg-slate-400 rounded-full mt-2 flex-shrink-0"></div>
-              <p><strong>Observe the Process:</strong> Watch how SMEs apply the rubric to evaluate traces systematically</p>
-            </div>
-            <div className="flex items-start gap-2">
-              <div className="w-1.5 h-1.5 bg-slate-400 rounded-full mt-2 flex-shrink-0"></div>
-              <p><strong>Learn Evaluation Methods:</strong> Understand how the rubric translates discovery insights into measurable criteria</p>
-            </div>
-            <div className="flex items-start gap-2">
-              <div className="w-1.5 h-1.5 bg-slate-400 rounded-full mt-2 flex-shrink-0"></div>
-              <p><strong>Prepare for Results:</strong> The annotations will generate Inter-Rater Reliability (IRR) data for analysis</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Footer */}
-      <div className="text-center text-sm text-slate-500">
-        <p>This page will automatically update when the annotation phase begins. Your observations will be valuable for understanding the evaluation process!</p>
+      <div className="text-center text-xs text-gray-400 pt-2">
+        <p>This page will automatically update when the annotation phase begins.</p>
+        <p className="mt-1">No action is required from you at this time.</p>
       </div>
     </div>
   );

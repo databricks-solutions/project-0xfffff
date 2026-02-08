@@ -2,7 +2,7 @@ import React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertCircle, Settings } from 'lucide-react';
+import { AlertCircle, Loader2, PanelLeftOpen } from 'lucide-react';
 import { WorkshopHeader } from '@/components/WorkshopHeader';
 import { useUser, useRoleCheck } from '@/context/UserContext';
 import { useWorkflowContext } from '@/context/WorkflowContext';
@@ -63,6 +63,7 @@ export function WorkshopDemoLanding() {
   // State hooks - MUST be before any conditional returns
   const [isManualNavigation, setIsManualNavigation] = React.useState(false);
   const [currentView, setCurrentView] = React.useState<string>('loading'); // Initialize with loading
+  const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
   
   // Helper function that accepts explicit state values to avoid race conditions
   const getViewForPhaseWithState = (
@@ -305,7 +306,18 @@ export function WorkshopDemoLanding() {
       setCurrentView(view);
     }
   }, [user, workshop, currentPhase, currentView]);
-  
+
+  // Auto-collapse sidebar during participant-facing phases (discovery, annotation)
+  // Keep sidebar visible for SME users so they can navigate workflow steps
+  React.useEffect(() => {
+    const participantViews = ['discovery-participate', 'annotation-participate'];
+    if (participantViews.includes(currentView) && !isSME) {
+      setSidebarCollapsed(true);
+    } else {
+      setSidebarCollapsed(false);
+    }
+  }, [currentView, isSME]);
+
   // ========================================
   // CONDITIONAL LOGIC AND EARLY RETURNS
   // ========================================
@@ -339,11 +351,14 @@ export function WorkshopDemoLanding() {
       if (isFacilitator && isAutoRecovering) {
         return (
           <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
-            <Card className="max-w-md">
+            <Card className="max-w-md border-l-4 border-blue-500">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Settings className="h-5 w-5 text-blue-600 animate-spin" />
+                  <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />
                   Auto-Recovery in Progress
+                  <Badge className="ml-auto bg-blue-50 text-blue-600 border-blue-200">
+                    Creating
+                  </Badge>
                 </CardTitle>
                 <CardDescription>
                   Creating a new workshop for you...
@@ -357,7 +372,7 @@ export function WorkshopDemoLanding() {
                   Previous ID: {workshopId}
                 </div>
                 <div className="flex items-center justify-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  <Loader2 className="h-8 w-8 text-blue-600 animate-spin" />
                 </div>
               </CardContent>
             </Card>
@@ -370,14 +385,17 @@ export function WorkshopDemoLanding() {
           setWorkshopId(null);
           window.history.replaceState({}, '', '/');
         };
-        
+
         return (
           <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
-            <Card className="max-w-md">
+            <Card className="max-w-md border-l-4 border-amber-500">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <AlertCircle className="h-5 w-5 text-red-600" />
+                  <AlertCircle className="h-5 w-5 text-amber-600" />
                   Workshop Not Found
+                  <Badge className="ml-auto bg-amber-50 text-amber-600 border-amber-200">
+                    Not Found
+                  </Badge>
                 </CardTitle>
                 <CardDescription>
                   The workshop ID doesn't exist or has been deleted
@@ -390,7 +408,7 @@ export function WorkshopDemoLanding() {
                 <div className="text-xs text-gray-500 font-mono bg-gray-100 p-2 rounded mb-4">
                   Invalid Workshop ID: {workshopId}
                 </div>
-                <Button 
+                <Button
                   onClick={handleCreateNewWorkshop}
                   className="w-full"
                 >
@@ -409,14 +427,17 @@ export function WorkshopDemoLanding() {
           window.history.replaceState({}, '', '/');
           window.location.reload();
         };
-        
+
         return (
           <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
-            <Card className="max-w-md">
+            <Card className="max-w-md border-l-4 border-red-500">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <AlertCircle className="h-5 w-5 text-red-600" />
                   Workshop Not Found
+                  <Badge className="ml-auto bg-red-50 text-red-600 border-red-200">
+                    Error
+                  </Badge>
                 </CardTitle>
                 <CardDescription>
                   The workshop ID in the URL does not exist
@@ -430,7 +451,7 @@ export function WorkshopDemoLanding() {
                 <div className="text-xs text-gray-500 font-mono bg-gray-100 p-2 rounded mb-4">
                   Workshop ID: {workshopId}
                 </div>
-                <Button 
+                <Button
                   onClick={handleGoToLogin}
                   className="w-full"
                   variant="outline"
@@ -559,35 +580,62 @@ export function WorkshopDemoLanding() {
   return (
     <div className="h-screen flex overflow-hidden bg-background">
       {/* Sidebar */}
-      <AppSidebar 
-        onNavigate={handleNavigation} 
+      <AppSidebar
+        onNavigate={handleNavigation}
         showUserSwitching={DEBUG_ENABLE_USER_SWITCHING}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(prev => !prev)}
       />
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0">
         {/* Workshop Header */}
-        <WorkshopHeader 
-          showDescription={true}
-          showPhase={true}
-          showParticipantCount={false}
-          variant="default"
-        />
+        <div className="flex items-center">
+          {sidebarCollapsed && (
+            <button
+              onClick={() => setSidebarCollapsed(false)}
+              className="flex items-center justify-center h-full px-3 border-r border-b bg-background hover:bg-gray-50 transition-colors"
+              title="Show sidebar"
+            >
+              <PanelLeftOpen className="h-4 w-4 text-gray-500" />
+            </button>
+          )}
+          <div className="flex-1">
+            <WorkshopHeader
+              showDescription={!sidebarCollapsed}
+              showPhase={true}
+              showParticipantCount={false}
+              variant="default"
+            />
+          </div>
+        </div>
         
         {/* Main Content - scrollable, contained */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden pb-8">
           {(() => {
-            // Normal rendering logic  
+            // Normal rendering logic
             if (currentView === 'loading' || !user?.role) {
               return (
                 <div className="h-full flex items-center justify-center">
-                  <div className="text-center text-slate-500">
-                    <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                      <Settings className="h-8 w-8 text-slate-400" />
-                    </div>
-                    <h3 className="text-lg font-semibold text-slate-700 mb-2">Loading...</h3>
-                    <p className="text-sm">Setting up your workspace</p>
-                  </div>
+                  <Card className="max-w-md border-l-4 border-slate-400">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Loader2 className="h-5 w-5 text-slate-600 animate-spin" />
+                        Loading
+                        <Badge className="ml-auto bg-slate-50 text-slate-600 border-slate-200">
+                          Initializing
+                        </Badge>
+                      </CardTitle>
+                      <CardDescription>
+                        Setting up your workspace
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="h-8 w-8 text-slate-600 animate-spin" />
+                      </div>
+                    </CardContent>
+                  </Card>
                 </div>
               );
             }

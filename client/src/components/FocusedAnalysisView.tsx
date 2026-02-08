@@ -206,71 +206,54 @@ export function FocusedAnalysisView({ discoveryResponses, scratchPad, setScratch
       {/* Left Panel - Trace Content */}
       <div className="flex-1 min-w-0 space-y-4 overflow-y-auto">
         {/* Navigation Header */}
-        <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
-          <CardHeader className="pb-4">
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2 text-blue-900">
-                <Hash className="h-5 w-5 text-blue-600" />
-                Focused Analysis
-              </CardTitle>
-              
-              <div className="flex items-center gap-3">
-                {/* Back Button */}
-                {previousTraceIndex !== null && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={goBack}
-                    className="flex items-center gap-2 border-blue-300 text-blue-700 hover:bg-blue-100"
-                  >
-                    <ArrowLeft className="h-4 w-4" />
-                    Back to Trace {previousTraceIndex + 1}
-                  </Button>
-                )}
-                
-                {/* Trace Navigation */}
-                <div className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-blue-200">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={goToPrevious}
-                    disabled={totalTraces <= 1}
-                    className="h-8 w-8 p-0 hover:bg-blue-100"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  
-                  <div className="text-sm font-semibold px-2 min-w-[6rem] text-center text-blue-900">
-                    {currentTraceIndex + 1} of {totalTraces}
-                  </div>
-                  
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={goToNext}
-                    disabled={totalTraces <= 1}
-                    className="h-8 w-8 p-0 hover:bg-blue-100"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            </div>
-            {/* Progress Bar */}
-            <div className="mt-3">
-              <div className="w-full bg-blue-200 rounded-full h-2">
-                <div 
-                  className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+              <Hash className="h-4 w-4 text-gray-500" />
+              Trace {currentTraceIndex + 1} of {totalTraces}
+            </h3>
+            {previousTraceIndex !== null && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={goBack}
+                className="flex items-center gap-1.5 h-7 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+              >
+                <ArrowLeft className="h-3 w-3" />
+                Back to #{previousTraceIndex + 1}
+              </Button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={goToPrevious}
+              disabled={totalTraces <= 1}
+              className="h-7 w-7 p-0"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <div className="w-24 mx-1">
+              <div className="w-full bg-gray-200 rounded-full h-1.5">
+                <div
+                  className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
                   style={{ width: `${((currentTraceIndex + 1) / totalTraces) * 100}%` }}
-                ></div>
-              </div>
-              <div className="flex justify-between text-xs text-blue-600 mt-1">
-                <span>Progress</span>
-                <span>{Math.round(((currentTraceIndex + 1) / totalTraces) * 100)}%</span>
+                />
               </div>
             </div>
-          </CardHeader>
-        </Card>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={goToNext}
+              disabled={totalTraces <= 1}
+              className="h-7 w-7 p-0"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
 
         {/* Trace Content - Use standardized TraceViewer */}
         {traceData ? (
@@ -412,16 +395,17 @@ export function FocusedAnalysisView({ discoveryResponses, scratchPad, setScratch
       </div>
 
       {/* Right Panel - Scratch Pad */}
-      <div className="w-80 lg:w-96 flex-shrink-0 bg-gradient-to-b from-gray-50 to-gray-100 rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="w-80 lg:w-96 flex-shrink-0 rounded-lg border border-gray-200 bg-white overflow-hidden">
         <div className="h-full flex flex-col">
-          <div className="p-6 bg-white border-b border-gray-200">
-            {/* Scratch Pad Header */}
+          <div className="px-4 py-3 border-b border-gray-100">
             <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-                <NotebookPen className="h-5 w-5 text-gray-600" />
+              <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                <NotebookPen className="h-4 w-4 text-gray-500" />
                 Scratch Pad
                 {(scratchPad.length + (participantNotes?.length || 0)) > 0 && (
-                  <Badge variant="secondary">{scratchPad.length + (participantNotes?.length || 0)}</Badge>
+                  <Badge variant="secondary" className="bg-gray-100 text-gray-600 text-[10px] px-1.5 py-0 h-5">
+                    {scratchPad.length + (participantNotes?.length || 0)}
+                  </Badge>
                 )}
               </h3>
               {scratchPad.length > 0 && (
@@ -429,31 +413,32 @@ export function FocusedAnalysisView({ discoveryResponses, scratchPad, setScratch
                   onClick={exportScratchPad}
                   variant="ghost"
                   size="sm"
-                  className="text-gray-600 hover:text-gray-800"
+                  className="text-gray-400 hover:text-gray-600 h-7 w-7 p-0"
                 >
-                  <Download className="h-4 w-4" />
+                  <Download className="h-3.5 w-3.5" />
                 </Button>
               )}
             </div>
           </div>
-          <div className="flex-1 p-6 overflow-y-auto">
-            <div className="space-y-4">
+          <div className="flex-1 px-4 py-3 overflow-y-auto">
+            <div className="space-y-3">
               {/* Custom Note Input */}
               <div className="space-y-2">
                 <Textarea
                   placeholder="Add a custom note..."
                   value={customNote}
                   onChange={(e) => setCustomNote(e.target.value)}
-                  className="min-h-[80px] bg-white"
+                  className="min-h-[60px] bg-gray-50 border-gray-200 text-sm resize-none"
                 />
-                <Button 
-                  onClick={addCustomNote}
-                  disabled={!customNote.trim()}
-                  size="sm"
-                  className="w-full"
-                >
-                  Add Note
-                </Button>
+                {customNote.trim() && (
+                  <Button
+                    onClick={addCustomNote}
+                    size="sm"
+                    className="w-full h-7 text-xs"
+                  >
+                    Add Note
+                  </Button>
+                )}
               </div>
 
               {/* Participant Notes from DB */}
@@ -528,53 +513,88 @@ export function FocusedAnalysisView({ discoveryResponses, scratchPad, setScratch
               {/* Pinned Items */}
               {scratchPad.length > 0 && (
                 <div className="space-y-2">
-                  <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                    Pinned Insights
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <Lightbulb className="h-4 w-4 text-amber-600" />
+                    <span className="text-xs font-semibold text-amber-700 uppercase tracking-wider">
+                      Pinned Insights
+                    </span>
+                    <Badge variant="secondary" className="bg-amber-100 text-amber-700 text-xs">
+                      {scratchPad.length}
+                    </Badge>
+                  </div>
                 </div>
               )}
               <div className="space-y-3">
                 {scratchPad.length === 0 && (!participantNotes || participantNotes.length === 0) ? (
-                  <div className="text-center py-8 text-gray-500">
-                    <NotebookPen className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-                    <p className="text-sm">No insights pinned yet.</p>
-                    <p className="text-xs mt-1">Click the pin icon on any comment to save it here.</p>
+                  <div className="text-center py-6 text-gray-400">
+                    <Pin className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                    <p className="text-xs">Pin insights from responses using the pin icon.</p>
                   </div>
                 ) : (
-                  scratchPad.map((entry) => (
-                    <Card 
-                      key={entry.id} 
-                      className={`p-3 ${entry.traceIndex === currentTraceIndex + 1 ? 'border-blue-300 bg-blue-50/50' : 'bg-white'}`}
-                    >
-                      <div className="space-y-2">
-                        <p className="text-sm text-gray-700">{entry.comment}</p>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => jumpToTrace(entry.traceIndex - 1)}
-                              className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
-                            >
-                              From Trace {entry.traceIndex}
-                              <ArrowUpRight className="h-3 w-3" />
-                            </button>
-                            {entry.category && (
-                              <Badge variant="outline" className="text-xs">
-                                {entry.category}
-                              </Badge>
-                            )}
+                  scratchPad.map((entry) => {
+                    const isCurrentTrace = entry.traceIndex === currentTraceIndex + 1;
+                    const categoryColor = entry.category === 'effectiveness'
+                      ? 'border-l-green-400'
+                      : entry.category === 'scenario'
+                      ? 'border-l-blue-400'
+                      : 'border-l-amber-400';
+
+                    return (
+                      <Card
+                        key={entry.id}
+                        className={`p-3 border-l-4 ${categoryColor} ${
+                          isCurrentTrace ? 'bg-amber-50/50 border-amber-200' : 'bg-white'
+                        }`}
+                      >
+                        <div className="space-y-2">
+                          <p className="text-sm text-gray-700 whitespace-pre-wrap">{entry.comment}</p>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => jumpToTrace(entry.traceIndex - 1)}
+                                className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                              >
+                                Trace {entry.traceIndex}
+                                <ArrowUpRight className="h-3 w-3" />
+                              </button>
+                              {entry.category && (
+                                <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${
+                                  entry.category === 'effectiveness'
+                                    ? 'bg-green-50 text-green-600 border-green-200'
+                                    : entry.category === 'scenario'
+                                    ? 'bg-blue-50 text-blue-600 border-blue-200'
+                                    : 'bg-amber-50 text-amber-600 border-amber-200'
+                                }`}>
+                                  {entry.category}
+                                </Badge>
+                              )}
+                              {entry.source && (
+                                <div className="flex items-center gap-1">
+                                  <User className="h-3 w-3 text-gray-400" />
+                                  <span className="text-xs text-gray-500">
+                                    {entry.source}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-gray-400">
+                                {entry.timestamp.toLocaleTimeString()}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removeFromScratchPad(entry.id)}
+                                className="text-red-600 hover:text-red-800 h-6 w-6 p-0"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
                           </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removeFromScratchPad(entry.id)}
-                            className="text-red-600 hover:text-red-800 h-6 w-6 p-0"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
                         </div>
-                      </div>
-                    </Card>
-                  ))
+                      </Card>
+                    );
+                  })
                 )}
               </div>
             </div>
