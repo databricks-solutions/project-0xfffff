@@ -1971,9 +1971,9 @@ async def generate_rubric_test_data(workshop_id: str, db: Session = Depends(get_
 @router.post("/{workshop_id}/generate-rubric-suggestions")
 async def generate_rubric_suggestions(
     workshop_id: str,
-    request: "RubricGenerationRequest",
+    request: RubricGenerationRequest,
     db: Session = Depends(get_db)
-) -> List["RubricSuggestion"]:
+) -> List[RubricSuggestion]:
     """Generate rubric suggestions using AI analysis of discovery feedback.
 
     This endpoint uses a Databricks model serving endpoint to analyze

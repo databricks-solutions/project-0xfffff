@@ -51,7 +51,6 @@ import { WorkshopsService } from '@/client';
 import type { Rubric, RubricCreate, JudgeType } from '@/client';
 import { toast } from 'sonner';
 import { parseRubricQuestions, formatRubricQuestions, QUESTION_DELIMITER, type RubricQuestion } from '@/utils/rubricUtils';
-import { binaryLabelPresets } from '@/components/JudgeTypeSelector';
 
 
 // Convert API Rubric to local RubricQuestion format
@@ -843,34 +842,6 @@ export function RubricCreationDemo() {
                 </div>
               </CardContent>
             </Card>
-
-            {/* Binary label customization - shown if any questions are binary */}
-            {questions.some(q => q.judgeType === 'binary') && (
-              <Card className="border-l-4 border-blue-500">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    Binary Label Settings
-                  </CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    Customize the labels for all binary evaluation criteria
-                  </p>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-2">
-                    {Object.entries(binaryLabelPresets).map(([key, labels]) => (
-                      <Badge
-                        key={key}
-                        variant={binaryLabels.pass === labels.pass ? 'default' : 'outline'}
-                        className="cursor-pointer"
-                        onClick={() => setBinaryLabels(labels)}
-                      >
-                        {labels.pass} / {labels.fail}
-                      </Badge>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
 
             {/* Toolbar */}
             <div className="flex items-center justify-between">

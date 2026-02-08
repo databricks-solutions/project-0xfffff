@@ -60,7 +60,7 @@ class RubricGenerationService:
     async def generate_rubric_suggestions(
         self,
         workshop_id: str,
-        endpoint_name: str = "claude-opus-4-5",
+        endpoint_name: str = "databricks-claude-sonnet-4-5",
         temperature: float = 0.3,
         include_notes: bool = True
     ) -> List[RubricSuggestion]:
@@ -98,7 +98,7 @@ class RubricGenerationService:
 
         # 3. Call Databricks endpoint
         try:
-            response = await self.databricks_service.call_chat_completion(
+            response = self.databricks_service.call_chat_completion(
                 endpoint_name=endpoint_name,
                 messages=[
                     {"role": "system", "content": RUBRIC_GENERATION_SYSTEM_PROMPT},

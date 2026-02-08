@@ -820,7 +820,7 @@ export function useGenerateRubricSuggestions(workshopId: string) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request || {
-          endpoint_name: 'claude-opus-4-5',
+          endpoint_name: 'databricks-claude-sonnet-4-5',
           temperature: 0.3,
           include_notes: true
         }),

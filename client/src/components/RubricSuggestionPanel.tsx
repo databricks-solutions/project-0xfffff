@@ -6,7 +6,7 @@
  * Facilitators can edit, accept, or reject each suggestion.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -19,6 +19,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Sparkles,
   Check,
@@ -28,6 +29,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { MODEL_MAPPING } from '@/utils/modelMapping';
 
 export interface RubricSuggestion {
   title: string;
@@ -54,11 +56,7 @@ export function RubricSuggestionPanel({
   const [error, setError] = useState<string | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editedSuggestion, setEditedSuggestion] = useState<RubricSuggestion | null>(null);
-
-  // Generate suggestions on mount
-  useEffect(() => {
-    handleGenerate();
-  }, []);
+  const [selectedModel, setSelectedModel] = useState<string>('databricks-claude-opus-4-5');
 
   const handleGenerate = async () => {
     setLoading(true);
@@ -71,7 +69,7 @@ export function RubricSuggestionPanel({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            endpoint_name: 'claude-opus-4-5',
+            endpoint_name: selectedModel,
             temperature: 0.3,
             include_notes: true
           })
@@ -179,6 +177,36 @@ export function RubricSuggestionPanel({
             You can edit, accept, or reject each suggestion.
           </DialogDescription>
         </DialogHeader>
+
+        {/* Model Selection + Generate */}
+        <div className="flex items-center gap-3">
+          <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Model</label>
+          <Select value={selectedModel} onValueChange={setSelectedModel} disabled={loading}>
+            <SelectTrigger className="h-9 flex-1">
+              <SelectValue placeholder="Select a model" />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(MODEL_MAPPING).map(([displayName, endpointName]) => (
+                <SelectItem key={endpointName} value={endpointName}>
+                  {displayName}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            onClick={handleGenerate}
+            disabled={loading}
+            size="sm"
+            className="whitespace-nowrap"
+          >
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            ) : (
+              <Sparkles className="h-4 w-4 mr-2" />
+            )}
+            {loading ? 'Generating...' : 'Generate'}
+          </Button>
+        </div>
 
         {loading && (
           <div className="flex flex-col items-center justify-center py-12 space-y-4">

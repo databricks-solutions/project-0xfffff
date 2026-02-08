@@ -230,7 +230,7 @@ class Rubric(BaseModel):
 
 class RubricGenerationRequest(BaseModel):
   """Request model for generating rubric suggestions using AI."""
-  endpoint_name: str = Field(default="claude-opus-4-5", description="Databricks model serving endpoint name")
+  endpoint_name: str = Field(default="databricks-claude-sonnet-4-5", description="Databricks model serving endpoint name")
   temperature: float = Field(default=0.3, ge=0.0, le=2.0, description="Model temperature (0.0-2.0)")
   include_notes: bool = Field(default=True, description="Include participant notes in prompt")
 
