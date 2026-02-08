@@ -153,7 +153,7 @@ export async function loginAsFacilitator(page: Page): Promise<void> {
 
   await page.locator('button[type="submit"]').click();
 
-  await expect(page.getByText(/Welcome, Facilitator!/i)).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText(/Welcome, Facilitator/i)).toBeVisible({ timeout: 10000 });
 }
 
 /**

@@ -373,7 +373,7 @@ test.describe('Annotation - Last Trace Bug', {
     // Annotate all 10 traces through the UI
     for (let i = 0; i < 10; i++) {
       // Wait for the progress indicator to show correct trace number
-      await expect(page.getByText(`Trace ${i + 1} of 10`)).toBeVisible({
+      await expect(page.getByText(`Trace ${i + 1}/10`)).toBeVisible({
         timeout: 5000,
       });
 

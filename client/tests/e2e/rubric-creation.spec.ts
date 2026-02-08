@@ -32,7 +32,7 @@ test('rubric creation: facilitator can advance from discovery and create a rubri
 
   await page.locator('button[type="submit"]').click();
 
-  await expect(page.getByText(/Welcome, Facilitator!/i)).toBeVisible();
+  await expect(page.getByText(/Welcome, Facilitator/i)).toBeVisible();
 
   await Promise.all([
     page.waitForResponse(

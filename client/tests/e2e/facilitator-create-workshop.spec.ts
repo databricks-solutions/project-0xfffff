@@ -24,7 +24,7 @@ test('facilitator can log in and create a workshop', {
   await page.locator('button[type="submit"]').click();
 
   // Facilitator should land on workshop creation when no workshop is selected
-  await expect(page.getByText(/Welcome, Facilitator!/i)).toBeVisible();
+  await expect(page.getByText(/Welcome, Facilitator/i)).toBeVisible();
 
   // Create workshop (real POST /workshops through Vite proxy)
   // The Quick Start button is "Create New Workshop"
