@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useFacilitatorFindings, useFacilitatorFindingsWithUserDetails, useTraces, useAllTraces, useRubric, useFacilitatorAnnotations, useFacilitatorAnnotationsWithUserDetails, useWorkshop } from '@/hooks/useWorkshopApi';
-import { Settings, Users, FileText, CheckCircle, Clock, AlertCircle, BarChart, ChevronRight, Play, Eye, Plus, RotateCcw } from 'lucide-react';
+import { Settings, Users, FileText, CheckCircle, Clock, AlertCircle, ChevronRight, Play, Eye, Plus, RotateCcw, Target, TrendingUp, Activity } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -204,6 +204,25 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
     return rubric?.judge_type || 'likert';
   }, [rubric]);
 
+  // Discovery metrics for focused view
+  const discoveryMetrics = React.useMemo(() => {
+    if (!allFindings) return { totalFindings: 0, smeFindings: 0, participantFindings: 0, avgFindingsPerTrace: 0 };
+
+    const findingsToUse = allFindingsWithUserDetails || allFindings;
+    const smeFindings = findingsToUse.filter((f: any) => f.user_role === 'sme');
+    const participantFindings = findingsToUse.filter((f: any) => f.user_role !== 'sme');
+    const avgFindingsPerTrace = tracesWithFindings.size > 0
+      ? Math.round((allFindings.length / tracesWithFindings.size) * 10) / 10
+      : 0;
+
+    return {
+      totalFindings: allFindings.length,
+      smeFindings: smeFindings.length,
+      participantFindings: participantFindings.length,
+      avgFindingsPerTrace,
+    };
+  }, [allFindings, allFindingsWithUserDetails, tracesWithFindings.size]);
+
   // Annotation metrics for focused view
   const annotationMetrics = React.useMemo(() => {
     if (!annotations) return { smeCount: 0, participantCount: 0, avgRating: 0, ratingDistribution: {} };
@@ -311,8 +330,8 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
       // Clear React Query cache to refresh all data
       queryClient.invalidateQueries();
       
-    } catch (error) {
-      toast.error(`Failed to start ${nextPhase} phase: ${error.message}`);
+    } catch (error: any) {
+      toast.error('Could not start phase', { description: error.message });
     }
   };
 
@@ -334,7 +353,7 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
     
     const count = parseInt(countValue);
     if (!count || count <= 0) {
-      toast.error('Please enter a valid number of traces to add.');
+      toast.error('Invalid input', { description: 'Please enter a valid number of traces to add.' });
       return;
     }
     
@@ -372,12 +391,12 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
       
       // Show success message with auto-evaluation status for annotation phase
       if (phase === 'annotation' && result.auto_evaluation_started) {
-        toast.success(`Added ${result.traces_added} traces to ${phaseLabel}. Auto-evaluation started in background.`);
+        toast.success('Traces added', { description: `${result.traces_added} traces added to ${phaseLabel}. Auto-evaluation started in background.` });
       } else {
-        toast.success(`Successfully added ${result.traces_added} traces to ${phaseLabel}! (Total: ${result.total_active_traces})`);
+        toast.success('Traces added', { description: `${result.traces_added} traces added to ${phaseLabel}. Total: ${result.total_active_traces}.` });
       }
-    } catch (error) {
-      toast.error(`Failed to add traces: ${error.message}`);
+    } catch (error: any) {
+      toast.error('Could not add traces', { description: error.message });
     } finally {
       setIsAddingTraces(false);
     }
@@ -405,9 +424,9 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
       await queryClient.refetchQueries({ queryKey: ['traces', workshopId] });
       queryClient.invalidateQueries({ queryKey: ['annotations', workshopId] });
       
-      toast.success(`Successfully reordered ${result.reordered_count} traces! Completed traces now appear first.`);
-    } catch (error) {
-      toast.error(`Failed to reorder traces: ${error.message}`);
+      toast.success('Traces reordered', { description: `${result.reordered_count} traces reordered. Completed traces now appear first.` });
+    } catch (error: any) {
+      toast.error('Could not reorder traces', { description: error.message });
     } finally {
       setIsReorderingTraces(false);
     }
@@ -447,12 +466,12 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
         }
       });
       
-      toast.success('Discovery reset! All participant progress cleared. Select your trace configuration.');
-      
+      toast.success('Discovery reset', { description: 'All participant progress cleared. Select your trace configuration.' });
+
       // Force page reload to reflect phase change
       window.location.reload();
     } catch (error: any) {
-      toast.error(`Failed to reset discovery: ${error.message}`);
+      toast.error('Could not reset discovery', { description: error.message });
     } finally {
       setIsResettingDiscovery(false);
     }
@@ -483,12 +502,12 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
       queryClient.invalidateQueries({ queryKey: ['annotations', workshopId] });
       queryClient.invalidateQueries({ queryKey: ['all-traces', workshopId] });
       
-      toast.success('Annotation reset! All SME progress cleared. Select your trace configuration.');
-      
+      toast.success('Annotation reset', { description: 'All SME progress cleared. Select your trace configuration.' });
+
       // Force page reload to reflect phase change
       window.location.reload();
     } catch (error: any) {
-      toast.error(`Failed to reset annotation: ${error.message}`);
+      toast.error('Could not reset annotation', { description: error.message });
     } finally {
       setIsResettingAnnotation(false);
     }
@@ -498,80 +517,129 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
     <div className="p-6">
       <div className="max-w-6xl mx-auto space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between gap-3 mb-8">
+        <div className="flex items-center justify-between gap-3 mb-6">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center">
-              <BarChart className="w-6 h-6 text-white" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-100">
+              <Activity className="w-5 h-5 text-emerald-600" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">
-                {focusPhase === 'discovery' ? 'Discovery Phase Monitoring' : 
-                 focusPhase === 'annotation' ? 'Annotation Phase Monitoring' : 
-                 'Facilitator Dashboard'}
+              <h1 className="text-xl font-semibold text-gray-900">
+                {focusPhase === 'discovery' ? 'Discovery Monitoring' :
+                 focusPhase === 'annotation' ? 'Annotation Monitoring' :
+                 'Dashboard'}
               </h1>
-              <p className="text-slate-600">
-                {focusPhase === 'discovery' ? 'Monitor participant discovery progress and insights' :
-                 focusPhase === 'annotation' ? 'Monitor SME annotation progress and ratings' :
-                 'Workshop progress tracking and management'}
+              <p className="text-sm text-gray-500">
+                {focusPhase === 'discovery' ? 'Monitor participant progress and insights' :
+                 focusPhase === 'annotation' ? 'Monitor SME annotation progress' :
+                 'Workshop progress and management'}
               </p>
             </div>
           </div>
-          
-          {/* Phase Control - Only show advance button, remove floating pause */}
-          <div className="flex items-center gap-3">
-            {/* Advance Phase Button - hide when viewing focused phase dashboards */}
-            {canAdvancePhase() && !focusPhase && (
-              <Button
-                onClick={handleAdvancePhase}
-                className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white"
-                size="sm"
-              >
-                <Play className="w-4 h-4 mr-2" />
-                {getPhaseAdvancementText()}
-                <ChevronRight className="w-4 h-4 ml-1" />
-              </Button>
-            )}
-          </div>
+
+          {/* Advance Phase Button */}
+          {canAdvancePhase() && !focusPhase && (
+            <Button
+              onClick={handleAdvancePhase}
+              size="sm"
+            >
+              <Play className="w-4 h-4 mr-1.5" />
+              {getPhaseAdvancementText()}
+              <ChevronRight className="w-4 h-4 ml-1" />
+            </Button>
+          )}
         </div>
 
         {/* Overall Progress Cards */}
         <div className={`grid grid-cols-1 gap-6 ${
-          focusPhase === 'discovery' ? 'md:grid-cols-1 max-w-md mx-auto' : 
-          focusPhase === 'annotation' ? 'md:grid-cols-1 max-w-md mx-auto' : 
+          focusPhase === 'discovery' ? 'md:grid-cols-1 max-w-md mx-auto' :
+          focusPhase === 'annotation' ? 'md:grid-cols-1 max-w-md mx-auto' :
           'md:grid-cols-3'
         }`}>
           {/* Discovery Progress - Hide during annotation focus, always show otherwise */}
           {focusPhase !== 'annotation' && (
-          <Card className={`bg-gradient-to-br from-green-50 to-green-50 border-green-200 ${
+          <Card className={`border-l-4 border-green-500 bg-gradient-to-br from-green-50 to-white ${
             focusPhase === 'discovery' ? 'ring-2 ring-green-400 shadow-lg' : ''
           }`}>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-green-800">
-                <FileText className="w-5 h-5" />
-                Discovery Phase
-                {(() => {
-                  if (discoveryProgress === 100) {
-                    return <Badge className="ml-2 bg-emerald-100 text-emerald-700">Completed</Badge>;
-                  } else if (focusPhase === 'discovery') {
-                    return <Badge className="ml-2 bg-slate-100 text-slate-600">Viewing</Badge>;
-                  }
-                  return null;
-                })()}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
+            <CardContent className="pt-6">
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <FileText className="w-5 h-5 text-green-600" />
+                    <p className="text-sm font-medium text-gray-600">Discovery Phase</p>
+                  </div>
+                  {(() => {
+                    if (discoveryProgress === 100) {
+                      return <Badge className="mt-2 bg-emerald-100 text-emerald-700 border-emerald-200">Completed</Badge>;
+                    } else if (focusPhase === 'discovery') {
+                      return <Badge className="mt-2 bg-blue-100 text-blue-700 border-blue-200">Viewing</Badge>;
+                    }
+                    return null;
+                  })()}
+                </div>
+                <Activity className="h-8 w-8 text-green-600" />
+              </div>
               <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-green-700">Traces Analyzed</span>
-                  <span className="text-sm font-medium text-green-800">
-                    {completedDiscoveryTraces}/{discoveryTraceCount}
-                  </span>
-                </div>
-                <Progress value={discoveryProgress} className="h-2" />
-                <div className="flex justify-between items-center text-xs text-green-600">
-                  <span>{Math.round(discoveryProgress)}% Complete</span>
-                  <span>{activeUsers.size} Active Users</span>
-                </div>
+                {(currentPhase === 'discovery' || focusPhase === 'discovery') ? (
+                  <>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Traces Analyzed</span>
+                      <span className="text-2xl font-bold text-green-600">
+                        {completedDiscoveryTraces}/{discoveryTraceCount}
+                      </span>
+                    </div>
+                    <Progress value={discoveryProgress} className="h-2" />
+
+                    {focusPhase === 'discovery' ? (
+                      // Detailed discovery metrics when focused
+                      <div className="space-y-2 text-xs">
+                        <div className="flex justify-between text-gray-600">
+                          <span>Total Findings:</span>
+                          <span className="font-semibold text-green-600">{discoveryMetrics.totalFindings}</span>
+                        </div>
+                        <div className="flex justify-between text-gray-600">
+                          <span>Avg. Findings per Trace:</span>
+                          <span className="font-semibold text-green-600">{discoveryMetrics.avgFindingsPerTrace}</span>
+                        </div>
+                        <div className="flex justify-between text-gray-600">
+                          <span>SME Findings:</span>
+                          <span className="font-semibold text-green-600">{discoveryMetrics.smeFindings}</span>
+                        </div>
+                        <div className="flex justify-between text-gray-600">
+                          <span>Participant Findings:</span>
+                          <span className="font-semibold text-green-600">{discoveryMetrics.participantFindings}</span>
+                        </div>
+                        <div className="pt-2 mt-2 border-t border-green-200">
+                          <div className="flex justify-between text-gray-600">
+                            <span className="flex items-center gap-1">
+                              <Users className="w-3 h-3" />
+                              Active Participants:
+                            </span>
+                            <span className="font-semibold text-green-600">{activeUsers.size}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      // Simple progress when not focused
+                      <div className="flex justify-between items-center text-xs text-gray-500">
+                        <span>{Math.round(discoveryProgress)}% Complete</span>
+                        <span className="flex items-center gap-1">
+                          <Users className="w-3 h-3" />
+                          {activeUsers.size} Active
+                        </span>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Clock className="w-4 h-4 text-amber-500" />
+                      <span className="text-sm font-semibold text-amber-700">Not Started</span>
+                    </div>
+                    <p className="text-xs text-gray-600">
+                      Participants will explore traces and share quality insights
+                    </p>
+                  </>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -579,30 +647,34 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
 
           {/* Rubric Status - Hide during discovery AND annotation focus */}
           {focusPhase !== 'discovery' && focusPhase !== 'annotation' && (
-            <Card className={`bg-gradient-to-br from-blue-50 to-blue-50 border-blue-200`}>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-blue-800">
-                  <Settings className="w-5 h-5" />
-                  Rubric Status
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
+            <Card className="border-l-4 border-blue-500 bg-gradient-to-br from-blue-50 to-white">
+              <CardContent className="pt-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <Settings className="w-5 h-5 text-blue-600" />
+                      <p className="text-sm font-medium text-gray-600">Rubric Status</p>
+                    </div>
+                  </div>
+                  <Target className="h-8 w-8 text-blue-600" />
+                </div>
                 <div className="space-y-3">
                   {rubric ? (
                     <>
                       <div className="flex items-center gap-2">
                         <CheckCircle className="w-4 h-4 text-green-600" />
-                        <span className="text-sm text-blue-700">Rubric Created</span>
+                        <span className="text-sm font-semibold text-blue-700">Rubric Created</span>
                       </div>
-                      <p className="text-xs text-blue-600 line-clamp-2">
+                      <p className="text-xs text-gray-600 line-clamp-2">
                         {rubric?.question ? parseRubricQuestions(rubric.question)[0]?.title || 'Evaluation rubric is ready' : 'Evaluation rubric is ready'}
                       </p>
-                      <Button 
-                        variant="outline" 
+                      <Button
+                        variant="outline"
                         size="sm"
                         onClick={() => onNavigate('rubric')}
-                        className="w-full text-xs"
+                        className="w-full text-xs border-blue-200 text-blue-700 hover:bg-blue-50"
                       >
+                        <Eye className="w-3 h-3 mr-1" />
                         View Rubric
                       </Button>
                     </>
@@ -610,17 +682,18 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                     <>
                       <div className="flex items-center gap-2">
                         <Clock className="w-4 h-4 text-amber-500" />
-                        <span className="text-sm text-blue-700">Rubric Needed</span>
+                        <span className="text-sm font-semibold text-amber-700">Rubric Needed</span>
                       </div>
-                      <p className="text-xs text-blue-600">
+                      <p className="text-xs text-gray-600">
                         Create evaluation criteria for annotation phase
                       </p>
-                      <Button 
-                        variant="outline" 
+                      <Button
+                        variant="outline"
                         size="sm"
                         onClick={() => onNavigate('rubric')}
-                        className="w-full text-xs"
+                        className="w-full text-xs border-amber-200 text-amber-700 hover:bg-amber-50"
                       >
+                        <Plus className="w-3 h-3 mr-1" />
                         Create Rubric
                       </Button>
                     </>
@@ -632,78 +705,92 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
 
           {/* Annotation Progress - Hide during discovery focus, show during annotation focus or general view */}
           {focusPhase !== 'discovery' && (
-            <Card className={`bg-gradient-to-br from-purple-50 to-purple-50 border-purple-200 ${
+            <Card className={`border-l-4 border-purple-500 bg-gradient-to-br from-purple-50 to-white ${
               focusPhase === 'annotation' ? 'ring-2 ring-purple-400 shadow-lg' : ''
             }`}>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-purple-800">
-                  <Users className="w-5 h-5" />
-                  Annotation Phase
-                  {(() => {
-                    if (annotationProgress === 100) {
-                      return <Badge className="ml-2 bg-emerald-100 text-emerald-700">Completed</Badge>;
-                    } else if (focusPhase === 'annotation') {
-                      return <Badge className="ml-2 bg-slate-100 text-slate-600">Viewing</Badge>;
-                    }
-                    return null;
-                  })()}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
+              <CardContent className="pt-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <Users className="w-5 h-5 text-purple-600" />
+                      <p className="text-sm font-medium text-gray-600">Annotation Phase</p>
+                    </div>
+                    {(() => {
+                      if (annotationProgress === 100) {
+                        return <Badge className="mt-2 bg-emerald-100 text-emerald-700 border-emerald-200">Completed</Badge>;
+                      } else if (focusPhase === 'annotation') {
+                        return <Badge className="mt-2 bg-blue-100 text-blue-700 border-blue-200">Viewing</Badge>;
+                      }
+                      return null;
+                    })()}
+                  </div>
+                  <TrendingUp className="h-8 w-8 text-purple-600" />
+                </div>
                 <div className="space-y-3">
                   {(currentPhase === 'annotation' || focusPhase === 'annotation') ? (
                     <>
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-purple-700">Traces Annotated</span>
-                        <span className="text-sm font-medium text-purple-800">
+                        <span className="text-sm text-gray-600">Traces Annotated</span>
+                        <span className="text-2xl font-bold text-purple-600">
                           {tracesWithAnnotations.size}/{annotationTraceCount}
                         </span>
                       </div>
                       <Progress value={annotationProgress} className="h-2" />
-                      
+
+
                       {focusPhase === 'annotation' ? (
                         // Detailed annotation metrics when focused
                         <div className="space-y-2 text-xs">
                           {/* Average Rating - adapt display for binary vs likert scale */}
                           {effectiveJudgeType === 'binary' ? (
-                            <div className="flex justify-between text-purple-600">
+                            <div className="flex justify-between text-gray-600">
                               <span>Pass Rate:</span>
-                              <span className="font-medium">
-                                {annotations && annotations.length > 0 
+                              <span className="font-semibold text-purple-600">
+                                {annotations && annotations.length > 0
                                   ? `${Math.round((annotations.filter(a => a.rating === 1).length / annotations.length) * 100)}%`
                                   : '0%'}
                               </span>
                             </div>
                           ) : (
-                            <div className="flex justify-between text-purple-600">
+                            <div className="flex justify-between text-gray-600">
                               <span>Average Rating:</span>
-                              <span className="font-medium">{annotationMetrics.avgRating}/{rubric?.rating_scale || 5}</span>
+                              <span className="font-semibold text-purple-600">{annotationMetrics.avgRating}/{rubric?.rating_scale || 5}</span>
                             </div>
                           )}
-                          <div className="flex justify-between text-purple-600">
+                          <div className="flex justify-between text-gray-600">
                             <span>SME Annotations:</span>
-                            <span className="font-medium">{annotationMetrics.smeCount}</span>
+                            <span className="font-semibold text-purple-600">{annotationMetrics.smeCount}</span>
                           </div>
-                          <div className="flex justify-between text-purple-600">
+                          <div className="flex justify-between text-gray-600">
                             <span>Participant Annotations:</span>
-                            <span className="font-medium">{annotationMetrics.participantCount}</span>
+                            <span className="font-semibold text-purple-600">{annotationMetrics.participantCount}</span>
                           </div>
                           {Object.keys(annotationMetrics.ratingDistribution).length > 0 && (
-                            <div className="pt-1 border-t border-purple-200">
-                              <div className="text-purple-700 font-medium mb-1">Rating Distribution:</div>
+                            <div className="pt-2 mt-2 border-t border-purple-200">
+                              <div className="text-gray-700 font-medium mb-1">Rating Distribution:</div>
                               {effectiveJudgeType === 'binary' ? (
                                 // Binary scale: show Pass/Fail
                                 <>
                                   {annotationMetrics.ratingDistribution[1] !== undefined && (
-                                    <div className="flex justify-between">
-                                      <span className="text-green-600">✓ {rubric?.binary_labels?.pass || 'Pass'}:</span>
-                                      <span>{annotationMetrics.ratingDistribution[1]}</span>
+                                    <div className="flex justify-between items-center">
+                                      <span className="flex items-center gap-1 text-green-600">
+                                        <CheckCircle className="w-3 h-3" />
+                                        {rubric?.binary_labels?.pass || 'Pass'}:
+                                      </span>
+                                      <Badge className="bg-green-100 text-green-700 border-green-200">
+                                        {annotationMetrics.ratingDistribution[1]}
+                                      </Badge>
                                     </div>
                                   )}
                                   {annotationMetrics.ratingDistribution[0] !== undefined && (
-                                    <div className="flex justify-between">
-                                      <span className="text-red-600">✗ {rubric?.binary_labels?.fail || 'Fail'}:</span>
-                                      <span>{annotationMetrics.ratingDistribution[0]}</span>
+                                    <div className="flex justify-between items-center mt-1">
+                                      <span className="flex items-center gap-1 text-red-600">
+                                        <AlertCircle className="w-3 h-3" />
+                                        {rubric?.binary_labels?.fail || 'Fail'}:
+                                      </span>
+                                      <Badge className="bg-red-100 text-red-700 border-red-200">
+                                        {annotationMetrics.ratingDistribution[0]}
+                                      </Badge>
                                     </div>
                                   )}
                                 </>
@@ -711,9 +798,11 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                                 // Likert scale: show star ratings
                                 [5, 4, 3, 2, 1].map(rating => (
                                   annotationMetrics.ratingDistribution[rating] && (
-                                    <div key={rating} className="flex justify-between">
-                                      <span>{rating}⭐:</span>
-                                      <span>{annotationMetrics.ratingDistribution[rating]}</span>
+                                    <div key={rating} className="flex justify-between items-center mt-1">
+                                      <span className="text-gray-600">{rating}⭐:</span>
+                                      <Badge variant="secondary" className="bg-purple-100 text-purple-700">
+                                        {annotationMetrics.ratingDistribution[rating]}
+                                      </Badge>
                                     </div>
                                   )
                                 ))
@@ -723,20 +812,20 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                         </div>
                       ) : (
                         // Simple progress when not focused
-                        <div className="text-xs text-purple-600">
+                        <div className="text-xs text-gray-500">
                           {Math.round(annotationProgress)}% Complete
                         </div>
                       )}
                     </>
                   ) : (
                     <>
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-4 h-4 text-purple-500" />
-                        <span className="text-sm text-purple-700">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Clock className="w-4 h-4 text-amber-500" />
+                        <span className="text-sm font-semibold text-amber-700">
                           {currentPhase === 'discovery' ? 'Pending Discovery' : 'Not Started'}
                         </span>
                       </div>
-                      <p className="text-xs text-purple-600">
+                      <p className="text-xs text-gray-600">
                         SMEs will annotate traces using the rubric
                       </p>
                     </>
@@ -749,19 +838,18 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
 
         {/* Ready for Review/Tuning Banner - Show when annotation is complete */}
         {annotationProgress === 100 && currentPhase === 'annotation' && focusPhase === 'annotation' && (
-          <div className="mb-6">
-            <Card className="border-green-200 bg-gradient-to-r from-green-50 to-emerald-50">
-              <CardContent className="pt-6">
+          <div className="mb-4">
+            <Card className="border-l-4 border-green-500 bg-gradient-to-r from-green-50 to-emerald-50">
+              <CardContent className="py-3 px-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                    <CheckCircle className="w-5 h-5 text-green-600" />
+                  <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <span className="font-medium text-green-900 text-sm">Ready for Results Review & Judge Tuning</span>
+                    <span className="text-xs text-green-600 ml-2">— Use the sidebar to review IRR results and proceed to judge tuning.</span>
                   </div>
-                  <div className="flex-1">
-                    <h4 className="font-semibold text-green-900">Ready for Results Review & Judge Tuning</h4>
-                    <p className="text-sm text-green-700">
-                      Annotation phase complete! Use the sidebar workflow to review IRR results and proceed to judge tuning.
-                    </p>
-                  </div>
+                  <Badge className="bg-green-100 text-green-700 border-green-200 text-xs px-2 py-0.5">
+                    Complete
+                  </Badge>
                 </div>
               </CardContent>
             </Card>
@@ -771,98 +859,138 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
         {/* Detailed Analysis */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Eye className="w-5 h-5" />
+            <CardTitle className="text-base flex items-center gap-2">
+              <Eye className="h-4 w-4 text-blue-600" />
               {focusPhase === 'discovery' ? 'Discovery Analysis' : 'Workshop Analysis'}
             </CardTitle>
-            <CardDescription>
-              {focusPhase === 'discovery' ? 
+            <CardDescription className="text-xs">
+              {focusPhase === 'discovery' ?
                 'Detailed breakdown of discovery progress and trace coverage' :
                 'User participation and trace coverage analysis'}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <Tabs defaultValue="users" className="space-y-4">
-              <TabsList>
-                <TabsTrigger value="users">User Participation</TabsTrigger>
-                <TabsTrigger value="traces">Trace Coverage</TabsTrigger>
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="users" className="flex items-center gap-2">
+                  <Users className="w-4 h-4" />
+                  User Participation
+                </TabsTrigger>
+                <TabsTrigger value="traces" className="flex items-center gap-2">
+                  <FileText className="w-4 h-4" />
+                  Trace Coverage
+                </TabsTrigger>
               </TabsList>
 
               {/* User Participation Tab */}
               <TabsContent value="users">
+                <div className="flex items-center gap-2 mb-4">
+                  <Users className="h-4 w-4 text-blue-600" />
+                  <h3 className="text-sm font-semibold">Participant Activity</h3>
+                  <Badge variant="secondary" className="bg-blue-100 text-blue-700 border-blue-200">
+                    {userContributions.length}
+                  </Badge>
+                </div>
                 {userContributions.length > 0 ? (
                   <div className="space-y-3">
-                                    {userContributions.map(({ userId, userName, count }) => {
-                  const userTraces = traceCoverageDetails.filter(t => t.reviewers.includes(userId)).length;
-                  return (
-                    <div key={userId} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-gradient-to-br from-slate-400 to-slate-600 rounded-full flex items-center justify-center text-white text-xs font-semibold">
-                          {userName.slice(0, 2).toUpperCase()}
-                        </div>
-                        <div>
-                          <div className="text-sm font-medium text-slate-900">
-                            {userName}
+                    {userContributions.map(({ userId, userName, count }) => {
+                      const userTraces = traceCoverageDetails.filter((t: any) => t.reviewers.includes(userId)).length;
+                      return (
+                        <div key={userId} className="flex items-center justify-between p-4 bg-gradient-to-r from-slate-50 to-white border border-slate-200 rounded-lg hover:shadow-sm transition-shadow">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center text-white text-sm font-semibold shadow-sm">
+                              {userName.slice(0, 2).toUpperCase()}
+                            </div>
+                            <div>
+                              <div className="text-sm font-semibold text-slate-900">
+                                {userName}
+                              </div>
+                              <div className="text-xs text-slate-600 flex items-center gap-2">
+                                <span className="flex items-center gap-1">
+                                  <FileText className="w-3 h-3" />
+                                  {count} finding{count !== 1 ? 's' : ''}
+                                </span>
+                                <span className="text-slate-400">•</span>
+                                <span className="flex items-center gap-1">
+                                  <Activity className="w-3 h-3" />
+                                  {userTraces} trace{userTraces !== 1 ? 's' : ''}
+                                </span>
+                              </div>
+                            </div>
                           </div>
-                          <div className="text-xs text-slate-600">
-                            {count} finding{count !== 1 ? 's' : ''} • {userTraces} trace{userTraces !== 1 ? 's' : ''} reviewed
+                          <div className="text-right">
+                            <Badge
+                              variant={count >= 3 ? 'default' : 'secondary'}
+                              className={count >= 3 ? 'bg-green-100 text-green-700 border-green-200' : 'bg-slate-100 text-slate-700 border-slate-200'}
+                            >
+                              {count >= 3 ? 'Active' : 'Participating'}
+                            </Badge>
                           </div>
                         </div>
-                      </div>
-                      <div className="text-right">
-                        <Badge variant={count >= 3 ? 'default' : 'secondary'} className="text-xs">
-                          {count >= 3 ? 'Active' : 'Participating'}
-                        </Badge>
-                      </div>
-                    </div>
-                  );
-                })}
+                      );
+                    })}
                   </div>
                 ) : (
-                  <div className="text-center py-8 text-slate-500">
-                    <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                    <p className="text-sm">No user participation data yet</p>
-                    <p className="text-xs">Users will appear here once they start contributing findings</p>
+                  <div className="text-center py-8 text-slate-500 bg-slate-50 rounded-lg border-2 border-dashed border-slate-200">
+                    <Users className="w-12 h-12 mx-auto mb-4 opacity-40 text-slate-400" />
+                    <p className="text-sm font-medium text-slate-700">No user participation data yet</p>
+                    <p className="text-xs text-slate-500 mt-1">Users will appear here once they start contributing findings</p>
                   </div>
                 )}
               </TabsContent>
 
               {/* Trace Coverage Tab */}
               <TabsContent value="traces">
+                <div className="flex items-center gap-2 mb-4">
+                  <FileText className="h-4 w-4 text-purple-600" />
+                  <h3 className="text-sm font-semibold">Trace Review Status</h3>
+                  <Badge variant="secondary" className="bg-purple-100 text-purple-700 border-purple-200">
+                    {traceCoverageDetails.length}
+                  </Badge>
+                </div>
                 {traceCoverageDetails.length > 0 ? (
                   <div className="space-y-3" data-testid="trace-coverage">
                     {traceCoverageDetails.map((trace) => (
-                      <div key={trace.traceId} className="border rounded-lg p-4 bg-slate-50" data-testid="trace-item">
+                      <div key={trace.traceId} className="border border-slate-200 rounded-lg p-4 bg-gradient-to-r from-slate-50 to-white hover:shadow-sm transition-shadow" data-testid="trace-item">
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-2">
-                              <h4 className="font-medium text-slate-900 text-sm">
+                            <div className="flex items-center gap-2 mb-2 flex-wrap">
+                              <h4 className="font-semibold text-slate-900 text-sm">
                                 Trace: {trace.traceId.slice(0, 20)}...
                               </h4>
-                              <Badge 
-                                variant={trace.isFullyReviewed ? 'default' : 'secondary'}
-                                className="text-xs"
+                              <Badge
+                                className={
+                                  trace.isFullyReviewed
+                                    ? 'bg-green-100 text-green-700 border-green-200'
+                                    : trace.reviewCount > 0
+                                    ? 'bg-blue-100 text-blue-700 border-blue-200'
+                                    : 'bg-slate-100 text-slate-600 border-slate-200'
+                                }
                               >
                                 {trace.reviewCount} review{trace.reviewCount !== 1 ? 's' : ''}
                               </Badge>
-                              <Badge 
-                                variant={trace.uniqueReviewers >= 2 ? 'default' : 'outline'}
-                                className="text-xs"
+                              <Badge
+                                className={
+                                  trace.uniqueReviewers >= 2
+                                    ? 'bg-purple-100 text-purple-700 border-purple-200'
+                                    : 'bg-amber-100 text-amber-700 border-amber-200'
+                                }
                               >
+                                <Users className="w-3 h-3 mr-1" />
                                 {trace.uniqueReviewers} reviewer{trace.uniqueReviewers !== 1 ? 's' : ''}
                               </Badge>
                             </div>
-                            <p className="text-xs text-slate-600 line-clamp-2 mb-2">
+                            <p className="text-xs text-slate-600 line-clamp-2 mb-3 leading-relaxed">
                               {trace.input.slice(0, 120)}...
                             </p>
                             {trace.reviewers.length > 0 && (
-                              <div className="flex flex-wrap gap-1">
+                              <div className="flex flex-wrap gap-1.5">
                                 {trace.reviewers.map(reviewer => {
                                   // Find the user name from the findings with user details
                                   const userFinding = allFindingsWithUserDetails?.find(f => f.user_id === reviewer);
                                   const reviewerName = userFinding?.user_name || reviewer;
                                   return (
-                                    <Badge key={reviewer} variant="outline" className="text-xs px-2 py-0">
+                                    <Badge key={reviewer} variant="outline" className="text-xs px-2 py-0.5 bg-white border-slate-300">
                                       {reviewerName}
                                     </Badge>
                                   );
@@ -870,26 +998,43 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                               </div>
                             )}
                           </div>
-                          <div className="flex flex-col items-end gap-1">
-                            <div className="text-right text-xs">
-                              <div className={`font-medium status-text ${
-                                trace.isFullyReviewed ? 'text-green-600' : 
-                                trace.reviewCount > 0 ? 'text-amber-600' : 'text-slate-400'
-                              }`}>
-                                {trace.isFullyReviewed ? '✓ Complete' : 
-                                 trace.reviewCount > 0 ? 'In Progress' : 'Pending'}
-                              </div>
-                            </div>
+                          <div className="flex flex-col items-end gap-1 ml-4">
+                            <Badge
+                              className={`status-text ${
+                                trace.isFullyReviewed
+                                  ? 'bg-green-100 text-green-700 border-green-200'
+                                  : trace.reviewCount > 0
+                                  ? 'bg-amber-100 text-amber-700 border-amber-200'
+                                  : 'bg-slate-100 text-slate-500 border-slate-200'
+                              }`}
+                            >
+                              {trace.isFullyReviewed ? (
+                                <>
+                                  <CheckCircle className="w-3 h-3 mr-1" />
+                                  Complete
+                                </>
+                              ) : trace.reviewCount > 0 ? (
+                                <>
+                                  <Clock className="w-3 h-3 mr-1" />
+                                  In Progress
+                                </>
+                              ) : (
+                                <>
+                                  <AlertCircle className="w-3 h-3 mr-1" />
+                                  Pending
+                                </>
+                              )}
+                            </Badge>
                           </div>
                         </div>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="text-center py-8 text-slate-500">
-                    <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                    <p className="text-sm">No trace coverage data yet</p>
-                    <p className="text-xs">Traces will appear here once they start being reviewed</p>
+                  <div className="text-center py-8 text-slate-500 bg-slate-50 rounded-lg border-2 border-dashed border-slate-200">
+                    <FileText className="w-12 h-12 mx-auto mb-4 opacity-40 text-slate-400" />
+                    <p className="text-sm font-medium text-slate-700">No trace coverage data yet</p>
+                    <p className="text-xs text-slate-500 mt-1">Traces will appear here once they start being reviewed</p>
                   </div>
                 )}
               </TabsContent>
@@ -900,8 +1045,11 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
         {/* Quick Actions */}
         <Card>
           <CardHeader>
-            <CardTitle>Quick Actions</CardTitle>
-            <CardDescription>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Settings className="h-4 w-4 text-blue-600" />
+              Quick Actions
+            </CardTitle>
+            <CardDescription className="text-xs">
               {focusPhase === 'discovery' ? 'Discovery phase management tools' :
                focusPhase === 'annotation' ? 'Annotation phase management tools' :
                'Common facilitator tasks and workshop management'}
@@ -917,14 +1065,17 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
               {focusPhase !== 'discovery' && focusPhase !== 'annotation' && (
               <Button
                 variant="outline"
-                className="flex items-center gap-2 justify-start p-4 h-auto"
+                className="flex items-center gap-3 justify-start p-4 h-auto border-blue-200 hover:bg-blue-50 hover:border-blue-300 transition-colors"
                 onClick={() => onNavigate('view-all-findings')}
               >
-                <FileText className="w-5 h-5" />
-                <div className="text-left">
-                  <div className="font-medium">View All Findings</div>
-                  <div className="text-xs text-muted-foreground">Review participant insights</div>
+                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <FileText className="w-5 h-5 text-blue-600" />
                 </div>
+                <div className="text-left">
+                  <div className="font-semibold text-slate-900">View All Findings</div>
+                  <div className="text-xs text-slate-600">Review participant insights</div>
+                </div>
+                <ChevronRight className="w-4 h-4 ml-auto text-slate-400" />
               </Button>
               )}
 
@@ -932,12 +1083,14 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
               {focusPhase === 'discovery' && (
                 <>
                   {/* Add Additional Traces */}
-                  <div className="border rounded-lg p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Plus className="w-5 h-5 text-green-600" />
+                  <div className="border-l-4 border-green-500 rounded-lg p-4 bg-gradient-to-r from-green-50 to-white shadow-sm">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                        <Plus className="w-4 h-4 text-green-600" />
+                      </div>
                       <div className="text-left">
-                        <div className="font-medium">Add More Traces</div>
-                        <div className="text-xs text-muted-foreground">Include additional traces in discovery</div>
+                        <div className="font-semibold text-slate-900">Add More Traces</div>
+                        <div className="text-xs text-slate-600">Include additional traces in discovery</div>
                       </div>
                     </div>
                     <div className="flex gap-2">
@@ -947,23 +1100,23 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                         placeholder="Number of traces"
                         value={discoveryTracesCount}
                         onChange={(e) => setDiscoveryTracesCount(e.target.value)}
-                        className="flex-1 h-8 text-xs"
+                        className="flex-1 h-9 text-sm border-green-200 focus:border-green-400 focus:ring-green-400"
                         disabled={isAddingTraces}
                       />
                       <Button
                         onClick={handleAddAdditionalTraces}
                         disabled={isAddingTraces || !discoveryTracesCount}
                         size="sm"
-                        className="h-8 px-3 bg-green-600 hover:bg-green-700 text-white"
+                        className="h-9 px-4 bg-green-600 hover:bg-green-700 text-white shadow-sm"
                       >
                         {isAddingTraces ? (
                           <>
-                            <div className="w-3 h-3 border border-white/30 border-t-white rounded-full animate-spin mr-1" />
+                            <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
                             Adding...
                           </>
                         ) : (
                           <>
-                            <Plus className="w-3 h-3 mr-1" />
+                            <Plus className="w-4 h-4 mr-1" />
                             Add
                           </>
                         )}
@@ -972,12 +1125,14 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                   </div>
 
                   {/* Phase Control Button */}
-                  <div className="border rounded-lg p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Play className="w-5 h-5 text-blue-600" />
+                  <div className="border-l-4 border-blue-500 rounded-lg p-4 bg-gradient-to-r from-blue-50 to-white shadow-sm">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                        <Play className="w-4 h-4 text-blue-600" />
+                      </div>
                       <div className="text-left">
-                        <div className="font-medium">Discovery Control</div>
-                        <div className="text-xs text-muted-foreground">Pause or resume discovery phase</div>
+                        <div className="font-semibold text-slate-900">Discovery Control</div>
+                        <div className="text-xs text-slate-600">Pause or resume discovery phase</div>
                       </div>
                     </div>
                     <div className="flex justify-center">
@@ -986,11 +1141,13 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                   </div>
 
                   {/* Reset Discovery */}
-                  <div className="border border-amber-200 rounded-lg p-4 bg-amber-50">
-                    <div className="flex items-center gap-2 mb-3">
-                      <RotateCcw className="w-5 h-5 text-amber-600" />
+                  <div className="border-l-4 border-amber-500 rounded-lg p-4 bg-gradient-to-r from-amber-50 to-white shadow-sm">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center">
+                        <RotateCcw className="w-4 h-4 text-amber-600" />
+                      </div>
                       <div className="text-left">
-                        <div className="font-medium text-amber-800">Reset Discovery</div>
+                        <div className="font-semibold text-amber-800">Reset Discovery</div>
                         <div className="text-xs text-amber-600">Go back to reconfigure trace selection</div>
                       </div>
                     </div>
@@ -1000,16 +1157,16 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                           variant="outline"
                           size="sm"
                           disabled={isResettingDiscovery}
-                          className="w-full border-amber-300 text-amber-700 hover:bg-amber-100"
+                          className="w-full border-amber-300 text-amber-700 hover:bg-amber-100 font-medium"
                         >
                           {isResettingDiscovery ? (
                             <>
-                              <div className="w-3 h-3 border border-amber-300 border-t-amber-600 rounded-full animate-spin mr-2" />
+                              <div className="w-3 h-3 border-2 border-amber-300 border-t-amber-600 rounded-full animate-spin mr-2" />
                               Resetting...
                             </>
                           ) : (
                             <>
-                              <RotateCcw className="w-3 h-3 mr-2" />
+                              <RotateCcw className="w-4 h-4 mr-2" />
                               Reset & Reconfigure
                             </>
                           )}
@@ -1045,12 +1202,14 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
               {focusPhase === 'annotation' && (
                 <>
                   {/* Add Additional Traces for Annotation */}
-                  <div className="border rounded-lg p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Plus className="w-5 h-5 text-purple-600" />
+                  <div className="border-l-4 border-purple-500 rounded-lg p-4 bg-gradient-to-r from-purple-50 to-white shadow-sm">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                        <Plus className="w-4 h-4 text-purple-600" />
+                      </div>
                       <div className="text-left">
-                        <div className="font-medium">Add More Traces</div>
-                        <div className="text-xs text-muted-foreground">Include additional traces for annotation</div>
+                        <div className="font-semibold text-slate-900">Add More Traces</div>
+                        <div className="text-xs text-slate-600">Include additional traces for annotation</div>
                       </div>
                     </div>
                     <div className="flex gap-2">
@@ -1060,23 +1219,23 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                         placeholder="Number of traces"
                         value={annotationTracesCount}
                         onChange={(e) => setAnnotationTracesCount(e.target.value)}
-                        className="flex-1 h-8 text-xs"
+                        className="flex-1 h-9 text-sm border-purple-200 focus:border-purple-400 focus:ring-purple-400"
                         disabled={isAddingTraces}
                       />
                       <Button
                         onClick={handleAddAdditionalTraces}
                         disabled={isAddingTraces || !annotationTracesCount}
                         size="sm"
-                        className="h-8 px-3"
+                        className="h-9 px-4 bg-purple-600 hover:bg-purple-700 text-white shadow-sm"
                       >
                         {isAddingTraces ? (
                           <>
-                            <div className="w-3 h-3 border border-white/30 border-t-white rounded-full animate-spin mr-1" />
+                            <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
                             Adding...
                           </>
                         ) : (
                           <>
-                            <Plus className="w-3 h-3 mr-1" />
+                            <Plus className="w-4 h-4 mr-1" />
                             Add
                           </>
                         )}
@@ -1085,12 +1244,14 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                   </div>
 
                   {/* Phase Control Button */}
-                  <div className="border rounded-lg p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Play className="w-5 h-5 text-purple-600" />
+                  <div className="border-l-4 border-blue-500 rounded-lg p-4 bg-gradient-to-r from-blue-50 to-white shadow-sm">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                        <Play className="w-4 h-4 text-blue-600" />
+                      </div>
                       <div className="text-left">
-                        <div className="font-medium">Annotation Control</div>
-                        <div className="text-xs text-muted-foreground">Pause or resume annotation phase</div>
+                        <div className="font-semibold text-slate-900">Annotation Control</div>
+                        <div className="text-xs text-slate-600">Pause or resume annotation phase</div>
                       </div>
                     </div>
                     <div className="flex justify-center">
@@ -1099,11 +1260,13 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                   </div>
 
                   {/* Reset Annotation */}
-                  <div className="border border-purple-200 rounded-lg p-4 bg-purple-50">
-                    <div className="flex items-center gap-2 mb-3">
-                      <RotateCcw className="w-5 h-5 text-purple-600" />
+                  <div className="border-l-4 border-purple-500 rounded-lg p-4 bg-gradient-to-r from-purple-50 to-white shadow-sm">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                        <RotateCcw className="w-4 h-4 text-purple-600" />
+                      </div>
                       <div className="text-left">
-                        <div className="font-medium text-purple-800">Reset Annotation</div>
+                        <div className="font-semibold text-purple-800">Reset Annotation</div>
                         <div className="text-xs text-purple-600">Go back to reconfigure trace selection</div>
                       </div>
                     </div>
@@ -1113,16 +1276,16 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                           variant="outline"
                           size="sm"
                           disabled={isResettingAnnotation}
-                          className="w-full border-purple-300 text-purple-700 hover:bg-purple-100"
+                          className="w-full border-purple-300 text-purple-700 hover:bg-purple-100 font-medium"
                         >
                           {isResettingAnnotation ? (
                             <>
-                              <div className="w-3 h-3 border border-purple-300 border-t-purple-600 rounded-full animate-spin mr-2" />
+                              <div className="w-3 h-3 border-2 border-purple-300 border-t-purple-600 rounded-full animate-spin mr-2" />
                               Resetting...
                             </>
                           ) : (
                             <>
-                              <RotateCcw className="w-3 h-3 mr-2" />
+                              <RotateCcw className="w-4 h-4 mr-2" />
                               Reset & Reconfigure
                             </>
                           )}

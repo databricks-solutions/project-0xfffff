@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, CheckCircle, AlertCircle, Database, Settings, Download, Upload, FileText, Trash2, RotateCcw } from 'lucide-react';
@@ -46,7 +45,7 @@ export function IntakePage() {
   const { workshopId } = useWorkshopContext();
   const { setCurrentPhase } = useWorkflowContext();
   const queryClient = useQueryClient();
-  
+
   // Load MLflow config from localStorage on initial mount
   const getInitialConfig = (): MLflowConfig => {
     try {
@@ -74,7 +73,7 @@ export function IntakePage() {
   };
 
   const [config, setConfig] = useState<MLflowConfig>(getInitialConfig);
-  
+
   const [status, setStatus] = useState<MLflowStatus | null>(null);
   const [isIngesting, setIsIngesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -101,16 +100,16 @@ export function IntakePage() {
 
   const loadStatus = async () => {
     if (!workshopId) {
-      
+
       return;
     }
-    
+
     try {
       const response = await fetch(`/workshops/${workshopId}/mlflow-status`);
       if (response.ok) {
         const statusData = await response.json();
         setStatus(statusData);
-        
+
         // Merge backend config with existing config (prefer backend values if present)
         if (statusData.config) {
           setConfig(prev => ({
@@ -124,7 +123,7 @@ export function IntakePage() {
         }
       }
     } catch (err) {
-      
+
     }
   };
 
@@ -151,10 +150,10 @@ export function IntakePage() {
     setError(null);
 
     try {
-      
-      
+
+
       // First, save the configuration (which stores the token in memory)
-      
+
       const configResponse = await fetch(`/workshops/${workshopId}/mlflow-config`, {
         method: 'POST',
         headers: {
@@ -168,10 +167,10 @@ export function IntakePage() {
         setError(errorData.detail || 'Failed to save configuration');
         return;
       }
-      
+
 
       // Then, ingest traces (token will be retrieved from memory)
-      
+
       const response = await fetch(`/workshops/${workshopId}/mlflow-ingest`, {
         method: 'POST',
         headers: {
@@ -180,17 +179,17 @@ export function IntakePage() {
         body: JSON.stringify({}), // No need to send token - it's retrieved from memory
       });
 
-      
+
 
       if (response.ok) {
         const result = await response.json();
-        
+
         await loadStatus();
-        
+
         // Invalidate trace caches to ensure new traces are visible
         queryClient.invalidateQueries({ queryKey: ['traces', workshopId] });
         queryClient.invalidateQueries({ queryKey: ['all-traces', workshopId] });
-        
+
         if (result.trace_count === 0) {
           toast.info('Traces from this experiment have already been ingested. No new traces were added.');
         } else {
@@ -203,10 +202,10 @@ export function IntakePage() {
         setError(errorData.detail || `Failed to ingest traces (HTTP ${response.status})`);
       }
     } catch (err) {
-      
+
       setError('Network error: Unable to connect to the server. Please check your connection and try again.');
     } finally {
-      
+
       setIsIngesting(false);
     }
   };
@@ -292,7 +291,7 @@ export function IntakePage() {
 
         toast.success(`Successfully created ${result.mlflow_traces_created} MLflow traces! Use "Import from MLflow" to bring them into Discovery.`);
         setCsvFile(null);
-        
+
         if (result.warnings && result.warnings.length > 0) {
           toast.warning(`${result.warnings.length} rows had issues. Check console for details.`);
           console.warn('CSV upload warnings:', result.warnings);
@@ -324,9 +323,9 @@ export function IntakePage() {
 
       if (response.ok) {
         const result = await response.json();
-        
+
         await loadStatus();
-        
+
         // Invalidate ALL workshop-related caches for a complete reset
         queryClient.invalidateQueries({ queryKey: ['traces', workshopId] });
         queryClient.invalidateQueries({ queryKey: ['all-traces', workshopId] });
@@ -338,13 +337,13 @@ export function IntakePage() {
         queryClient.invalidateQueries({ queryKey: ['irr', workshopId] });
         queryClient.invalidateQueries({ queryKey: ['mlflowConfig', workshopId] });
         // Invalidate any queries that contain this workshopId (catches all variations)
-        queryClient.invalidateQueries({ 
+        queryClient.invalidateQueries({
           predicate: (query) => {
             const key = query.queryKey;
             return Array.isArray(key) && key.some(k => k === workshopId);
           }
         });
-        
+
         toast.success(`Deleted ${result.deleted_count} traces. Workshop reset to intake phase.`);
       } else {
         const errorData = await response.json().catch(() => ({}));
@@ -359,106 +358,110 @@ export function IntakePage() {
 
 
   return (
-    <div className="container mx-auto p-6 max-w-4xl">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">MLflow Trace Intake</h1>
-        <p className="text-gray-600">
-          Configure and pull MLflow traces from your Databricks workspace to begin the workshop.
-        </p>
+    <div className="max-w-4xl mx-auto p-6 space-y-5">
+      {/* Header */}
+      <div className="flex items-center gap-3 pb-2">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-100">
+          <Database className="w-5 h-5 text-blue-600" />
+        </div>
+        <div>
+          <h1 className="text-xl font-semibold text-gray-900">MLflow Trace Intake</h1>
+          <p className="text-sm text-gray-500">
+            Pull traces from Databricks workspace to begin the workshop.
+          </p>
+        </div>
       </div>
 
       {/* Status Card */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Database className="h-5 w-5" />
+      <Card className="border-l-4 border-blue-500">
+        <CardContent className="p-4">
+          <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2 mb-3">
+            <Database className="w-4 h-4 text-blue-600" />
             Intake Status
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+          </h3>
           {status ? (
             <div className="space-y-3">
               <div className="flex items-center gap-2">
-                <Badge variant={status.is_configured ? "default" : "secondary"}>
+                <Badge className={status.is_configured ? "bg-indigo-50 text-indigo-700 border border-indigo-200" : "bg-gray-100 text-gray-600 border border-gray-200"}>
                   {status.is_configured ? "Configured" : "Not Configured"}
                 </Badge>
-                <Badge variant={status.is_ingested ? "default" : "secondary"}>
+                <Badge className={status.is_ingested ? "bg-green-50 text-green-700 border border-green-200" : "bg-gray-100 text-gray-600 border border-gray-200"}>
                   {status.is_ingested ? "Ingested" : "Not Ingested"}
                 </Badge>
                 {status.trace_count > 0 && (
-                  <Badge variant="outline">
+                  <Badge className="bg-blue-50 text-blue-700 border border-blue-200">
                     {status.trace_count} traces
                   </Badge>
                 )}
               </div>
-              
+
               {status.last_ingestion_time && (
-                <p className="text-sm text-gray-600">
+                <p className="text-xs text-gray-500">
                   Last ingested: {new Date(status.last_ingestion_time).toLocaleString()}
                 </p>
               )}
-              
+
               {status.error_message && (
                 <Alert variant="destructive">
                   <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{status.error_message}</AlertDescription>
+                  <AlertDescription className="text-xs">{status.error_message}</AlertDescription>
                 </Alert>
               )}
             </div>
           ) : (
-            <p className="text-gray-500">Loading status...</p>
+            <p className="text-sm text-gray-500">Loading status...</p>
           )}
         </CardContent>
       </Card>
 
       {/* Configuration Card */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Settings className="h-5 w-5" />
+      <Card className="border-l-4 border-amber-500">
+        <CardContent className="p-4 space-y-4">
+          <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+            <Settings className="w-4 h-4 text-amber-600" />
             MLflow Configuration
-          </CardTitle>
-          <CardDescription>
-            Configure your Databricks workspace and MLflow experiment details.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="databricks_host">Databricks Host</Label>
+          </h3>
+          <p className="text-xs text-gray-500">Configure your Databricks workspace and MLflow experiment details.</p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="databricks_host" className="text-xs font-medium text-gray-600">Databricks Host</Label>
               <Input
                 id="databricks_host"
-                placeholder="https://your-workspace.cloud.databricks.com"
+                placeholder="https://je2-demo-field-eng.cloud.databricks.com"
                 value={config.databricks_host}
                 onChange={(e) => handleConfigChange('databricks_host', e.target.value)}
+                className="h-9"
               />
             </div>
-            
-            <div>
-              <Label htmlFor="experiment_id">Experiment ID</Label>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="experiment_id" className="text-xs font-medium text-gray-600">Experiment ID</Label>
               <Input
                 id="experiment_id"
-                placeholder="1234567890123456"
+                placeholder="2452310130191209"
                 value={config.experiment_id}
                 onChange={(e) => handleConfigChange('experiment_id', e.target.value)}
+                className="h-9"
               />
             </div>
           </div>
 
-          <div>
-            <Label htmlFor="databricks_token">Databricks Token</Label>
+          <div className="space-y-1.5">
+            <Label htmlFor="databricks_token" className="text-xs font-medium text-gray-600">Databricks Token</Label>
             <Input
               id="databricks_token"
               type="password"
               placeholder="dapi..."
               value={config.databricks_token}
               onChange={(e) => handleConfigChange('databricks_token', e.target.value)}
+              className="h-9"
             />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="max_traces">Max Traces</Label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="max_traces" className="text-xs font-medium text-gray-600">Max Traces</Label>
               <Input
                 id="max_traces"
                 type="number"
@@ -466,39 +469,27 @@ export function IntakePage() {
                 max="1000"
                 value={config.max_traces}
                 onChange={(e) => handleConfigChange('max_traces', parseInt(e.target.value))}
+                className="h-9"
               />
             </div>
-            
-            <div>
-              <Label htmlFor="filter_string">Filter String (Optional)</Label>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="filter_string" className="text-xs font-medium text-gray-600">Filter String (Optional)</Label>
               <Input
                 id="filter_string"
                 placeholder="attributes.status = 'OK'"
                 value={config.filter_string || ''}
                 onChange={(e) => handleConfigChange('filter_string', e.target.value)}
+                className="h-9"
               />
             </div>
           </div>
 
-        </CardContent>
-      </Card>
-
-      {/* Ingestion Card */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Download className="h-5 w-5" />
-            Ingest Traces
-          </CardTitle>
-          <CardDescription>
-            Pull traces from MLflow into the workshop for analysis.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
           <Button
             onClick={ingestTraces}
             disabled={isIngesting || !config.databricks_host || !config.databricks_token || !config.experiment_id}
             className="w-full"
+            size="sm"
           >
             {isIngesting ? (
               <>
@@ -506,36 +497,38 @@ export function IntakePage() {
                 Ingesting Traces...
               </>
             ) : (
-              'Ingest Traces from MLflow'
+              <>
+                <Download className="mr-2 h-4 w-4" />
+                Import from MLflow
+              </>
             )}
           </Button>
-          
-          {/* Show ingestion error immediately below the button */}
+
           {error && (
-            <Alert variant="destructive" className="mt-4">
+            <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
+              <AlertDescription className="text-xs">{error}</AlertDescription>
             </Alert>
           )}
         </CardContent>
       </Card>
 
       {/* CSV Upload Card */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Upload className="h-5 w-5" />
-            Upload Traces from CSV
-          </CardTitle>
-          <CardDescription>
-            Upload conversational data from a CSV file. CSV must have "request_preview" and "response_preview" columns.
-            Optionally log the data to MLflow as traces.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400 transition-colors">
-            <FileText className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-            <div className="mb-4">
+      <Card className="border-l-4 border-green-500">
+        <CardContent className="p-4 space-y-4">
+          <div>
+            <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2 mb-1">
+              <Upload className="w-4 h-4 text-green-600" />
+              Upload Traces from CSV
+            </h3>
+            <p className="text-xs text-gray-500">
+              CSV must have "request_preview" and "response_preview" columns. Optionally log to MLflow.
+            </p>
+          </div>
+
+          <div className="border-2 border-dashed border-gray-200 rounded-lg p-4 text-center bg-gray-50/50">
+            <FileText className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+            <div className="mb-3">
               <label htmlFor="csv-upload" className="cursor-pointer">
                 <input
                   id="csv-upload"
@@ -549,32 +542,32 @@ export function IntakePage() {
                     }
                   }}
                 />
-                <Button variant="outline" type="button" asChild>
+                <Button variant="outline" type="button" size="sm" asChild>
                   <span>
-                    <FileText className="mr-2 h-4 w-4" />
+                    <FileText className="mr-2 h-3.5 w-3.5" />
                     Select CSV File
                   </span>
                 </Button>
               </label>
             </div>
             {csvFile && (
-              <p className="text-sm text-gray-600 mb-4">
-                Selected: <span className="font-medium">{csvFile.name}</span>
+              <p className="text-xs text-gray-600 mb-2">
+                <span className="font-medium">{csvFile.name}</span>
               </p>
             )}
-            <p className="text-xs text-gray-500">
-              Expected format: CSV with "request_preview" and "response_preview" columns
+            <p className="text-xs text-gray-400">
+              Required: "request_preview" and "response_preview" columns
             </p>
           </div>
 
           {/* Import destination options */}
           <div className="space-y-2">
-            <Label className="text-sm font-medium text-gray-700">Import destination:</Label>
+            <Label className="text-xs font-medium text-gray-600">Import destination:</Label>
             <div className="space-y-2">
-              <div 
-                className={`flex items-center space-x-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
-                  csvImportDestination === 'discovery' 
-                    ? 'border-blue-500 bg-blue-50' 
+              <div
+                className={`flex items-center space-x-3 p-2.5 rounded-md border cursor-pointer transition-colors ${
+                  csvImportDestination === 'discovery'
+                    ? 'border-blue-500 bg-blue-50'
                     : 'border-gray-200 hover:border-gray-300'
                 }`}
                 onClick={() => setCsvImportDestination('discovery')}
@@ -585,7 +578,7 @@ export function IntakePage() {
                   name="csv-import-destination"
                   checked={csvImportDestination === 'discovery'}
                   onChange={() => setCsvImportDestination('discovery')}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500"
+                  className="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500"
                 />
                 <div className="flex-1">
                   <label htmlFor="import-discovery" className="text-sm font-medium text-gray-700 cursor-pointer">
@@ -594,11 +587,11 @@ export function IntakePage() {
                   <p className="text-xs text-gray-500">Add traces to workshop for immediate use</p>
                 </div>
               </div>
-              
-              <div 
-                className={`flex items-center space-x-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
-                  csvImportDestination === 'mlflow' 
-                    ? 'border-purple-500 bg-purple-50' 
+
+              <div
+                className={`flex items-center space-x-3 p-2.5 rounded-md border cursor-pointer transition-colors ${
+                  csvImportDestination === 'mlflow'
+                    ? 'border-purple-500 bg-purple-50'
                     : 'border-gray-200 hover:border-gray-300'
                 }`}
                 onClick={() => setCsvImportDestination('mlflow')}
@@ -609,13 +602,13 @@ export function IntakePage() {
                   name="csv-import-destination"
                   checked={csvImportDestination === 'mlflow'}
                   onChange={() => setCsvImportDestination('mlflow')}
-                  className="h-4 w-4 text-purple-600 focus:ring-purple-500"
+                  className="h-3.5 w-3.5 text-purple-600 focus:ring-purple-500"
                 />
                 <div className="flex-1">
                   <label htmlFor="import-mlflow" className="text-sm font-medium text-gray-700 cursor-pointer">
                     Log to MLflow as traces
                   </label>
-                  <p className="text-xs text-gray-500">Create MLflow traces only (use "Import from MLflow" to add to Discovery later)</p>
+                  <p className="text-xs text-gray-500">Create MLflow traces only (use "Import from MLflow" to add later)</p>
                 </div>
               </div>
             </div>
@@ -624,7 +617,7 @@ export function IntakePage() {
           {csvImportDestination === 'mlflow' && (!config.databricks_host || !config.databricks_token || !config.experiment_id) && (
             <Alert className="bg-amber-50 border-amber-200">
               <AlertCircle className="h-4 w-4 text-amber-600" />
-              <AlertDescription className="text-amber-700">
+              <AlertDescription className="text-amber-700 text-xs">
                 Please configure MLflow settings above to log traces to MLflow.
               </AlertDescription>
             </Alert>
@@ -634,11 +627,12 @@ export function IntakePage() {
             onClick={csvImportDestination === 'mlflow' ? uploadCsvToMlflow : uploadCsvFile}
             disabled={isUploadingCsv || !csvFile || !csvImportDestination || (csvImportDestination === 'mlflow' && (!config.databricks_host || !config.databricks_token || !config.experiment_id))}
             className="w-full"
+            size="sm"
           >
             {isUploadingCsv ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {csvImportDestination === 'mlflow' ? 'Creating MLflow Traces...' : 'Uploading to Discovery...'}
+                {csvImportDestination === 'mlflow' ? 'Creating MLflow Traces...' : 'Uploading...'}
               </>
             ) : (
               <>
@@ -650,26 +644,27 @@ export function IntakePage() {
         </CardContent>
       </Card>
 
-      {/* Reset & Delete Card - Always visible for facilitators */}
-      <Card className="mb-6 border-red-200 bg-gradient-to-r from-red-50 to-orange-50">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-red-800">
-            <RotateCcw className="h-5 w-5" />
-            Reset & Start Over
-          </CardTitle>
-          <CardDescription className="text-red-700">
-            {status?.trace_count && status.trace_count > 0 
-              ? `Delete all ${status.trace_count} traces and reset the workshop to start fresh with new data.`
-              : 'Reset the workshop and clear all progress to start fresh.'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+      {/* Reset Card */}
+      <Card className="border-l-4 border-red-500">
+        <CardContent className="p-4">
+          <div className="flex items-start gap-3 mb-3">
+            <RotateCcw className="w-4 h-4 text-red-600 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="text-base font-semibold text-red-800">Reset & Start Over</h3>
+              <p className="text-xs text-red-700 mt-0.5">
+                {status?.trace_count && status.trace_count > 0
+                  ? `Delete all ${status.trace_count} traces and reset workshop to start fresh.`
+                  : 'Reset the workshop and clear all progress.'}
+              </p>
+            </div>
+          </div>
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button 
-                variant="destructive" 
+              <Button
+                variant="outline"
                 disabled={isDeleting}
-                className="w-full"
+                className="w-full border-red-300 text-red-700 hover:bg-red-50"
+                size="sm"
               >
                 {isDeleting ? (
                   <>
@@ -688,14 +683,14 @@ export function IntakePage() {
               <AlertDialogHeader>
                 <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  {status?.trace_count && status.trace_count > 0 
+                  {status?.trace_count && status.trace_count > 0
                     ? `This will permanently delete all ${status.trace_count} traces and reset the workshop to the intake phase. All annotations, findings, and progress will be lost. This action cannot be undone.`
                     : 'This will reset the workshop to the intake phase and clear all progress. This action cannot be undone.'}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction 
+                <AlertDialogAction
                   onClick={deleteAllTraces}
                   className="bg-red-600 hover:bg-red-700"
                 >
@@ -707,7 +702,6 @@ export function IntakePage() {
         </CardContent>
       </Card>
 
-
     </div>
   );
-} 
+}

@@ -59,10 +59,10 @@ export function WelcomePage() {
 
         {/* User Info Card */}
         {userInfo && (
-          <Card className="mb-8 border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/50">
+          <Card className="mb-8 border-l-4 border-blue-500 bg-blue-50/50 dark:bg-blue-950/50">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <User className="h-5 w-5" />
+                <User className="h-5 w-5 text-blue-600" />
                 Current User
               </CardTitle>
             </CardHeader>
@@ -76,7 +76,14 @@ export function WelcomePage() {
                     {userInfo.userName}
                   </p>
                 </div>
-                <Badge variant={userInfo.active ? "default" : "secondary"}>
+                <Badge
+                  variant={userInfo.active ? "default" : "secondary"}
+                  className={
+                    userInfo.active
+                      ? "bg-green-100 text-green-700 border-green-200"
+                      : "bg-gray-100 text-gray-700 border-gray-200"
+                  }
+                >
                   {userInfo.active ? "Active" : "Inactive"}
                 </Badge>
               </div>
@@ -87,10 +94,10 @@ export function WelcomePage() {
         {/* Main Content Grid - First Row */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
           {/* Getting Started */}
-          <Card className="h-fit">
+          <Card className="h-fit border-l-4 border-blue-500">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Play className="h-5 w-5" />
+                <Play className="h-5 w-5 text-blue-600" />
                 Getting Started
               </CardTitle>
               <CardDescription>
@@ -141,11 +148,21 @@ export function WelcomePage() {
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between items-center">
                     <span>Frontend (React + Vite)</span>
-                    <Badge variant="outline">:3000</Badge>
+                    <Badge
+                      variant="outline"
+                      className="bg-blue-50 text-blue-600 border-blue-200"
+                    >
+                      :3000
+                    </Badge>
                   </div>
                   <div className="flex justify-between items-center">
                     <span>Backend (FastAPI)</span>
-                    <Badge variant="outline">:8000</Badge>
+                    <Badge
+                      variant="outline"
+                      className="bg-blue-50 text-blue-600 border-blue-200"
+                    >
+                      :8000
+                    </Badge>
                   </div>
                 </div>
               </div>
@@ -164,10 +181,10 @@ export function WelcomePage() {
           </Card>
 
           {/* Claude Commands */}
-          <Card className="h-fit">
+          <Card className="h-fit border-l-4 border-purple-500">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Bot className="h-5 w-5" />
+                <Bot className="h-5 w-5 text-purple-600" />
                 Claude Commands
               </CardTitle>
               <CardDescription>
@@ -255,10 +272,10 @@ export function WelcomePage() {
         {/* Second Row */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
           {/* Tech Stack */}
-          <Card className="h-fit">
+          <Card className="h-fit border-l-4 border-green-500">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Code className="h-5 w-5" />
+                <Code className="h-5 w-5 text-green-600" />
                 Tech Stack
               </CardTitle>
               <CardDescription>
@@ -271,25 +288,37 @@ export function WelcomePage() {
                   <h4 className="font-semibold mb-3 text-blue-600">Backend</h4>
                   <ul className="space-y-2 text-sm">
                     <li className="flex items-center gap-2">
-                      <Badge variant="secondary" className="text-xs">
+                      <Badge
+                        variant="secondary"
+                        className="text-xs bg-blue-100 text-blue-700 border-blue-200"
+                      >
                         Python
                       </Badge>
                       <span>FastAPI + uvicorn</span>
                     </li>
                     <li className="flex items-center gap-2">
-                      <Badge variant="secondary" className="text-xs">
+                      <Badge
+                        variant="secondary"
+                        className="text-xs bg-blue-100 text-blue-700 border-blue-200"
+                      >
                         Package
                       </Badge>
                       <span>uv for dependencies</span>
                     </li>
                     <li className="flex items-center gap-2">
-                      <Badge variant="secondary" className="text-xs">
+                      <Badge
+                        variant="secondary"
+                        className="text-xs bg-blue-100 text-blue-700 border-blue-200"
+                      >
                         SDK
                       </Badge>
                       <span>Databricks SDK</span>
                     </li>
                     <li className="flex items-center gap-2">
-                      <Badge variant="secondary" className="text-xs">
+                      <Badge
+                        variant="secondary"
+                        className="text-xs bg-blue-100 text-blue-700 border-blue-200"
+                      >
                         Quality
                       </Badge>
                       <span>ruff for linting</span>
@@ -302,25 +331,37 @@ export function WelcomePage() {
                   </h4>
                   <ul className="space-y-2 text-sm">
                     <li className="flex items-center gap-2">
-                      <Badge variant="secondary" className="text-xs">
+                      <Badge
+                        variant="secondary"
+                        className="text-xs bg-purple-100 text-purple-700 border-purple-200"
+                      >
                         React
                       </Badge>
                       <span>TypeScript + Vite</span>
                     </li>
                     <li className="flex items-center gap-2">
-                      <Badge variant="secondary" className="text-xs">
+                      <Badge
+                        variant="secondary"
+                        className="text-xs bg-purple-100 text-purple-700 border-purple-200"
+                      >
                         UI
                       </Badge>
                       <span>shadcn/ui + Tailwind</span>
                     </li>
                     <li className="flex items-center gap-2">
-                      <Badge variant="secondary" className="text-xs">
+                      <Badge
+                        variant="secondary"
+                        className="text-xs bg-purple-100 text-purple-700 border-purple-200"
+                      >
                         Data
                       </Badge>
                       <span>React Query</span>
                     </li>
                     <li className="flex items-center gap-2">
-                      <Badge variant="secondary" className="text-xs">
+                      <Badge
+                        variant="secondary"
+                        className="text-xs bg-purple-100 text-purple-700 border-purple-200"
+                      >
                         Package
                       </Badge>
                       <span>bun for speed</span>
@@ -332,10 +373,10 @@ export function WelcomePage() {
           </Card>
 
           {/* Project Structure */}
-          <Card className="h-fit">
+          <Card className="h-fit border-l-4 border-amber-500">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5" />
+                <FileText className="h-5 w-5 text-amber-600" />
                 Project Structure
               </CardTitle>
               <CardDescription>
@@ -377,10 +418,10 @@ export function WelcomePage() {
         </div>
 
         {/* Features */}
-        <Card className="mb-8">
+        <Card className="mb-8 border-l-4 border-green-500">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Wrench className="h-5 w-5" />
+              <Wrench className="h-5 w-5 text-green-600" />
               Key Features
             </CardTitle>
             <CardDescription>
@@ -391,7 +432,9 @@ export function WelcomePage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-4">
                 <div className="flex items-start gap-3">
-                  <Badge className="mt-1">Auto</Badge>
+                  <Badge className="mt-1 bg-blue-100 text-blue-700 border-blue-200">
+                    Auto
+                  </Badge>
                   <div>
                     <h5 className="font-semibold">
                       TypeScript Client Generation
@@ -403,7 +446,9 @@ export function WelcomePage() {
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
-                  <Badge className="mt-1">Hot</Badge>
+                  <Badge className="mt-1 bg-green-100 text-green-700 border-green-200">
+                    Hot
+                  </Badge>
                   <div>
                     <h5 className="font-semibold">Hot Reloading</h5>
                     <p className="text-sm text-muted-foreground">
@@ -413,7 +458,9 @@ export function WelcomePage() {
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
-                  <Badge className="mt-1">Auth</Badge>
+                  <Badge className="mt-1 bg-purple-100 text-purple-700 border-purple-200">
+                    Auth
+                  </Badge>
                   <div>
                     <h5 className="font-semibold">Databricks Authentication</h5>
                     <p className="text-sm text-muted-foreground">
@@ -425,7 +472,9 @@ export function WelcomePage() {
               </div>
               <div className="space-y-4">
                 <div className="flex items-start gap-3">
-                  <Badge className="mt-1">Deploy</Badge>
+                  <Badge className="mt-1 bg-amber-100 text-amber-700 border-amber-200">
+                    Deploy
+                  </Badge>
                   <div>
                     <h5 className="font-semibold">Databricks Apps Ready</h5>
                     <p className="text-sm text-muted-foreground">
@@ -434,7 +483,9 @@ export function WelcomePage() {
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
-                  <Badge className="mt-1">Quality</Badge>
+                  <Badge className="mt-1 bg-green-100 text-green-700 border-green-200">
+                    Quality
+                  </Badge>
                   <div>
                     <h5 className="font-semibold">Code Quality Tools</h5>
                     <p className="text-sm text-muted-foreground">
@@ -444,7 +495,9 @@ export function WelcomePage() {
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
-                  <Badge className="mt-1">Logs</Badge>
+                  <Badge className="mt-1 bg-blue-100 text-blue-700 border-blue-200">
+                    Logs
+                  </Badge>
                   <div>
                     <h5 className="font-semibold">Background Development</h5>
                     <p className="text-sm text-muted-foreground">

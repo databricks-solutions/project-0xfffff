@@ -231,46 +231,41 @@ def _calculate_expected_disagreement_ordinal(
 ) -> float:
   """Calculate expected disagreement based on marginal distributions.
 
+  Uses Krippendorff's formula: D_e = sum(n_c * n_k * delta^2) / (n * (n-1))
+  where n_c are marginal frequencies and n is total values.
+  The n*(n-1) denominator is the finite-sample correction for sampling
+  without replacement from the value pool.
+
   Args:
       coincidence_matrix: Coincidence matrix
 
   Returns:
       float: Expected disagreement by chance
-
-  Expected disagreement is calculated by considering all possible
-  rating pairs weighted by their marginal probabilities.
   """
-  # Calculate marginal frequencies
+  # Calculate marginal frequencies as row sums of the coincidence matrix.
+  # Since the matrix stores both directions (c,k) and (k,c), the row sum
+  # for value c is: n_c = sum over all k of o(c,k).
   marginal_counts = defaultdict(float)
-  # TODO: this was ostensibly here for a reason, but I don't know what it is.
-  # total_pairs = sum(coincidence_matrix.values())
 
-  for (r1, r2), count in coincidence_matrix.items():
+  for (r1, _r2), count in coincidence_matrix.items():
     marginal_counts[r1] += count
-    marginal_counts[r2] += count
 
-  # Total marginal count (each rating counted twice in pairs)
-  total_marginal = sum(marginal_counts.values())
+  n = sum(marginal_counts.values())
 
-  if total_marginal == 0:
+  if n <= 1:
     return 0.0
 
-  # Calculate expected disagreement
+  # Calculate expected disagreement using Krippendorff's formula:
+  # D_e = sum_{c != k} n_c * n_k * delta^2(c,k) / (n * (n - 1))
   expected_disagreement = 0.0
 
   for r1 in marginal_counts:
     for r2 in marginal_counts:
-      if r1 != r2:  # Only consider disagreement pairs
-        # Probability of this pair occurring by chance
-        prob_r1 = marginal_counts[r1] / total_marginal
-        prob_r2 = marginal_counts[r2] / total_marginal
-
-        # Ordinal distance
+      if r1 != r2:
         distance = (r1 - r2) ** 2
+        expected_disagreement += marginal_counts[r1] * marginal_counts[r2] * distance
 
-        expected_disagreement += prob_r1 * prob_r2 * distance
-
-  return expected_disagreement
+  return expected_disagreement / (n * (n - 1))
 
 
 def interpret_krippendorff_alpha(alpha: float) -> str:

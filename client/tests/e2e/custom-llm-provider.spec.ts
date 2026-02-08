@@ -11,7 +11,9 @@
 import { test, expect } from '@playwright/test';
 import { TestScenario } from '../lib';
 
-test.describe('Custom LLM Provider Configuration', () => {
+// CustomLLMProviderConfig component was removed from JudgeTuningPage during UI modernization.
+// These tests are skipped until the feature is re-integrated.
+test.describe.skip('Custom LLM Provider Configuration', () => {
   test.use({ tag: ['@spec:CUSTOM_LLM_PROVIDER_SPEC'] });
   test('facilitator can access custom LLM provider config in judge tuning', async ({ page }) => {
     // Setup workshop in tuning phase with annotation data

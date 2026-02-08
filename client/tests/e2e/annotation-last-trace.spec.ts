@@ -373,17 +373,14 @@ test.describe('Annotation - Last Trace Bug', {
     // Annotate all 10 traces through the UI
     for (let i = 0; i < 10; i++) {
       // Wait for the progress indicator to show correct trace number
-      await expect(page.getByText(`Trace ${i + 1} of 10`)).toBeVisible({
+      await expect(page.getByText(`Trace ${i + 1}/10`)).toBeVisible({
         timeout: 5000,
       });
 
-      // Select a rating - find the radio button for "Agree" (rating 4)
-      // The Likert scale has: Strongly Disagree(1), Disagree(2), Neutral(3), Agree(4), Strongly Agree(5)
-      const agreeRadio = page.locator('input[type="radio"][value="4"]').first();
-      await agreeRadio.click();
-
-      // Verify the rating was selected
-      await expect(agreeRadio).toBeChecked();
+      // Select a rating - click the Likert button for "Agree" (rating 4)
+      // The Likert scale uses role="button" divs with the number displayed inside
+      const agreeButton = page.locator('[role="button"]').filter({ hasText: /^4$/ }).first();
+      await agreeButton.click();
 
       // Click Next (or Complete for the last trace)
       if (i < 9) {
@@ -401,9 +398,9 @@ test.describe('Annotation - Last Trace Bug', {
       await page.waitForTimeout(1000);
     }
 
-    // Wait for completion message
+    // Wait for completion toast
     await expect(
-      page.getByText('All traces annotated! Great work.')
+      page.getByText('All traces annotated successfully!')
     ).toBeVisible({ timeout: 10000 });
 
     // CRITICAL: Verify all 10 annotations were saved via API

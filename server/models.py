@@ -228,6 +228,23 @@ class Rubric(BaseModel):
   created_at: datetime = Field(default_factory=datetime.now)
 
 
+class RubricGenerationRequest(BaseModel):
+  """Request model for generating rubric suggestions using AI."""
+  endpoint_name: str = Field(default="databricks-claude-sonnet-4-5", description="Databricks model serving endpoint name")
+  temperature: float = Field(default=0.3, ge=0.0, le=2.0, description="Model temperature (0.0-2.0)")
+  include_notes: bool = Field(default=True, description="Include participant notes in prompt")
+
+
+class RubricSuggestion(BaseModel):
+  """AI-generated rubric suggestion."""
+  title: str = Field(..., min_length=3, max_length=100, description="Short criterion name")
+  description: str = Field(..., min_length=10, max_length=1000, description="Clear definition of what this measures")
+  positive: Optional[str] = Field(None, max_length=500, description="What excellent responses demonstrate")
+  negative: Optional[str] = Field(None, max_length=500, description="What poor responses demonstrate")
+  examples: Optional[str] = Field(None, max_length=500, description="Concrete examples of good and bad")
+  judgeType: str = Field(default="likert", pattern="^(likert|binary|freeform)$", description="Judge type")
+
+
 class AnnotationCreate(BaseModel):
   trace_id: str
   user_id: str

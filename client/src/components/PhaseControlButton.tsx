@@ -66,12 +66,12 @@ export const PhaseControlButton: React.FC<PhaseControlButtonProps> = ({
         onStatusChange();
       }
       
-      toast.success(`${phase} phase ${isCompleted ? 'resumed' : 'paused'}`);
-      
-    } catch (error) {
+      toast.success(`Phase ${isCompleted ? 'resumed' : 'paused'}`, { description: `${phase} phase has been ${isCompleted ? 'resumed' : 'paused'}.` });
+
+    } catch (error: any) {
       // On error, refetch to restore correct state
       queryClient.refetchQueries({ queryKey: ['workshop', workshopId] });
-      toast.error(`Failed to ${isCompleted ? 'resume' : 'pause'} phase: ${error.message}`);
+      toast.error(`Could not ${isCompleted ? 'resume' : 'pause'} phase`, { description: error.message });
     } finally {
       setIsLoading(false);
     }

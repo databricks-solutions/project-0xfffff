@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -83,50 +83,50 @@ export const JsonPathSettings: React.FC = () => {
   );
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Code className="w-5 h-5" />
-          Trace Display Settings
-        </CardTitle>
-        <CardDescription>
-          Configure JSONPath queries to extract specific content from trace inputs and outputs for cleaner display.
-          Leave empty to show the original trace data.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
+    <Card className="border-l-4 border-gray-500">
+      <CardContent className="p-4 space-y-4">
+        <div>
+          <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2 mb-1">
+            <Code className="w-4 h-4 text-gray-600" />
+            Trace Display Settings
+          </h3>
+          <p className="text-xs text-gray-500">
+            Configure JSONPath queries to extract specific content from trace inputs and outputs for cleaner display. Leave empty to show the original trace data.
+          </p>
+        </div>
+
         {/* Input JSONPath */}
-        <div className="space-y-2">
-          <Label htmlFor="input-jsonpath" className="flex items-center gap-2">
+        <div className="space-y-1.5">
+          <Label htmlFor="input-jsonpath" className="flex items-center gap-2 text-xs font-medium text-gray-600">
             Input JSONPath
-            <Badge variant="outline" className="text-xs font-normal">optional</Badge>
+            <Badge variant="outline" className="text-[10px] font-normal border-gray-300 text-gray-500">optional</Badge>
           </Label>
           <Input
             id="input-jsonpath"
             placeholder="$.messages[0].content"
             value={inputJsonPath}
             onChange={(e) => setInputJsonPath(e.target.value)}
-            className="font-mono text-sm"
+            className="font-mono text-xs h-9"
           />
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-gray-400">
             Extract specific content from trace input JSON (e.g., $.messages[0].content)
           </p>
         </div>
 
         {/* Output JSONPath */}
-        <div className="space-y-2">
-          <Label htmlFor="output-jsonpath" className="flex items-center gap-2">
+        <div className="space-y-1.5">
+          <Label htmlFor="output-jsonpath" className="flex items-center gap-2 text-xs font-medium text-gray-600">
             Output JSONPath
-            <Badge variant="outline" className="text-xs font-normal">optional</Badge>
+            <Badge variant="outline" className="text-[10px] font-normal border-gray-300 text-gray-500">optional</Badge>
           </Label>
           <Input
             id="output-jsonpath"
             placeholder="$.response.text"
             value={outputJsonPath}
             onChange={(e) => setOutputJsonPath(e.target.value)}
-            className="font-mono text-sm"
+            className="font-mono text-xs h-9"
           />
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-gray-400">
             Extract specific content from trace output JSON (e.g., $.response.text)
           </p>
         </div>
@@ -135,30 +135,32 @@ export const JsonPathSettings: React.FC = () => {
         <div className="flex gap-2">
           <Button
             variant="outline"
+            size="sm"
             onClick={handlePreview}
             disabled={previewJsonPath.isPending || (!inputJsonPath && !outputJsonPath)}
           >
             {previewJsonPath.isPending ? (
-              <div className="w-4 h-4 border border-slate-300 border-t-slate-600 rounded-full animate-spin mr-2" />
+              <div className="w-3.5 h-3.5 border border-gray-300 border-t-gray-600 rounded-full animate-spin mr-2" />
             ) : (
-              <Eye className="w-4 h-4 mr-2" />
+              <Eye className="w-3.5 h-3.5 mr-2" />
             )}
             Preview
           </Button>
           <Button
+            size="sm"
             onClick={handleSave}
             disabled={updateSettings.isPending || !hasChanges}
           >
             {updateSettings.isPending ? (
-              <div className="w-4 h-4 border border-white/30 border-t-white rounded-full animate-spin mr-2" />
+              <div className="w-3.5 h-3.5 border border-white/30 border-t-white rounded-full animate-spin mr-2" />
             ) : (
-              <Save className="w-4 h-4 mr-2" />
+              <Save className="w-3.5 h-3.5 mr-2" />
             )}
             Save Settings
           </Button>
           {hasChanges && (
-            <Button variant="ghost" onClick={handleClear}>
-              <X className="w-4 h-4 mr-2" />
+            <Button variant="ghost" size="sm" onClick={handleClear}>
+              <X className="w-3.5 h-3.5 mr-2" />
               Clear
             </Button>
           )}
@@ -166,12 +168,12 @@ export const JsonPathSettings: React.FC = () => {
 
         {/* Preview Results */}
         {showPreview && previewResult && (
-          <div className="border rounded-lg p-4 bg-slate-50 space-y-4">
+          <div className="border rounded-md p-3 bg-gray-50 space-y-3">
             <div className="flex items-center justify-between">
-              <h4 className="font-medium text-sm">
+              <h4 className="text-xs font-semibold text-gray-700">
                 Preview Results
                 {previewResult.trace_id && (
-                  <span className="text-muted-foreground ml-2 font-normal">
+                  <span className="text-gray-400 ml-2 font-normal">
                     (Trace: {previewResult.trace_id.slice(0, 8)}...)
                   </span>
                 )}
@@ -180,40 +182,40 @@ export const JsonPathSettings: React.FC = () => {
                 variant="ghost"
                 size="sm"
                 onClick={() => setShowPreview(false)}
-                className="h-6 w-6 p-0"
+                className="h-5 w-5 p-0"
               >
-                <X className="h-4 w-4" />
+                <X className="h-3 w-3" />
               </Button>
             </div>
 
             {previewResult.error ? (
               <div className="flex items-center gap-2 text-amber-600">
-                <AlertCircle className="w-4 h-4" />
-                <span className="text-sm">{previewResult.error}</span>
+                <AlertCircle className="w-3.5 h-3.5" />
+                <span className="text-xs">{previewResult.error}</span>
               </div>
             ) : (
               <>
                 {/* Input Preview */}
                 {inputJsonPath && (
                   <div className="space-y-1">
-                    <div className="flex items-center gap-2 text-sm">
-                      <span className="font-medium">Input Result:</span>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="font-medium text-gray-700">Input:</span>
                       {previewResult.input_success ? (
-                        <Badge variant="default" className="text-xs bg-green-100 text-green-700">
-                          <CheckCircle className="w-3 h-3 mr-1" />
+                        <Badge className="text-[10px] bg-green-50 text-green-700 border border-green-200">
+                          <CheckCircle className="w-2.5 h-2.5 mr-1" />
                           Extracted
                         </Badge>
                       ) : (
-                        <Badge variant="outline" className="text-xs text-amber-600">
-                          <AlertCircle className="w-3 h-3 mr-1" />
-                          Showing original
+                        <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-300">
+                          <AlertCircle className="w-2.5 h-2.5 mr-1" />
+                          Original
                         </Badge>
                       )}
                     </div>
-                    <div className="bg-white border rounded p-3 max-h-32 overflow-y-auto">
-                      <pre className="text-xs whitespace-pre-wrap break-words">
-                        {previewResult.input_result?.slice(0, 500)}
-                        {(previewResult.input_result?.length || 0) > 500 && '...'}
+                    <div className="bg-white border border-gray-200 rounded p-2 max-h-24 overflow-y-auto">
+                      <pre className="text-[11px] whitespace-pre-wrap break-words text-gray-600">
+                        {previewResult.input_result?.slice(0, 400)}
+                        {(previewResult.input_result?.length || 0) > 400 && '...'}
                       </pre>
                     </div>
                   </div>
@@ -222,24 +224,24 @@ export const JsonPathSettings: React.FC = () => {
                 {/* Output Preview */}
                 {outputJsonPath && (
                   <div className="space-y-1">
-                    <div className="flex items-center gap-2 text-sm">
-                      <span className="font-medium">Output Result:</span>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="font-medium text-gray-700">Output:</span>
                       {previewResult.output_success ? (
-                        <Badge variant="default" className="text-xs bg-green-100 text-green-700">
-                          <CheckCircle className="w-3 h-3 mr-1" />
+                        <Badge className="text-[10px] bg-green-50 text-green-700 border border-green-200">
+                          <CheckCircle className="w-2.5 h-2.5 mr-1" />
                           Extracted
                         </Badge>
                       ) : (
-                        <Badge variant="outline" className="text-xs text-amber-600">
-                          <AlertCircle className="w-3 h-3 mr-1" />
-                          Showing original
+                        <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-300">
+                          <AlertCircle className="w-2.5 h-2.5 mr-1" />
+                          Original
                         </Badge>
                       )}
                     </div>
-                    <div className="bg-white border rounded p-3 max-h-32 overflow-y-auto">
-                      <pre className="text-xs whitespace-pre-wrap break-words">
-                        {previewResult.output_result?.slice(0, 500)}
-                        {(previewResult.output_result?.length || 0) > 500 && '...'}
+                    <div className="bg-white border border-gray-200 rounded p-2 max-h-24 overflow-y-auto">
+                      <pre className="text-[11px] whitespace-pre-wrap break-words text-gray-600">
+                        {previewResult.output_result?.slice(0, 400)}
+                        {(previewResult.output_result?.length || 0) > 400 && '...'}
                       </pre>
                     </div>
                   </div>
@@ -251,16 +253,16 @@ export const JsonPathSettings: React.FC = () => {
 
         {/* Current Settings Display */}
         {(workshop?.input_jsonpath || workshop?.output_jsonpath) && (
-          <div className="border-t pt-4">
-            <h4 className="text-sm font-medium mb-2 text-muted-foreground">Current Saved Settings</h4>
-            <div className="flex flex-wrap gap-2">
+          <div className="border-t border-gray-100 pt-3">
+            <h4 className="text-xs font-medium mb-2 text-gray-500">Current Saved Settings</h4>
+            <div className="flex flex-wrap gap-1.5">
               {workshop.input_jsonpath && (
-                <Badge variant="secondary" className="font-mono text-xs">
+                <Badge variant="secondary" className="font-mono text-[10px] bg-gray-100">
                   Input: {workshop.input_jsonpath}
                 </Badge>
               )}
               {workshop.output_jsonpath && (
-                <Badge variant="secondary" className="font-mono text-xs">
+                <Badge variant="secondary" className="font-mono text-[10px] bg-gray-100">
                   Output: {workshop.output_jsonpath}
                 </Badge>
               )}

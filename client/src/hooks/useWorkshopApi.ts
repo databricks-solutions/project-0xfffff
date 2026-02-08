@@ -422,7 +422,7 @@ export function useUserAnnotations(workshopId: string, user: any) {
       );
     },
     enabled: !!workshopId && !!user?.id, // REQUIRE user to be logged in
-    staleTime: 30 * 1000, // Data is fresh for 30 seconds
+    staleTime: 10 * 1000, // Short stale time so navigation picks up recently saved scores
     refetchInterval: false, // Disable automatic refetching to avoid issues
     retry: 3, // Retry failed requests 3 times
   });
@@ -502,10 +502,21 @@ export function useSubmitAnnotation(workshopId: string) {
           trace_id: newAnnotation.trace_id,
           user_id: newAnnotation.user_id,
           rating: newAnnotation.rating,
+          ratings: newAnnotation.ratings,
           comment: newAnnotation.comment,
           created_at: new Date().toISOString(),
         };
-        return old ? [...old, optimisticAnnotation] : [optimisticAnnotation];
+        if (!old) return [optimisticAnnotation];
+        // Update existing annotation for this trace instead of appending a duplicate
+        const existingIndex = old.findIndex(
+          (a: any) => a.trace_id === newAnnotation.trace_id && a.user_id === newAnnotation.user_id
+        );
+        if (existingIndex >= 0) {
+          const updated = [...old];
+          updated[existingIndex] = { ...updated[existingIndex], ...optimisticAnnotation };
+          return updated;
+        }
+        return [...old, optimisticAnnotation];
       });
       
       return { previousAnnotations };
@@ -791,6 +802,46 @@ export function usePreviewJsonPath(workshopId: string) {
         const error = await response.json().catch(() => ({ detail: 'Failed to preview JSONPath' }));
         throw new Error(error.detail || 'Failed to preview JSONPath');
       }
+      return response.json();
+    },
+  });
+}
+
+// Rubric Generation hooks
+
+export interface RubricSuggestion {
+  title: string;
+  description: string;
+  positive?: string;
+  negative?: string;
+  examples?: string;
+  judgeType: 'likert' | 'binary' | 'freeform';
+}
+
+interface RubricGenerationRequest {
+  endpoint_name?: string;
+  temperature?: number;
+  include_notes?: boolean;
+}
+
+export function useGenerateRubricSuggestions(workshopId: string) {
+  return useMutation({
+    mutationFn: async (request?: RubricGenerationRequest): Promise<RubricSuggestion[]> => {
+      const response = await fetch(`/workshops/${workshopId}/generate-rubric-suggestions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request || {
+          endpoint_name: 'databricks-claude-sonnet-4-5',
+          temperature: 0.3,
+          include_notes: true
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to generate suggestions' }));
+        throw new Error(error.detail || 'Failed to generate suggestions');
+      }
+
       return response.json();
     },
   });

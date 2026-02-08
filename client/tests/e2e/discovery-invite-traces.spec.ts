@@ -22,6 +22,9 @@ test('discovery blocks until multiple participants complete; facilitator-driven 
   // Facilitator login + workshop creation
   await loginAsFacilitator(page);
 
+  // Fill required Use Case Description before creating
+  await page.locator('#description').fill('E2E test workshop for discovery trace assignment');
+
   await Promise.all([
     page.waitForResponse(
       (resp) =>
@@ -29,7 +32,7 @@ test('discovery blocks until multiple participants complete; facilitator-driven 
         resp.url().includes('/workshops') &&
         resp.status() === 201,
     ),
-    page.getByRole('button', { name: /Create New Workshop/i }).click(),
+    page.getByRole('button', { name: /Create Workshop/i }).click(),
   ]);
 
   await expect(page).toHaveURL(/\?workshop=[a-f0-9-]{36}/i);

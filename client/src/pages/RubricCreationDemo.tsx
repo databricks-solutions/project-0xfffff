@@ -36,20 +36,21 @@ import {
   Focus,
   Loader2,
   Eye,
-  EyeOff
+  EyeOff,
+  Sparkles
 } from 'lucide-react';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useWorkflowContext } from '@/context/WorkflowContext';
 import { useUser, useRoleCheck } from '@/context/UserContext';
 import { useRubric, useCreateRubric, useUpdateRubric, useUserFindings, useFacilitatorFindingsWithUserDetails, useAllTraces, useAllParticipantNotes, useWorkshop, useToggleParticipantNotes } from '@/hooks/useWorkshopApi';
 import { FocusedAnalysisView, ScratchPadEntry } from '@/components/FocusedAnalysisView';
+import { RubricSuggestionPanel, type RubricSuggestion } from '@/components/RubricSuggestionPanel';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useQueryClient } from '@tanstack/react-query';
 import { WorkshopsService } from '@/client';
 import type { Rubric, RubricCreate, JudgeType } from '@/client';
 import { toast } from 'sonner';
 import { parseRubricQuestions, formatRubricQuestions, QUESTION_DELIMITER, type RubricQuestion } from '@/utils/rubricUtils';
-import { binaryLabelPresets } from '@/components/JudgeTypeSelector';
 
 
 // Convert API Rubric to local RubricQuestion format
@@ -197,6 +198,7 @@ export function RubricCreationDemo() {
   const [viewMode, setViewMode] = useState<'grid' | 'focused'>('focused');
   const [scratchPad, setScratchPadState] = useState<ScratchPadEntry[]>([]);
   const [updatingQuestionId, setUpdatingQuestionId] = useState<string | null>(null);
+  const [showSuggestionPanel, setShowSuggestionPanel] = useState(false);
   const [lastUpdatedQuestionId, setLastUpdatedQuestionId] = useState<string | null>(null);
   const [isSavingQuestion, setIsSavingQuestion] = useState(false);
   
@@ -204,23 +206,23 @@ export function RubricCreationDemo() {
   const [judgeType, setJudgeType] = useState<JudgeType>('likert');
   const [binaryLabels, setBinaryLabels] = useState<Record<string, string>>({ pass: 'Pass', fail: 'Fail' });
   
-  // Fetch data
-  const { data: rubric, isLoading: rubricLoading, error: rubricError } = useRubric(workshopId!);
+  // Fetch data (only if workshopId exists)
+  const { data: rubric, isLoading: rubricLoading, error: rubricError } = useRubric(workshopId || '');
   // Use all traces for rubric creation page
-  const { data: traces, refetch: refetchTraces } = useAllTraces(workshopId!);
+  const { data: traces, refetch: refetchTraces } = useAllTraces(workshopId || '');
   // Facilitators see all findings to create better rubric, others see their own
-  const { data: findings, refetch: refetchFindings, isRefetching: isRefetchingFindings } = isFacilitator 
-    ? useFacilitatorFindingsWithUserDetails(workshopId!) 
-    : useUserFindings(workshopId!, user);
-  const createRubric = useCreateRubric(workshopId!);
-  const updateRubric = useUpdateRubric(workshopId!);
+  const { data: findings, refetch: refetchFindings, isRefetching: isRefetchingFindings } = isFacilitator
+    ? useFacilitatorFindingsWithUserDetails(workshopId || '')
+    : useUserFindings(workshopId || '', user);
+  const createRubric = useCreateRubric(workshopId || '');
+  const updateRubric = useUpdateRubric(workshopId || '');
   // Fetch all participant notes for the scratch pad (facilitator sees all)
-  const { data: participantNotes } = useAllParticipantNotes(workshopId!);
+  const { data: participantNotes } = useAllParticipantNotes(workshopId || '');
   // Workshop data for show_participant_notes toggle
-  const { data: workshopData } = useWorkshop(workshopId!);
-  const toggleParticipantNotes = useToggleParticipantNotes(workshopId!);
+  const { data: workshopData } = useWorkshop(workshopId || '');
+  const toggleParticipantNotes = useToggleParticipantNotes(workshopId || '');
   
-  // SECURITY: Block access if no valid user
+  // SECURITY: Block access if no valid user or workshop
   if (!user || !user.id) {
     return (
       <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
@@ -231,6 +233,22 @@ export function RubricCreationDemo() {
           </div>
           <div className="text-sm text-gray-500">
             You must be logged in to access rubric creation.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!workshopId) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
+        <div className="text-center">
+          <AlertCircle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+          <div className="text-lg font-medium text-gray-900 mb-2">
+            No Workshop Selected
+          </div>
+          <div className="text-sm text-gray-500">
+            Please select a workshop to access rubric creation.
           </div>
         </div>
       </div>
@@ -275,7 +293,12 @@ export function RubricCreationDemo() {
           const parsed = JSON.parse(storedData);
           // Only load if data is less than 7 days old (extended from 24 hours)
           if (Date.now() - parsed.timestamp < 7 * 24 * 60 * 60 * 1000) {
-            setScratchPadState(parsed.scratchPad);
+            // Convert timestamp strings back to Date objects
+            const entriesWithDates = parsed.scratchPad.map((entry: any) => ({
+              ...entry,
+              timestamp: new Date(entry.timestamp)
+            }));
+            setScratchPadState(entriesWithDates);
           } else {
             localStorage.removeItem(storageKey);
           }
@@ -549,218 +572,225 @@ export function RubricCreationDemo() {
 
   return (
     <div className="h-full">
-      <div className={`h-full ${viewMode === 'grid' ? 'max-w-6xl mx-auto p-6' : 'px-6 py-4'} space-y-6`}>
-        {/* Status Badges */}
-        <div className="flex justify-center gap-2">
-          <Badge variant="outline">
-            Facilitator View
-          </Badge>
-          {rubric && (
-            <Badge className="bg-green-500">
-              <CheckCircle className="h-3 w-3 mr-1" />
-              Rubric Exists
-            </Badge>
-          )}
-          {rubricError && (
-            <Badge variant="destructive">
-              <AlertCircle className="h-3 w-3 mr-1" />
-              API Error
-            </Badge>
-          )}
-        </div>
+      <div className={`h-full ${viewMode === 'grid' ? 'max-w-6xl mx-auto p-6' : 'px-6 py-4'} space-y-5`}>
 
         {/* Main Content Tabs */}
         <Tabs defaultValue="discovery" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="discovery" className="flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              Discovery Responses
-            </TabsTrigger>
-            <TabsTrigger value="rubric" className="flex items-center gap-2">
-              <ClipboardList className="h-4 w-4" />
-              Rubric Questions
-              {questions.length > 0 && (
-                <Badge variant="secondary" className="ml-2">{questions.length}</Badge>
+          <div className="flex items-center justify-between mb-4">
+            <TabsList className="bg-gray-100/80">
+              <TabsTrigger value="discovery" className="flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                <Users className="h-4 w-4" />
+                Discovery Responses
+                {findings && findings.length > 0 && (
+                  <Badge variant="secondary" className="ml-1 bg-blue-100 text-blue-700 text-[10px] px-1.5 py-0 h-5">{findings.length}</Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="rubric" className="flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                <ClipboardList className="h-4 w-4" />
+                Rubric Questions
+                {questions.length > 0 && (
+                  <Badge variant="secondary" className="ml-1 bg-green-100 text-green-700 text-[10px] px-1.5 py-0 h-5">{questions.length}</Badge>
+                )}
+              </TabsTrigger>
+            </TabsList>
+            <div className="flex items-center gap-2">
+              {rubric && (
+                <Badge className="bg-green-50 text-green-700 border border-green-200">
+                  <CheckCircle className="h-3 w-3 mr-1" />
+                  Rubric Saved
+                </Badge>
               )}
-            </TabsTrigger>
-          </TabsList>
-          
+              {rubricError && (
+                <Badge variant="destructive">
+                  <AlertCircle className="h-3 w-3 mr-1" />
+                  API Error
+                </Badge>
+              )}
+            </div>
+          </div>
+
           {/* Discovery Responses Tab */}
-          <TabsContent value="discovery">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <span className="flex items-center gap-2">
-                    Discovery Responses
-                    {findings && findings.length > 0 && (
-                      <Badge variant="secondary">{findings.length} responses</Badge>
-                    )}
-                  </span>
-                  {/* View Mode Toggle */}
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => toggleParticipantNotes.mutate()}
-                      disabled={toggleParticipantNotes.isPending}
-                      className={`flex items-center gap-2 ${
-                        workshopData?.show_participant_notes
-                          ? 'border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100'
-                          : ''
-                      }`}
-                    >
-                      {workshopData?.show_participant_notes ? (
-                        <>
-                          <EyeOff className="h-4 w-4" />
-                          Disable SME Notes
-                        </>
-                      ) : (
-                        <>
-                          <Eye className="h-4 w-4" />
-                          Enable SME Notes
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      variant={viewMode === 'grid' ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => setViewMode('grid')}
-                      className="flex items-center gap-2"
-                    >
-                      <Grid3x3 className="h-4 w-4" />
-                      Grid View
-                    </Button>
-                    <Button
-                      variant={viewMode === 'focused' ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => setViewMode('focused')}
-                      className="flex items-center gap-2"
-                    >
-                      <Focus className="h-4 w-4" />
-                      Focused View
-                    </Button>
-                  </div>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-              <div className="flex items-start gap-3">
-                <Lightbulb className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="text-sm text-blue-800 font-medium mb-1">
-                    Facilitator Instructions
-                  </p>
+          <TabsContent value="discovery" className="space-y-4">
+            {/* Toolbar */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => toggleParticipantNotes.mutate()}
+                  disabled={toggleParticipantNotes.isPending}
+                  className={`flex items-center gap-2 ${
+                    workshopData?.show_participant_notes
+                      ? 'border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100'
+                      : ''
+                  }`}
+                >
+                  {workshopData?.show_participant_notes ? (
+                    <>
+                      <EyeOff className="h-4 w-4" />
+                      Disable SME Notes
+                    </>
+                  ) : (
+                    <>
+                      <Eye className="h-4 w-4" />
+                      Enable SME Notes
+                    </>
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowSuggestionPanel(true)}
+                  disabled={!findings || findings.length === 0}
+                  className="flex items-center gap-2"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  Generate Suggestions
+                </Button>
+              </div>
+              <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+                <Button
+                  variant={viewMode === 'grid' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setViewMode('grid')}
+                  className={`flex items-center gap-1.5 h-8 ${viewMode === 'grid' ? '' : 'text-gray-600 hover:text-gray-900'}`}
+                >
+                  <Grid3x3 className="h-3.5 w-3.5" />
+                  Grid
+                </Button>
+                <Button
+                  variant={viewMode === 'focused' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setViewMode('focused')}
+                  className={`flex items-center gap-1.5 h-8 ${viewMode === 'focused' ? '' : 'text-gray-600 hover:text-gray-900'}`}
+                >
+                  <Focus className="h-3.5 w-3.5" />
+                  Focused
+                </Button>
+              </div>
+            </div>
+
+            {/* Facilitator Instructions */}
+            <Card className="border-l-4 border-blue-500 bg-blue-50/30">
+              <CardContent className="py-3 px-4">
+                <div className="flex items-start gap-3">
+                  <Lightbulb className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
                   <p className="text-sm text-blue-700">
                     Review participant responses to identify patterns and create rubric questions. Use these responses to facilitate group discussion and build consensus on evaluation criteria.
                   </p>
                 </div>
-              </div>
-            </div>
+              </CardContent>
+            </Card>
             
             {viewMode === 'grid' ? (
               <div className="space-y-8">
                 {discoveryResponses.length > 0 ? (
                   discoveryResponses.map((traceResponse, index) => (
-                <div key={index} className="border rounded-xl p-6 bg-gradient-to-br from-white to-gray-50">
-                  <div className="flex items-start gap-3 mb-4">
-                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <span className="text-blue-600 font-medium text-sm">{index + 1}</span>
+                <Card key={index} className="border-l-4 border-blue-500">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                        <span className="text-blue-600 font-medium text-sm">{index + 1}</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-gray-900 mb-1">Trace Analysis</h3>
+                        {traceResponse.trace ? (
+                          <p className="text-gray-600 text-sm italic">"{traceResponse.trace.input.substring(0, 100)}..."</p>
+                        ) : (
+                          <p className="text-gray-500 text-sm italic">No trace data available</p>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-900 mb-1">Trace Analysis</h3>
-                      {traceResponse.trace ? (
-                        <p className="text-gray-600 text-sm italic">"{traceResponse.trace.input.substring(0, 100)}..."</p>
-                      ) : (
-                        <p className="text-gray-500 text-sm italic">No trace data available</p>
-                      )}
-                    </div>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Effectiveness Responses */}
-                    <div>
-                      <h4 className="font-medium text-gray-800 mb-3 flex items-center gap-2">
-                        <Star className="h-4 w-4 text-yellow-500" />
-                        Response Effectiveness
-                      </h4>
-                      <div className="space-y-3">
-                        {traceResponse.responses.map((response, responseIndex) => (
-                          <div key={responseIndex} className="bg-white border border-gray-200 rounded-lg p-3">
-                            <div className="flex items-center gap-2 mb-2">
-                              <div className="w-6 h-6 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
-                                <span className="text-white font-medium text-xs">
-                                  {response.participant.includes('SME') ? 'E' : 'P'}
-                                </span>
-                              </div>
-                              <span className="font-medium text-sm text-gray-700">{response.participant}</span>
-                            </div>
-                            <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{response.question1}</p>
-                          </div>
-                        ))}
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      {/* Effectiveness Responses */}
+                      <div>
+                        <h4 className="font-medium text-gray-800 mb-3 flex items-center gap-2">
+                          <Star className="h-4 w-4 text-yellow-500" />
+                          Response Effectiveness
+                        </h4>
+                        <div className="space-y-3">
+                          {traceResponse.responses.map((response, responseIndex) => (
+                            <Card key={responseIndex} className="border-l-4 border-yellow-500">
+                              <CardContent className="p-3">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <div className="w-6 h-6 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
+                                    <span className="text-white font-medium text-xs">
+                                      {response.participant.includes('SME') ? 'E' : 'P'}
+                                    </span>
+                                  </div>
+                                  <span className="font-medium text-sm text-gray-700">{response.participant}</span>
+                                </div>
+                                <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{response.question1}</p>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Good/Bad Scenarios */}
+                      <div>
+                        <h4 className="font-medium text-gray-800 mb-3 flex items-center gap-2">
+                          <ClipboardList className="h-4 w-4 text-green-500" />
+                          Good/Bad Scenarios
+                        </h4>
+                        <div className="space-y-3">
+                          {traceResponse.responses.map((response, responseIndex) => (
+                            <Card key={responseIndex} className="border-l-4 border-green-500">
+                              <CardContent className="p-3">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <div className="w-6 h-6 bg-gradient-to-r from-green-500 to-blue-500 rounded-full flex items-center justify-center">
+                                    <span className="text-white font-medium text-xs">
+                                      {response.participant.includes('SME') ? 'E' : 'P'}
+                                    </span>
+                                  </div>
+                                  <span className="font-medium text-sm text-gray-700">{response.participant}</span>
+                                </div>
+                                <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{response.question2}</p>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
                       </div>
                     </div>
 
-                    {/* Good/Bad Scenarios */}
-                    <div>
-                      <h4 className="font-medium text-gray-800 mb-3 flex items-center gap-2">
-                        <ClipboardList className="h-4 w-4 text-green-500" />
-                        Good/Bad Scenarios
-                      </h4>
-                      <div className="space-y-3">
-                        {traceResponse.responses.map((response, responseIndex) => (
-                          <div key={responseIndex} className="bg-white border border-gray-200 rounded-lg p-3">
-                            <div className="flex items-center gap-2 mb-2">
-                              <div className="w-6 h-6 bg-gradient-to-r from-green-500 to-blue-500 rounded-full flex items-center justify-center">
-                                <span className="text-white font-medium text-xs">
-                                  {response.participant.includes('SME') ? 'E' : 'P'}
-                                </span>
-                              </div>
-                              <span className="font-medium text-sm text-gray-700">{response.participant}</span>
-                            </div>
-                            <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{response.question2}</p>
-                          </div>
-                        ))}
+                    {/* Key Themes */}
+                    <div className="pt-4 border-t border-gray-200">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Lightbulb className="h-4 w-4 text-amber-500" />
+                        <span className="font-medium text-sm text-gray-700">Potential Rubric Themes</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {traceResponse.responses.length > 0 && (
+                          <>
+                            <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                              Empathy & Understanding
+                            </Badge>
+                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                              Professional Tone
+                            </Badge>
+                            <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                              Solution Orientation
+                            </Badge>
+                            <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+                              Personalization
+                            </Badge>
+                          </>
+                        )}
                       </div>
                     </div>
-                  </div>
-
-                  {/* Key Themes (Optional Enhancement) */}
-                  <div className="mt-4 pt-4 border-t border-gray-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Lightbulb className="h-4 w-4 text-amber-500" />
-                      <span className="font-medium text-sm text-gray-700">Potential Rubric Themes</span>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {/* Generate themes from actual findings */}
-                      {traceResponse.responses.length > 0 && (
-                        <>
-                          <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
-                            Empathy & Understanding
-                          </Badge>
-                          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                            Professional Tone
-                          </Badge>
-                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                            Solution Orientation
-                          </Badge>
-                          <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
-                            Personalization
-                          </Badge>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                  </CardContent>
+                </Card>
                   ))
                 ) : (
-                  <div className="text-center py-12">
-                    <Lightbulb className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <div className="text-center py-16">
+                    <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <Lightbulb className="h-8 w-8 text-amber-400" />
+                    </div>
                     <h3 className="text-lg font-medium text-gray-900 mb-2">No Discovery Data Available</h3>
-                    <p className="text-sm text-gray-500 mb-4">
-                      Complete the discovery phase first to see participant insights here.
-                    </p>
-                    <p className="text-xs text-gray-400">
-                      Discovery responses will appear once participants have explored traces and provided feedback.
+                    <p className="text-sm text-gray-500 mb-6 max-w-md mx-auto">
+                      Complete the discovery phase first to see participant insights here. Responses will appear once participants have explored traces and provided feedback.
                     </p>
                   </div>
                 )}
@@ -774,188 +804,191 @@ export function RubricCreationDemo() {
                   participantNotes={participantNotes}
                 />
               ) : (
-                <div className="text-center py-12">
-                  <Focus className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <div className="text-center py-16">
+                  <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Focus className="h-8 w-8 text-blue-400" />
+                  </div>
                   <h3 className="text-lg font-medium text-gray-900 mb-2">No Discovery Data for Analysis</h3>
-                  <p className="text-sm text-gray-500 mb-4">
-                    Complete the discovery phase first to use focused analysis mode.
+                  <p className="text-sm text-gray-500 mb-6 max-w-md mx-auto">
+                    Complete the discovery phase first to use focused analysis mode. Participant insights will appear here for review.
                   </p>
-                  <p className="text-xs text-gray-400">
-                    Switch to grid view to create rubric questions manually, or wait for discovery data.
-                  </p>
+                  <div className="flex items-center justify-center gap-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setViewMode('grid')}
+                      className="flex items-center gap-2"
+                    >
+                      <Grid3x3 className="h-4 w-4" />
+                      Switch to Grid View
+                    </Button>
+                  </div>
                 </div>
               )
             )}
-              </CardContent>
-            </Card>
           </TabsContent>
-          
+
           {/* Rubric Questions Tab */}
-          <TabsContent value="rubric">
+          <TabsContent value="rubric" className="space-y-4">
             {/* Info about per-question judge types */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-              <div className="flex items-start gap-3">
-                <Lightbulb className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="text-sm text-blue-800 font-medium mb-1">
-                    Per-Question Evaluation Types
-                  </p>
-                  <p className="text-sm text-blue-700">
-                    Each criterion can have its own evaluation type: <strong>Likert Scale</strong> (1-5 ratings), 
-                    <strong> Binary</strong> (Pass/Fail), or <strong>Free-form</strong> (open text feedback). 
-                    Select the type for each criterion individually.
+            <Card className="border-l-4 border-indigo-500 bg-indigo-50/30">
+              <CardContent className="py-3 px-4">
+                <div className="flex items-start gap-3">
+                  <Lightbulb className="h-4 w-4 text-indigo-600 mt-0.5 flex-shrink-0" />
+                  <p className="text-sm text-indigo-700">
+                    Each criterion can have its own evaluation type: <strong>Likert Scale</strong> (1-5 ratings),
+                    <strong> Binary</strong> (Pass/Fail), or <strong>Free-form</strong> (open text feedback).
                   </p>
                 </div>
-              </div>
-            </div>
-            
-            {/* Binary label customization - shown if any questions are binary */}
-            {questions.some(q => q.judgeType === 'binary') && (
-              <Card className="mb-6">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Binary Label Settings</CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    Customize the labels for all binary evaluation criteria
-                  </p>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-2">
-                    {Object.entries(binaryLabelPresets).map(([key, labels]) => (
-                      <Badge
-                        key={key}
-                        variant={binaryLabels.pass === labels.pass ? 'default' : 'outline'}
-                        className="cursor-pointer"
-                        onClick={() => setBinaryLabels(labels)}
-                      >
-                        {labels.pass} / {labels.fail}
-                      </Badge>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+              </CardContent>
+            </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <span>Evaluation Criteria</span>
-                  <Button
-                    onClick={() => setIsAddingQuestion(true)}
+            {/* Toolbar */}
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+                <ClipboardList className="h-5 w-5 text-gray-600" />
+                Evaluation Criteria
+              </h3>
+              <Button
+                onClick={() => setIsAddingQuestion(true)}
                 className="flex items-center gap-2"
                 disabled={isAddingQuestion}
+                size="sm"
               >
                 <Plus className="h-4 w-4" />
                 Add Criterion
               </Button>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
+            </div>
+
+            <div className="space-y-4">
             {questions.length === 0 && !isAddingQuestion && (
-              <div className="text-center py-8">
-                <ClipboardList className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                <p className="text-gray-600 mb-4">No rubric questions yet</p>
+              <div className="text-center py-12">
+                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <ClipboardList className="h-8 w-8 text-gray-400" />
+                </div>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No Evaluation Criteria Yet</h3>
+                <p className="text-sm text-gray-500 mb-6 max-w-md mx-auto">
+                  Create your first evaluation criterion to define how traces will be assessed. Review the discovery responses above for inspiration.
+                </p>
                 <Button
                   onClick={() => setIsAddingQuestion(true)}
                   className="flex items-center gap-2"
                 >
                   <Plus className="h-4 w-4" />
-                  Create First Question
+                  Create First Criterion
                 </Button>
               </div>
             )}
 
             {questions.map((question, index) => {
               const parsed = parseDescription(question.description);
-              return (
-              <div key={question.id} className="border rounded-xl p-5 bg-gradient-to-br from-white to-green-50 border-green-200">
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-                    <span className="text-green-600 font-medium">{index + 1}</span>
-                  </div>
-                  
-                  <div className="flex-1 min-w-0">
-                    {/* Header row: title + type badge + actions */}
-                    <div className="flex items-start justify-between gap-3 mb-3">
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <h3 className="text-base font-semibold text-gray-900">{question.title}</h3>
-                        <Badge 
-                          variant="outline" 
-                          className={
-                            question.judgeType === 'likert' ? 'bg-green-50 text-green-700 border-green-200' :
-                            question.judgeType === 'binary' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                            'bg-purple-50 text-purple-700 border-purple-200'
-                          }
-                        >
-                          {question.judgeType === 'likert' ? 'Likert Scale' : question.judgeType === 'binary' ? 'Binary' : 'Free-form'}
-                        </Badge>
-                      </div>
-                      <div className="flex gap-1 flex-shrink-0">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => openEditDialog(question)}
-                          className="text-blue-600 hover:text-blue-800 hover:bg-blue-50"
-                          title="Edit this criterion"
-                        >
-                          <Edit className="h-4 w-4" />
-                          Edit
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => deleteQuestion(question.id)}
-                          className="text-red-600 hover:text-red-800 hover:bg-red-50"
-                          title="Remove this question from the rubric"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          Delete
-                        </Button>
-                      </div>
-                    </div>
+              const judgeType = question.judgeType || 'likert';
+              const borderColor =
+                judgeType === 'likert' ? 'border-green-500' :
+                judgeType === 'binary' ? 'border-blue-500' :
+                'border-purple-500';
+              const bgColor =
+                judgeType === 'likert' ? 'from-white to-green-50' :
+                judgeType === 'binary' ? 'from-white to-blue-50' :
+                'from-white to-purple-50';
+              const iconBgColor =
+                judgeType === 'likert' ? 'bg-green-100' :
+                judgeType === 'binary' ? 'bg-blue-100' :
+                'bg-purple-100';
+              const iconTextColor =
+                judgeType === 'likert' ? 'text-green-600' :
+                judgeType === 'binary' ? 'text-blue-600' :
+                'text-purple-600';
 
-                    {/* Structured description display */}
-                    <div className="space-y-2 text-sm">
-                      {parsed.definition && (
-                        <div>
-                          <span className="font-medium text-gray-700">Definition: </span>
-                          <span className="text-gray-600">{parsed.definition}</span>
+              return (
+              <Card key={question.id} className={`border-l-4 ${borderColor}`}>
+                <CardHeader className={`bg-gradient-to-br ${bgColor}`}>
+                  <CardTitle className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3 flex-1 min-w-0">
+                      <div className={`w-10 h-10 ${iconBgColor} rounded-full flex items-center justify-center flex-shrink-0`}>
+                        <span className={`${iconTextColor} font-medium`}>{index + 1}</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-3 flex-wrap mb-2">
+                          <h3 className="text-base font-semibold text-gray-900">{question.title}</h3>
+                          <Badge
+                            variant="outline"
+                            className={
+                              judgeType === 'likert' ? 'bg-green-50 text-green-700 border-green-200' :
+                              judgeType === 'binary' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                              'bg-purple-50 text-purple-700 border-purple-200'
+                            }
+                          >
+                            {judgeType === 'likert' ? 'Likert Scale' : judgeType === 'binary' ? 'Binary' : 'Free-form'}
+                          </Badge>
                         </div>
-                      )}
-                      {parsed.positive && (
-                        <div className="flex items-start gap-1.5">
-                          <CheckCircle className="h-3.5 w-3.5 text-green-600 mt-0.5 flex-shrink-0" />
-                          <div>
-                            <span className="font-medium text-green-700">Positive: </span>
-                            <span className="text-gray-600">{parsed.positive}</span>
-                          </div>
-                        </div>
-                      )}
-                      {parsed.negative && (
-                        <div className="flex items-start gap-1.5">
-                          <AlertCircle className="h-3.5 w-3.5 text-red-600 mt-0.5 flex-shrink-0" />
-                          <div>
-                            <span className="font-medium text-red-700">Negative: </span>
-                            <span className="text-gray-600">{parsed.negative}</span>
-                          </div>
-                        </div>
-                      )}
-                      {parsed.examples && (
-                        <div className="flex items-start gap-1.5">
-                          <Lightbulb className="h-3.5 w-3.5 text-amber-500 mt-0.5 flex-shrink-0" />
-                          <div>
-                            <span className="font-medium text-amber-700">Examples: </span>
-                            <span className="text-gray-600">{parsed.examples}</span>
-                          </div>
-                        </div>
-                      )}
-                      {/* Fallback: if no structured fields were parsed, show raw description */}
-                      {!parsed.definition && !parsed.positive && !parsed.negative && !parsed.examples && question.description && (
-                        <div className="text-gray-600 whitespace-pre-wrap">{question.description}</div>
-                      )}
+                      </div>
                     </div>
+                    <div className="flex gap-1 flex-shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openEditDialog(question)}
+                        className="text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                        title="Edit this criterion"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => deleteQuestion(question.id)}
+                        className="text-red-600 hover:text-red-800 hover:bg-red-50"
+                        title="Remove this question from the rubric"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  {/* Structured description display */}
+                  <div className="space-y-3 text-sm">
+                    {parsed.definition && (
+                      <div>
+                        <span className="font-medium text-gray-700">Definition: </span>
+                        <span className="text-gray-600">{parsed.definition}</span>
+                      </div>
+                    )}
+                    {parsed.positive && (
+                      <div className="flex items-start gap-1.5">
+                        <CheckCircle className="h-3.5 w-3.5 text-green-600 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <span className="font-medium text-green-700">Positive: </span>
+                          <span className="text-gray-600">{parsed.positive}</span>
+                        </div>
+                      </div>
+                    )}
+                    {parsed.negative && (
+                      <div className="flex items-start gap-1.5">
+                        <AlertCircle className="h-3.5 w-3.5 text-red-600 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <span className="font-medium text-red-700">Negative: </span>
+                          <span className="text-gray-600">{parsed.negative}</span>
+                        </div>
+                      </div>
+                    )}
+                    {parsed.examples && (
+                      <div className="flex items-start gap-1.5">
+                        <Lightbulb className="h-3.5 w-3.5 text-amber-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <span className="font-medium text-amber-700">Examples: </span>
+                          <span className="text-gray-600">{parsed.examples}</span>
+                        </div>
+                      </div>
+                    )}
+                    {/* Fallback: if no structured fields were parsed, show raw description */}
+                    {!parsed.definition && !parsed.positive && !parsed.negative && !parsed.examples && question.description && (
+                      <div className="text-gray-600 whitespace-pre-wrap">{question.description}</div>
+                    )}
                   </div>
-                </div>
-              </div>
+                </CardContent>
+              </Card>
               );
             })}
 
@@ -1256,56 +1289,118 @@ export function RubricCreationDemo() {
                 </p>
               </div>
             )}
-              </CardContent>
-            </Card>
+            </div>
           </TabsContent>
         </Tabs>
 
         {/* Next Steps */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5 text-blue-600" />
-              Next Steps
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {rubric && questions.length > 0 ? (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                    <CheckCircle className="w-5 h-5 text-green-600" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm text-green-800 font-medium mb-1">
-                      Ready for Annotation Phase
-                    </p>
-                    <p className="text-sm text-green-700">
-                      Rubric is complete with {questions.length} question{questions.length !== 1 ? 's' : ''}. Use the sidebar workflow to start the annotation phase.
-                    </p>
-                  </div>
+        {rubric && questions.length > 0 ? (
+          <Card className="border-l-4 border-green-500 bg-green-50/30">
+            <CardContent className="py-3 px-4">
+              <div className="flex items-center gap-3">
+                <CheckCircle className="h-5 w-5 text-green-600 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-green-800">
+                    Ready for Annotation Phase
+                  </p>
+                  <p className="text-xs text-green-700">
+                    Rubric is complete with {questions.length} criterion{questions.length !== 1 ? 's' : ''}. Use the sidebar to start annotations.
+                  </p>
                 </div>
               </div>
-            ) : (
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center">
-                    <AlertCircle className="w-5 h-5 text-amber-600" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm text-amber-800 font-medium mb-1">
-                      Rubric Required
-                    </p>
-                    <p className="text-sm text-amber-700">
-                      Create at least one rubric question before proceeding to the annotation phase.
-                    </p>
-                  </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="border-l-4 border-amber-500 bg-amber-50/30">
+            <CardContent className="py-3 px-4">
+              <div className="flex items-center gap-3">
+                <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-amber-800">
+                    Rubric Required
+                  </p>
+                  <p className="text-xs text-amber-700">
+                    Create at least one rubric question before proceeding to annotation.
+                  </p>
                 </div>
               </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
       </div>
+
+      {/* AI Rubric Suggestion Panel */}
+      {showSuggestionPanel && (
+        <RubricSuggestionPanel
+          workshopId={workshopId!}
+          onAcceptSuggestion={async (suggestion) => {
+            // Convert suggestion to RubricQuestion format
+            const descriptionParts = [suggestion.description];
+
+            if (suggestion.positive) {
+              descriptionParts.push(`\nPositive: ${suggestion.positive}`);
+            }
+            if (suggestion.negative) {
+              descriptionParts.push(`\nNegative: ${suggestion.negative}`);
+            }
+            if (suggestion.examples) {
+              descriptionParts.push(`\nExamples: ${suggestion.examples}`);
+            }
+
+            const description = descriptionParts.join('');
+
+            // Persist to backend immediately
+            setIsEditingExisting(true);
+
+            try {
+              const updatedQuestions = [
+                ...questions,
+                {
+                  id: 'temp',
+                  title: suggestion.title,
+                  description,
+                  judgeType: suggestion.judgeType as JudgeType
+                }
+              ];
+
+              const combinedQuestionText = formatRubricQuestions(updatedQuestions);
+
+              const apiRubric = {
+                question: combinedQuestionText,
+                created_by: 'facilitator',
+                judge_type: judgeType,
+                binary_labels: judgeType === 'binary' ? binaryLabels : undefined,
+                rating_scale: 5
+              };
+
+              const method = rubric ? 'PUT' : 'POST';
+              const url = `/workshops/${workshopId}/rubric`;
+
+              const response = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(apiRubric),
+              });
+
+              if (!response.ok) throw new Error('Failed to save');
+
+              const savedRubric = await response.json();
+              if (savedRubric && savedRubric.id) {
+                queryClient.setQueryData(['rubric', workshopId], savedRubric);
+                setQuestions(convertApiRubricToQuestions(savedRubric));
+              }
+
+              toast.success(`"${suggestion.title}" added to rubric`);
+            } catch (error) {
+              console.error('Error adding suggestion:', error);
+              toast.error('Failed to add suggestion to rubric');
+            } finally {
+              setIsEditingExisting(false);
+            }
+          }}
+          onClose={() => setShowSuggestionPanel(false)}
+        />
+      )}
     </div>
   );
 }

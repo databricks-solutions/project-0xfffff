@@ -1,5 +1,6 @@
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { BarChart, Download, Copy, Users, Sparkles } from 'lucide-react';
 import { TraceDataViewer } from '@/components/TraceDataViewer';
 
 // Sample trace data that matches your database structure
@@ -47,24 +48,39 @@ export function TraceDataViewerDemo() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="text-center p-4 bg-blue-50 rounded-lg">
-                <h3 className="font-semibold text-blue-900 mb-2">📊 Data Tables</h3>
-                <p className="text-sm text-blue-700">
-                  Convert JSON results into readable tables with proper headers
-                </p>
-              </div>
-              <div className="text-center p-4 bg-green-50 rounded-lg">
-                <h3 className="font-semibold text-green-900 mb-2">💾 Export Options</h3>
-                <p className="text-sm text-green-700">
-                  Download data as CSV and SQL queries as .sql files
-                </p>
-              </div>
-              <div className="text-center p-4 bg-purple-50 rounded-lg">
-                <h3 className="font-semibold text-purple-900 mb-2">📋 Copy & Paste</h3>
-                <p className="text-sm text-purple-700">
-                  Easy copying of data, queries, and JSON for further analysis
-                </p>
-              </div>
+              <Card className="text-center p-4 border-l-4 border-blue-500">
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-center gap-2 mb-3">
+                    <BarChart className="h-8 w-8 text-blue-600" />
+                    <h3 className="font-semibold text-blue-900">Data Tables</h3>
+                  </div>
+                  <p className="text-sm text-blue-700">
+                    Convert JSON results into readable tables with proper headers
+                  </p>
+                </CardContent>
+              </Card>
+              <Card className="text-center p-4 border-l-4 border-green-500">
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-center gap-2 mb-3">
+                    <Download className="h-8 w-8 text-green-600" />
+                    <h3 className="font-semibold text-green-900">Export Options</h3>
+                  </div>
+                  <p className="text-sm text-green-700">
+                    Download data as CSV and SQL queries as .sql files
+                  </p>
+                </CardContent>
+              </Card>
+              <Card className="text-center p-4 border-l-4 border-purple-500">
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-center gap-2 mb-3">
+                    <Copy className="h-8 w-8 text-purple-600" />
+                    <h3 className="font-semibold text-purple-900">Copy & Paste</h3>
+                  </div>
+                  <p className="text-sm text-purple-700">
+                    Easy copying of data, queries, and JSON for further analysis
+                  </p>
+                </CardContent>
+              </Card>
             </div>
           </CardContent>
         </Card>
@@ -105,24 +121,58 @@ export function TraceDataViewerDemo() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <h3 className="font-semibold text-gray-900 mb-2">For Workshop Participants</h3>
-                <ul className="text-sm text-gray-600 space-y-1">
-                  <li>• View trace results in organized tables</li>
-                  <li>• Copy data for further analysis</li>
-                  <li>• Download results as CSV files</li>
-                  <li>• Examine SQL queries for learning</li>
-                </ul>
-              </div>
-              <div>
-                <h3 className="font-semibold text-gray-900 mb-2">For Facilitators</h3>
-                <ul className="text-sm text-gray-600 space-y-1">
-                  <li>• Review trace outputs easily</li>
-                  <li>• Export data for external analysis</li>
-                  <li>• Share SQL queries with participants</li>
-                  <li>• Monitor trace quality and structure</li>
-                </ul>
-              </div>
+              <Card className="border-l-4 border-blue-500">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Users className="h-6 w-6 text-blue-600" />
+                    <h3 className="font-semibold text-gray-900">For Workshop Participants</h3>
+                  </div>
+                  <ul className="text-sm text-gray-600 space-y-2">
+                    <li className="flex items-start gap-2">
+                      <span className="text-blue-500 mt-0.5">•</span>
+                      <span>View trace results in organized tables</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-blue-500 mt-0.5">•</span>
+                      <span>Copy data for further analysis</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-blue-500 mt-0.5">•</span>
+                      <span>Download results as CSV files</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-blue-500 mt-0.5">•</span>
+                      <span>Examine SQL queries for learning</span>
+                    </li>
+                  </ul>
+                </CardContent>
+              </Card>
+              <Card className="border-l-4 border-purple-500">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Sparkles className="h-6 w-6 text-purple-600" />
+                    <h3 className="font-semibold text-gray-900">For Facilitators</h3>
+                  </div>
+                  <ul className="text-sm text-gray-600 space-y-2">
+                    <li className="flex items-start gap-2">
+                      <span className="text-purple-500 mt-0.5">•</span>
+                      <span>Review trace outputs easily</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-purple-500 mt-0.5">•</span>
+                      <span>Export data for external analysis</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-purple-500 mt-0.5">•</span>
+                      <span>Share SQL queries with participants</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-purple-500 mt-0.5">•</span>
+                      <span>Monitor trace quality and structure</span>
+                    </li>
+                  </ul>
+                </CardContent>
+              </Card>
             </div>
           </CardContent>
         </Card>

@@ -24,13 +24,15 @@ test('facilitator can log in and create a workshop', {
   await page.locator('button[type="submit"]').click();
 
   // Facilitator should land on workshop creation when no workshop is selected
-  await expect(page.getByText(/Welcome, Facilitator!/i)).toBeVisible();
+  await expect(page.getByText(/Welcome, Facilitator/i)).toBeVisible();
+
+  // Fill required Use Case Description before creating
+  await page.locator('#description').fill('E2E test workshop for facilitator login flow');
 
   // Create workshop (real POST /workshops through Vite proxy)
-  // The Quick Start button is "Create New Workshop"
   await Promise.all([
     page.waitForResponse((resp) => resp.request().method() === 'POST' && resp.url().includes('/workshops') && resp.status() === 201),
-    page.getByRole('button', { name: /Create New Workshop/i }).click(),
+    page.getByRole('button', { name: /Create Workshop/i }).click(),
   ]);
 
   await expect(page).toHaveURL(/\?workshop=[a-f0-9-]{36}/i);

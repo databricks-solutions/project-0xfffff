@@ -325,10 +325,10 @@ export function DBSQLExportPage() {
         {/* Left Column - Configuration */}
         <div className="space-y-6">
           {/* Workshop Summary */}
-          <Card>
+          <Card className="border-l-4 border-blue-500">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5" />
+                <FileText className="h-5 w-5 text-blue-600" />
                 Workshop Summary
               </CardTitle>
             </CardHeader>
@@ -351,10 +351,10 @@ export function DBSQLExportPage() {
           </Card>
 
           {/* DBSQL Configuration */}
-          <Card>
+          <Card className="border-l-4 border-green-500">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Settings className="h-5 w-5" />
+                <Settings className="h-5 w-5 text-green-600" />
                 DBSQL Configuration
               </CardTitle>
               <CardDescription>
@@ -482,34 +482,42 @@ export function DBSQLExportPage() {
                 </Button>
                 
                 {exportStatus && (
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div className="flex items-center gap-2">
-                      <Star className="h-4 w-4" />
-                      <span>Rubrics:</span>
-                      <Badge variant={exportStatus.export_requirements.has_rubrics ? "default" : "secondary"}>
-                        {exportStatus.data_summary.rubrics_count}
-                      </Badge>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="text-center p-4 bg-yellow-50 rounded-lg border-l-4 border-yellow-500">
+                      <div className="flex items-center justify-center gap-2 mb-2">
+                        <Star className="h-5 w-5 text-yellow-600" />
+                        <Badge className="bg-yellow-100 text-yellow-700">
+                          {exportStatus.data_summary.rubrics_count}
+                        </Badge>
+                      </div>
+                      <div className="text-sm text-gray-600">Rubrics</div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="h-4 w-4" />
-                      <span>Annotations:</span>
-                      <Badge variant={exportStatus.export_requirements.has_annotations ? "default" : "secondary"}>
-                        {exportStatus.data_summary.annotations_count}
-                      </Badge>
+                    <div className="text-center p-4 bg-green-50 rounded-lg border-l-4 border-green-500">
+                      <div className="flex items-center justify-center gap-2 mb-2">
+                        <CheckCircle className="h-5 w-5 text-green-600" />
+                        <Badge className="bg-green-100 text-green-700">
+                          {exportStatus.data_summary.annotations_count}
+                        </Badge>
+                      </div>
+                      <div className="text-sm text-gray-600">Annotations</div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Database className="h-4 w-4" />
-                      <span>Traces:</span>
-                      <Badge variant={exportStatus.export_requirements.has_traces ? "default" : "secondary"}>
-                        {exportStatus.data_summary.traces_count}
-                      </Badge>
+                    <div className="text-center p-4 bg-blue-50 rounded-lg border-l-4 border-blue-500">
+                      <div className="flex items-center justify-center gap-2 mb-2">
+                        <Database className="h-5 w-5 text-blue-600" />
+                        <Badge className="bg-blue-100 text-blue-700">
+                          {exportStatus.data_summary.traces_count}
+                        </Badge>
+                      </div>
+                      <div className="text-sm text-gray-600">Traces</div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Users className="h-4 w-4" />
-                      <span>Users:</span>
-                      <Badge variant={exportStatus.export_requirements.has_users ? "default" : "secondary"}>
-                        {exportStatus.data_summary.users_count}
-                      </Badge>
+                    <div className="text-center p-4 bg-purple-50 rounded-lg border-l-4 border-purple-500">
+                      <div className="flex items-center justify-center gap-2 mb-2">
+                        <Users className="h-5 w-5 text-purple-600" />
+                        <Badge className="bg-purple-100 text-purple-700">
+                          {exportStatus.data_summary.users_count}
+                        </Badge>
+                      </div>
+                      <div className="text-sm text-gray-600">Users</div>
                     </div>
                   </div>
                 )}
@@ -521,10 +529,10 @@ export function DBSQLExportPage() {
         {/* Right Column - Export Actions and Results */}
         <div className="space-y-6">
           {/* Export Action */}
-          <Card>
+          <Card className="border-l-4 border-blue-500">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Download className="h-5 w-5" />
+                <Download className="h-5 w-5 text-blue-600" />
                 Export to DBSQL
               </CardTitle>
               <CardDescription>
@@ -590,13 +598,17 @@ export function DBSQLExportPage() {
                     <h4 className="text-sm font-medium">Exported Tables</h4>
                     <div className="space-y-2">
                       {exportResult.tables_exported.map((table: any, index: number) => (
-                        <div key={index} className="flex items-center justify-between p-2 bg-muted rounded">
-                          <div className="flex items-center gap-2">
-                            <Table className="h-3 w-3" />
-                            <span className="text-sm font-mono">{table.table_name}</span>
-                          </div>
-                          <Badge variant="outline">{table.rows_exported} rows</Badge>
-                        </div>
+                        <Card key={index} className="border-l-4 border-gray-300">
+                          <CardContent className="p-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <Table className="h-4 w-4 text-gray-600" />
+                                <span className="text-sm font-mono">{table.table_name}</span>
+                              </div>
+                              <Badge variant="outline">{table.rows_exported} rows</Badge>
+                            </div>
+                          </CardContent>
+                        </Card>
                       ))}
                     </div>
                   </div>
@@ -636,10 +648,10 @@ export function DBSQLExportPage() {
           )}
 
           {/* Unity Catalog Volume Upload */}
-          <Card>
+          <Card className="border-l-4 border-indigo-500">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Upload className="h-5 w-5" />
+                <Upload className="h-5 w-5 text-indigo-600" />
                 Upload SQLite to Unity Catalog Volume
               </CardTitle>
               <CardDescription>
@@ -726,10 +738,10 @@ export function DBSQLExportPage() {
           </Card>
 
           {/* What Gets Exported */}
-          <Card>
+          <Card className="border-l-4 border-gray-400">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Info className="h-5 w-5" />
+                <Info className="h-5 w-5 text-gray-600" />
                 What Gets Exported
               </CardTitle>
             </CardHeader>
