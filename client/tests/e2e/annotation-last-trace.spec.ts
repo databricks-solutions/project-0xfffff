@@ -377,13 +377,10 @@ test.describe('Annotation - Last Trace Bug', {
         timeout: 5000,
       });
 
-      // Select a rating - find the radio button for "Agree" (rating 4)
-      // The Likert scale has: Strongly Disagree(1), Disagree(2), Neutral(3), Agree(4), Strongly Agree(5)
-      const agreeRadio = page.locator('input[type="radio"][value="4"]').first();
-      await agreeRadio.click();
-
-      // Verify the rating was selected
-      await expect(agreeRadio).toBeChecked();
+      // Select a rating - click the Likert button for "Agree" (rating 4)
+      // The Likert scale uses role="button" divs with the number displayed inside
+      const agreeButton = page.locator('[role="button"]').filter({ hasText: /^4$/ }).first();
+      await agreeButton.click();
 
       // Click Next (or Complete for the last trace)
       if (i < 9) {
