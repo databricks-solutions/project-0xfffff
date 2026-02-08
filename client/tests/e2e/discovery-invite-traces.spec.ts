@@ -22,6 +22,9 @@ test('discovery blocks until multiple participants complete; facilitator-driven 
   // Facilitator login + workshop creation
   await loginAsFacilitator(page);
 
+  // Fill required Use Case Description before creating
+  await page.locator('#description').fill('E2E test workshop for discovery trace assignment');
+
   await Promise.all([
     page.waitForResponse(
       (resp) =>

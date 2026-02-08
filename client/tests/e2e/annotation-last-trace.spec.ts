@@ -398,9 +398,9 @@ test.describe('Annotation - Last Trace Bug', {
       await page.waitForTimeout(1000);
     }
 
-    // Wait for completion message
+    // Wait for completion toast
     await expect(
-      page.getByText('All traces annotated! Great work.')
+      page.getByText('All traces annotated successfully!')
     ).toBeVisible({ timeout: 10000 });
 
     // CRITICAL: Verify all 10 annotations were saved via API

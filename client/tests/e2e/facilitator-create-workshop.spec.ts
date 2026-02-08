@@ -26,6 +26,9 @@ test('facilitator can log in and create a workshop', {
   // Facilitator should land on workshop creation when no workshop is selected
   await expect(page.getByText(/Welcome, Facilitator/i)).toBeVisible();
 
+  // Fill required Use Case Description before creating
+  await page.locator('#description').fill('E2E test workshop for facilitator login flow');
+
   // Create workshop (real POST /workshops through Vite proxy)
   await Promise.all([
     page.waitForResponse((resp) => resp.request().method() === 'POST' && resp.url().includes('/workshops') && resp.status() === 201),

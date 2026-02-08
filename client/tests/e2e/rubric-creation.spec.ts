@@ -34,6 +34,9 @@ test('rubric creation: facilitator can advance from discovery and create a rubri
 
   await expect(page.getByText(/Welcome, Facilitator/i)).toBeVisible();
 
+  // Fill required Use Case Description before creating
+  await page.locator('#description').fill('E2E test workshop for rubric creation');
+
   await Promise.all([
     page.waitForResponse(
       (resp) =>
