@@ -569,10 +569,19 @@ export function TraceViewerDemo() {
         await saveFinding(q1ToSave, q2ToSave, currentTraceId, true);
       }
       
-      // Then navigate
+      // Then navigate - pre-populate with saved state to avoid flash
       const nextIndex = currentTraceIndex + 1;
-      setQuestion1Response('');
-      setQuestion2Response('');
+      const nextTraceId = traceData[nextIndex]?.id;
+      const nextSavedState = nextTraceId ? savedStateRef.current.get(nextTraceId) : null;
+      if (nextSavedState) {
+        setQuestion1Response(nextSavedState.q1);
+        setQuestion2Response(nextSavedState.q2);
+      } else {
+        setQuestion1Response('');
+        setQuestion2Response('');
+      }
+      // Update ref so the useEffect doesn't re-trigger and cause a double render
+      previousTraceId.current = nextTraceId || null;
       setCurrentTraceIndex(nextIndex);
       
     } finally {
@@ -650,10 +659,19 @@ export function TraceViewerDemo() {
         await saveFinding(q1ToSave, q2ToSave, currentTraceId, true);
       }
       
-      // Then navigate
+      // Then navigate - pre-populate with saved state to avoid flash
       const prevIndex = currentTraceIndex - 1;
-      setQuestion1Response('');
-      setQuestion2Response('');
+      const prevTraceId = traceData[prevIndex]?.id;
+      const prevSavedState = prevTraceId ? savedStateRef.current.get(prevTraceId) : null;
+      if (prevSavedState) {
+        setQuestion1Response(prevSavedState.q1);
+        setQuestion2Response(prevSavedState.q2);
+      } else {
+        setQuestion1Response('');
+        setQuestion2Response('');
+      }
+      // Update ref so the useEffect doesn't re-trigger and cause a double render
+      previousTraceId.current = prevTraceId || null;
       setCurrentTraceIndex(prevIndex);
       
     } finally {
@@ -808,10 +826,10 @@ export function TraceViewerDemo() {
   // }
 
   return (
-    <div className="p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className="p-6 h-full flex flex-col">
+      <div className="max-w-7xl mx-auto w-full flex flex-col flex-1 min-h-0 gap-6">
         {/* Compact Progress Bar */}
-        <div className="flex items-center gap-4 px-1" data-testid="discovery-phase-title">
+        <div className="flex items-center gap-4 px-1 flex-shrink-0" data-testid="discovery-phase-title">
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-sm font-medium text-gray-700 whitespace-nowrap">
               Trace <span data-testid="trace-number">{currentTraceIndex + 1}/{traceData.length}</span>
@@ -843,14 +861,14 @@ export function TraceViewerDemo() {
         </div>
 
         {/* Side-by-side: Trace (left 60%) + Questions (right 40%) */}
-        <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-6">
-          {/* Left Column: Trace */}
-          <div className="lg:sticky lg:top-6 lg:self-start">
+        <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-6 flex-1 min-h-0">
+          {/* Left Column: Trace - independently scrollable */}
+          <div className="overflow-y-auto pr-2 scrollbar-thin">
             <TraceViewer trace={currentTrace} />
           </div>
 
-          {/* Right Column: Questions + Navigation + Notes */}
-          <div className="space-y-4">
+          {/* Right Column: Questions + Navigation + Notes - independently scrollable */}
+          <div className="overflow-y-auto space-y-4 pr-1 scrollbar-thin">
         {/* Discovery Questions */}
         <Card className="border-l-4 border-blue-500">
           <CardContent className="p-4 space-y-4">
@@ -902,17 +920,15 @@ export function TraceViewerDemo() {
         <div className="flex items-center justify-between">
           <Button
             variant="outline"
-            size="sm"
             onClick={prevTrace}
             disabled={currentTraceIndex === 0}
-            className="flex items-center gap-1 h-7 text-xs"
+            className="flex items-center gap-1.5"
           >
-            <ChevronLeft className="h-3 w-3" />
-            Prev
+            <ChevronLeft className="h-4 w-4" />
+            Previous
           </Button>
 
           <Button
-            size="sm"
             onClick={async () => {
               // On last trace, save current content then show completion state
               if (currentTraceIndex === traceData.length - 1 && currentTrace) {
@@ -934,22 +950,22 @@ export function TraceViewerDemo() {
               isSaving ||
               !canCreateFindings
             }
-            className="flex items-center gap-1 h-7 text-xs"
+            className={`flex items-center gap-1.5 ${currentTraceIndex === traceData.length - 1 ? 'bg-purple-700 hover:bg-purple-800' : ''}`}
           >
             {isSaving ? (
               <>
-                <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 Saving...
               </>
             ) : currentTraceIndex === traceData.length - 1 ? (
               <>
-                <Send className="h-3 w-3" />
+                <Send className="h-4 w-4" />
                 Complete
               </>
             ) : (
               <>
-                <ChevronRight className="h-3 w-3" />
                 Next
+                <ChevronRight className="h-4 w-4" />
               </>
             )}
           </Button>
@@ -1060,36 +1076,29 @@ export function TraceViewerDemo() {
 
         {/* Discovery Completion */}
         {isDiscoveryComplete && (
-          <Card className="border-green-200 bg-green-50">
-            <CardContent className="pt-6">
-              <div className="text-center">
-                <CheckCircle className="h-12 w-12 text-green-600 mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-green-800 mb-2">
-                  All Traces Reviewed!
-                </h3>
-                <p className="text-green-700 mb-4">
-                  You've successfully reviewed all {traceData.length} traces and submitted findings for each one.
-                </p>
-                <Button
-                  onClick={completeDiscovery}
-                  disabled={isCompletingDiscovery}
-                  className="bg-green-600 hover:bg-green-700 text-white"
-                >
-                  {isCompletingDiscovery ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
-                      Completing Discovery...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle className="h-4 w-4 mr-2" data-testid="complete-discovery-phase-button" />
-                      Complete Discovery Phase
-                    </>
-                  )}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="flex items-center justify-between p-3 rounded-lg border border-green-200 bg-green-50">
+            <div className="flex items-center gap-2">
+              <CheckCircle className="h-4 w-4 text-green-600 flex-shrink-0" />
+              <span className="text-sm font-medium text-green-800">
+                All {traceData.length} traces reviewed
+              </span>
+            </div>
+            <Button
+              onClick={completeDiscovery}
+              disabled={isCompletingDiscovery}
+              size="sm"
+              className="bg-green-600 hover:bg-green-700 text-white"
+            >
+              {isCompletingDiscovery ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-1.5" />
+                  Completing...
+                </>
+              ) : (
+                <span data-testid="complete-discovery-phase-button">Complete Discovery</span>
+              )}
+            </Button>
+          </div>
         )}
           </div>{/* End right column */}
         </div>{/* End grid */}

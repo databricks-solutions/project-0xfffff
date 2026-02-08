@@ -479,7 +479,7 @@ const CollapsibleSection: React.FC<{
         <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
       </button>
       {expanded && (
-        <div className="border-t border-gray-100 bg-gray-50/30 p-4 max-h-[500px] overflow-auto">
+        <div className="border-t border-gray-100 bg-gray-50/30 p-4 max-h-[500px] overflow-auto scrollbar-thin">
           {children}
         </div>
       )}
@@ -712,7 +712,7 @@ const SmartObjectField: React.FC<{
           <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
         </button>
         {expanded && (
-          <div className="border-t border-gray-100 bg-gray-50/30 p-4 max-h-[500px] overflow-auto">
+          <div className="border-t border-gray-100 bg-gray-50/30 p-4 max-h-[500px] overflow-auto scrollbar-thin">
             <SmartValueRenderer value={value} fieldName={fieldKey} depth={depth} />
           </div>
         )}

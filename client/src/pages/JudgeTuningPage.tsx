@@ -281,10 +281,42 @@ export function JudgeTuningPage() {
       setMetrics(null);
       // Don't clear evaluations here - auto-eval results should persist across question switches
       // setEvaluations([]);
-      
+
+      // Load the judge-specific prompt if available
+      if (prompts.length > 0 && selectedQuestion) {
+        const currentJudgeName = selectedQuestion.title
+          ? selectedQuestion.title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') + '_judge'
+          : 'workshop_judge';
+
+        // Find prompts for this specific judge
+        const judgePrompts = prompts.filter(p =>
+          p.model_parameters &&
+          typeof p.model_parameters === 'object' &&
+          p.model_parameters.judge_name === currentJudgeName
+        );
+
+        if (judgePrompts.length > 0) {
+          // Use the latest judge-specific prompt
+          const judgePrompt = judgePrompts[0];
+          setCurrentPrompt(judgePrompt.prompt_text);
+          setOriginalPromptText(judgePrompt.prompt_text);
+          setSelectedPromptId(judgePrompt.id);
+          setIsModified(false);
+        } else {
+          // No judge-specific prompt - create default from rubric
+          if (rubric) {
+            const defaultPrompt = createDefaultPrompt(rubric.question, selectedQuestionIndex);
+            setCurrentPrompt(defaultPrompt);
+            setOriginalPromptText(defaultPrompt);
+            setSelectedPromptId(null);
+            setIsModified(false);
+          }
+        }
+      }
+
       prevQuestionIndexRef.current = selectedQuestionIndex;
     }
-  }, [selectedQuestionIndex, selectedQuestion, workshopId]);
+  }, [selectedQuestionIndex, selectedQuestion, workshopId, prompts, rubric]);
 
   // Load initial data
   useEffect(() => {
@@ -487,16 +519,28 @@ export function JudgeTuningPage() {
         const defaultPrompt = createDefaultPrompt(rubricData.question, selectedQuestionIndex);
         setCurrentPrompt(defaultPrompt);
         setOriginalPromptText(defaultPrompt); // Track original for new prompt
-        
+
         // Set default models when no prompts exist
         setSelectedEvaluationModel(defaultModel);
         setSelectedAlignmentModel(defaultModel);
-        
+
         // Don't auto-create baseline - let user create it manually
         // This prevents the v2 issue where auto-creation makes first manual save become v2
       } else if (promptsData.length > 0) {
-        // Select the latest prompt (first in array since ordered by version desc)
-        const latestPrompt = promptsData[0];
+        // Get the judge name for the current question to find judge-specific prompt
+        const currentJudgeName = selectedQuestion?.title
+          ? selectedQuestion.title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') + '_judge'
+          : 'workshop_judge';
+
+        // Try to find the latest prompt for this specific judge (check model_parameters.judge_name)
+        const judgePrompts = promptsData.filter(p =>
+          p.model_parameters &&
+          typeof p.model_parameters === 'object' &&
+          p.model_parameters.judge_name === currentJudgeName
+        );
+
+        // Use judge-specific prompt if available, otherwise fall back to latest prompt
+        const latestPrompt = judgePrompts.length > 0 ? judgePrompts[0] : promptsData[0];
         
         // Check if prompt judge_type matches current rubric question's judge_type
         // If rubric changed (e.g., from Likert to Binary), update prompt template
@@ -605,6 +649,12 @@ export function JudgeTuningPage() {
           // If auto-eval is currently running, start polling
           if (autoEvalData.status === 'running') {
             setIsPollingAutoEval(true);
+          }
+
+          // Warn if auto-eval reported completed but no evaluations were saved
+          if (autoEvalData.status === 'completed' && (!autoEvalData.evaluations || autoEvalData.evaluations.length === 0)) {
+            console.warn('[AutoEval] Status is completed but no evaluations found - possible save failure');
+            toast.warning('Auto-evaluation completed but results were not saved. Click "Run Align()" to retry evaluation.');
           }
         }
       } catch (autoEvalErr) {
@@ -2076,10 +2126,9 @@ Think step by step about how well the output addresses the criteria, then provid
                           let evaluation = hasJudgeLabels && expectedJudgeName
                             ? evaluations.find((e: any) => matchesTrace(e) && e.predicted_feedback === expectedJudgeName)
                             : evaluations.find((e: any) => matchesTrace(e));
-                          // Fallback: if no match with judge filter, try without (handles legacy data)
-                          if (!evaluation && hasJudgeLabels) {
-                            evaluation = evaluations.find((e: any) => matchesTrace(e));
-                          }
+                          // REMOVED fallback: Don't show other judges' scores when filtering by judge name
+                          // Each judge must have its own evaluation results; showing another judge's
+                          // score is confusing (e.g., binary scores appearing for Likert questions)
                           
                           const judgeRating = evaluation?.predicted_rating;
 

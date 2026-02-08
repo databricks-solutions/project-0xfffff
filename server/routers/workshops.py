@@ -1446,6 +1446,40 @@ async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Sessi
 
                             job.add_log("Initializing auto-evaluation service...")
 
+                            # Wait for MLflow tag indexing (eventual consistency)
+                            # Tags were just set via mlflow.set_trace_tag but search_traces
+                            # may not find them immediately due to index lag
+                            import time as _time
+                            import os as _os
+                            try:
+                                import mlflow as _mlflow
+                                _os.environ['DATABRICKS_HOST'] = mlflow_config.databricks_host.rstrip('/')
+                                has_oauth = bool(_os.environ.get('DATABRICKS_CLIENT_ID') and _os.environ.get('DATABRICKS_CLIENT_SECRET'))
+                                if not has_oauth:
+                                    _os.environ['DATABRICKS_TOKEN'] = mlflow_config.databricks_token
+                                _mlflow.set_tracking_uri('databricks')
+
+                                job.add_log("Waiting for MLflow tag indexing...")
+                                tag_verified = False
+                                for wait_attempt in range(5):  # Up to 10 seconds (5 x 2s)
+                                    _time.sleep(2)
+                                    try:
+                                        test_df = _mlflow.search_traces(
+                                            experiment_ids=[mlflow_config.experiment_id],
+                                            filter_string=f"tags.label = 'eval' AND tags.workshop_id = '{workshop_id}'",
+                                            return_type="pandas",
+                                        )
+                                        if test_df is not None and not test_df.empty:
+                                            job.add_log(f"MLflow tags verified after {(wait_attempt + 1) * 2}s ({len(test_df)} traces found)")
+                                            tag_verified = True
+                                            break
+                                    except Exception as search_err:
+                                        logger.debug("Tag verification attempt %d failed: %s", wait_attempt + 1, search_err)
+                                if not tag_verified:
+                                    job.add_log("WARNING: MLflow tags not yet indexed after 10s, proceeding anyway")
+                            except Exception as tag_wait_err:
+                                job.add_log(f"WARNING: Could not verify MLflow tags: {tag_wait_err}")
+
                             # Get rubric questions again in thread context
                             questions_to_eval = thread_db_service.get_rubric_questions_for_evaluation(workshop_id)
                             if not questions_to_eval:
@@ -1501,6 +1535,7 @@ async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Sessi
                             failed = [r for r in all_results if not r['result'].get('success')]
 
                             # Save evaluations to database
+                            save_succeeded = False
                             if successful:
                                 try:
                                     from server.models import JudgePromptCreate, JudgeEvaluation
@@ -1550,8 +1585,20 @@ async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Sessi
                                                     logger.error(f"Error parsing evaluation: {inner_err}")
 
                                     if all_evaluations:
-                                        thread_db_service.store_judge_evaluations(all_evaluations)
-                                        job.add_log(f"✓ Saved {len(all_evaluations)} evaluations to database")
+                                        # Retry save up to 3 times to handle transient DB errors
+                                        import time as _time
+                                        for save_attempt in range(3):
+                                            try:
+                                                thread_db_service.store_judge_evaluations(all_evaluations)
+                                                job.add_log(f"✓ Saved {len(all_evaluations)} evaluations to database")
+                                                save_succeeded = True
+                                                break
+                                            except Exception as retry_err:
+                                                if save_attempt < 2:
+                                                    job.add_log(f"⚠ Save attempt {save_attempt + 1} failed, retrying in 1s...")
+                                                    _time.sleep(1)
+                                                else:
+                                                    raise retry_err
                                     else:
                                         job.add_log("⚠ No evaluations to save")
                                 except Exception as save_err:
@@ -1559,7 +1606,7 @@ async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Sessi
                                     logger.exception("Failed to save auto-evaluation results")
 
                             job.result = {
-                                'success': len(failed) == 0,
+                                'success': len(failed) == 0 and save_succeeded,
                                 'total_judges': len(questions_to_eval),
                                 'successful_judges': len(successful),
                                 'failed_judges': len(failed),
@@ -1568,13 +1615,16 @@ async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Sessi
                             }
                             job.save()
 
-                            if len(failed) == 0:
+                            if len(failed) == 0 and save_succeeded:
                                 job.set_status("completed")
                                 job.add_log(f"\n✓ All {len(questions_to_eval)} judges completed successfully!")
                                 job.add_log(f"Total evaluations: {total_evaluated}")
-                            elif len(successful) > 0:
+                            elif len(successful) > 0 and save_succeeded:
                                 job.set_status("completed")  # Partial success
                                 job.add_log(f"\n⚠ {len(successful)}/{len(questions_to_eval)} judges succeeded")
+                            elif len(successful) > 0 and not save_succeeded:
+                                job.set_status("failed")
+                                job.add_log(f"\n✗ Evaluation succeeded but database save failed. Click 'Run Align()' to retry.")
                             else:
                                 job.set_status("failed")
                                 job.add_log(f"\n✗ All judges failed")
@@ -3382,7 +3432,7 @@ async def start_alignment_job(
                                 prompt_text=aligned_instructions,
                                 few_shot_examples=[],
                                 model_name=request.evaluation_model_name,
-                                model_parameters={"aligned": True, "alignment_model": request.alignment_model_name},
+                                model_parameters={"aligned": True, "alignment_model": request.alignment_model_name, "judge_name": request.judge_name},
                             )
                             new_prompt = thread_db_service.create_judge_prompt(workshop_id, new_prompt_data)
                             result["saved_prompt_id"] = new_prompt.id
@@ -4500,6 +4550,7 @@ async def restart_auto_evaluation(
                 failed = [r for r in all_results if not r['result'].get('success')]
 
                 # Save evaluations to database
+                save_succeeded = False
                 if successful:
                     try:
                         from server.models import JudgePromptCreate, JudgeEvaluation as JudgeEvalModel
@@ -4545,8 +4596,20 @@ async def restart_auto_evaluation(
                                         logger.error(f"Error parsing evaluation: {inner_err}")
 
                         if all_evaluations:
-                            thread_db_service.store_judge_evaluations(all_evaluations)
-                            job.add_log(f"✓ Saved {len(all_evaluations)} evaluations to database")
+                            # Retry save up to 3 times to handle transient DB errors
+                            import time as _time
+                            for save_attempt in range(3):
+                                try:
+                                    thread_db_service.store_judge_evaluations(all_evaluations)
+                                    job.add_log(f"✓ Saved {len(all_evaluations)} evaluations to database")
+                                    save_succeeded = True
+                                    break
+                                except Exception as retry_err:
+                                    if save_attempt < 2:
+                                        job.add_log(f"⚠ Save attempt {save_attempt + 1} failed, retrying in 1s...")
+                                        _time.sleep(1)
+                                    else:
+                                        raise retry_err
                         else:
                             job.add_log("⚠ No evaluations to save")
                     except Exception as save_err:
@@ -4554,7 +4617,7 @@ async def restart_auto_evaluation(
                         logger.exception("Failed to save restart-auto-evaluation results")
 
                 job.result = {
-                    'success': len(failed) == 0,
+                    'success': len(failed) == 0 and save_succeeded,
                     'total_judges': len(rubric_questions),
                     'successful_judges': len(successful),
                     'failed_judges': len(failed),
@@ -4563,15 +4626,21 @@ async def restart_auto_evaluation(
                 }
                 job.save()
 
-                if len(failed) == 0:
+                if len(failed) == 0 and save_succeeded:
                     job.set_status("completed")
                     job.add_log(f"\n✓ All {len(rubric_questions)} judges completed successfully!")
                     job.add_log(f"Total evaluations: {total_evaluated}")
-                else:
+                elif len(successful) > 0 and save_succeeded:
                     job.set_status("completed")  # Partial success
                     job.add_log(f"\n⚠ {len(successful)}/{len(rubric_questions)} judges succeeded")
                     for f in failed:
                         job.add_log(f"  Failed: {f['judge_name']}")
+                elif len(successful) > 0 and not save_succeeded:
+                    job.set_status("failed")
+                    job.add_log(f"\n✗ Evaluation succeeded but database save failed. Click 'Run Align()' to retry.")
+                else:
+                    job.set_status("failed")
+                    job.add_log(f"\n✗ All judges failed")
 
             finally:
                 thread_db.close()

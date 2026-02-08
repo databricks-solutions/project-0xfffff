@@ -902,11 +902,21 @@ export function AnnotationDemo() {
     const nextIndex = currentTraceIndex + 1;
     
     setHasNavigatedManually(true);
+    // Pre-populate form with saved state to avoid flash, or clear for new traces
+    const nextTraceId = traceData[nextIndex]?.id;
+    const nextSavedState = nextTraceId ? savedStateRef.current.get(nextTraceId) : null;
+    if (nextSavedState) {
+      setCurrentRatings(nextSavedState.ratings);
+      setFreeformResponses(nextSavedState.freeformResponses);
+      setComment(nextSavedState.comment);
+    } else {
+      setCurrentRatings({});
+      setFreeformResponses({});
+      setComment('');
+    }
+    // Update ref so the useEffect doesn't re-trigger and cause a double render
+    previousTraceId.current = nextTraceId || null;
     setCurrentTraceIndex(nextIndex);
-    // Reset form for next trace
-    setCurrentRatings({});
-    setFreeformResponses({});
-    setComment('');
     
     // Clear navigating flag immediately after state update
     setIsNavigating(false);
@@ -963,8 +973,22 @@ export function AnnotationDemo() {
     const prevIndex = currentTraceIndex - 1;
     
     setHasNavigatedManually(true);
+    // Pre-populate form with saved state to avoid flash, or clear for new traces
+    const prevTraceId = traceData[prevIndex]?.id;
+    const prevSavedState = prevTraceId ? savedStateRef.current.get(prevTraceId) : null;
+    if (prevSavedState) {
+      setCurrentRatings(prevSavedState.ratings);
+      setFreeformResponses(prevSavedState.freeformResponses);
+      setComment(prevSavedState.comment);
+    } else {
+      setCurrentRatings({});
+      setFreeformResponses({});
+      setComment('');
+    }
+    // Update ref so the useEffect doesn't re-trigger and cause a double render
+    previousTraceId.current = prevTraceId || null;
     setCurrentTraceIndex(prevIndex);
-    
+
     // Clear navigating flag immediately after state update
     setIsNavigating(false);
     
@@ -1108,10 +1132,10 @@ export function AnnotationDemo() {
   }
 
   return (
-    <div className="p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className="p-6 h-full flex flex-col">
+      <div className="max-w-7xl mx-auto w-full flex flex-col flex-1 min-h-0 gap-6">
         {/* Compact Progress Bar */}
-        <div className="flex items-center gap-4 px-1">
+        <div className="flex items-center gap-4 px-1 flex-shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-sm font-medium text-gray-700 whitespace-nowrap">
               Trace {currentTraceIndex + 1}/{traceData.length}
@@ -1144,14 +1168,14 @@ export function AnnotationDemo() {
 
 
         {/* Side-by-side: Trace (left 60%) + Scoring (right 40%) */}
-        <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-6">
-          {/* Left Column: Trace */}
-          <div className="lg:sticky lg:top-6 lg:self-start">
+        <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-6 flex-1 min-h-0">
+          {/* Left Column: Trace - independently scrollable */}
+          <div className="overflow-y-auto pr-2 scrollbar-thin">
             <TraceViewer trace={currentTrace} />
           </div>
 
-          {/* Right Column: Scoring + Navigation + Notes */}
-          <div className="space-y-4">
+          {/* Right Column: Scoring + Navigation + Notes - independently scrollable */}
+          <div className="overflow-y-auto space-y-4 pr-1 scrollbar-thin">
         {/* Rubric Questions */}
         <Card>
           <CardHeader className="px-4 py-3">
@@ -1296,38 +1320,38 @@ export function AnnotationDemo() {
                   
                   {/* Binary (Pass/Fail) */}
                   {question.judgeType === 'binary' && (
-                    <div className="flex justify-center gap-4">
+                    <div className="flex justify-center gap-14">
                       <div
-                        className={`flex flex-col items-center gap-1 ${canAnnotate && !isSaving ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}
+                        className={`flex flex-col items-center gap-1.5 ${canAnnotate && !isSaving ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}
                         onClick={() => canAnnotate && !isSaving && setCurrentRatings(prev => ({ ...prev, [question.id]: 1 }))}
                         role="button"
                         tabIndex={canAnnotate && !isSaving ? 0 : -1}
                         onKeyDown={(e) => e.key === 'Enter' && canAnnotate && !isSaving && setCurrentRatings(prev => ({ ...prev, [question.id]: 1 }))}
                       >
-                        <div className={`w-6 h-6 rounded-full border flex items-center justify-center transition-all duration-150 ${
+                        <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all duration-150 ${
                           currentRatings[question.id] === 1
                             ? 'border-emerald-500 bg-emerald-100 ring-1 ring-emerald-300'
                             : 'border-gray-300 bg-gray-50 hover:border-emerald-400 hover:bg-emerald-50'
                         }`}>
-                          <CheckCircle className={`w-3 h-3 ${currentRatings[question.id] === 1 ? 'text-emerald-600' : 'text-gray-400'}`} />
+                          <CheckCircle className={`w-4 h-4 ${currentRatings[question.id] === 1 ? 'text-emerald-600' : 'text-gray-400'}`} />
                         </div>
-                        <span className={`text-[9px] font-medium ${currentRatings[question.id] === 1 ? 'text-emerald-700' : 'text-gray-500'}`}>Pass</span>
+                        <span className={`text-[10px] font-medium ${currentRatings[question.id] === 1 ? 'text-emerald-700' : 'text-gray-500'}`}>Pass</span>
                       </div>
                       <div
-                        className={`flex flex-col items-center gap-1 ${canAnnotate && !isSaving ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}
+                        className={`flex flex-col items-center gap-1.5 ${canAnnotate && !isSaving ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}
                         onClick={() => canAnnotate && !isSaving && setCurrentRatings(prev => ({ ...prev, [question.id]: 0 }))}
                         role="button"
                         tabIndex={canAnnotate && !isSaving ? 0 : -1}
                         onKeyDown={(e) => e.key === 'Enter' && canAnnotate && !isSaving && setCurrentRatings(prev => ({ ...prev, [question.id]: 0 }))}
                       >
-                        <div className={`w-6 h-6 rounded-full border flex items-center justify-center transition-all duration-150 ${
+                        <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all duration-150 ${
                           currentRatings[question.id] === 0
                             ? 'border-rose-500 bg-rose-100 ring-1 ring-rose-300'
                             : 'border-gray-300 bg-gray-50 hover:border-rose-400 hover:bg-rose-50'
                         }`}>
-                          <AlertCircle className={`w-3 h-3 ${currentRatings[question.id] === 0 ? 'text-rose-600' : 'text-gray-400'}`} />
+                          <AlertCircle className={`w-4 h-4 ${currentRatings[question.id] === 0 ? 'text-rose-600' : 'text-gray-400'}`} />
                         </div>
-                        <span className={`text-[9px] font-medium ${currentRatings[question.id] === 0 ? 'text-rose-700' : 'text-gray-500'}`}>Fail</span>
+                        <span className={`text-[10px] font-medium ${currentRatings[question.id] === 0 ? 'text-rose-700' : 'text-gray-500'}`}>Fail</span>
                       </div>
                     </div>
                   )}
@@ -1395,31 +1419,29 @@ export function AnnotationDemo() {
         <div className="flex items-center justify-between">
           <Button
             variant="outline"
-            size="sm"
             onClick={prevTrace}
             disabled={currentTraceIndex === 0 || isNavigating}
-            className="flex items-center gap-1 h-7 text-xs"
+            className="flex items-center gap-1.5"
           >
-            <ChevronLeft className="h-3 w-3" />
-            Prev
+            <ChevronLeft className="h-4 w-4" />
+            Previous
           </Button>
 
           <Button
-            size="sm"
             onClick={nextTrace}
             disabled={isNextDisabled}
-            className="flex items-center gap-1 h-7 text-xs"
+            className={`flex items-center gap-1.5 ${currentTraceIndex === traceData.length - 1 ? 'bg-purple-700 hover:bg-purple-800' : ''}`}
             data-testid={currentTraceIndex === traceData.length - 1 ? "complete-annotation-button" : "next-trace-button"}
           >
             {currentTraceIndex === traceData.length - 1 ? (
               <>
-                <Send className="h-3 w-3" />
+                <Send className="h-4 w-4" />
                 Complete
               </>
             ) : (
               <>
                 Next
-                <ChevronRight className="h-3 w-3" />
+                <ChevronRight className="h-4 w-4" />
               </>
             )}
           </Button>
