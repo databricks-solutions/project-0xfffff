@@ -7,13 +7,12 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { TraceViewer, TraceData } from '@/components/TraceViewer';
-import { TraceDataViewer } from '@/components/TraceDataViewer';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { MessageCircle, ChevronLeft, ChevronRight, Send, AlertCircle, CheckCircle, Settings, Table, RefreshCw, NotebookPen, Trash2 } from 'lucide-react';
+import { MessageCircle, ChevronLeft, ChevronRight, Send, AlertCircle, CheckCircle, Settings, RefreshCw, NotebookPen, Trash2, Lightbulb, Clock, User } from 'lucide-react';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useWorkflowContext } from '@/context/WorkflowContext';
 import { toast } from 'sonner';
@@ -83,7 +82,6 @@ export function TraceViewerDemo() {
   const [submittedFindings, setSubmittedFindings] = useState<Set<string>>(new Set());
   const [isCompletingDiscovery, setIsCompletingDiscovery] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [showTableView, setShowTableView] = useState(false);
   const previousTraceId = useRef<string | null>(null);
   const hasAutoNavigated = useRef(false);
   const previousTraceCount = useRef<number>(0);
@@ -375,9 +373,10 @@ export function TraceViewerDemo() {
         setFailedSaveCount(failedSaveQueueRef.current.size);
         
         // Notify user once when save fails (only for new failures)
-        toast.warning('Save in progress... will retry automatically', {
+        toast.warning('Retrying save', {
+          description: 'Your finding will be saved automatically.',
           duration: 3000,
-          id: `save-retry-${traceId}` // Prevent duplicate toasts
+          id: `save-retry-${traceId}`
         });
       } else {
         // Update existing entry with latest data
@@ -393,7 +392,7 @@ export function TraceViewerDemo() {
       
       // Only show error toast for user-initiated saves (not background)
       if (!isBackground) {
-        toast.error('Failed to save. Will retry automatically.');
+        toast.error('Save failed', { description: 'Will retry automatically.' });
       }
       return false;
     } finally {
@@ -490,7 +489,7 @@ export function TraceViewerDemo() {
   const retryAllFailedSaves = async () => {
     if (failedSaveQueueRef.current.size === 0) return;
     
-    toast.info(`Retrying ${failedSaveQueueRef.current.size} unsaved findings...`);
+    toast.info('Retrying saves', { description: `${failedSaveQueueRef.current.size} unsaved finding${failedSaveQueueRef.current.size > 1 ? 's' : ''} queued.` });
     
     const entries = Array.from(failedSaveQueueRef.current.entries());
     let successCount = 0;
@@ -518,10 +517,10 @@ export function TraceViewerDemo() {
     setFailedSaveCount(failedSaveQueueRef.current.size);
     
     if (successCount > 0) {
-      toast.success(`Successfully saved ${successCount} findings`);
+      toast.success('Findings saved', { description: `${successCount} finding${successCount > 1 ? 's' : ''} saved successfully.` });
     }
     if (failedSaveQueueRef.current.size > 0) {
-      toast.error(`${failedSaveQueueRef.current.size} findings still pending`);
+      toast.error('Some saves pending', { description: `${failedSaveQueueRef.current.size} finding${failedSaveQueueRef.current.size > 1 ? 's' : ''} still need to be saved.` });
     }
   };
   
@@ -597,10 +596,10 @@ export function TraceViewerDemo() {
         throw new Error('Failed to mark discovery complete');
       }
       
-      toast.success('Discovery phase completed! You can now wait for the facilitator to move to the next phase.');
+      toast.success('Discovery complete', { description: 'Waiting for the facilitator to advance to the next phase.' });
     } catch (error) {
-      
-      toast.error('Failed to complete discovery. Please try again.');
+
+      toast.error('Could not complete discovery', { description: 'Please try again.' });
     } finally {
       setIsCompletingDiscovery(false);
     }
@@ -720,7 +719,7 @@ export function TraceViewerDemo() {
                   window.location.reload();
                 } catch (error) {
                   
-                  toast.error('Failed to start discovery phase. Please try again.');
+                  toast.error('Could not start discovery', { description: 'Please try again.' });
                 }
               }}
               className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white py-3 rounded-xl font-medium"
@@ -815,94 +814,125 @@ export function TraceViewerDemo() {
         <div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2" data-testid="discovery-phase-title">Discovery Phase</h2>
           <p className="text-gray-600 mb-4">Review LLM responses and share your insights</p>
-          
-          {/* Progress Bar */}
-          <div className="mb-6">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-sm text-gray-600">Progress</span>
-              <div className="flex items-center gap-3">
-                {failedSaveCount > 0 && (
-                  <button 
-                    onClick={retryAllFailedSaves}
-                    className="flex items-center gap-1 text-sm text-amber-600 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded cursor-pointer transition-colors"
-                    title="Click to retry saving"
-                  >
-                    <RefreshCw className="h-3 w-3 animate-spin" />
-                    {failedSaveCount} pending save{failedSaveCount > 1 ? 's' : ''} - click to retry
-                  </button>
-                )}
-                <span className="text-sm text-gray-600">
-                  {submittedFindings.size} of {traceData.length} complete
-                  {isDiscoveryComplete && (
-                    <span className="ml-2 text-green-600 font-medium">✓ All traces reviewed!</span>
+
+          {/* Progress Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            {/* Completion Progress */}
+            <Card className={`border-l-4 ${isDiscoveryComplete ? 'border-green-500' : 'border-blue-500'}`}>
+              <CardContent className="py-4">
+                <div className="flex items-center gap-3">
+                  {isDiscoveryComplete ? (
+                    <CheckCircle className="h-8 w-8 text-green-600" />
+                  ) : (
+                    <Clock className="h-8 w-8 text-blue-600" />
                   )}
-                </span>
-              </div>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div
-                className={`h-2 rounded-full transition-all duration-300 ${
-                  isDiscoveryComplete ? 'bg-green-500' : 'bg-blue-500'
-                }`}
-                style={{ width: `${(submittedFindings.size / traceData.length) * 100}%` }}
-              />
-            </div>
-          </div>
-          
-          {/* Current Trace Info */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Badge variant="outline" data-testid="trace-number">
-                Trace {currentTraceIndex + 1} of {traceData.length}
-              </Badge>
-            </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-gray-600 mb-1">
+                      {isDiscoveryComplete ? 'Complete' : 'In Progress'}
+                    </div>
+                    <Badge variant="outline" className={
+                      isDiscoveryComplete
+                        ? 'bg-green-50 text-green-700 border-green-200'
+                        : 'bg-blue-50 text-blue-700 border-blue-200'
+                    }>
+                      {submittedFindings.size}/{traceData.length} Complete
+                    </Badge>
+                    <div className="w-full bg-gray-200 rounded-full h-1.5 mt-2">
+                      <div
+                        className={`h-1.5 rounded-full transition-all duration-300 ${
+                          isDiscoveryComplete ? 'bg-green-500' : 'bg-blue-500'
+                        }`}
+                        style={{ width: `${(submittedFindings.size / traceData.length) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Current Trace */}
+            <Card className={`border-l-4 ${submittedFindings.has(currentTrace.id) ? 'border-green-500' : 'border-gray-300'}`}>
+              <CardContent className="py-4">
+                <div className="flex items-center gap-3">
+                  {submittedFindings.has(currentTrace.id) ? (
+                    <CheckCircle className="h-8 w-8 text-green-600" />
+                  ) : (
+                    <User className="h-8 w-8 text-gray-400" />
+                  )}
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-gray-600 mb-1">Current Trace</div>
+                    <Badge variant="outline" data-testid="trace-number" className={
+                      submittedFindings.has(currentTrace.id)
+                        ? 'bg-green-50 text-green-700 border-green-200'
+                        : 'bg-gray-50 text-gray-700 border-gray-200'
+                    }>
+                      {currentTraceIndex + 1} of {traceData.length}
+                    </Badge>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Save Status */}
+            {failedSaveCount > 0 ? (
+              <Card className="border-l-4 border-amber-500">
+                <CardContent className="py-4">
+                  <div className="flex items-center gap-3">
+                    <AlertCircle className="h-8 w-8 text-amber-600" />
+                    <div className="flex-1">
+                      <div className="text-sm font-medium text-gray-600 mb-1">Pending Saves</div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={retryAllFailedSaves}
+                        className="text-amber-600 border-amber-300 hover:bg-amber-50"
+                      >
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        Retry {failedSaveCount} Save{failedSaveCount > 1 ? 's' : ''}
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="border-l-4 border-green-500">
+                <CardContent className="py-4">
+                  <div className="flex items-center gap-3">
+                    <CheckCircle className="h-8 w-8 text-green-600" />
+                    <div className="flex-1">
+                      <div className="text-sm font-medium text-gray-600 mb-1">All Saved</div>
+                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                        No Pending Saves
+                      </Badge>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
         </div>
 
         {/* Current Trace Display */}
         <TraceViewer trace={currentTrace} />
-        
-        {/* Trace Data Table View Toggle */}
-        <Card className="mt-4">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-lg">Trace Data Analysis</CardTitle>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowTableView(!showTableView)}
-                className="flex items-center gap-2"
-              >
-                <Table className="h-4 w-4" />
-                {showTableView ? 'Hide' : 'Show'} Data Table
-              </Button>
-            </div>
-          </CardHeader>
-          {showTableView && (
-            <CardContent>
-              <TraceDataViewer 
-                trace={currentTrace}
-                showContext={false}
-                className="border-0 shadow-none"
-              />
-            </CardContent>
-          )}
-        </Card>
 
         {/* Discovery Questions */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Discovery Questions</CardTitle>
-            {!canCreateFindings && (
-              <p className="text-sm text-red-600 mt-2">
-                <AlertCircle className="h-4 w-4 inline mr-1" />
-                You don't have permission to submit findings. You can view the traces but cannot contribute insights.
-              </p>
-            )}
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-3">
-              <Label htmlFor="question1" className="text-sm font-medium">
+        <Card className="border-l-4 border-blue-500">
+          <CardContent className="p-4 space-y-4">
+            <div>
+              <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2 mb-1">
+                <Lightbulb className="w-4 h-4 text-blue-600" />
+                Discovery Questions
+              </h3>
+              {!canCreateFindings && (
+                <p className="text-xs text-red-600 flex items-center gap-1.5 mt-2">
+                  <AlertCircle className="h-3.5 w-3.5" />
+                  You don't have permission to submit findings. You can view traces but cannot contribute insights.
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="question1" className="text-xs font-medium text-gray-600">
                 What makes this response effective or ineffective?
               </Label>
               <Textarea
@@ -915,8 +945,8 @@ export function TraceViewerDemo() {
               />
             </div>
 
-            <div className="space-y-3">
-              <Label htmlFor="question2" className="text-sm font-medium">
+            <div className="space-y-2">
+              <Label htmlFor="question2" className="text-xs font-medium text-gray-600">
                 If this response was good, what would have made it bad? If bad, what would have made it good?
               </Label>
               <Textarea
@@ -932,23 +962,83 @@ export function TraceViewerDemo() {
           </CardContent>
         </Card>
 
+        {/* Navigation */}
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <Button
+                variant="outline"
+                onClick={prevTrace}
+                disabled={currentTraceIndex === 0}
+                className="flex items-center gap-2"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Previous
+              </Button>
+
+
+              <Button
+                onClick={async () => {
+                  // On last trace, save current content then show completion state
+                  if (currentTraceIndex === traceData.length - 1 && currentTrace) {
+                    const q1 = question1Response.trim();
+                    const q2 = question2Response.trim();
+                    if (q1 || q2) {
+                      setIsSaving(true);
+                      const success = await saveFinding(q1, q2, currentTrace.id, false);
+                      setIsSaving(false);
+                      if (success) {
+                        toast.success('Response saved', { description: 'Your finding has been recorded.' });
+                      }
+                    }
+                  } else {
+                    nextTrace();
+                  }
+                }}
+                disabled={
+                  isSaving ||
+                  !canCreateFindings
+                }
+                className="flex items-center gap-2"
+              >
+                {isSaving ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Saving...
+                  </>
+                ) : currentTraceIndex === traceData.length - 1 ? (
+                  <>
+                    <Send className="h-4 w-4" />
+                    Complete
+                  </>
+                ) : (
+                  <>
+                    <ChevronRight className="h-4 w-4" />
+                    Next
+                  </>
+                )}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Participant Notepad - only shown when facilitator enables it */}
-        {notesEnabled && <Card className="border-purple-200">
-          <CardHeader className="bg-gradient-to-r from-purple-50 to-indigo-50">
-            <CardTitle className="flex items-center gap-2 text-purple-900">
-              <NotebookPen className="h-5 w-5 text-purple-600" />
-              My Notes
+        {notesEnabled && <Card className="border-l-4 border-purple-500">
+          <CardContent className="p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+                <NotebookPen className="w-4 h-4 text-purple-600" />
+                My Notes
               {participantNotes && participantNotes.length > 0 && (
-                <Badge variant="secondary" className="bg-purple-100 text-purple-700">
+                <Badge variant="secondary" className="bg-purple-50 text-purple-700 border border-purple-200 text-xs">
                   {participantNotes.length}
                 </Badge>
               )}
-            </CardTitle>
-            <p className="text-sm text-purple-700 mt-1">
+            </h3>
+            <p className="text-xs text-gray-500 mt-1">
               Jot down insights or observations. These notes are shared with the facilitator to help build the evaluation rubric.
             </p>
-          </CardHeader>
-          <CardContent className="space-y-4 pt-4">
+          </div>
             {/* Add note input */}
             <div className="flex gap-2">
               <Textarea
@@ -971,9 +1061,9 @@ export function TraceViewerDemo() {
                     phase: 'discovery',
                   });
                   setNoteContent('');
-                  toast.success('Note saved!');
+                  toast.success('Note saved', { description: 'Your observation has been recorded.' });
                 } catch (error) {
-                  toast.error('Failed to save note');
+                  toast.error('Could not save note', { description: 'Please try again.' });
                 }
               }}
               disabled={!noteContent.trim() || !canCreateFindings || submitNote.isPending}
@@ -1025,7 +1115,7 @@ export function TraceViewerDemo() {
                         try {
                           await deleteNote.mutateAsync(note.id);
                         } catch (error) {
-                          toast.error('Failed to delete note');
+                          toast.error('Could not delete note', { description: 'Please try again.' });
                         }
                       }}
                       className="text-red-400 hover:text-red-600 h-6 w-6 p-0 flex-shrink-0"
@@ -1038,66 +1128,6 @@ export function TraceViewerDemo() {
             )}
           </CardContent>
         </Card>}
-
-        {/* Navigation */}
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <Button
-                variant="outline"
-                onClick={prevTrace}
-                disabled={currentTraceIndex === 0}
-                className="flex items-center gap-2"
-              >
-                <ChevronLeft className="h-4 w-4" />
-                Previous
-              </Button>
-              
-              
-              <Button
-                onClick={async () => {
-                  // On last trace, save current content then show completion state
-                  if (currentTraceIndex === traceData.length - 1 && currentTrace) {
-                    const q1 = question1Response.trim();
-                    const q2 = question2Response.trim();
-                    if (q1 || q2) {
-                      setIsSaving(true);
-                      const success = await saveFinding(q1, q2, currentTrace.id, false);
-                      setIsSaving(false);
-                      if (success) {
-                        toast.success('Response saved!');
-                      }
-                    }
-                  } else {
-                    nextTrace();
-                  }
-                }}
-                disabled={
-                  isSaving ||
-                  !canCreateFindings
-                }
-                className="flex items-center gap-2"
-              >
-                {isSaving ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Saving...
-                  </>
-                ) : currentTraceIndex === traceData.length - 1 ? (
-                  <>
-                    <Send className="h-4 w-4" />
-                    Complete
-                  </>
-                ) : (
-                  <>
-                    <ChevronRight className="h-4 w-4" />
-                    Next
-                  </>
-                )}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
 
         {/* Discovery Completion */}
         {isDiscoveryComplete && (
