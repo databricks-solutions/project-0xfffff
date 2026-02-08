@@ -1511,16 +1511,21 @@ Think step by step about how well the output addresses the criteria, then provid
                 // Refresh prompts list and select the new aligned version
                 if (status.result.saved_prompt_id) {
                   try {
+                    // Refresh prompts list to show the new aligned version
                     const updatedPrompts = await WorkshopsService.getJudgePromptsWorkshopsWorkshopIdJudgePromptsGet(workshopId);
                     setPrompts(updatedPrompts);
                     setSelectedPromptId(status.result.saved_prompt_id);
-                    
+
                     // Load the aligned prompt text from the database to ensure consistency
                     const alignedPrompt = updatedPrompts.find(p => p.id === status.result.saved_prompt_id);
                     if (alignedPrompt) {
                       setCurrentPrompt(alignedPrompt.prompt_text);
                       setOriginalPromptText(alignedPrompt.prompt_text);
                       setIsModified(false);
+                      // Load metrics from the aligned prompt if available
+                      if (alignedPrompt.performance_metrics) {
+                        setMetrics(alignedPrompt.performance_metrics as JudgePerformanceMetrics);
+                      }
                     }
                     
                     // Re-fetch evaluations from the server — auto-eval ran before alignment
