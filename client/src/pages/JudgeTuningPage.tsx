@@ -142,11 +142,18 @@ export function JudgeTuningPage() {
 
   // Filter prompts to show only the current judge's prompts in the history dropdown
   const judgeSpecificPrompts = useMemo(() => {
-    return prompts.filter(p =>
+    const filtered = prompts.filter(p =>
       p.model_parameters &&
       typeof p.model_parameters === 'object' &&
       p.model_parameters.judge_name === judgeName
     );
+    console.log(`[JudgeTuning] Filtering prompts for judge "${judgeName}":`, {
+      totalPrompts: prompts.length,
+      judgeName,
+      filtered: filtered.length,
+      allJudgeNames: prompts.map(p => p.model_parameters?.judge_name).filter(Boolean),
+    });
+    return filtered;
   }, [prompts, judgeName]);
 
   const logsStorageKey = useMemo(
