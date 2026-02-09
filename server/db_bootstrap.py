@@ -272,11 +272,20 @@ def _run_alembic_stamp_baseline(database_url: str, revision: str = "0001_baselin
 
 
 def _bootstrap_if_missing_sqlite(plan: BootstrapPlan) -> None:
-    """Bootstrap SQLite database if missing."""
-    if Path(plan.db_path).exists():
-        return
+    """Bootstrap SQLite database if missing or empty.
 
-    print(f"📦 DB missing; creating via migrations: {plan.db_path}")
+    SQLite creates the .db file on first connection, so the file can exist
+    with zero tables.  Check for actual user tables, not just file existence.
+    """
+    if Path(plan.db_path).exists():
+        tables = _list_sqlite_tables(plan.db_path)
+        user_tables = [t for t in tables if t and not t.startswith("sqlite_")]
+        if user_tables:
+            return
+        print(f"📦 DB file exists but has no tables; bootstrapping: {plan.db_path}")
+    else:
+        print(f"📦 DB missing; creating via migrations: {plan.db_path}")
+
     _run_alembic_upgrade_head(plan.database_url)
     print("✅ Database created successfully!")
 
