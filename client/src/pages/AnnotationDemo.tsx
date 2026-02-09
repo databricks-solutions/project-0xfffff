@@ -1277,6 +1277,7 @@ export function AnnotationDemo() {
                         return (
                           <div key={value} className="flex flex-col items-center">
                             <div
+                              data-rating={value}
                               className={`${canAnnotate && !isSaving ? "cursor-pointer" : "cursor-not-allowed opacity-50"} mb-1.5`}
                               onClick={(e) => {
                                 e.preventDefault();
@@ -1329,6 +1330,7 @@ export function AnnotationDemo() {
                         className={`flex flex-col items-center gap-1.5 ${canAnnotate && !isSaving ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}
                         onClick={() => canAnnotate && !isSaving && setCurrentRatings(prev => ({ ...prev, [question.id]: 1 }))}
                         role="button"
+                        data-rating="1"
                         tabIndex={canAnnotate && !isSaving ? 0 : -1}
                         onKeyDown={(e) => e.key === 'Enter' && canAnnotate && !isSaving && setCurrentRatings(prev => ({ ...prev, [question.id]: 1 }))}
                       >
@@ -1345,6 +1347,7 @@ export function AnnotationDemo() {
                         className={`flex flex-col items-center gap-1.5 ${canAnnotate && !isSaving ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}
                         onClick={() => canAnnotate && !isSaving && setCurrentRatings(prev => ({ ...prev, [question.id]: 0 }))}
                         role="button"
+                        data-rating="0"
                         tabIndex={canAnnotate && !isSaving ? 0 : -1}
                         onKeyDown={(e) => e.key === 'Enter' && canAnnotate && !isSaving && setCurrentRatings(prev => ({ ...prev, [question.id]: 0 }))}
                       >

@@ -11,7 +11,7 @@
 import { test, expect } from '@playwright/test';
 import { TestScenario } from '../lib';
 
-test.describe('Re-Evaluation UI', () => {
+test.describe('Re-Evaluation UI', { tag: ['@spec:JUDGE_EVALUATION_SPEC']}, () => {
   test('re-evaluation spinner stops after completion', {
     tag: ['@spec:JUDGE_EVALUATION_SPEC'],
   }, async ({ page }) => {
@@ -40,13 +40,13 @@ test.describe('Re-Evaluation UI', () => {
 
     // Navigate to Judge Tuning / Results tab
     const judgeTuningTab = page.getByRole('tab', { name: /Judge Tuning|Results|Evaluation/i });
-    if (await judgeTuningTab.isVisible({ timeout: 3000 }).catch(() => false)) {
+    if (await judgeTuningTab.isVisible({ timeout: 3000 })) {
       await judgeTuningTab.click();
       await page.waitForTimeout(500);
 
       // Look for Re-evaluate button
       const reEvalButton = page.getByRole('button', { name: /Re-evaluate|Re-Evaluate/i });
-      if (await reEvalButton.isVisible({ timeout: 3000 }).catch(() => false)) {
+      if (await reEvalButton.isVisible({ timeout: 3000 })) {
         await reEvalButton.click();
 
         // A spinner/loading indicator should appear while re-evaluation runs
@@ -105,7 +105,7 @@ test.describe('Re-Evaluation UI', () => {
 
     // Navigate to Judge Tuning / Results tab
     const judgeTuningTab = page.getByRole('tab', { name: /Judge Tuning|Results|Evaluation/i });
-    if (await judgeTuningTab.isVisible({ timeout: 3000 }).catch(() => false)) {
+    if (await judgeTuningTab.isVisible({ timeout: 3000 })) {
       await judgeTuningTab.click();
       await page.waitForTimeout(1000);
 
@@ -124,7 +124,7 @@ test.describe('Re-Evaluation UI', () => {
       // At least one results section should be present on the Judge Tuning page
       let foundScoreUI = false;
       for (const indicator of scoreIndicators) {
-        if (await indicator.first().isVisible({ timeout: 1000 }).catch(() => false)) {
+        if (await indicator.first().isVisible({ timeout: 1000 })) {
           foundScoreUI = true;
           break;
         }

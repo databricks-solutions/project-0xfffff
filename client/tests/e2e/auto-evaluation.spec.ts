@@ -39,7 +39,7 @@ test.describe('Auto-Evaluation UI', () => {
     // Navigate to annotation phase setup
     // The "Begin Annotation" button should be visible in rubric phase
     const beginAnnotationButton = page.getByRole('button', { name: /Begin Annotation|Start Annotation/i });
-    if (await beginAnnotationButton.isVisible({ timeout: 5000 }).catch(() => false)) {
+    if (await beginAnnotationButton.isVisible({ timeout: 5000 })) {
       await beginAnnotationButton.click();
 
       // Wait for the annotation dialog/modal to appear
@@ -60,7 +60,7 @@ test.describe('Auto-Evaluation UI', () => {
         page.locator('.modal')
       );
 
-      if (await dialogContent.isVisible({ timeout: 2000 }).catch(() => false)) {
+      if (await dialogContent.isVisible({ timeout: 2000 })) {
         // Verify dialog has annotation configuration options
         await expect(page.getByText(/traces/i).first()).toBeVisible();
       }
@@ -131,7 +131,7 @@ test.describe('Judge Tuning Page', () => {
 
     // Navigate to Judge Tuning tab if available
     const judgeTuningTab = page.getByRole('tab', { name: /Judge Tuning|Results|Evaluation/i });
-    if (await judgeTuningTab.isVisible({ timeout: 3000 }).catch(() => false)) {
+    if (await judgeTuningTab.isVisible({ timeout: 3000 })) {
       await judgeTuningTab.click();
 
       // Should see some form of results or evaluation UI
@@ -148,7 +148,7 @@ test.describe('Judge Tuning Page', () => {
       // At least one results indicator should be present
       let foundResults = false;
       for (const indicator of resultsIndicators) {
-        if (await indicator.isVisible({ timeout: 1000 }).catch(() => false)) {
+        if (await indicator.isVisible({ timeout: 1000 })) {
           foundResults = true;
           break;
         }
@@ -188,7 +188,7 @@ test.describe('Model Selection', () => {
     // Look for model selection UI
     // This could be on Judge Tuning page or in evaluation controls
     const judgeTuningTab = page.getByRole('tab', { name: /Judge Tuning|Evaluation/i });
-    if (await judgeTuningTab.isVisible({ timeout: 3000 }).catch(() => false)) {
+    if (await judgeTuningTab.isVisible({ timeout: 3000 })) {
       await judgeTuningTab.click();
       await page.waitForTimeout(500);
 
@@ -200,7 +200,7 @@ test.describe('Model Selection', () => {
       );
 
       // Model selection UI might exist
-      if (await modelSelector.first().isVisible({ timeout: 2000 }).catch(() => false)) {
+      if (await modelSelector.first().isVisible({ timeout: 2000 })) {
         // Verify it has options
         expect(await modelSelector.count()).toBeGreaterThanOrEqual(0);
       }
