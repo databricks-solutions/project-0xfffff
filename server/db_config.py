@@ -136,15 +136,19 @@ def get_token_manager() -> OAuthTokenManager:
 
 
 def detect_database_backend() -> DatabaseBackend:
-    """Detect which database backend to use based on DATABASE_ENV.
+    """Detect which database backend to use.
 
-    Returns:
-        DatabaseBackend.POSTGRESQL if DATABASE_ENV is "postgres",
-        DatabaseBackend.SQLITE otherwise (including when DATABASE_ENV is unset).
+    Priority:
+    1. DATABASE_ENV=postgres → PostgreSQL (falls back to SQLite if PG vars missing)
+    2. DATABASE_ENV=sqlite  → SQLite (explicit)
+    3. DATABASE_ENV unset   → auto-detect: use PostgreSQL if PGHOST/PGDATABASE/PGUSER
+                              are all present (e.g. injected by Databricks Apps runtime),
+                              otherwise SQLite
     """
-    database_env = os.getenv("DATABASE_ENV", "sqlite").lower()
+    database_env = os.getenv("DATABASE_ENV")
 
-    if database_env == "postgres":
+    if database_env is not None and database_env.lower() == "postgres":
+        # Explicit postgres requested
         lakebase_config = LakebaseConfig.from_env()
         if lakebase_config is not None:
             logger.info(
@@ -152,11 +156,30 @@ def detect_database_backend() -> DatabaseBackend:
                 f"database={lakebase_config.database}, "
                 f"app_name={lakebase_config.app_name}"
             )
-        else:
-            logger.info("DATABASE_ENV=postgres (PG connection vars will be read at engine creation)")
+            return DatabaseBackend.POSTGRESQL
+
+        missing = [v for v in ("PGHOST", "PGDATABASE", "PGUSER") if not os.getenv(v)]
+        logger.warning(
+            "DATABASE_ENV=postgres but required PG vars missing: %s. "
+            "Falling back to SQLite.",
+            ", ".join(missing),
+        )
+        return DatabaseBackend.SQLITE
+
+    if database_env is not None and database_env.lower() == "sqlite":
+        logger.info("DATABASE_ENV=sqlite, using SQLite")
+        return DatabaseBackend.SQLITE
+
+    # DATABASE_ENV not set — auto-detect from PG connection vars
+    lakebase_config = LakebaseConfig.from_env()
+    if lakebase_config is not None:
+        logger.info(
+            f"Auto-detected PostgreSQL from PG vars: host={lakebase_config.host}, "
+            f"database={lakebase_config.database}"
+        )
         return DatabaseBackend.POSTGRESQL
 
-    logger.info(f"DATABASE_ENV={database_env}, using SQLite")
+    logger.info("No DATABASE_ENV set and no PG vars found, using SQLite")
     return DatabaseBackend.SQLITE
 
 

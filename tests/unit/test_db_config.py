@@ -182,22 +182,43 @@ class TestOAuthTokenManager:
 class TestDetectDatabaseBackend:
     """Tests for DATABASE_ENV-based backend detection."""
 
-    def test_returns_sqlite_when_database_env_unset(self, monkeypatch):
+    def test_returns_sqlite_when_database_env_unset_and_no_pg_vars(self, monkeypatch):
         monkeypatch.delenv("DATABASE_ENV", raising=False)
+        monkeypatch.delenv("PGHOST", raising=False)
+        monkeypatch.delenv("PGDATABASE", raising=False)
+        monkeypatch.delenv("PGUSER", raising=False)
         assert detect_database_backend() == DatabaseBackend.SQLITE
+
+    def test_auto_detects_postgresql_from_pg_vars(self, monkeypatch):
+        monkeypatch.delenv("DATABASE_ENV", raising=False)
+        monkeypatch.setenv("PGHOST", "db.example.com")
+        monkeypatch.setenv("PGDATABASE", "mydb")
+        monkeypatch.setenv("PGUSER", "myuser")
+        assert detect_database_backend() == DatabaseBackend.POSTGRESQL
 
     def test_returns_sqlite_when_database_env_is_sqlite(self, monkeypatch):
         monkeypatch.setenv("DATABASE_ENV", "sqlite")
         assert detect_database_backend() == DatabaseBackend.SQLITE
 
-    def test_returns_postgresql_when_database_env_is_postgres(self, monkeypatch):
+    def test_returns_postgresql_when_database_env_and_pg_vars_set(self, monkeypatch):
         monkeypatch.setenv("DATABASE_ENV", "postgres")
-        # PG vars not required for detection, only for engine creation
-        monkeypatch.delenv("PGHOST", raising=False)
+        monkeypatch.setenv("PGHOST", "db.example.com")
+        monkeypatch.setenv("PGDATABASE", "mydb")
+        monkeypatch.setenv("PGUSER", "myuser")
         assert detect_database_backend() == DatabaseBackend.POSTGRESQL
+
+    def test_falls_back_to_sqlite_when_pg_vars_missing(self, monkeypatch):
+        monkeypatch.setenv("DATABASE_ENV", "postgres")
+        monkeypatch.delenv("PGHOST", raising=False)
+        monkeypatch.delenv("PGDATABASE", raising=False)
+        monkeypatch.delenv("PGUSER", raising=False)
+        assert detect_database_backend() == DatabaseBackend.SQLITE
 
     def test_returns_postgresql_case_insensitive(self, monkeypatch):
         monkeypatch.setenv("DATABASE_ENV", "Postgres")
+        monkeypatch.setenv("PGHOST", "db.example.com")
+        monkeypatch.setenv("PGDATABASE", "mydb")
+        monkeypatch.setenv("PGUSER", "myuser")
         assert detect_database_backend() == DatabaseBackend.POSTGRESQL
 
 
@@ -210,12 +231,18 @@ class TestGetDatabaseUrl:
     def test_sqlite_default_url(self, monkeypatch):
         monkeypatch.delenv("DATABASE_ENV", raising=False)
         monkeypatch.delenv("DATABASE_URL", raising=False)
+        monkeypatch.delenv("PGHOST", raising=False)
+        monkeypatch.delenv("PGDATABASE", raising=False)
+        monkeypatch.delenv("PGUSER", raising=False)
 
         url = get_database_url()
         assert url == "sqlite:///./workshop.db"
 
     def test_sqlite_custom_url(self, monkeypatch):
         monkeypatch.delenv("DATABASE_ENV", raising=False)
+        monkeypatch.delenv("PGHOST", raising=False)
+        monkeypatch.delenv("PGDATABASE", raising=False)
+        monkeypatch.delenv("PGUSER", raising=False)
         monkeypatch.setenv("DATABASE_URL", "sqlite:///./custom.db")
 
         url = get_database_url()
@@ -252,12 +279,17 @@ class TestGetSchemaName:
 
     def test_returns_none_for_sqlite(self, monkeypatch):
         monkeypatch.delenv("DATABASE_ENV", raising=False)
+        monkeypatch.delenv("PGHOST", raising=False)
+        monkeypatch.delenv("PGDATABASE", raising=False)
+        monkeypatch.delenv("PGUSER", raising=False)
         assert get_schema_name() is None
 
     def test_returns_schema_for_postgresql(self, monkeypatch):
         monkeypatch.setenv("DATABASE_ENV", "postgres")
-        monkeypatch.setenv("PGAPPNAME", "my-app")
+        monkeypatch.setenv("PGHOST", "db.example.com")
+        monkeypatch.setenv("PGDATABASE", "mydb")
         monkeypatch.setenv("PGUSER", "svc-user")
+        monkeypatch.setenv("PGAPPNAME", "my-app")
 
         schema = get_schema_name()
         assert schema is not None
@@ -265,6 +297,8 @@ class TestGetSchemaName:
 
     def test_schema_name_replaces_hyphens(self, monkeypatch):
         monkeypatch.setenv("DATABASE_ENV", "postgres")
+        monkeypatch.setenv("PGHOST", "db.example.com")
+        monkeypatch.setenv("PGDATABASE", "mydb")
         monkeypatch.setenv("PGUSER", "svc-principal-123")
         monkeypatch.setenv("PGAPPNAME", "human-eval-workshop")
 
