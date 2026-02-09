@@ -113,6 +113,10 @@ class OAuthTokenManager:
 
         return self._token
 
+    def force_refresh(self) -> None:
+        """Force an immediate token refresh on the next get_token() call."""
+        self._last_refresh = 0
+
     @property
     def needs_refresh(self) -> bool:
         """Check if token needs to be refreshed."""

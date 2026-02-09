@@ -433,43 +433,84 @@ class CustomLLMProviderConfigDB(Base):
     workshop = relationship("WorkshopDB", back_populates="custom_llm_provider")
 
 
+# Common PostgreSQL serverless connection error markers
+_PG_CONNECTION_ERRORS = (
+    "connection is closed",
+    "server closed the connection unexpectedly",
+    "terminating connection",
+    "connection reset",
+    "ssl connection has been closed unexpectedly",
+    "could not connect to server",
+    "connection refused",
+    "connection timed out",
+    "database is locked",  # SQLite
+)
+
+
+def _is_connection_error(exc: Exception) -> bool:
+    """Check if an exception is a transient connection error."""
+    from sqlalchemy.exc import DisconnectionError, OperationalError
+
+    if isinstance(exc, (DisconnectionError, OperationalError)):
+        return True
+    msg = str(exc).lower()
+    return any(marker in msg for marker in _PG_CONNECTION_ERRORS)
+
+
+def _reset_connection_pool() -> None:
+    """Reset the connection pool and force OAuth token refresh.
+
+    Disposes all pooled connections (closing stale ones) and marks the
+    OAuth token for refresh so the next connection gets a fresh token.
+    """
+    engine.dispose()
+    if DATABASE_BACKEND == DatabaseBackend.POSTGRESQL:
+        try:
+            from .db_config import get_token_manager
+            get_token_manager().force_refresh()
+            logger.info("Connection pool reset and OAuth token marked for refresh")
+        except Exception as e:
+            logger.warning("Pool reset OK but token refresh failed: %s", e)
+    else:
+        logger.info("Connection pool reset (SQLite)")
+
+
 def get_db():
     """Get database session with retry logic for serverless connection drops.
 
     Serverless PostgreSQL (e.g. Databricks Lakebase) drops idle connections.
-    When that happens, the first attempt fails with an OperationalError.
-    We catch that, dispose the stale pool, and retry once with a fresh connection.
+    On connection failure, resets the pool (+ OAuth token) and retries up to
+    3 times with exponential backoff (0.5s, 1.0s, 1.5s).
     """
-    from sqlalchemy.exc import OperationalError
+    import time as _time
 
-    max_attempts = 2  # 1 normal + 1 retry after pool reset
+    max_attempts = 3
     for attempt in range(max_attempts):
         db = None
         try:
             db = SessionLocal()
             # Quick connectivity check on PostgreSQL to surface stale connections early
-            if DATABASE_BACKEND == DatabaseBackend.POSTGRESQL and attempt == 0:
+            if DATABASE_BACKEND == DatabaseBackend.POSTGRESQL:
                 from sqlalchemy import text
                 db.execute(text("SELECT 1"))
             yield db
             return  # Success — exit the generator
-        except OperationalError as e:
+        except Exception as e:
             if db:
                 db.rollback()
                 db.close()
                 db = None
-            if attempt < max_attempts - 1:
+            if _is_connection_error(e) and attempt < max_attempts - 1:
+                backoff = 0.5 * (attempt + 1)  # 0.5s, 1.0s
                 logger.warning(
-                    "Database connection failed (attempt %d/%d), resetting pool: %s",
-                    attempt + 1, max_attempts, e,
+                    "Database connection failed (attempt %d/%d), "
+                    "resetting pool and retrying in %.1fs: %s",
+                    attempt + 1, max_attempts, backoff, e,
                 )
-                engine.dispose()  # Throw away all stale pooled connections
+                _reset_connection_pool()
+                _time.sleep(backoff)
                 continue
             raise
-        except Exception as e:
-            if db:
-                db.rollback()
-            raise e
         finally:
             if db:
                 try:
