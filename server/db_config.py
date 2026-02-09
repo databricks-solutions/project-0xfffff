@@ -1,11 +1,11 @@
 """Database configuration with Lakebase (PostgreSQL) and SQLite support.
 
-This module provides automatic database backend detection:
-- If Lakebase environment variables are detected (PGHOST, PGDATABASE, etc.),
-  PostgreSQL is used with OAuth token refresh via Databricks SDK.
-- Otherwise, falls back to SQLite (default behavior).
+This module provides database backend selection via the DATABASE_ENV
+environment variable:
+- DATABASE_ENV=postgres  → PostgreSQL (Lakebase) with OAuth token refresh
+- DATABASE_ENV=sqlite    → SQLite (default when DATABASE_ENV is unset)
 
-Environment variables for Lakebase:
+When using PostgreSQL, these environment variables configure the connection:
 - PGHOST: PostgreSQL host
 - PGDATABASE: Database name
 - PGUSER: Username (typically a UUID for Lakebase)
@@ -113,6 +113,10 @@ class OAuthTokenManager:
 
         return self._token
 
+    def force_refresh(self) -> None:
+        """Force an immediate token refresh on the next get_token() call."""
+        self._last_refresh = 0
+
     @property
     def needs_refresh(self) -> bool:
         """Check if token needs to be refreshed."""
@@ -132,22 +136,27 @@ def get_token_manager() -> OAuthTokenManager:
 
 
 def detect_database_backend() -> DatabaseBackend:
-    """Detect which database backend to use based on environment variables.
+    """Detect which database backend to use based on DATABASE_ENV.
 
     Returns:
-        DatabaseBackend.POSTGRESQL if Lakebase env vars are detected,
-        DatabaseBackend.SQLITE otherwise.
+        DatabaseBackend.POSTGRESQL if DATABASE_ENV is "postgres",
+        DatabaseBackend.SQLITE otherwise (including when DATABASE_ENV is unset).
     """
-    lakebase_config = LakebaseConfig.from_env()
-    if lakebase_config is not None:
-        logger.info(
-            f"Lakebase detected: host={lakebase_config.host}, "
-            f"database={lakebase_config.database}, "
-            f"app_name={lakebase_config.app_name}"
-        )
+    database_env = os.getenv("DATABASE_ENV", "sqlite").lower()
+
+    if database_env == "postgres":
+        lakebase_config = LakebaseConfig.from_env()
+        if lakebase_config is not None:
+            logger.info(
+                f"DATABASE_ENV=postgres: host={lakebase_config.host}, "
+                f"database={lakebase_config.database}, "
+                f"app_name={lakebase_config.app_name}"
+            )
+        else:
+            logger.info("DATABASE_ENV=postgres (PG connection vars will be read at engine creation)")
         return DatabaseBackend.POSTGRESQL
 
-    logger.info("Lakebase not detected, using SQLite")
+    logger.info(f"DATABASE_ENV={database_env}, using SQLite")
     return DatabaseBackend.SQLITE
 
 
@@ -245,10 +254,10 @@ def create_engine_for_backend(backend: DatabaseBackend) -> "Engine":
 
     engine = create_engine(
         database_url,
-        pool_size=10,
-        max_overflow=20,
+        pool_size=5,
+        max_overflow=10,
         pool_timeout=30,
-        pool_recycle=1800,  # Recycle connections every 30 min (before token expires)
+        pool_recycle=300,  # Recycle every 5 min — serverless PG drops idle connections
         pool_pre_ping=True,
         echo=False,
         # Set search_path at the PostgreSQL protocol level during connection

@@ -30,36 +30,42 @@ export const ProductionLogin: React.FC = () => {
     }
   }, [setWorkshopId]);
 
-  // Fetch available workshops on mount (only once)
+  // Fetch available workshops on mount with retry for cold-start 503s
   useEffect(() => {
     const fetchWorkshops = async () => {
-      try {
-        // Add cache-busting to ensure fresh data
-        const response = await fetch(`/workshops/?_t=${Date.now()}`, {
-          headers: {
-            'Cache-Control': 'no-cache',
+      const maxRetries = 2;
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          const response = await fetch(`/workshops/?_t=${Date.now()}`, {
+            headers: { 'Cache-Control': 'no-cache' }
+          });
+          if (response.ok) {
+            const data = await response.json();
+            setWorkshops(data);
+            if (data.length === 1) {
+              setSelectedWorkshopId(data[0].id);
+            }
+            if (data.length === 0) {
+              setCreateNewWorkshop(true);
+            }
+            break; // Success
+          } else if (response.status === 503 && attempt < maxRetries) {
+            // Backend waking up — wait and retry
+            await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
+            continue;
+          } else {
+            console.error('[ProductionLogin] Failed to fetch workshops:', response.status);
+            break;
           }
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setWorkshops(data);
-          
-          // If there's only one workshop, auto-select it
-          if (data.length === 1) {
-            setSelectedWorkshopId(data[0].id);
+        } catch (err) {
+          if (attempt < maxRetries) {
+            await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
+            continue;
           }
-          // If no workshops exist, auto-select "Create New" for facilitators
-          if (data.length === 0) {
-            setCreateNewWorkshop(true);
-          }
-        } else {
-          console.error('[ProductionLogin] Failed to fetch workshops:', response.status, response.statusText);
+          console.error('[ProductionLogin] Error fetching workshops:', err);
         }
-      } catch (err) {
-        console.error('[ProductionLogin] Error fetching workshops:', err);
-      } finally {
-        setIsLoadingWorkshops(false);
       }
+      setIsLoadingWorkshops(false);
     };
     fetchWorkshops();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -83,36 +89,47 @@ export const ProductionLogin: React.FC = () => {
       return;
     }
 
-    try {
-      // For participants/SMEs (no password), include workshop_id for access validation
-      const response = await UsersService.loginUsersAuthLoginPost({
-        email: loginData.email,
-        password: loginData.password,
-        workshop_id: !loginData.password ? selectedWorkshopId : undefined
-      });
+    // Retry login up to 2 times on 503 (backend may be waking up from idle)
+    const maxRetries = 2;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        // For participants/SMEs (no password), include workshop_id for access validation
+        const response = await UsersService.loginUsersAuthLoginPost({
+          email: loginData.email,
+          password: loginData.password,
+          workshop_id: !loginData.password ? selectedWorkshopId : undefined
+        });
 
-      // Handle facilitator creating new workshop
-      if (loginData.password && createNewWorkshop) {
-        // Clear workshop ID to go to workshop creation page
-        setWorkshopId(null);
-        localStorage.removeItem('workshop_id');
-        window.history.replaceState({}, '', '/');
-      }
-      // Set workshop ID if selected (for existing workshops)
-      else if (selectedWorkshopId && !response.user.workshop_id) {
-        // Update the workshop context
-        setWorkshopId(selectedWorkshopId);
-        window.history.pushState({}, '', `?workshop=${selectedWorkshopId}`);
-      }
+        // Handle facilitator creating new workshop
+        if (loginData.password && createNewWorkshop) {
+          // Clear workshop ID to go to workshop creation page
+          setWorkshopId(null);
+          localStorage.removeItem('workshop_id');
+          window.history.replaceState({}, '', '/');
+        }
+        // Set workshop ID if selected (for existing workshops)
+        else if (selectedWorkshopId && !response.user.workshop_id) {
+          // Update the workshop context
+          setWorkshopId(selectedWorkshopId);
+          window.history.pushState({}, '', `?workshop=${selectedWorkshopId}`);
+        }
 
-      // Set the user in context
-      await setUser(response.user);
-    } catch (error: any) {
-      const errorDetail = error.body?.detail || error.response?.data?.detail || 'Login failed. Please check your credentials.';
-      setError(errorDetail);
-    } finally {
-      setIsLoading(false);
+        // Set the user in context
+        await setUser(response.user);
+        break; // Success — exit retry loop
+      } catch (error: any) {
+        const status = error.status || error.response?.status;
+        // Retry on 503 (service waking up) unless we've exhausted retries
+        if (status === 503 && attempt < maxRetries) {
+          await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
+          continue;
+        }
+        const errorDetail = error.body?.detail || error.response?.data?.detail || 'Login failed. Please check your credentials.';
+        setError(errorDetail);
+        break;
+      }
     }
+    setIsLoading(false);
   };
 
   return (

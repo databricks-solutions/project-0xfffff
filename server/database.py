@@ -433,23 +433,90 @@ class CustomLLMProviderConfigDB(Base):
     workshop = relationship("WorkshopDB", back_populates="custom_llm_provider")
 
 
+# Common PostgreSQL serverless connection error markers
+_PG_CONNECTION_ERRORS = (
+    "connection is closed",
+    "server closed the connection unexpectedly",
+    "terminating connection",
+    "connection reset",
+    "ssl connection has been closed unexpectedly",
+    "could not connect to server",
+    "connection refused",
+    "connection timed out",
+    "database is locked",  # SQLite
+)
+
+
+def _is_connection_error(exc: Exception) -> bool:
+    """Check if an exception is a transient connection error."""
+    from sqlalchemy.exc import DisconnectionError, OperationalError
+
+    if isinstance(exc, (DisconnectionError, OperationalError)):
+        return True
+    msg = str(exc).lower()
+    return any(marker in msg for marker in _PG_CONNECTION_ERRORS)
+
+
+def _reset_connection_pool() -> None:
+    """Reset the connection pool and force OAuth token refresh.
+
+    Disposes all pooled connections (closing stale ones) and marks the
+    OAuth token for refresh so the next connection gets a fresh token.
+    """
+    engine.dispose()
+    if DATABASE_BACKEND == DatabaseBackend.POSTGRESQL:
+        try:
+            from .db_config import get_token_manager
+            get_token_manager().force_refresh()
+            logger.info("Connection pool reset and OAuth token marked for refresh")
+        except Exception as e:
+            logger.warning("Pool reset OK but token refresh failed: %s", e)
+    else:
+        logger.info("Connection pool reset (SQLite)")
+
+
 def get_db():
-    """Get database session with proper error handling and connection management."""
-    db = None
-    try:
-        db = SessionLocal()
-        yield db
-    except Exception as e:
-        if db:
-            db.rollback()
-        raise e
-    finally:
-        if db:
-            try:
+    """Get database session with retry logic for serverless connection drops.
+
+    Serverless PostgreSQL (e.g. Databricks Lakebase) drops idle connections.
+    On connection failure, resets the pool (+ OAuth token) and retries up to
+    3 times with exponential backoff (0.5s, 1.0s, 1.5s).
+    """
+    import time as _time
+
+    max_attempts = 3
+    for attempt in range(max_attempts):
+        db = None
+        try:
+            db = SessionLocal()
+            # Quick connectivity check on PostgreSQL to surface stale connections early
+            if DATABASE_BACKEND == DatabaseBackend.POSTGRESQL:
+                from sqlalchemy import text
+                db.execute(text("SELECT 1"))
+            yield db
+            return  # Success — exit the generator
+        except Exception as e:
+            if db:
+                db.rollback()
                 db.close()
-            except Exception as e:
-                # Log the error but don't raise it to avoid masking the original error
-                print(f"Warning: Error closing database session: {e}")
+                db = None
+            if _is_connection_error(e) and attempt < max_attempts - 1:
+                backoff = 0.5 * (attempt + 1)  # 0.5s, 1.0s
+                logger.warning(
+                    "Database connection failed (attempt %d/%d), "
+                    "resetting pool and retrying in %.1fs: %s",
+                    attempt + 1, max_attempts, backoff, e,
+                )
+                _reset_connection_pool()
+                _time.sleep(backoff)
+                continue
+            raise
+        finally:
+            if db:
+                try:
+                    db.close()
+                except Exception as e:
+                    logger.warning("Error closing database session: %s", e)
 
 
 def create_tables():
