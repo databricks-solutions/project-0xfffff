@@ -19,18 +19,18 @@ export async function submitAnnotation(
   // Find and click the rating button (1-5 scale)
   // The app typically uses radio buttons or clickable rating elements
   const ratingButton = page.locator(`[data-rating="${rating}"]`);
-  if (await ratingButton.isVisible().catch(() => false)) {
+  if (await ratingButton.isVisible()) {
     await ratingButton.click();
   } else {
     // Try radio group
     const radioGroup = page.getByRole('radiogroup');
-    if (await radioGroup.isVisible().catch(() => false)) {
+    if (await radioGroup.isVisible()) {
       const ratingOption = radioGroup.getByRole('radio').nth(rating - 1);
       await ratingOption.click();
     } else {
       // Try clicking a star rating or similar
       const starButton = page.locator(`button:has-text("${rating}")`).first();
-      if (await starButton.isVisible().catch(() => false)) {
+      if (await starButton.isVisible()) {
         await starButton.click();
       }
     }
@@ -39,12 +39,12 @@ export async function submitAnnotation(
   // Fill comment if provided
   if (comment) {
     const commentField = page.locator('textarea[name="comment"]');
-    if (await commentField.isVisible().catch(() => false)) {
+    if (await commentField.isVisible()) {
       await commentField.fill(comment);
     } else {
       // Try generic comment textarea
       const textarea = page.locator('textarea').first();
-      if (await textarea.isVisible().catch(() => false)) {
+      if (await textarea.isVisible()) {
         await textarea.fill(comment);
       }
     }
@@ -54,7 +54,7 @@ export async function submitAnnotation(
   const submitButton = page.getByRole('button', {
     name: /submit|save|next/i,
   });
-  if (await submitButton.isVisible().catch(() => false)) {
+  if (await submitButton.isVisible()) {
     await submitButton.click();
   }
 }
@@ -120,7 +120,7 @@ export async function getAnnotations(
  */
 export async function goToNextTrace(page: Page): Promise<void> {
   const nextButton = page.getByRole('button', { name: /next/i });
-  if (await nextButton.isVisible().catch(() => false)) {
+  if (await nextButton.isVisible()) {
     await nextButton.click();
   }
 }
@@ -130,7 +130,7 @@ export async function goToNextTrace(page: Page): Promise<void> {
  */
 export async function goToPreviousTrace(page: Page): Promise<void> {
   const prevButton = page.getByRole('button', { name: /prev|back/i });
-  if (await prevButton.isVisible().catch(() => false)) {
+  if (await prevButton.isVisible()) {
     await prevButton.click();
   }
 }

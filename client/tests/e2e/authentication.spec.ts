@@ -10,7 +10,7 @@ import { test, expect } from '@playwright/test';
 import { TestScenario } from '../lib';
 
 test.describe('Authentication Flow', () => {
-  test.use({ tag: ['@spec:AUTHENTICATION_SPEC'] });
+  test.use({ tags: ['@spec:AUTHENTICATION_SPEC'] });
 
   test('loading indicator shown during login on slow network', async ({ page }) => {
     const scenario = await TestScenario.create(page)
@@ -43,7 +43,7 @@ test.describe('Authentication Flow', () => {
     // Fill login form
     await page.locator('#email').fill(scenario.facilitator.email);
     const passwordField = page.locator('#password');
-    if (await passwordField.isVisible().catch(() => false)) {
+    if (await passwordField.isVisible()) {
       await passwordField.fill('facilitator123');
     }
 
@@ -52,7 +52,7 @@ test.describe('Authentication Flow', () => {
 
     // Click Create New if visible
     const createNewButton = page.getByRole('button', { name: /Create New/i });
-    if (await createNewButton.isVisible().catch(() => false)) {
+    if (await createNewButton.isVisible()) {
       await createNewButton.click();
     }
 
@@ -111,14 +111,14 @@ test.describe('Authentication Flow', () => {
     // Fill in credentials
     await page.locator('#email').fill('wrong@example.com');
     const passwordField = page.locator('#password');
-    if (await passwordField.isVisible().catch(() => false)) {
+    if (await passwordField.isVisible()) {
       await passwordField.fill('wrongpassword');
     }
 
     // Wait for workshop options
     await page.waitForTimeout(500);
     const createNewButton = page.getByRole('button', { name: /Create New/i });
-    if (await createNewButton.isVisible().catch(() => false)) {
+    if (await createNewButton.isVisible()) {
       await createNewButton.click();
     }
 
@@ -131,7 +131,7 @@ test.describe('Authentication Flow', () => {
     // Now attempt a new login - error should clear when user starts typing
     await page.locator('#email').clear();
     await page.locator('#email').fill(scenario.facilitator.email);
-    if (await passwordField.isVisible().catch(() => false)) {
+    if (await passwordField.isVisible()) {
       await passwordField.clear();
       await passwordField.fill('facilitator123');
     }

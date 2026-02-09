@@ -26,4 +26,6 @@ workshop.db
 .test-results/
 htmlcov/
 coverage/
+coverage.xml
 .coverage
+.claude/mlflow/

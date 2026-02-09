@@ -17,7 +17,7 @@ test('facilitator can log in and create a workshop', {
   // Wait for workshop options to load, then click "Create New" to create a new workshop
   await page.waitForTimeout(500);
   const createNewButton = page.getByRole('button', { name: /Create New/i });
-  if (await createNewButton.isVisible().catch(() => false)) {
+  if (await createNewButton.isVisible()) {
     await createNewButton.click();
   }
 

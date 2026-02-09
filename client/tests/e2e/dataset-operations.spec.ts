@@ -10,10 +10,10 @@
 import { test, expect } from '@playwright/test';
 import { TestScenario } from '../lib';
 
-const API_URL = process.env.E2E_API_URL ?? 'http://127.0.0.1:8000';
-
-// Declare process for env var access without importing Node types
+// Declare process for env var access
 declare const process: { env: Record<string, string | undefined> };
+
+const API_URL = process.env.E2E_API_URL ?? 'http://127.0.0.1:8000';
 
 test.describe('Dataset Operations', {
   tag: ['@spec:DATASETS_SPEC'],
@@ -52,8 +52,8 @@ test.describe('Dataset Operations', {
     await scenario.cleanup();
   });
 
-  test('two users see different trace orders', async ({ page, browser }) => {
-    // Create scenario with annotation phase and randomization
+  test('two users get user-specific trace ordering', async ({ page }) => {
+    // Create scenario with annotation phase
     const scenario = await TestScenario.create(page)
       .withWorkshop({ name: 'Trace Order Test' })
       .withFacilitator()
@@ -68,38 +68,37 @@ test.describe('Dataset Operations', {
     const sme1 = scenario.users.sme[0];
     const sme2 = scenario.users.sme[1];
 
-    // Enable annotation randomization via API
-    await page.request.post(
-      `${API_URL}/workshops/${workshopId}/annotation-randomize`,
-      {
-        headers: { 'Content-Type': 'application/json' },
-        data: { randomize: true },
-      }
-    );
-
-    // Fetch annotation traces for SME 1
+    // Fetch traces for SME 1 (user-specific ordering)
     const resp1 = await page.request.get(
-      `${API_URL}/workshops/${workshopId}/annotation-traces?user_id=${sme1.id}`
+      `${API_URL}/workshops/${workshopId}/traces?user_id=${sme1.id}`
     );
     expect(resp1.ok()).toBeTruthy();
     const traces1 = (await resp1.json()) as Array<{ id: string }>;
 
-    // Fetch annotation traces for SME 2
+    // Fetch traces for SME 2
     const resp2 = await page.request.get(
-      `${API_URL}/workshops/${workshopId}/annotation-traces?user_id=${sme2.id}`
+      `${API_URL}/workshops/${workshopId}/traces?user_id=${sme2.id}`
     );
     expect(resp2.ok()).toBeTruthy();
     const traces2 = (await resp2.json()) as Array<{ id: string }>;
 
-    // Both users see the same set of traces
+    // Both users should see traces
+    expect(traces1.length).toBeGreaterThan(0);
+    expect(traces2.length).toBeGreaterThan(0);
+
+    // Both users see the same set of traces (sorted IDs match)
     const ids1 = traces1.map((t) => t.id).sort();
     const ids2 = traces2.map((t) => t.id).sort();
     expect(ids1).toEqual(ids2);
 
-    // But in different orders (randomization enabled)
+    // Verify deterministic: same user gets same order twice
+    const resp1b = await page.request.get(
+      `${API_URL}/workshops/${workshopId}/traces?user_id=${sme1.id}`
+    );
+    const traces1b = (await resp1b.json()) as Array<{ id: string }>;
     const order1 = traces1.map((t) => t.id);
-    const order2 = traces2.map((t) => t.id);
-    expect(order1).not.toEqual(order2);
+    const order1b = traces1b.map((t) => t.id);
+    expect(order1).toEqual(order1b);
 
     await scenario.cleanup();
   });

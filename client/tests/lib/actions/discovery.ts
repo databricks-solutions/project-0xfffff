@@ -30,9 +30,9 @@ export async function submitFinding(
   const question1 = page.locator('#question1');
   const question2 = page.locator('#question2');
 
-  if (await question1.isVisible().catch(() => false)) {
+  if (await question1.isVisible()) {
     // Split insight into two parts if both fields exist
-    if (await question2.isVisible().catch(() => false)) {
+    if (await question2.isVisible()) {
       const parts = insight.split('\n\n');
       await question1.fill(parts[0] || insight);
       await question2.fill(parts[1] || 'Additional observations.');
@@ -42,14 +42,14 @@ export async function submitFinding(
   } else {
     // Try generic textarea or input
     const textarea = page.locator('textarea').first();
-    if (await textarea.isVisible().catch(() => false)) {
+    if (await textarea.isVisible()) {
       await textarea.fill(insight);
     }
   }
 
   // Submit the finding
   const submitButton = page.getByRole('button', { name: /^Complete$/i });
-  if (await submitButton.isVisible().catch(() => false)) {
+  if (await submitButton.isVisible()) {
     await submitButton.click();
   }
 }
@@ -91,7 +91,7 @@ export async function completeDiscovery(page: Page): Promise<void> {
   // Look for the "Complete Discovery Phase" button
   const completeButton = page.getByTestId('complete-discovery-phase-button');
 
-  if (await completeButton.isVisible().catch(() => false)) {
+  if (await completeButton.isVisible()) {
     await completeButton.click();
     // Wait for confirmation or phase transition
     await page.waitForTimeout(500);
@@ -100,7 +100,7 @@ export async function completeDiscovery(page: Page): Promise<void> {
     const altButton = page.getByRole('button', {
       name: /complete.*discovery|finish.*discovery/i,
     });
-    if (await altButton.isVisible().catch(() => false)) {
+    if (await altButton.isVisible()) {
       await altButton.click();
     }
   }

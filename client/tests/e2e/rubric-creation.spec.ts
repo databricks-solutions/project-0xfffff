@@ -26,7 +26,7 @@ test('rubric creation: facilitator can advance from discovery and create a rubri
   // Wait for workshop options to load, then click "Create New" to create a new workshop
   await page.waitForTimeout(500);
   const createNewButton = page.getByRole('button', { name: /Create New/i });
-  if (await createNewButton.isVisible().catch(() => false)) {
+  if (await createNewButton.isVisible()) {
     await createNewButton.click();
   }
 
@@ -131,7 +131,7 @@ test('rubric creation: facilitator can advance from discovery and create a rubri
 
   // If we're on the facilitator dashboard (Welcome, Facilitator!), click into the specific workshop
   const welcomeHeading = page.getByRole('heading', { name: /Welcome, Facilitator/i });
-  if (await welcomeHeading.isVisible({ timeout: 3000 }).catch(() => false)) {
+  if (await welcomeHeading.isVisible({ timeout: 3000 })) {
     // The workshop card should have this workshop's ID somewhere in its data or we find by Rubric Creation phase
     // Look for a card with "Rubric Creation" status since we just advanced to rubric
     const rubricWorkshopCard = page.locator('div.cursor-pointer').filter({ hasText: /Rubric Creation/ }).first();
@@ -149,7 +149,7 @@ test('rubric creation: facilitator can advance from discovery and create a rubri
   const createFirstCriterion = page.getByRole('button', {
     name: /Create First Criterion/i,
   });
-  if (await createFirstCriterion.isVisible().catch(() => false)) {
+  if (await createFirstCriterion.isVisible()) {
     await createFirstCriterion.click();
   } else {
     await page.getByRole('button', { name: /Add Criterion/i }).first().click();

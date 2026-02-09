@@ -46,7 +46,7 @@ test.describe('Per-Question Judge Type', () => {
 
     // Go to annotation phase
     const annotationTab = page.getByRole('tab', { name: /Annotation|Rating/i });
-    if (await annotationTab.isVisible({ timeout: 3000 }).catch(() => false)) {
+    if (await annotationTab.isVisible({ timeout: 3000 })) {
       await annotationTab.click();
       await page.waitForTimeout(500);
 
@@ -61,7 +61,7 @@ test.describe('Per-Question Judge Type', () => {
       );
 
       // If rating controls are visible, verify they have 5 options
-      if (await ratingControls.first().isVisible({ timeout: 2000 }).catch(() => false)) {
+      if (await ratingControls.first().isVisible({ timeout: 2000 })) {
         // Look for 5 rating options
         const ratingButtons = page.locator('button').filter({ hasText: /^[1-5]$/ });
         const buttonCount = await ratingButtons.count();
@@ -130,8 +130,8 @@ test.describe('Per-Question Judge Type', () => {
 
       // Either pass/fail buttons should be visible OR we should NOT see 5 star buttons
       const hasPassFail = (
-        await passButton.isVisible({ timeout: 2000 }).catch(() => false) ||
-        await failButton.isVisible({ timeout: 2000 }).catch(() => false)
+        await passButton.isVisible({ timeout: 2000 }) ||
+        await failButton.isVisible({ timeout: 2000 })
       );
 
       // If pass/fail visible, that's correct for binary
@@ -195,7 +195,7 @@ test.describe('Per-Question Judge Type', () => {
 
       // Navigate to annotation
       const annotationTab = page.getByRole('tab', { name: /Annotation|Rating/i });
-      if (await annotationTab.isVisible({ timeout: 3000 }).catch(() => false)) {
+      if (await annotationTab.isVisible({ timeout: 3000 })) {
         await annotationTab.click();
         await page.waitForTimeout(1000);
 

@@ -14,14 +14,14 @@ import { DEFAULT_FACILITATOR } from '../data';
 async function selectWorkshopFromDropdown(page: Page, workshopId: string): Promise<void> {
   // Wait for "Loading workshops..." to disappear
   const loadingText = page.getByText(/Loading workshops/i);
-  await expect(loadingText).not.toBeVisible({ timeout: 5000 }).catch(() => {});
+  await expect(loadingText).not.toBeVisible({ timeout: 5000 });
 
   // Find and click the combobox to open the dropdown
   const workshopSelect = page.locator('button[role="combobox"]').first();
-  if (await workshopSelect.isVisible().catch(() => false)) {
+  if (await workshopSelect.isVisible()) {
     await workshopSelect.click();
     // Wait for dropdown content to appear
-    await page.waitForSelector('[role="listbox"]', { timeout: 3000 }).catch(() => {});
+    await page.waitForSelector('[role="listbox"]', { timeout: 3000 });
     await page.waitForTimeout(200);
 
     // Radix Select stores the value in data-value attribute on the option element
@@ -29,7 +29,7 @@ async function selectWorkshopFromDropdown(page: Page, workshopId: string): Promi
     const dataValueSelector = `[role="option"][data-value="${workshopId}"]`;
     const workshopOption = page.locator(dataValueSelector);
 
-    if (await workshopOption.isVisible({ timeout: 1000 }).catch(() => false)) {
+    if (await workshopOption.isVisible({ timeout: 1000 })) {
       await workshopOption.click();
     } else {
       // If data-value selector didn't work, log and fail explicitly
@@ -78,7 +78,7 @@ export async function loginAs(page: Page, user: User): Promise<void> {
   // Facilitators need password
   if (user.role === 'facilitator') {
     const passwordField = page.locator('#password');
-    if (await passwordField.isVisible().catch(() => false)) {
+    if (await passwordField.isVisible()) {
       // Use default facilitator password if this is the default facilitator
       const password =
         user.email === DEFAULT_FACILITATOR.email
@@ -94,11 +94,11 @@ export async function loginAs(page: Page, user: User): Promise<void> {
     const createNewButton = page.getByRole('button', { name: /Create New/i });
     const joinExistingButton = page.getByRole('button', { name: /Join Existing/i });
 
-    if (await createNewButton.isVisible().catch(() => false)) {
+    if (await createNewButton.isVisible()) {
       // If user has a workshop_id, try to join existing; otherwise create new
       if (user.workshop_id) {
         // Click "Join Existing" if it's visible AND enabled, then select the workshop
-        const isJoinExistingEnabled = await joinExistingButton.isEnabled().catch(() => false);
+        const isJoinExistingEnabled = await joinExistingButton.isEnabled();
         if (isJoinExistingEnabled) {
           await joinExistingButton.click();
           await page.waitForTimeout(300);
@@ -147,7 +147,7 @@ export async function loginAsFacilitator(page: Page): Promise<void> {
 
   // Click "Create New" to enable submit button for workshop creation
   const createNewButton = page.getByRole('button', { name: /Create New/i });
-  if (await createNewButton.isVisible().catch(() => false)) {
+  if (await createNewButton.isVisible()) {
     await createNewButton.click();
   }
 
@@ -162,12 +162,12 @@ export async function loginAsFacilitator(page: Page): Promise<void> {
 export async function logout(page: Page): Promise<void> {
   // Look for logout button or dropdown
   const logoutButton = page.getByRole('button', { name: /logout|sign out/i });
-  if (await logoutButton.isVisible().catch(() => false)) {
+  if (await logoutButton.isVisible()) {
     await logoutButton.click();
   } else {
     // Try user menu dropdown
     const userMenu = page.getByRole('button', { name: /user|account|profile/i });
-    if (await userMenu.isVisible().catch(() => false)) {
+    if (await userMenu.isVisible()) {
       await userMenu.click();
       await page.getByRole('menuitem', { name: /logout|sign out/i }).click();
     } else {

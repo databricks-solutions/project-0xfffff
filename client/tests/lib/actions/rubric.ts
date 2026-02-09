@@ -18,7 +18,7 @@ export async function createRubricQuestion(
 
   // Navigate to the Rubric Questions tab if needed
   const rubricTab = page.getByRole('tab', { name: /Rubric Questions/i });
-  if (await rubricTab.isVisible().catch(() => false)) {
+  if (await rubricTab.isVisible()) {
     await rubricTab.click();
   }
 
@@ -26,11 +26,11 @@ export async function createRubricQuestion(
   const createFirstButton = page.getByRole('button', {
     name: /Create First Question/i,
   });
-  if (await createFirstButton.isVisible().catch(() => false)) {
+  if (await createFirstButton.isVisible()) {
     await createFirstButton.click();
   } else {
     const addButton = page.getByRole('button', { name: /Add Question/i });
-    if (await addButton.isVisible().catch(() => false)) {
+    if (await addButton.isVisible()) {
       await addButton.click();
     }
   }
@@ -38,13 +38,13 @@ export async function createRubricQuestion(
   // Fill in the question form
   // The app uses #new-title for the question title
   const titleInput = page.locator('#new-title');
-  if (await titleInput.isVisible().catch(() => false)) {
+  if (await titleInput.isVisible()) {
     await titleInput.fill(question);
   }
 
   // Fill description if field exists
   const descriptionInput = page.locator('#new-description');
-  if (await descriptionInput.isVisible().catch(() => false)) {
+  if (await descriptionInput.isVisible()) {
     await descriptionInput.fill(
       config.question || 'Rate the helpfulness of this response.'
     );

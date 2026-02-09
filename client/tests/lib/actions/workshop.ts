@@ -27,21 +27,21 @@ export async function goToPhase(page: Page, phase: WorkshopPhase): Promise<void>
 
   // Try sidebar navigation first
   const sidebarLink = page.getByRole('link', { name: new RegExp(label, 'i') });
-  if (await sidebarLink.isVisible().catch(() => false)) {
+  if (await sidebarLink.isVisible()) {
     await sidebarLink.click();
     return;
   }
 
   // Try tab navigation
   const tab = page.getByRole('tab', { name: new RegExp(label, 'i') });
-  if (await tab.isVisible().catch(() => false)) {
+  if (await tab.isVisible()) {
     await tab.click();
     return;
   }
 
   // Try button navigation
   const button = page.getByRole('button', { name: new RegExp(label, 'i') });
-  if (await button.isVisible().catch(() => false)) {
+  if (await button.isVisible()) {
     await button.click();
     return;
   }

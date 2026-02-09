@@ -294,7 +294,7 @@ test.describe.skip('Custom LLM Provider Configuration', () => {
     // Now reconfigure with a different provider (simulates switching)
     // Click the reconfigure/edit button
     const reconfigureButton = page.getByRole('button', { name: /Configure|Reconfigure|Edit/i }).first();
-    if (await reconfigureButton.isVisible().catch(() => false)) {
+    if (await reconfigureButton.isVisible() {
       await reconfigureButton.click();
     }
 
