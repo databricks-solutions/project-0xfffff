@@ -7,9 +7,11 @@ command:
   - "uvicorn.workers.UvicornWorker"
   - "--timeout"
   - "1800"
-env:
-  - name: DATABASE_ENV
-    value: postgres
+
+# Uncomment this to use PostgreSQL (Lakebase) for persistence across container restarts.
+# env:
+#   - name: DATABASE_ENV
+#     value: postgres
   
 # SQLite Rescue: Backup/restore DB to Unity Catalog Volume for persistence
 # across container restarts.
