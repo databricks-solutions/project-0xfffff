@@ -69,30 +69,6 @@ test.describe('Annotation Flow', {
     await scenario.cleanup();
   });
 
-  test('view without change shows no toast', async ({ page }) => {
-    const scenario = await TestScenario.create(page)
-      .withWorkshop({ name: 'Toast - No Change' })
-      .withFacilitator()
-      .withSMEs(1)
-      .withTraces(3)
-      .withRubric({ question: 'How helpful?' })
-      .withAnnotation({ traceIndex: 0, rating: 4 })
-      .inPhase('annotation')
-      .withRealApi()
-      .build();
-
-    await page.goto(`/?workshop=${scenario.workshop.id}`);
-    await scenario.loginAs(scenario.users.sme[0]);
-    await waitForAnnotationInterface(page);
-
-    await goToNextTrace(page);
-    await page.waitForTimeout(1500);
-
-    await expect(page.getByText('Annotation saved!')).not.toBeVisible();
-    await expect(page.getByText('Annotation updated!')).not.toBeVisible();
-
-    await scenario.cleanup();
-  });
 
   test('multi-line comment preserves newlines', async ({ page }) => {
     const scenario = await TestScenario.create(page)

@@ -1429,6 +1429,7 @@ export function AnnotationDemo() {
             onClick={prevTrace}
             disabled={currentTraceIndex === 0 || isNavigating}
             className="flex items-center gap-1.5"
+            data-testid="prev-trace-button"
           >
             <ChevronLeft className="h-4 w-4" />
             Previous

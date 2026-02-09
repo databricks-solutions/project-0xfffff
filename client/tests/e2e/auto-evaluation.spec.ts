@@ -10,6 +10,7 @@
 
 import { test, expect } from '@playwright/test';
 import { TestScenario } from '../lib';
+import { beginAnnotation, beginAnnotationViaSidebar } from '../lib/actions';
 
 test.describe('Auto-Evaluation UI', () => {
   test('begin annotation dialog shows model selection when auto-eval is available', {
@@ -38,32 +39,29 @@ test.describe('Auto-Evaluation UI', () => {
 
     // Navigate to annotation phase setup
     // The "Begin Annotation" button should be visible in rubric phase
-    const beginAnnotationButton = page.getByRole('button', { name: /Begin Annotation|Start Annotation/i });
-    if (await beginAnnotationButton.isVisible({ timeout: 5000 })) {
-      await beginAnnotationButton.click();
+    await beginAnnotation(page, scenario.workshop.id);
 
-      // Wait for the annotation dialog/modal to appear
-      // The dialog should have options for auto-evaluation
-      await page.waitForTimeout(1000);
+    // Wait for the annotation dialog/modal to appear
+    // The dialog should have options for auto-evaluation
+    await page.waitForTimeout(1000);
 
-      // Look for auto-evaluation related elements
-      // Could be a toggle, checkbox, or model selector
-      const autoEvalToggle = page.locator('text=Auto-evaluation').or(
-        page.locator('text=Automatic evaluation')
-      ).or(
-        page.locator('text=LLM Judge')
-      );
+    // Look for auto-evaluation related elements
+    // Could be a toggle, checkbox, or model selector
+    const autoEvalToggle = page.locator('text=Auto-evaluation').or(
+      page.locator('text=Automatic evaluation')
+    ).or(
+      page.locator('text=LLM Judge')
+    );
 
-      // The dialog should have some form of auto-eval control
-      // Even if disabled by default
-      const dialogContent = page.locator('[role="dialog"]').or(
-        page.locator('.modal')
-      );
+    // The dialog should have some form of auto-eval control
+    // Even if disabled by default
+    const dialogContent = page.locator('[role="dialog"]').or(
+      page.locator('.modal')
+    );
 
-      if (await dialogContent.isVisible({ timeout: 2000 })) {
-        // Verify dialog has annotation configuration options
-        await expect(page.getByText(/traces/i).first()).toBeVisible();
-      }
+    if (await dialogContent.isVisible({ timeout: 2000 })) {
+      // Verify dialog has annotation configuration options
+      await expect(page.getByText(/traces/i).first()).toBeVisible();
     }
 
     await scenario.cleanup();
