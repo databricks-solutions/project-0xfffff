@@ -104,19 +104,23 @@ export function useWorkshop(workshopId: string) {
     queryFn: () => WorkshopsService.getWorkshopWorkshopsWorkshopIdGet(workshopId),
     enabled: !!workshopId,
     staleTime: 10000, // Consider data stale after 10 seconds
-    refetchInterval: 10000, // Refetch every 10 seconds
+    refetchInterval: 30000, // Refetch every 30 seconds (was 10s — too aggressive for Databricks Apps)
     refetchOnMount: true, // Always refetch on component mount to get latest traces
     refetchIntervalInBackground: false, // Don't refetch when window is not focused
-    refetchOnWindowFocus: true, 
+    refetchOnWindowFocus: true,
     retry: (failureCount, error) => {
       // Don't retry on 404 errors - workshop doesn't exist
       if (error && typeof error === 'object' && 'status' in error && error.status === 404) {
         return false;
       }
-      // Retry other errors up to 3 times
-      return failureCount < 3;
+      // Don't retry on 503 - backend is restarting, polling will pick it up
+      if (error && typeof error === 'object' && 'status' in error && error.status === 503) {
+        return false;
+      }
+      // Retry other errors up to 2 times
+      return failureCount < 2;
     },
-    retryDelay: 1000, // Wait 1 second between retries
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
   });
 }
 
@@ -156,7 +160,7 @@ export function useTraces(workshopId: string, userId: string) {
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
     refetchOnWindowFocus: true, // Refetch when user returns to tab
     refetchOnMount: true, // Refetch on component mount to get latest traces
-    refetchInterval: 15 * 1000, // Poll every 15 seconds to pick up new traces added by facilitator
+    refetchInterval: 30 * 1000, // Poll every 30 seconds to pick up new traces added by facilitator
   });
 }
 
@@ -683,7 +687,7 @@ export function useParticipantNotes(workshopId: string, userId?: string, phase?:
     },
     enabled: !!workshopId,
     staleTime: 10 * 1000,
-    refetchInterval: 10 * 1000, // Poll for new notes from other participants
+    refetchInterval: 30 * 1000, // Poll for new notes from other participants
   });
 }
 
@@ -703,7 +707,7 @@ export function useAllParticipantNotes(workshopId: string, phase?: string) {
     },
     enabled: !!workshopId,
     staleTime: 5 * 1000,
-    refetchInterval: 5 * 1000, // Poll frequently so facilitator sees notes quickly
+    refetchInterval: 15 * 1000, // Poll so facilitator sees notes (was 5s, too aggressive for Databricks Apps)
   });
 }
 

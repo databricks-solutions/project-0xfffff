@@ -33,8 +33,11 @@ export function WorkflowProvider({ children }: WorkflowProviderProps) {
   const [completedPhases, setCompletedPhases] = useState<string[]>([]);
 
   // Fetch workshop data to determine completion status
-  // Only fetch if we have a valid workshop ID
-  const { data: workshop } = useWorkshop(workshopId || '');
+  // Only fetch if we have a valid workshop ID AND an authenticated user.
+  // Without the user gate, stale workshopId from localStorage causes polling
+  // on the login page, hammering the backend with requests (503 storms).
+  const isAuthenticated = !!workshopId && !!user;
+  const { data: workshop } = useWorkshop(isAuthenticated ? workshopId : '');
   const { data: participants } = useQuery({
     queryKey: ['workshop-participants', workshopId],
     queryFn: async () => {
@@ -47,13 +50,13 @@ export function WorkflowProvider({ children }: WorkflowProviderProps) {
         return [];
       }
     },
-    enabled: !!workshopId
+    enabled: isAuthenticated
   });
   // Use all traces for workflow context (general workshop flow tracking)
-  const { data: traces } = useAllTraces(workshopId || '');
-  const { data: findings } = useFindings(workshopId || '');
-  const { data: rubric } = useRubric(workshopId || '');
-  const { data: annotations } = useAnnotations(workshopId || '');
+  const { data: traces } = useAllTraces(isAuthenticated ? workshopId : '');
+  const { data: findings } = useFindings(isAuthenticated ? workshopId : '');
+  const { data: rubric } = useRubric(isAuthenticated ? workshopId : '');
+  const { data: annotations } = useAnnotations(isAuthenticated ? workshopId : '');
 
   // Sync currentPhase with backend workshop phase - backend is source of truth
   useEffect(() => {
