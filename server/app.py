@@ -1,5 +1,6 @@
 """FastAPI application for Databricks App Template."""
 
+import logging
 import os
 import time
 from contextlib import asynccontextmanager
@@ -23,6 +24,8 @@ from server.sqlite_rescue import (
     start_backup_timer,
     stop_backup_timer,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -153,18 +156,31 @@ class ProcessTimeMiddleware(BaseHTTPMiddleware):
 
 # Error handling middleware
 class DatabaseErrorMiddleware(BaseHTTPMiddleware):
-    """Handle database connection errors gracefully."""
+    """Handle transient database errors (SQLite locks, serverless PG drops)."""
+
+    # Substrings that indicate a retryable / transient database error
+    _TRANSIENT_MARKERS = (
+        "database is locked",          # SQLite
+        "connection refused",           # PG serverless cold-start
+        "connection reset",             # PG dropped idle connection
+        "server closed the connection", # PG serverless idle timeout
+        "ssl connection has been closed", # PG SSL teardown
+        "could not connect to server",  # PG unreachable
+        "connection timed out",         # PG timeout
+    )
 
     async def dispatch(self, request: Request, call_next):
         try:
             return await call_next(request)
         except Exception as e:
-            if "database is locked" in str(e).lower() or "connection" in str(e).lower():
+            error_msg = str(e).lower()
+            if any(marker in error_msg for marker in self._TRANSIENT_MARKERS):
+                logger.warning("Transient DB error on %s %s: %s", request.method, request.url.path, e)
                 return JSONResponse(
                     status_code=503,
                     content={
-                        "detail": "Service temporarily unavailable due to high load. Please try again in a moment.",
-                        "error_type": "database_connection_error",
+                        "detail": f"Database temporarily unavailable. Please retry. [{type(e).__name__}]",
+                        "error_type": "database_transient",
                     },
                 )
             raise

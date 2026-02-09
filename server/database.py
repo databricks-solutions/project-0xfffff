@@ -434,22 +434,48 @@ class CustomLLMProviderConfigDB(Base):
 
 
 def get_db():
-    """Get database session with proper error handling and connection management."""
-    db = None
-    try:
-        db = SessionLocal()
-        yield db
-    except Exception as e:
-        if db:
-            db.rollback()
-        raise e
-    finally:
-        if db:
-            try:
+    """Get database session with retry logic for serverless connection drops.
+
+    Serverless PostgreSQL (e.g. Databricks Lakebase) drops idle connections.
+    When that happens, the first attempt fails with an OperationalError.
+    We catch that, dispose the stale pool, and retry once with a fresh connection.
+    """
+    from sqlalchemy.exc import OperationalError
+
+    max_attempts = 2  # 1 normal + 1 retry after pool reset
+    for attempt in range(max_attempts):
+        db = None
+        try:
+            db = SessionLocal()
+            # Quick connectivity check on PostgreSQL to surface stale connections early
+            if DATABASE_BACKEND == DatabaseBackend.POSTGRESQL and attempt == 0:
+                from sqlalchemy import text
+                db.execute(text("SELECT 1"))
+            yield db
+            return  # Success — exit the generator
+        except OperationalError as e:
+            if db:
+                db.rollback()
                 db.close()
-            except Exception as e:
-                # Log the error but don't raise it to avoid masking the original error
-                print(f"Warning: Error closing database session: {e}")
+                db = None
+            if attempt < max_attempts - 1:
+                logger.warning(
+                    "Database connection failed (attempt %d/%d), resetting pool: %s",
+                    attempt + 1, max_attempts, e,
+                )
+                engine.dispose()  # Throw away all stale pooled connections
+                continue
+            raise
+        except Exception as e:
+            if db:
+                db.rollback()
+            raise e
+        finally:
+            if db:
+                try:
+                    db.close()
+                except Exception as e:
+                    logger.warning("Error closing database session: %s", e)
 
 
 def create_tables():
