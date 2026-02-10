@@ -19,6 +19,7 @@ Run these commands to verify code changes:
 | `just spec-coverage --json` | JSON coverage report to stdout | For programmatic analysis |
 | `just spec-coverage --affected` | Coverage for specs affected by changes | During development |
 | `just test-affected` | Run tests for affected specs only | Quick verification of changes |
+| `just test-spec SPEC` | All tests (unit+integration+E2E) for a spec | Full verification of a spec |
 | `just spec-validate` | Validates all tests are spec-tagged | Before committing |
 
 ## Spec Coverage Report
@@ -160,6 +161,7 @@ Run tests for a specific spec:
 
 | Command | Purpose | Example |
 |---------|---------|---------|
+| `just test-spec SPEC_NAME` | **All tests** (unit+integration+E2E) | `just test-spec AUTHENTICATION_SPEC` |
 | `just test-server-spec SPEC_NAME` | Python tests for a spec | `just test-server-spec AUTHENTICATION_SPEC` |
 | `just ui-test-unit-spec SPEC_NAME` | Unit tests for a spec | `just ui-test-unit-spec RUBRIC_SPEC` |
 | `just e2e-spec SPEC_NAME` | E2E tests for a spec (headless) | `just e2e-spec ANNOTATION_SPEC` |
@@ -219,6 +221,7 @@ AUTHENTICATION_SPEC (1 failure):
 | `spec-validate` | Ensure all tests are spec-tagged | `just spec-validate` |
 | `spec-status SPEC` | Show test results + coverage for a spec | `just spec-status AUTHENTICATION_SPEC` |
 | `test-summary` | Token-efficient test result summary | `just test-summary --spec SPEC_NAME` |
+| `test-spec SPEC [mode] [workers]` | Run **all** tests for a spec | `just test-spec SPEC_NAME` |
 | `test-server-spec SPEC` | Run Python tests for a spec | `just test-server-spec SPEC_NAME` |
 | `ui-test-unit-spec SPEC` | Run unit tests for a spec | `just ui-test-unit-spec SPEC_NAME` |
 | `e2e-spec SPEC [mode] [workers]` | Run E2E tests for a spec | `just e2e-spec SPEC_NAME headless 1` |

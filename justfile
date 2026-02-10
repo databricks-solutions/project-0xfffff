@@ -335,13 +335,39 @@ test-server-spec spec *args:
 [group('dev')]
 ui-test-unit-spec spec *args:
   @echo "Running unit tests for {{spec}}..."
-  just ui-test-unit --grep "@spec:{{spec}}" {{args}}
+  just ui-test-unit -t "@spec:{{spec}}" {{args}}
 
 # Run E2E tests for a specific spec (writes JSON report to .test-results/)
 [group('e2e')]
 e2e-spec spec mode="headless" workers="1":
   @echo "Running E2E tests for {{spec}} in {{mode}} mode..."
   just e2e {{mode}} {{workers}} "@spec:{{spec}}"
+
+# Run all tests (unit, integration, E2E) for a specific spec
+[group('dev')]
+test-spec spec mode="headless" workers="1":
+  #!/usr/bin/env bash
+  set -euo pipefail
+  echo "🧪 Running all tests for {{spec}}"
+  echo "=================================="
+  FAILED=0
+  echo ""
+  echo "── Python tests ──"
+  just test-server-spec {{spec}} || FAILED=1
+  echo ""
+  echo "── Frontend unit tests ──"
+  just ui-test-unit-spec {{spec}} || FAILED=1
+  echo ""
+  echo "── E2E tests ──"
+  just e2e-spec {{spec}} {{mode}} {{workers}} || FAILED=1
+  echo ""
+  echo "=================================="
+  if [ "$FAILED" -eq 0 ]; then
+    echo "✅ All tests passed for {{spec}}"
+  else
+    echo "❌ Some tests failed for {{spec}}"
+    exit 1
+  fi
 
 # Get token-efficient test summary from JSON reports
 [group('dev')]
