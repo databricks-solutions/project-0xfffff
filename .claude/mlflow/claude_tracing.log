@@ -313,3 +313,11 @@
 2026-02-08 13:10:15,111 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=d17ad983-8db2-4777-8361-0054918c966e, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/d17ad983-8db2-4777-8361-0054918c966e.jsonl
 2026-02-08 13:10:15,274 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: d17ad983-8db2-4777-8361-0054918c966e
 2026-02-08 13:10:17,903 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-a946d9ea5e02820039cdf39ca46884af
+2026-02-09 15:42:40,575 - mlflow.claude_code.tracing - WARNING - Failed to set experiment: 401: Credential was not sent or was of an unsupported type for this API. [ReqId: ab5c53f8-ad83-4078-b470-ee30e40de99b]
+2026-02-09 15:42:40,576 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=cf328f08-ae09-4fe7-8f74-992964edef1c, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-full-coverage/cf328f08-ae09-4fe7-8f74-992964edef1c.jsonl
+2026-02-09 15:42:40,579 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: cf328f08-ae09-4fe7-8f74-992964edef1c
+2026-02-09 15:42:42,181 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-61042a7e91cb8c894373f5a5beb45bea
+2026-02-09 15:51:16,675 - mlflow.claude_code.tracing - WARNING - Failed to set experiment: 401: Credential was not sent or was of an unsupported type for this API. [ReqId: 92022737-9e11-4670-9e07-9b51351b98f9]
+2026-02-09 15:51:16,676 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=cf328f08-ae09-4fe7-8f74-992964edef1c, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-full-coverage/cf328f08-ae09-4fe7-8f74-992964edef1c.jsonl
+2026-02-09 15:51:16,680 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: cf328f08-ae09-4fe7-8f74-992964edef1c
+2026-02-09 15:51:17,681 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-16e635ca90486cb8064369e97ab6b198

@@ -284,12 +284,43 @@ ui-lint:
 ui-format:
   npm -C {{client-dir}} run format
 
+# Analyze spec test coverage (writes to SPEC_COVERAGE_MAP.md)
+# Use --json for JSON output, --affected [REF] for changes since REF (default HEAD~1)
+# Example: just spec-coverage --affected          # specs affected since last commit
+# Example: just spec-coverage --affected main     # specs affected since main branch
+# Example: just spec-coverage --specs AUTHENTICATION_SPEC ANNOTATION_SPEC
 [group('dev')]
-spec-coverage:
-  @echo "📊 Analyzing spec test coverage..."
-  uv run spec-coverage-analyzer
-  @echo ""
-  @echo "📋 Coverage report: SPEC_COVERAGE_MAP.md"
+spec-coverage *args:
+  #!/usr/bin/env bash
+  if [[ "{{args}}" == *"--json"* ]]; then
+    uv run spec-coverage-analyzer {{args}}
+  else
+    echo "📊 Analyzing spec test coverage..."
+    uv run spec-coverage-analyzer {{args}}
+    if [[ "{{args}}" != *"--affected"* ]]; then
+      echo ""
+      echo "📋 Coverage report: SPEC_COVERAGE_MAP.md"
+    fi
+  fi
+
+# Show specs affected by recent changes and run their tests
+[group('dev')]
+test-affected base="HEAD~1":
+  #!/usr/bin/env bash
+  echo "🔍 Detecting affected specs since {{base}}..."
+  AFFECTED=$(uv run spec-coverage-analyzer --affected {{base}} --json 2>/dev/null | jq -r '.affected_mode.affected_specs[]' 2>/dev/null)
+  if [ -z "$AFFECTED" ]; then
+    echo "No specs affected by changes since {{base}}"
+    exit 0
+  fi
+  echo "Affected specs:"
+  echo "$AFFECTED" | while read spec; do echo "  - $spec"; done
+  echo ""
+  echo "Running tests for affected specs..."
+  for spec in $AFFECTED; do
+    echo "=== Testing $spec ==="
+    just test-server-spec "$spec" || true
+  done
 
 [group('dev')]
 spec-tagging-check:

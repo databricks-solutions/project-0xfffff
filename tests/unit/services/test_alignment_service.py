@@ -4,6 +4,7 @@ from server.services.alignment_service import AlignmentService
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Optimized prompt saved to judge")
 def test_normalize_judge_prompt_converts_placeholders_to_mlflow_style():
     prompt = "Rate {{ inputs }} vs {{ outputs }} and also {input}/{output}"
     normalized = AlignmentService._normalize_judge_prompt(prompt)

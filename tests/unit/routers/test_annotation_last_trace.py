@@ -76,6 +76,7 @@ def create_test_rubric() -> Rubric:
 
 
 @pytest.mark.spec("ANNOTATION_SPEC")
+@pytest.mark.req("Annotation count reflects unique submissions (not re-submissions)")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_all_10_annotations_can_be_saved(async_client, override_get_db, monkeypatch):
@@ -142,6 +143,7 @@ async def test_all_10_annotations_can_be_saved(async_client, override_get_db, mo
 
 
 @pytest.mark.spec("ANNOTATION_SPEC")
+@pytest.mark.req("Changes automatically save on navigation (Next/Previous)")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_10th_annotation_specifically(async_client, override_get_db, monkeypatch):
@@ -229,6 +231,7 @@ async def test_10th_annotation_specifically(async_client, override_get_db, monke
 
 
 @pytest.mark.spec("ANNOTATION_SPEC")
+@pytest.mark.req("Annotation count reflects unique submissions (not re-submissions)")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_multiple_annotators_can_save_10th_annotation(async_client, override_get_db, monkeypatch):
@@ -306,6 +309,7 @@ async def test_multiple_annotators_can_save_10th_annotation(async_client, overri
 
 
 @pytest.mark.spec("ANNOTATION_SPEC")
+@pytest.mark.req("Annotation count reflects unique submissions (not re-submissions)")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_facilitator_sees_10_completed(async_client, override_get_db, monkeypatch):

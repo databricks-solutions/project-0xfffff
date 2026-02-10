@@ -2,6 +2,7 @@ import pytest
 
 
 @pytest.mark.spec("DATASETS_SPEC")
+@pytest.mark.req("Datasets can be created with arbitrary trace lists")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_dbsql_export_success(async_client, override_get_db, monkeypatch):
@@ -39,6 +40,7 @@ async def test_dbsql_export_success(async_client, override_get_db, monkeypatch):
 
 
 @pytest.mark.spec("DATASETS_SPEC")
+@pytest.mark.req("Dataset lineage tracked (source datasets, operations)")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_dbsql_export_status_happy_path(async_client, override_get_db, monkeypatch):

@@ -195,6 +195,8 @@ markers = [
     "unit: marks tests as unit tests",
     # Spec coverage markers - use @pytest.mark.spec("SPEC_NAME") to tag tests
     "spec: marks test as covering a spec (use with spec name argument)",
+    # Requirement coverage marker - use @pytest.mark.req("requirement text") to link to spec success criteria
+    "req: marks test as covering a specific requirement from spec success criteria",
 ]
 
 [tool.coverage.run]
