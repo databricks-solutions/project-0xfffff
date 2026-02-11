@@ -1,5 +1,16 @@
 {
   "permissions": {
+    "allow": [
+      "Bash(just:*)",
+      "Bash(uv run:*)",
+      "Bash(npm:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Read(*)"
+    ],
     "deny": [
       "Bash(rm -rf:*)",
       "Bash(git push --force:*)",
@@ -16,17 +27,6 @@
       "Edit(alembic/*)",
       "Edit(.github/*)",
       "Write(alembic/*)"
-    ],
-    "allow": [
-      "Bash(just:*)",
-      "Bash(uv run:*)",
-      "Bash(npm:*)",
-      "Bash(git status:*)",
-      "Bash(git diff:*)",
-      "Bash(git log:*)",
-      "Bash(git add:*)",
-      "Bash(git commit:*)",
-      "Read(*)"
     ]
   },
   "hooks": {

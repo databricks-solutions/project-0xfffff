@@ -17,6 +17,7 @@ This directory contains the comprehensive tech debt audit for the Human Evaluati
 | [DX_DEBT.md](DX_DEBT.md) | Tooling, onboarding, docs, artifacts | 1 | 3 | 5 | 1 |
 | [TOOLING_PATTERNS_DEBT.md](TOOLING_PATTERNS_DEBT.md) | Library misuse, framework underutilization | 2 | 4 | 3 | 1 |
 | [REACT_PATTERNS_DEBT.md](REACT_PATTERNS_DEBT.md) | React architecture, components, hooks, routing | 2 | 3 | 3 | 2 |
+| [WORKSHOP_ID_SIMPLIFICATION.md](WORKSHOP_ID_SIMPLIFICATION.md) | Suggestions: reduce workshop_id threading | — | — | — | — |
 
 ## Keyword Index
 
@@ -95,6 +96,8 @@ This directory contains the comprehensive tech debt audit for the Human Evaluati
 | useEffect chain, missing deps, data cascade | REACT_PATTERNS_DEBT |
 | Suspense, loading skeleton, progressive | REACT_PATTERNS_DEBT |
 | JudgeTuningPage, FacilitatorDashboard, TraceViewer | REACT_PATTERNS_DEBT, CODE_QUALITY_DEBT |
+| workshop_id, workshop context, scoped service | WORKSHOP_ID_SIMPLIFICATION, ARCHITECTURE_DEBT |
+| JWT claims, auth token, workshop scope | WORKSHOP_ID_SIMPLIFICATION, SECURITY_DEBT |
 
 ## How to Use This Registry
 
