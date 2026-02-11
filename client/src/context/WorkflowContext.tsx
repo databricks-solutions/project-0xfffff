@@ -32,6 +32,24 @@ export function WorkflowProvider({ children }: WorkflowProviderProps) {
   const [currentPhase, setCurrentPhase] = useState<string>('intake');
   const [completedPhases, setCompletedPhases] = useState<string[]>([]);
 
+  // Track phases the user has visited/clicked (persisted to localStorage)
+  const visitedPhasesKey = `visited-phases-${workshopId}`;
+  const [visitedPhases, setVisitedPhases] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem(visitedPhasesKey);
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Persist visited phases to localStorage
+  useEffect(() => {
+    if (workshopId) {
+      localStorage.setItem(visitedPhasesKey, JSON.stringify(visitedPhases));
+    }
+  }, [visitedPhases, visitedPhasesKey, workshopId]);
+
   // Fetch workshop data to determine completion status
   // Only fetch if we have a valid workshop ID AND an authenticated user.
   // Without the user gate, stale workshopId from localStorage causes polling
@@ -87,8 +105,9 @@ export function WorkflowProvider({ children }: WorkflowProviderProps) {
       newCompletedPhases.push('rubric');
     }
     
-    // Results phase: completed when we have enough annotations for IRR analysis OR when we're past this phase
-    if ((annotations && annotations.length >= 2) || workshop?.current_phase === 'judge_tuning' || workshop?.current_phase === 'unity_volume') {
+    // Results phase: completed when we have enough annotations AND workshop has progressed past annotation
+    const isPastAnnotation = ['results', 'judge_tuning', 'prompt_optimization', 'unity_volume'].includes(workshop?.current_phase || '');
+    if ((annotations && annotations.length >= 2 && isPastAnnotation) || workshop?.current_phase === 'judge_tuning' || workshop?.current_phase === 'unity_volume') {
       newCompletedPhases.push('results');
     }
     
@@ -103,13 +122,25 @@ export function WorkflowProvider({ children }: WorkflowProviderProps) {
     }
         
     // Only update if there are actual changes and avoid overriding backend-controlled phases
-    const backendControlledPhases = ['discovery', 'annotation']; 
+    const backendControlledPhases = ['discovery', 'annotation'];
     const backendPhases = workshop?.completed_phases || [];
-    
-    // Preserve backend-controlled phases and add frontend-determined phases
+
+    // Filter visited phases based on current workshop progress:
+    // When workshop is at annotation or earlier, exclude post-annotation visited phases
+    // so they reset to grey when annotation restarts
+    const postAnnotationPhaseIds = ['results', 'judge_tuning', 'prompt_optimization', 'unity_volume'];
+    const workshopPhaseOrder = ['discovery', 'rubric', 'annotation', 'results', 'judge_tuning', 'prompt_optimization', 'unity_volume'];
+    const currentWorkshopIdx = workshopPhaseOrder.indexOf(workshop?.current_phase || 'discovery');
+    const annotationIdx = workshopPhaseOrder.indexOf('annotation');
+    const allowedVisitedPhases = currentWorkshopIdx > annotationIdx
+      ? visitedPhases
+      : visitedPhases.filter(p => !postAnnotationPhaseIds.includes(p));
+
+    // Preserve backend-controlled phases and add frontend-determined phases + visited phases
     const finalPhases = [
       ...backendPhases,
-      ...newCompletedPhases.filter(phase => !backendControlledPhases.includes(phase) && !backendPhases.includes(phase))
+      ...newCompletedPhases.filter(phase => !backendControlledPhases.includes(phase) && !backendPhases.includes(phase)),
+      ...allowedVisitedPhases.filter(phase => !backendControlledPhases.includes(phase) && !backendPhases.includes(phase) && !newCompletedPhases.includes(phase)),
     ];
     
     // Only update if different to avoid infinite loops
@@ -123,10 +154,14 @@ export function WorkflowProvider({ children }: WorkflowProviderProps) {
     // REMOVED: Auto-advancement that was causing phase/navigation confusion
     // Phase changes now only happen through explicit facilitator actions via API calls
     // This ensures frontend phase stays in sync with backend workshop phase
-  }, [traces, findings, rubric, annotations, participants, workshopId, user, workshop?.current_phase]);
+  }, [traces, findings, rubric, annotations, participants, workshopId, user, workshop?.current_phase, visitedPhases]);
 
   const markPhaseComplete = (phase: string) => {
-    setCompletedPhases(prev => 
+    setCompletedPhases(prev =>
+      prev.includes(phase) ? prev : [...prev, phase]
+    );
+    // Also persist to visited phases so it survives re-renders
+    setVisitedPhases(prev =>
       prev.includes(phase) ? prev : [...prev, phase]
     );
   };

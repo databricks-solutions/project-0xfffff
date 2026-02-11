@@ -584,10 +584,10 @@ export class ApiMocker {
         await route.fulfill({
           json: {
             workshop_id: this.store.workshop?.id || '',
-            score: 0.75,
+            score: 82.5,
             ready_to_proceed: true,
             calculated_at: new Date().toISOString(),
-            details: {},
+            details: { metric_used: 'Pairwise Agreement' },
           },
         });
       },

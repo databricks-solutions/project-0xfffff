@@ -151,6 +151,7 @@ from server.models import (
     MLflowTraceInfo,
     ParticipantNote,
     ParticipantNoteCreate,
+    PromptOptimizationRequest,
     Rubric,
     RubricCreate,
     RubricGenerationRequest,
@@ -2296,12 +2297,16 @@ async def advance_to_unity_volume(workshop_id: str, db: Session = Depends(get_db
     if not workshop:
         raise HTTPException(status_code=404, detail="Workshop not found")
 
-    # Validation: Check prerequisites - allow advancement from judge_tuning phase
+    # Validation: Check prerequisites - allow advancement from judge_tuning or prompt_optimization phase
     # Also allow if already in unity_volume phase (idempotent operation)
-    if workshop.current_phase not in [WorkshopPhase.JUDGE_TUNING, WorkshopPhase.UNITY_VOLUME]:
+    if workshop.current_phase not in [
+        WorkshopPhase.JUDGE_TUNING,
+        WorkshopPhase.PROMPT_OPTIMIZATION,
+        WorkshopPhase.UNITY_VOLUME,
+    ]:
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot advance to Unity Volume from {workshop.current_phase} phase. Must be in judge tuning phase.",
+            detail=f"Cannot advance to Unity Volume from {workshop.current_phase} phase. Must be in judge tuning or prompt optimization phase.",
         )
 
     # If already in unity_volume phase, just return success
@@ -3444,6 +3449,15 @@ async def start_alignment_job(
                         except Exception as save_err:
                             logger.warning("Failed to save aligned instructions as judge prompt: %s", save_err)
                             job.add_log(f"WARNING: Could not save aligned prompt to database: {save_err}")
+
+                    # Update workshop.judge_name so prompt optimization picks up
+                    # the correct aligned judge automatically.
+                    registered_judge = result.get("registered_judge_name") or request.judge_name
+                    try:
+                        thread_db_service.update_workshop_judge_name(workshop_id, registered_judge)
+                        job.add_log(f"Set workshop judge name to '{registered_judge}'")
+                    except Exception as jn_err:
+                        logger.warning("Failed to update workshop judge_name: %s", jn_err)
 
                     job.result = result
                     job.save()
@@ -5227,3 +5241,346 @@ async def test_custom_llm_provider(
             message=f"Connection error: {str(e)}",
             error_code="CONNECTION_ERROR",
         )
+
+
+# ============================================================================
+# Prompt Optimization (GEPA) endpoints
+# ============================================================================
+
+
+@router.post("/{workshop_id}/advance-to-prompt-optimization")
+async def advance_to_prompt_optimization(workshop_id: str, db: Session = Depends(get_db)):
+    """Advance workshop from JUDGE_TUNING to PROMPT_OPTIMIZATION phase (facilitator only)."""
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    # Allow advancement from judge_tuning; idempotent if already in prompt_optimization
+    if workshop.current_phase not in [
+        WorkshopPhase.JUDGE_TUNING,
+        WorkshopPhase.PROMPT_OPTIMIZATION,
+    ]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot advance to prompt optimization from {workshop.current_phase} phase. Must be in judge tuning phase.",
+        )
+
+    if workshop.current_phase == WorkshopPhase.PROMPT_OPTIMIZATION:
+        return {
+            "message": "Workshop is already in prompt optimization phase",
+            "phase": "prompt_optimization",
+            "workshop_id": workshop_id,
+            "already_in_phase": True,
+        }
+
+    db_service.update_workshop_phase(workshop_id, WorkshopPhase.PROMPT_OPTIMIZATION)
+
+    return {
+        "message": "Workshop advanced to prompt optimization phase",
+        "phase": "prompt_optimization",
+        "workshop_id": workshop_id,
+    }
+
+
+@router.post("/{workshop_id}/start-prompt-optimization")
+async def start_prompt_optimization_job(
+    workshop_id: str,
+    request: PromptOptimizationRequest,
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Start a GEPA prompt optimization job in the background.
+
+    Use GET /prompt-optimization-job/{job_id} to poll for status and logs.
+    """
+    logger.info("=== START PROMPT OPTIMIZATION JOB ===")
+    logger.info("workshop_id=%s, prompt_uri=%s, has_text=%s", workshop_id, request.prompt_uri, bool(request.prompt_text))
+
+    if not request.prompt_text and not request.prompt_uri:
+        raise HTTPException(status_code=400, detail="Either prompt_text or prompt_uri must be provided")
+
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    # Get MLflow config
+    mlflow_config = db_service.get_mlflow_config(workshop_id)
+    if not mlflow_config:
+        raise HTTPException(status_code=400, detail="MLflow configuration not found")
+
+    # Get Databricks token
+    from server.services.token_storage_service import token_storage
+
+    databricks_token = token_storage.get_token(workshop_id)
+    if not databricks_token:
+        databricks_token = db_service.get_databricks_token(workshop_id)
+        if databricks_token:
+            token_storage.store_token(workshop_id, databricks_token)
+    if not databricks_token:
+        raise HTTPException(status_code=400, detail="Databricks token not found")
+
+    mlflow_config.databricks_token = databricks_token
+
+    # Create job
+    job_id = str(uuid.uuid4())
+    job = create_job(job_id, workshop_id)
+    job.set_status("running")
+    job.add_log("Prompt optimization job started")
+
+    # Determine judge name(s) — load all aligned judges from rubric questions
+    judge_name = request.judge_name or workshop.judge_name or "workshop_judge"
+    rubric_questions = db_service.get_rubric_questions_for_evaluation(workshop_id)
+    judge_names = [q['judge_name'] for q in rubric_questions] if rubric_questions else []
+    if judge_names:
+        logger.info("Found %d rubric judges for optimization: %s", len(judge_names), judge_names)
+    else:
+        logger.info("No rubric judges found, falling back to single judge: %s", judge_name)
+
+    # Create DB record for the optimization run
+    from server.database import PromptOptimizationRunDB, SessionLocal as _SessionLocal
+
+    try:
+        _db = _SessionLocal()
+        run_record = PromptOptimizationRunDB(
+            workshop_id=workshop_id,
+            job_id=job_id,
+            prompt_uri=request.prompt_uri or "direct-entry",
+            original_prompt=request.prompt_text,
+            optimizer_model=request.optimizer_model_name,
+            num_iterations=request.num_iterations,
+            num_candidates=request.num_candidates,
+            status="running",
+        )
+        _db.add(run_record)
+        _db.commit()
+        run_id = run_record.id
+        _db.close()
+    except Exception as e:
+        logger.warning("Failed to create optimization run record: %s", e)
+        run_id = None
+
+    # Run optimization in background thread
+    def run_optimization_background():
+        try:
+            from server.services.prompt_optimization_service import PromptOptimizationService
+            from server.database import SessionLocal
+
+            thread_db = SessionLocal()
+            try:
+                thread_db_service = DatabaseService(thread_db)
+                optimization_service = PromptOptimizationService(thread_db_service)
+
+                job.add_log("Initializing prompt optimization service...")
+
+                result = None
+                for message in optimization_service.run_optimization(
+                    workshop_id=workshop_id,
+                    optimizer_model_name=request.optimizer_model_name,
+                    num_iterations=request.num_iterations,
+                    num_candidates=request.num_candidates,
+                    judge_name=judge_name,
+                    mlflow_config=mlflow_config,
+                    prompt_text=request.prompt_text,
+                    prompt_uri=request.prompt_uri,
+                    prompt_name=request.prompt_name,
+                    uc_catalog=request.uc_catalog,
+                    uc_schema=request.uc_schema,
+                    judge_names=judge_names,
+                    target_endpoint=request.target_endpoint,
+                ):
+                    if isinstance(message, dict):
+                        result = message
+                        job.result = result
+                        job.save()
+                        logger.info("Optimization completed with result")
+                    elif isinstance(message, str):
+                        job.add_log(message)
+                        logger.info("Optimization log: %s", message[:100] if len(message) > 100 else message)
+
+                if result and result.get("success"):
+                    job.result = result
+                    job.save()
+                    job.set_status("completed")
+                    job.add_log("Prompt optimization completed successfully")
+
+                    # Update DB record
+                    if run_id:
+                        try:
+                            _update_db = SessionLocal()
+                            from server.database import PromptOptimizationRunDB as _RunDB
+                            import json as _json
+
+                            run_rec = _update_db.query(_RunDB).filter(_RunDB.id == run_id).first()
+                            if run_rec:
+                                run_rec.original_prompt = result.get("original_prompt")
+                                run_rec.optimized_prompt = result.get("optimized_prompt")
+                                run_rec.optimized_version = result.get("optimized_version")
+                                run_rec.optimized_uri = result.get("optimized_uri")
+                                run_rec.metrics = _json.dumps(result.get("metrics", {}))
+                                run_rec.status = "completed"
+                                _update_db.commit()
+                            _update_db.close()
+                        except Exception as db_err:
+                            logger.warning("Failed to update optimization run record: %s", db_err)
+                else:
+                    job.set_status("failed")
+                    job.error = result.get("error", "Unknown error") if result else "No result returned"
+                    job.add_log(f"Optimization failed: {job.error}")
+
+                    if run_id:
+                        try:
+                            _update_db = SessionLocal()
+                            from server.database import PromptOptimizationRunDB as _RunDB
+
+                            run_rec = _update_db.query(_RunDB).filter(_RunDB.id == run_id).first()
+                            if run_rec:
+                                run_rec.status = "failed"
+                                run_rec.error = job.error
+                                _update_db.commit()
+                            _update_db.close()
+                        except Exception:
+                            pass
+
+            finally:
+                thread_db.close()
+
+        except Exception as e:
+            logger.exception("Optimization job failed: %s", e)
+            job.set_status("failed")
+            job.error = str(e)
+            job.add_log(f"ERROR: Optimization failed with exception: {e}")
+            job.save()
+
+            # Update DB record so history doesn't show "running" forever
+            if run_id:
+                try:
+                    from server.database import SessionLocal as _ErrSessionLocal
+                    from server.database import PromptOptimizationRunDB as _ErrRunDB
+
+                    _err_db = _ErrSessionLocal()
+                    _err_rec = _err_db.query(_ErrRunDB).filter(_ErrRunDB.id == run_id).first()
+                    if _err_rec:
+                        _err_rec.status = "failed"
+                        _err_rec.error = str(e)
+                        _err_db.commit()
+                    _err_db.close()
+                except Exception:
+                    pass
+
+    thread = threading.Thread(target=run_optimization_background, daemon=True)
+    thread.start()
+
+    logger.info("Started prompt optimization job %s", job_id)
+    return {
+        "job_id": job_id,
+        "status": "running",
+        "message": "Prompt optimization job started. Poll /prompt-optimization-job/{job_id} for status.",
+    }
+
+
+@router.get("/{workshop_id}/prompt-optimization-job/{job_id}")
+async def get_prompt_optimization_job_status(
+    workshop_id: str,
+    job_id: str,
+    since_log_index: int = 0,
+) -> Dict[str, Any]:
+    """Get the status and logs of a prompt optimization job.
+
+    Use `since_log_index` to get only new logs since the last poll.
+    """
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Optimization job not found")
+
+    if job.workshop_id != workshop_id:
+        raise HTTPException(status_code=403, detail="Job does not belong to this workshop")
+
+    new_logs = job.logs[since_log_index:] if since_log_index > 0 else job.logs
+
+    response = {
+        "job_id": job_id,
+        "status": job.status,
+        "logs": new_logs,
+        "log_count": len(job.logs),
+        "updated_at": job.updated_at,
+    }
+
+    if job.result:
+        response["result"] = job.result
+    if job.error:
+        response["error"] = job.error
+
+    return response
+
+
+@router.get("/{workshop_id}/prompt-optimization-history")
+async def get_prompt_optimization_history(
+    workshop_id: str,
+    db: Session = Depends(get_db),
+) -> List[Dict[str, Any]]:
+    """Get the history of prompt optimization runs for a workshop.
+
+    Reconciles stale "running" DB records against in-memory job store:
+    - If the job completed in memory but DB wasn't updated, syncs the result.
+    - If the job is gone (server restarted), marks the run as failed.
+    """
+    import json as _json
+    from datetime import datetime, timedelta
+
+    from server.database import PromptOptimizationRunDB
+
+    runs = (
+        db.query(PromptOptimizationRunDB)
+        .filter(PromptOptimizationRunDB.workshop_id == workshop_id)
+        .order_by(PromptOptimizationRunDB.created_at.desc())
+        .all()
+    )
+
+    # Reconcile stale "running" records
+    for run in runs:
+        if run.status != "running":
+            continue
+        job = get_job(run.job_id)
+        if job and job.status in ("completed", "failed"):
+            # Job finished but DB wasn't updated (bug fixed in this patch)
+            run.status = job.status
+            run.error = job.error
+            if job.result and job.result.get("success"):
+                run.original_prompt = job.result.get("original_prompt") or run.original_prompt
+                run.optimized_prompt = job.result.get("optimized_prompt")
+                run.optimized_version = job.result.get("optimized_version")
+                run.optimized_uri = job.result.get("optimized_uri")
+                run.metrics = _json.dumps(job.result.get("metrics", {}))
+            try:
+                db.commit()
+            except Exception:
+                db.rollback()
+        elif not job and run.created_at and run.created_at < datetime.utcnow() - timedelta(minutes=30):
+            # Job is gone (server restarted) and old enough to be stale
+            run.status = "failed"
+            run.error = "Server restarted before optimization completed"
+            try:
+                db.commit()
+            except Exception:
+                db.rollback()
+
+    return [
+        {
+            "id": run.id,
+            "job_id": run.job_id,
+            "prompt_uri": run.prompt_uri,
+            "original_prompt": run.original_prompt,
+            "optimized_prompt": run.optimized_prompt,
+            "optimized_version": run.optimized_version,
+            "optimized_uri": run.optimized_uri,
+            "optimizer_model": run.optimizer_model,
+            "num_iterations": run.num_iterations,
+            "num_candidates": run.num_candidates,
+            "metrics": _json.loads(run.metrics) if run.metrics else None,
+            "status": run.status,
+            "error": run.error,
+            "created_at": run.created_at.isoformat() if run.created_at else None,
+        }
+        for run in runs
+    ]

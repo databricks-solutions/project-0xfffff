@@ -155,8 +155,8 @@ def format_irr_result(
   """Format IRR calculation result for API response.
 
   Args:
-      metric_name: Name of the metric used ("Cohen's Kappa" or "Krippendorff's Alpha")
-      score: IRR score value
+      metric_name: Name of the metric used (e.g. "Pairwise Agreement")
+      score: IRR score value (0-100 for pairwise agreement percentage)
       interpretation: Human-readable interpretation
       suggestions: List of improvement suggestions
       analysis: Annotation structure analysis
@@ -166,10 +166,10 @@ def format_irr_result(
   """
   return {
     'metric_used': metric_name,
-    'score': round(score, 3),
+    'score': round(score, 1),
     'interpretation': interpretation,
-    'ready_to_proceed': score >= 0.3,
-    'threshold': 0.3,
+    'ready_to_proceed': score >= 75.0,
+    'threshold': 75.0,
     'suggestions': suggestions,
     'num_raters': analysis['num_raters'],
     'num_traces': analysis['num_traces'],
