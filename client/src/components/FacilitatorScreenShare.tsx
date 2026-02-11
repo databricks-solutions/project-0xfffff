@@ -17,6 +17,8 @@ export const FacilitatorScreenShare: React.FC<FacilitatorScreenShareProps> = ({ 
         return 'The facilitator will present the inter-rater reliability results and insights.';
       case 'judge_tuning':
         return 'The facilitator is fine-tuning the LLM judge based on workshop annotations.';
+      case 'prompt_optimization':
+        return 'The facilitator is optimizing the agent system prompt using GEPA.';
       case 'dbsql_export':
         return 'The facilitator is exporting the judge configuration to Databricks SQL.';
       default:

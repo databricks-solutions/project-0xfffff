@@ -8,18 +8,20 @@ import React from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { 
-  CheckCircle, 
-  Circle, 
-  ArrowRight, 
-  Search, 
-  FileText, 
-  Star, 
+import {
+  CheckCircle,
+  Circle,
+  ArrowRight,
+  Search,
+  FileText,
+  Star,
   BarChart3,
   ChevronRight,
   Brain,
   Table,
-  Settings
+  Settings,
+  Database,
+  Sparkles,
 } from 'lucide-react';
 
 export interface WorkflowPhase {
@@ -199,6 +201,16 @@ export const createDefaultWorkflowPhases = (
       enabled: completedPhases.includes('results')
     },
     {
+      id: 'prompt_optimization',
+      name: 'Prompt Optimization',
+      description: 'Optimize agent prompt with GEPA',
+      icon: Sparkles,
+      path: '/prompt_optimization',
+      completed: completedPhases.includes('prompt_optimization'),
+      current: currentPhaseId === 'prompt_optimization',
+      enabled: completedPhases.includes('judge_tuning')
+    },
+    {
       id: 'unity_volume',
       name: 'Manage Workshop Data',
       description: 'Upload to Unity Volume or download workshop data',
@@ -206,7 +218,7 @@ export const createDefaultWorkflowPhases = (
       path: '/unity_volume',
       completed: completedPhases.includes('unity_volume'),
       current: currentPhaseId === 'unity_volume',
-      enabled: completedPhases.includes('judge_tuning')
+      enabled: completedPhases.includes('prompt_optimization') || completedPhases.includes('judge_tuning')
     }
   ];
 

@@ -23,6 +23,14 @@ interface WorkshopStep {
   isPhaseControl?: boolean;
 }
 
+// Phases that get marked complete on click (post-annotation phases)
+const CLICK_TO_COMPLETE_PHASES: Record<string, string> = {
+  'results review': 'results',
+  'judge tuning': 'judge_tuning',
+  'prompt optimization': 'prompt_optimization',
+  'manage data': 'unity_volume',
+};
+
 export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate }) => {
   const { user } = useUser();
   const { workshopId } = useWorkshopContext();
@@ -37,13 +45,38 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
     canViewAllFindings,
     canViewAllAnnotations
   } = useRoleCheck();
-  const { 
-    currentPhase, 
-    isPhaseComplete
+  const {
+    currentPhase,
+    isPhaseComplete,
   } = useWorkflowContext();
   
   const [isStartingPhase, setIsStartingPhase] = React.useState(false);
   const [phaseError, setPhaseError] = React.useState<string | null>(null);
+
+  // Track which post-annotation phase the user is currently viewing (shows as blue)
+  // Phases before it in the click order show as green (completed)
+  // This is in-memory only — resets on page refresh or when annotation restarts
+  const [activeViewedPhase, setActiveViewedPhase] = React.useState<string | null>(null);
+
+  // Clear post-annotation progress when workshop phase moves back to annotation or earlier
+  const prevCurrentPhaseRef = React.useRef(currentPhase);
+  React.useEffect(() => {
+    if (currentPhase !== prevCurrentPhaseRef.current) {
+      const prevPhase = prevCurrentPhaseRef.current;
+      prevCurrentPhaseRef.current = currentPhase;
+
+      // Don't clear on initial load (transition from default 'intake' to actual phase)
+      if (prevPhase === 'intake') return;
+
+      const phaseOrder = ['discovery', 'rubric', 'annotation', 'results', 'judge_tuning', 'prompt_optimization', 'unity_volume'];
+      const annotationIdx = phaseOrder.indexOf('annotation');
+      const newIdx = phaseOrder.indexOf(currentPhase);
+
+      if (newIdx >= 0 && newIdx <= annotationIdx) {
+        setActiveViewedPhase(null);
+      }
+    }
+  }, [currentPhase]);
   
   const startDiscoveryPhase = async () => {
     try {
@@ -70,6 +103,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
   const isAnnotationComplete = isPhaseComplete('annotation');
   const isResultsComplete = isPhaseComplete('results');
   const isJudgeTuningComplete = isPhaseComplete('judge_tuning');
+  const isPromptOptimizationComplete = isPhaseComplete('prompt_optimization');
   
   // Check if current user has completed discovery
   const { data: userDiscoveryComplete } = useQuery({
@@ -142,7 +176,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
     // Check if discovery should be marked as completed (defined at function level)
     const shouldMarkDiscoveryComplete = isDiscoveryComplete || 
                                        discoveryCompletionStatus?.all_completed || 
-                                       ['rubric', 'annotation', 'results', 'judge_tuning', 'dbsql_export'].includes(currentPhase);
+                                       ['rubric', 'annotation', 'results', 'judge_tuning', 'prompt_optimization', 'dbsql_export'].includes(currentPhase);
 
     // Always show all phases for context, but with different statuses and accessibility
     
@@ -307,51 +341,56 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
     }
 
     // Phase 4: Results Review
-    if (isAnnotationComplete) {
-      if (isFacilitator) {
-        steps.push({
-          title: 'Results Review',
-          description: 'View IRR analysis and results',
-          status: isResultsComplete ? 'completed' : (currentPhase === 'results' ? 'in_progress' : 'available'),
-          action: () => onNavigate('results'),
-          accessible: true
-        });
-      } else {
-        steps.push({
-          title: 'Results Review',
-          description: 'Facilitator will share results',
-          status: isResultsComplete ? 'completed' : 'waiting',
-          action: () => onNavigate('results'),
-          accessible: true
-        });
-      }
+    if (isResultsComplete) {
+      steps.push({
+        title: 'Results Review',
+        description: isFacilitator ? 'View IRR analysis and results' : 'Review and share IRR results',
+        status: 'completed',
+        action: () => onNavigate('results'),
+        accessible: true
+      });
+    } else if (isAnnotationComplete) {
+      steps.push({
+        title: 'Results Review',
+        description: isFacilitator ? 'View IRR analysis and results' : 'Facilitator will share results',
+        status: isFacilitator ? (currentPhase === 'results' ? 'in_progress' : 'available') : 'waiting',
+        action: () => onNavigate('results'),
+        accessible: true
+      });
     } else {
       steps.push({
         title: 'Results Review',
         description: isFacilitator ? 'Review and share IRR results' : 'Facilitator will share results',
         status: 'upcoming',
         action: () => onNavigate('results'),
-        accessible: isFacilitator  // Only facilitator can click
+        accessible: isFacilitator
       });
     }
 
     // Phase 5: Judge Tuning (Facilitator Only)
-    if (isAnnotationComplete && isFacilitator) {
+    if (isJudgeTuningComplete) {
+      steps.push({
+        title: 'Judge Tuning',
+        description: isFacilitator ? 'Create AI judges from data' : 'AI judge creation',
+        status: 'completed',
+        action: () => onNavigate('judge_tuning'),
+        accessible: isFacilitator
+      });
+    } else if (isAnnotationComplete && isFacilitator) {
       steps.push({
         title: 'Judge Tuning',
         description: 'Create AI judges from data',
-        status: currentPhase === 'judge_tuning' ? 'in_progress' :
-                (currentPhase === 'dbsql_export' || isJudgeTuningComplete) ? 'completed' : 'available',
+        status: currentPhase === 'judge_tuning' ? 'in_progress' : 'available',
         action: () => onNavigate('judge_tuning'),
-        accessible: isFacilitator  // Only facilitator can click
+        accessible: isFacilitator
       });
     } else if (isAnnotationComplete && !isFacilitator) {
       steps.push({
         title: 'Judge Tuning',
         description: 'Facilitator creating AI judges',
-        status: (currentPhase === 'dbsql_export' || isJudgeTuningComplete) ? 'completed' : 'waiting',
+        status: 'waiting',
         action: () => onNavigate('judge_tuning'),
-        accessible: isFacilitator  // Only facilitator can click
+        accessible: false
       });
     } else {
       steps.push({
@@ -359,13 +398,55 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
         description: isFacilitator ? 'Create AI judges' : 'AI judge creation',
         status: 'upcoming',
         action: () => onNavigate('judge_tuning'),
-        accessible: isFacilitator  // Only facilitator can click
+        accessible: isFacilitator
       });
     }
 
-    // Phase 6: Manage Workshop Data (All Users)
-    if (currentPhase === 'unity_volume') {
-      // If we're in Unity volume phase, show it as in progress
+    // Phase 6: Prompt Optimization (Facilitator Only)
+    if (isPromptOptimizationComplete) {
+      steps.push({
+        title: 'Prompt Optimization',
+        description: isFacilitator ? 'Optimize agent prompt with GEPA' : 'Agent prompt optimization',
+        status: 'completed',
+        action: () => onNavigate('prompt_optimization'),
+        accessible: isFacilitator
+      });
+    } else if (isJudgeTuningComplete && isFacilitator) {
+      steps.push({
+        title: 'Prompt Optimization',
+        description: 'Optimize agent prompt with GEPA',
+        status: currentPhase === 'prompt_optimization' ? 'in_progress' : 'available',
+        action: () => onNavigate('prompt_optimization'),
+        accessible: isFacilitator
+      });
+    } else if (isJudgeTuningComplete && !isFacilitator) {
+      steps.push({
+        title: 'Prompt Optimization',
+        description: 'Facilitator optimizing agent prompt',
+        status: 'waiting',
+        action: () => onNavigate('prompt_optimization'),
+        accessible: false
+      });
+    } else {
+      steps.push({
+        title: 'Prompt Optimization',
+        description: isFacilitator ? 'Optimize agent prompt' : 'Agent prompt optimization',
+        status: 'upcoming',
+        action: () => onNavigate('prompt_optimization'),
+        accessible: isFacilitator
+      });
+    }
+
+    // Phase 7: Manage Workshop Data (All Users)
+    if (isPhaseComplete('unity_volume')) {
+      steps.push({
+        title: 'Manage Data',
+        description: 'Upload or download data',
+        status: 'completed',
+        action: () => onNavigate('unity_volume'),
+        accessible: true
+      });
+    } else if (currentPhase === 'unity_volume') {
       steps.push({
         title: 'Manage Data',
         description: 'Upload or download data',
@@ -373,21 +454,21 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
         action: () => onNavigate('unity_volume'),
         accessible: true
       });
-    } else if (isJudgeTuningComplete) {
+    } else if (isPromptOptimizationComplete || isJudgeTuningComplete) {
       steps.push({
         title: 'Manage Data',
         description: 'Upload or download data',
         status: 'available',
         action: () => onNavigate('unity_volume'),
-        accessible: true  // All users can access data management
+        accessible: true
       });
     } else {
       steps.push({
         title: 'Manage Data',
-        description: 'Available after judge tuning',
+        description: 'Available after optimization',
         status: 'upcoming',
         action: () => onNavigate('unity_volume'),
-        accessible: true  // All users can access data management
+        accessible: true
       });
     }
 
@@ -524,19 +605,38 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
       {/* Workflow Steps */}
       <div className="space-y-2">
         {getWorkshopSteps().map((step, index) => {
-          const isActive = step.status === 'in_progress' || step.status === 'action_required';
-          const isCompleted = step.status === 'completed';
-          const isWaiting = step.status === 'waiting';
-          const isAvailable = step.status === 'available';
+          // Derive post-annotation phase visual state from activeViewedPhase position
+          const CLICK_PHASE_ORDER = ['results', 'judge_tuning', 'prompt_optimization', 'unity_volume'];
+          const stepPhaseId = CLICK_TO_COMPLETE_PHASES[step.title.toLowerCase()];
+          const stepIdx = stepPhaseId ? CLICK_PHASE_ORDER.indexOf(stepPhaseId) : -1;
+          const activeIdx = activeViewedPhase ? CLICK_PHASE_ORDER.indexOf(activeViewedPhase) : -1;
 
-          // Simplified current phase detection - direct string matching
-          const isCurrentPhase = (() => {
+          // Active = currently viewing (blue), before active = already visited (green)
+          const isActivelyViewed = stepIdx >= 0 && stepIdx === activeIdx;
+          const isBeforeActive = stepIdx >= 0 && activeIdx >= 0 && stepIdx < activeIdx;
+
+          // Override status based on click-through position
+          let effectiveStatus = step.status;
+          if (isActivelyViewed) {
+            effectiveStatus = 'in_progress'; // blue
+          } else if (isBeforeActive) {
+            effectiveStatus = 'completed'; // green
+          }
+
+          const isActive = effectiveStatus === 'in_progress' || effectiveStatus === 'action_required';
+          const isCompleted = effectiveStatus === 'completed';
+          const isWaiting = effectiveStatus === 'waiting';
+          const isAvailable = effectiveStatus === 'available';
+
+          // Simplified current phase detection - direct string matching OR actively viewed
+          const isCurrentPhase = isActivelyViewed || (() => {
             const title = step.title.toLowerCase();
             if (title.includes('discovery')) return currentPhase === 'discovery';
             if (title.includes('rubric')) return currentPhase === 'rubric';
             if (title.includes('annotation')) return currentPhase === 'annotation';
             if (title.includes('results')) return currentPhase === 'results';
             if (title.includes('judge')) return currentPhase === 'judge_tuning';
+            if (title.includes('prompt optimization')) return currentPhase === 'prompt_optimization';
             if (title.includes('dbsql')) return currentPhase === 'dbsql_export';
             if (title.includes('unity')) return currentPhase === 'unity_volume';
             return false;
@@ -547,6 +647,10 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
               key={index}
               onClick={() => {
                 if (!isStartingPhase && step.accessible) {
+                  const phaseId = CLICK_TO_COMPLETE_PHASES[step.title.toLowerCase()];
+                  if (phaseId) {
+                    setActiveViewedPhase(phaseId);
+                  }
                   step.action();
                 }
               }}
@@ -577,7 +681,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
                       : 'bg-gray-100 text-gray-500'
                   }`}
                 >
-                  {getStatusIcon(step.status)}
+                  {getStatusIcon(effectiveStatus)}
                 </div>
 
                 <div className="flex-1 min-w-0 space-y-0.5">
@@ -593,9 +697,9 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
                     {(isCurrentPhase || isActive || isAvailable || isCompleted || isWaiting) && (
                       <Badge
                         variant="secondary"
-                        className={`text-[10px] font-semibold px-2 py-0 h-5 ${getStatusColor(step.status)}`}
+                        className={`text-[10px] font-semibold px-2 py-0 h-5 ${getStatusColor(effectiveStatus)}`}
                       >
-                        {getStatusBadgeText(step.status)}
+                        {getStatusBadgeText(effectiveStatus)}
                       </Badge>
                     )}
                   </div>

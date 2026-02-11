@@ -82,6 +82,7 @@ export function WorkshopCreationPage() {
       'annotation': 'Annotation',
       'results': 'Results Review',
       'judge_tuning': 'Judge Tuning',
+      'prompt_optimization': 'Prompt Optimization',
       'unity_volume': 'Unity Volume'
     };
     return phases[phase] || phase;

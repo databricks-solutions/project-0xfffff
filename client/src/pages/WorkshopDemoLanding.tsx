@@ -18,6 +18,7 @@ import { RubricCreationDemo } from './RubricCreationDemo';
 import { AnnotationDemo } from './AnnotationDemo';
 import { IRRResultsDemo } from './IRRResultsDemo';
 import { JudgeTuningPage } from './JudgeTuningPage';
+import { PromptOptimizationPage } from './PromptOptimizationPage';
 import { DBSQLExportPage } from './DBSQLExportPage';
 import { UnityVolumePage } from './UnityVolumePage';
 import { FindingsReviewPage } from './FindingsReviewPage';
@@ -100,13 +101,14 @@ export function WorkshopDemoLanding() {
           return 'annotation-monitor';
         case 'results': return 'results-view';
         case 'judge_tuning': return 'judge-tuning';
+        case 'prompt_optimization': return 'prompt-optimization';
         case 'unity_volume': return 'unity-volume';
         default: return 'dashboard-general';
       }
     }
     
     // SME/PARTICIPANT - Handle facilitator-only phases first
-    if (['intake', 'rubric', 'results', 'judge_tuning', 'unity_volume'].includes(requestedPhase)) {
+    if (['intake', 'rubric', 'results', 'judge_tuning', 'prompt_optimization', 'unity_volume'].includes(requestedPhase)) {
       return 'facilitator-screen-share';
     }
     
@@ -123,7 +125,7 @@ export function WorkshopDemoLanding() {
       case 'discovery': 
         if (isPhaseActive('discovery')) return 'discovery-participate';
         if (state.currentPhase === 'discovery') return 'discovery-complete'; // Paused
-        if (['rubric', 'annotation', 'results', 'judge_tuning', 'unity_volume'].includes(state.currentPhase)) return 'discovery-complete';
+        if (['rubric', 'annotation', 'results', 'judge_tuning', 'prompt_optimization', 'unity_volume'].includes(state.currentPhase)) return 'discovery-complete';
         return 'discovery-pending';
       case 'annotation':
         if (isPhaseActive('annotation')) {
@@ -132,7 +134,7 @@ export function WorkshopDemoLanding() {
         if (state.currentPhase === 'annotation') {
           return 'annotation-review'; // Paused
         }
-        if (['results', 'judge_tuning', 'unity_volume'].includes(state.currentPhase)) {
+        if (['results', 'judge_tuning', 'prompt_optimization', 'unity_volume'].includes(state.currentPhase)) {
           return 'annotation-review';
         }
         return 'annotation-pending';
@@ -282,6 +284,13 @@ export function WorkshopDemoLanding() {
         });
       } else if (currentPhase === 'judge_tuning') {
         view = getViewForPhaseWithState(user.role, 'judge_tuning', {
+          currentPhase,
+          completedPhases: workshop.completed_phases || [],
+          discovery_started: workshop.discovery_started || false,
+          annotation_started: workshop.annotation_started || false
+        });
+      } else if (currentPhase === 'prompt_optimization') {
+        view = getViewForPhaseWithState(user.role, 'prompt_optimization', {
           currentPhase,
           completedPhases: workshop.completed_phases || [],
           discovery_started: workshop.discovery_started || false,
@@ -541,6 +550,8 @@ export function WorkshopDemoLanding() {
         return <ResultsWaitingView />;
       case 'judge-tuning':
         return <JudgeTuningPage />;
+      case 'prompt-optimization':
+        return <PromptOptimizationPage />;
       case 'dbsql-export':
         return <DBSQLExportPage />;
       case 'unity-volume':
