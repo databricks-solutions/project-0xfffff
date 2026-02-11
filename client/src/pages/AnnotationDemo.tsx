@@ -5,7 +5,7 @@
  * rate traces using the rubric questions with 1-5 Likert scale.
  */
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { TraceViewer, TraceData } from '@/components/TraceViewer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -69,7 +69,7 @@ const FormattedRubricDescription: React.FC<{ description: string }> = ({ descrip
   if (description.includes('\n')) {
     const lines = description.split('\n').map(line => line.trim()).filter(line => line.length > 0);
     // Check if lines start with bullet markers
-    const bulletPattern = /^[•\-*]\s*/;
+    const bulletPattern = /^[•\-\*]\s*/;
     const hasBullets = lines.some(line => bulletPattern.test(line));
     
     if (hasBullets) {
@@ -222,8 +222,27 @@ export function AnnotationDemo() {
   const { canAnnotate } = useRoleCheck();
   const currentUserId = user?.id || 'demo_user';
 
-  // Fetch data - pass user ID for personalized trace ordering (must be before early returns)
-  const { data: traces, isLoading: tracesLoading, error: tracesError } = useTraces(workshopId!, user?.id);
+
+  // Check if user is logged in
+  if (!user || !user.id) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
+        <div className="text-center max-w-md">
+          <AlertCircle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+          <div className="text-lg font-medium text-gray-900 mb-2">
+            Please Log In
+          </div>
+          <div className="text-sm text-gray-500">
+            You must be logged in to annotate traces.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Fetch data - pass user ID for personalized trace ordering
+  // User is guaranteed to have an ID at this point
+  const { data: traces, isLoading: tracesLoading, error: tracesError } = useTraces(workshopId!, user.id);
   const { data: rubric, isLoading: rubricLoading } = useRubric(workshopId!);
   const { data: existingAnnotations } = useUserAnnotations(workshopId!, user);
   const { data: mlflowConfig } = useMLflowConfig(workshopId!);
@@ -241,15 +260,9 @@ export function AnnotationDemo() {
   const deleteNote = useDeleteParticipantNote(workshopId!);
 
   // Convert traces to TraceData format
-  const traceData = useMemo(
-    () => traces?.map(convertTraceToTraceData) ?? [],
-    [traces]
-  );
+  const traceData = traces?.map(convertTraceToTraceData) || [];
   const currentTrace = traceData[currentTraceIndex];
-  const rubricQuestions = useMemo(
-    () => rubric ? parseRubricQuestions(rubric) : [],
-    [rubric]
-  );
+  const rubricQuestions = rubric ? parseRubricQuestions(rubric) : [];
 
   // Helper function to get legacy rating (first likert rating between 1-5, or default to 3)
   const getLegacyRating = (ratingsOverride?: Record<string, number>): number => {
@@ -281,14 +294,14 @@ export function AnnotationDemo() {
   
   // Helper function to build combined comment with freeform responses
   // Uses JSON for freeform to preserve multi-line content
-  const buildCombinedComment = useCallback((
+  const buildCombinedComment = (
     commentOverride?: string,
     freeformOverride?: Record<string, string>
   ) => {
     const commentToUse = commentOverride !== undefined ? commentOverride : comment;
     const freeformToUse = freeformOverride || freeformResponses;
     let combined = commentToUse.trim();
-
+    
     // Add freeform responses to comment as JSON to preserve multi-line content
     const freeformEntries = Object.entries(freeformToUse).filter(([_, v]) => v.trim());
     if (freeformEntries.length > 0) {
@@ -298,34 +311,34 @@ export function AnnotationDemo() {
         const question = rubricQuestions.find(q => q.id === questionId);
         freeformMap[question?.title || questionId] = response.trim();
       }
-
+      
       const freeformJson = JSON.stringify(freeformMap);
-
+      
       if (combined) {
         combined = `${combined}\n\n|||FREEFORM_JSON|||${freeformJson}|||END_FREEFORM|||`;
       } else {
         combined = `|||FREEFORM_JSON|||${freeformJson}|||END_FREEFORM|||`;
       }
     }
-
+    
     return combined || null;
-  }, [comment, freeformResponses, rubricQuestions]);
+  };
   
   // Helper function to parse combined comment back into separate parts
-  const parseLoadedComment = useCallback((loadedComment: string): { userComment: string; freeformData: Record<string, string> } => {
+  const parseLoadedComment = (loadedComment: string): { userComment: string; freeformData: Record<string, string> } => {
     const freeformData: Record<string, string> = {};
     let userComment = loadedComment;
-
+    
     // Check for new JSON format first
     const jsonStartMarker = '|||FREEFORM_JSON|||';
     const jsonEndMarker = '|||END_FREEFORM|||';
     const jsonStartIndex = loadedComment.indexOf(jsonStartMarker);
     const jsonEndIndex = loadedComment.indexOf(jsonEndMarker);
-
+    
     if (jsonStartIndex !== -1 && jsonEndIndex !== -1) {
       // Extract user comment (before the marker)
       userComment = loadedComment.substring(0, jsonStartIndex).trim();
-
+      
       // Extract and parse JSON
       const jsonStr = loadedComment.substring(jsonStartIndex + jsonStartMarker.length, jsonEndIndex);
       try {
@@ -344,14 +357,14 @@ export function AnnotationDemo() {
       // Check for old format (backward compatibility)
       const freeformMarker = '--- Free-form Responses ---';
       const markerIndex = loadedComment.indexOf(freeformMarker);
-
+      
       if (markerIndex !== -1) {
         // Extract user comment (before the marker)
         userComment = loadedComment.substring(0, markerIndex).trim();
-
+        
         // Extract freeform section - old format was single-line only
         const freeformSection = loadedComment.substring(markerIndex + freeformMarker.length).trim();
-
+        
         // Parse each freeform response: [Title]: Response (single line)
         const lines = freeformSection.split('\n');
         for (const line of lines) {
@@ -367,9 +380,9 @@ export function AnnotationDemo() {
         }
       }
     }
-
+    
     return { userComment, freeformData };
-  }, [rubricQuestions]);
+  };
 
 
 
@@ -452,10 +465,10 @@ export function AnnotationDemo() {
           return prev;
         });
       } else {
-        // No existing annotation for this trace - nothing to load
+        
       }
     }
-  }, [currentTrace?.id, existingAnnotations, currentUserId, rubricQuestions, parseLoadedComment]);
+  }, [currentTrace?.id, existingAnnotations, currentUserId]);
 
   // Initialize saved state from all existing annotations (runs once)
   useEffect(() => {
@@ -482,7 +495,7 @@ export function AnnotationDemo() {
         });
       });
     }
-  }, [existingAnnotations, rubricQuestions, parseLoadedComment]);
+  }, [existingAnnotations?.length, rubricQuestions.length]); // Only run when counts change
 
   // Navigate to first incomplete trace on initial load
   const hasInitialized = useRef(false);
@@ -553,7 +566,7 @@ export function AnnotationDemo() {
       
       hasInitialized.current = true;
     }
-  }, [existingAnnotations, traceData, hasNavigatedManually, workshopId, currentTrace?.id, currentUserId, rubricQuestions, parseLoadedComment]);
+  }, [existingAnnotations, traceData, hasNavigatedManually, workshopId]);
 
   // Save annotation function - can be called synchronously or asynchronously
   const saveAnnotation = async (
@@ -1079,23 +1092,6 @@ export function AnnotationDemo() {
     }
   };
   
-  // Check if user is logged in (after all hooks)
-  if (!user || !user.id) {
-    return (
-      <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
-        <div className="text-center max-w-md">
-          <AlertCircle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
-          <div className="text-lg font-medium text-gray-900 mb-2">
-            Please Log In
-          </div>
-          <div className="text-sm text-gray-500">
-            You must be logged in to annotate traces.
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   if (tracesLoading || rubricLoading) {
     return (
       <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
@@ -1201,7 +1197,7 @@ export function AnnotationDemo() {
                       const mlflowUrl = `${host}/ml/experiments/${experiment_id}/traces?selectedEvaluationId=${trace_id}`;
                       window.open(mlflowUrl, '_blank');
                     } else {
-                      // MLflow URL not configured - button is disabled anyway
+
                     }
                   }}
                   className="flex items-center gap-1 text-[10px] h-6 px-2"
@@ -1277,7 +1273,6 @@ export function AnnotationDemo() {
                         return (
                           <div key={value} className="flex flex-col items-center">
                             <div
-                              data-rating={value}
                               className={`${canAnnotate && !isSaving ? "cursor-pointer" : "cursor-not-allowed opacity-50"} mb-1.5`}
                               onClick={(e) => {
                                 e.preventDefault();
@@ -1330,7 +1325,6 @@ export function AnnotationDemo() {
                         className={`flex flex-col items-center gap-1.5 ${canAnnotate && !isSaving ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}
                         onClick={() => canAnnotate && !isSaving && setCurrentRatings(prev => ({ ...prev, [question.id]: 1 }))}
                         role="button"
-                        data-rating="1"
                         tabIndex={canAnnotate && !isSaving ? 0 : -1}
                         onKeyDown={(e) => e.key === 'Enter' && canAnnotate && !isSaving && setCurrentRatings(prev => ({ ...prev, [question.id]: 1 }))}
                       >
@@ -1347,7 +1341,6 @@ export function AnnotationDemo() {
                         className={`flex flex-col items-center gap-1.5 ${canAnnotate && !isSaving ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}
                         onClick={() => canAnnotate && !isSaving && setCurrentRatings(prev => ({ ...prev, [question.id]: 0 }))}
                         role="button"
-                        data-rating="0"
                         tabIndex={canAnnotate && !isSaving ? 0 : -1}
                         onKeyDown={(e) => e.key === 'Enter' && canAnnotate && !isSaving && setCurrentRatings(prev => ({ ...prev, [question.id]: 0 }))}
                       >
@@ -1429,7 +1422,6 @@ export function AnnotationDemo() {
             onClick={prevTrace}
             disabled={currentTraceIndex === 0 || isNavigating}
             className="flex items-center gap-1.5"
-            data-testid="prev-trace-button"
           >
             <ChevronLeft className="h-4 w-4" />
             Previous

@@ -123,7 +123,7 @@ export function IntakePage() {
         }
       }
     } catch (err) {
-      // no-op
+
     }
   };
 

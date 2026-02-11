@@ -240,49 +240,52 @@ def create_engine_for_backend(backend: DatabaseBackend) -> "Engine":
         raise RuntimeError("Cannot create PostgreSQL engine: Lakebase config not available")
 
     token_manager = get_token_manager()
-    password = token_manager.get_token()
-
-    database_url = (
-        f"postgresql+psycopg://{config.user}:{password}@"
-        f"{config.host}:{config.port}/{config.database}"
-        f"?sslmode={config.sslmode}"
-        f"&application_name={config.app_name}"
-    )
 
     # Derive schema name from PGAPPNAME (hyphens → underscores for SQL safety)
     schema_name = config.app_name.replace("-", "_")
 
+    # Use a creator callable so every NEW connection fetches a fresh OAuth
+    # token.  Previously the token was baked into the URL at engine creation
+    # time, so after it expired all new connections (including retries after
+    # pool reset) would fail with "Invalid authorization".
+    def _create_pg_connection():
+        import psycopg
+
+        token = token_manager.get_token()
+        conn = psycopg.connect(
+            host=config.host,
+            port=config.port,
+            dbname=config.database,
+            user=config.user,
+            password=token,
+            sslmode=config.sslmode,
+            options=f"-csearch_path={schema_name},public",
+            application_name=config.app_name,
+        )
+        return conn
+
+    # Use a placeholder URL — the actual connection is made by _create_pg_connection
     engine = create_engine(
-        database_url,
+        "postgresql+psycopg://",
+        creator=_create_pg_connection,
         pool_size=5,
         max_overflow=10,
         pool_timeout=30,
         pool_recycle=300,  # Recycle every 5 min — serverless PG drops idle connections
         pool_pre_ping=True,
         echo=False,
-        # Set search_path at the PostgreSQL protocol level during connection
-        # establishment.  This is more reliable than an event listener because
-        # it is handled by the server before any SQL statement runs.
-        connect_args={"options": f"-csearch_path={schema_name},public"},
     )
 
-    # Also set search_path via on_connect as a belt-and-suspenders fallback
-    # and handle token refresh for long-lived pooled connections.
+    # Belt-and-suspenders: set search_path via on_connect as well
     @event.listens_for(engine, "connect")
     def on_connect(dbapi_connection, connection_record):
-        """Set search_path and refresh token on new connections."""
+        """Set search_path on new connections."""
         try:
             cursor = dbapi_connection.cursor()
             cursor.execute(f'SET search_path TO "{schema_name}", public')
             cursor.close()
         except Exception as e:
             logger.warning(f"Failed to SET search_path in on_connect: {e}")
-
-        if token_manager.needs_refresh:
-            try:
-                token_manager.get_token()  # Refresh token
-            except Exception as e:
-                logger.warning(f"Token refresh on connect failed: {e}")
 
     logger.info(f"PostgreSQL engine created with search_path: {schema_name}, public")
     return engine

@@ -52,7 +52,7 @@ export function WorkshopCreationPage() {
       window.history.pushState({}, '', `?workshop=${workshop.id}`);
       
     } catch (error) {
-      // no-op
+      
     }
   };
 

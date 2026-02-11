@@ -211,12 +211,9 @@ export function RubricCreationDemo() {
   // Use all traces for rubric creation page
   const { data: traces, refetch: refetchTraces } = useAllTraces(workshopId || '');
   // Facilitators see all findings to create better rubric, others see their own
-  // Note: We need to call both hooks unconditionally to satisfy rules-of-hooks
-  const facilitatorFindings = useFacilitatorFindingsWithUserDetails(workshopId || '');
-  const userFindings = useUserFindings(workshopId || '', user);
   const { data: findings, refetch: refetchFindings, isRefetching: isRefetchingFindings } = isFacilitator
-    ? facilitatorFindings
-    : userFindings;
+    ? useFacilitatorFindingsWithUserDetails(workshopId || '')
+    : useUserFindings(workshopId || '', user);
   const createRubric = useCreateRubric(workshopId || '');
   const updateRubric = useUpdateRubric(workshopId || '');
   // Fetch all participant notes for the scratch pad (facilitator sees all)
@@ -224,76 +221,8 @@ export function RubricCreationDemo() {
   // Workshop data for show_participant_notes toggle
   const { data: workshopData } = useWorkshop(workshopId || '');
   const toggleParticipantNotes = useToggleParticipantNotes(workshopId || '');
-
-  // Get discovery responses from real findings data, enriched with trace information
-  const discoveryResponses = useDiscoveryResponses(findings, traces);
-
-  // Helper to save scratch pad immediately to localStorage (must be before early returns)
-  const saveScratchPadToStorage = useCallback((entries: ScratchPadEntry[]) => {
-    if (!workshopId) return;
-    const storageKey = `scratch-pad-${workshopId}`;
-    if (entries.length > 0) {
-      const dataToSave = {
-        timestamp: Date.now(),
-        scratchPad: entries
-      };
-      localStorage.setItem(storageKey, JSON.stringify(dataToSave));
-    } else {
-      localStorage.removeItem(storageKey);
-    }
-  }, [workshopId]);
-
-  // Wrapper that saves immediately when setting scratch pad (must be before early returns)
-  const setScratchPad = useCallback((value: ScratchPadEntry[] | ((prev: ScratchPadEntry[]) => ScratchPadEntry[])) => {
-    setScratchPadState(prev => {
-      const newValue = typeof value === 'function' ? value(prev) : value;
-      // Save immediately to localStorage
-      saveScratchPadToStorage(newValue);
-      return newValue;
-    });
-  }, [saveScratchPadToStorage]);
-
-  // Load scratch pad from localStorage on mount (must be before early returns)
-  useEffect(() => {
-    if (workshopId) {
-      const storageKey = `scratch-pad-${workshopId}`;
-      const storedData = localStorage.getItem(storageKey);
-      if (storedData) {
-        try {
-          const parsed = JSON.parse(storedData);
-          // Only load if data is less than 7 days old (extended from 24 hours)
-          if (Date.now() - parsed.timestamp < 7 * 24 * 60 * 60 * 1000) {
-            // Convert timestamp strings back to Date objects
-            const entriesWithDates = parsed.scratchPad.map((entry: any) => ({
-              ...entry,
-              timestamp: new Date(entry.timestamp)
-            }));
-            setScratchPadState(entriesWithDates);
-          } else {
-            localStorage.removeItem(storageKey);
-          }
-        } catch (error) {
-          localStorage.removeItem(storageKey);
-        }
-      }
-    }
-  }, [workshopId]);
-
-  // Initialize questions and judge type from API data (must be before early returns)
-  useEffect(() => {
-    if (rubric && !isEditingExisting) {
-      setQuestions(convertApiRubricToQuestions(rubric));
-      // Load judge type from rubric
-      if (rubric.judge_type) {
-        setJudgeType(rubric.judge_type);
-      }
-      if (rubric.binary_labels) {
-        setBinaryLabels(rubric.binary_labels);
-      }
-    }
-  }, [rubric, isEditingExisting]);
-
-  // SECURITY: Block access if no valid user or workshop (after all hooks)
+  
+  // SECURITY: Block access if no valid user or workshop
   if (!user || !user.id) {
     return (
       <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
@@ -326,6 +255,74 @@ export function RubricCreationDemo() {
     );
   }
 
+  // Get discovery responses from real findings data, enriched with trace information
+  const discoveryResponses = useDiscoveryResponses(findings, traces);
+  
+  // Helper to save scratch pad immediately to localStorage
+  const saveScratchPadToStorage = useCallback((entries: ScratchPadEntry[]) => {
+    if (!workshopId) return;
+    const storageKey = `scratch-pad-${workshopId}`;
+    if (entries.length > 0) {
+      const dataToSave = {
+        timestamp: Date.now(),
+        scratchPad: entries
+      };
+      localStorage.setItem(storageKey, JSON.stringify(dataToSave));
+    } else {
+      localStorage.removeItem(storageKey);
+    }
+  }, [workshopId]);
+  
+  // Wrapper that saves immediately when setting scratch pad
+  const setScratchPad = useCallback((value: ScratchPadEntry[] | ((prev: ScratchPadEntry[]) => ScratchPadEntry[])) => {
+    setScratchPadState(prev => {
+      const newValue = typeof value === 'function' ? value(prev) : value;
+      // Save immediately to localStorage
+      saveScratchPadToStorage(newValue);
+      return newValue;
+    });
+  }, [saveScratchPadToStorage]);
+
+  // Load scratch pad from localStorage on mount
+  useEffect(() => {
+    if (workshopId) {
+      const storageKey = `scratch-pad-${workshopId}`;
+      const storedData = localStorage.getItem(storageKey);
+      if (storedData) {
+        try {
+          const parsed = JSON.parse(storedData);
+          // Only load if data is less than 7 days old (extended from 24 hours)
+          if (Date.now() - parsed.timestamp < 7 * 24 * 60 * 60 * 1000) {
+            // Convert timestamp strings back to Date objects
+            const entriesWithDates = parsed.scratchPad.map((entry: any) => ({
+              ...entry,
+              timestamp: new Date(entry.timestamp)
+            }));
+            setScratchPadState(entriesWithDates);
+          } else {
+            localStorage.removeItem(storageKey);
+          }
+        } catch (error) {
+          localStorage.removeItem(storageKey);
+        }
+      }
+    }
+  }, [workshopId]);
+  
+  // Initialize questions and judge type from API data
+  useEffect(() => {
+    if (rubric && !isEditingExisting) {
+      setQuestions(convertApiRubricToQuestions(rubric));
+      // Load judge type from rubric
+      if (rubric.judge_type) {
+        setJudgeType(rubric.judge_type);
+      }
+      if (rubric.binary_labels) {
+        setBinaryLabels(rubric.binary_labels);
+      }
+    }
+  }, [rubric, isEditingExisting]);
+
   // Build combined description from structured fields
   const buildDescription = () => {
     const parts: string[] = [];
@@ -351,10 +348,10 @@ export function RubricCreationDemo() {
     let positive = '';
     let negative = '';
     let examples = '';
-
+    
     const lines = description.split('\n');
     const definitionLines: string[] = [];
-
+    
     for (const line of lines) {
       if (line.startsWith('Positive: ')) {
         positive = line.replace('Positive: ', '');
@@ -366,7 +363,7 @@ export function RubricCreationDemo() {
         definitionLines.push(line);
       }
     }
-
+    
     definition = definitionLines.join('\n').trim();
     return { definition, positive, negative, examples };
   };
@@ -556,7 +553,7 @@ export function RubricCreationDemo() {
         };
         await updateRubric.mutateAsync(apiRubric);
       } catch (error) {
-        // Silently ignore errors - UI will show error via mutation state
+        
       }
     }
   };
@@ -800,11 +797,12 @@ export function RubricCreationDemo() {
               </div>
             ) : (
               discoveryResponses.length > 0 ? (
-                <FocusedAnalysisView 
+                <FocusedAnalysisView
                   discoveryResponses={discoveryResponses}
                   scratchPad={scratchPad}
                   setScratchPad={setScratchPad}
                   participantNotes={participantNotes}
+                  allTraces={traces}
                 />
               ) : (
                 <div className="text-center py-16">

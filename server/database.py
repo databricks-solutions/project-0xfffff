@@ -443,6 +443,7 @@ _PG_CONNECTION_ERRORS = (
     "could not connect to server",
     "connection refused",
     "connection timed out",
+    "invalid authorization",  # Lakebase: expired OAuth token
     "database is locked",  # SQLite
 )
 
@@ -479,26 +480,34 @@ def get_db():
     """Get database session with retry logic for serverless connection drops.
 
     Serverless PostgreSQL (e.g. Databricks Lakebase) drops idle connections.
-    On connection failure, resets the pool (+ OAuth token) and retries up to
-    3 times with exponential backoff (0.5s, 1.0s, 1.5s).
+    On connection failure during session establishment, resets the pool
+    (+ OAuth token) and retries up to 3 times with exponential backoff.
+
+    Errors that occur *during* request processing (after yield) are NOT
+    retried here — they bubble up to DatabaseErrorMiddleware which returns
+    a 503.  Retrying after yield would cause "generator didn't stop after
+    throw()" because a FastAPI dependency generator must only yield once.
     """
     import time as _time
 
     max_attempts = 3
+    db = None
+
+    # Phase 1: Establish connection with retries
     for attempt in range(max_attempts):
-        db = None
         try:
             db = SessionLocal()
             # Quick connectivity check on PostgreSQL to surface stale connections early
             if DATABASE_BACKEND == DatabaseBackend.POSTGRESQL:
                 from sqlalchemy import text
                 db.execute(text("SELECT 1"))
-            yield db
-            return  # Success — exit the generator
+            break  # Connection succeeded
         except Exception as e:
             if db:
-                db.rollback()
-                db.close()
+                try:
+                    db.close()
+                except Exception:
+                    pass
                 db = None
             if _is_connection_error(e) and attempt < max_attempts - 1:
                 backoff = 0.5 * (attempt + 1)  # 0.5s, 1.0s
@@ -511,12 +520,16 @@ def get_db():
                 _time.sleep(backoff)
                 continue
             raise
-        finally:
-            if db:
-                try:
-                    db.close()
-                except Exception as e:
-                    logger.warning("Error closing database session: %s", e)
+
+    # Phase 2: Yield the session for request processing (single yield, no retry)
+    try:
+        yield db
+    finally:
+        if db:
+            try:
+                db.close()
+            except Exception as e:
+                logger.warning("Error closing database session: %s", e)
 
 
 def create_tables():

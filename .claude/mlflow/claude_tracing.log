@@ -313,11 +313,21 @@
 2026-02-08 13:10:15,111 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=d17ad983-8db2-4777-8361-0054918c966e, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/d17ad983-8db2-4777-8361-0054918c966e.jsonl
 2026-02-08 13:10:15,274 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: d17ad983-8db2-4777-8361-0054918c966e
 2026-02-08 13:10:17,903 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-a946d9ea5e02820039cdf39ca46884af
-2026-02-09 15:42:40,575 - mlflow.claude_code.tracing - WARNING - Failed to set experiment: 401: Credential was not sent or was of an unsupported type for this API. [ReqId: ab5c53f8-ad83-4078-b470-ee30e40de99b]
-2026-02-09 15:42:40,576 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=cf328f08-ae09-4fe7-8f74-992964edef1c, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-full-coverage/cf328f08-ae09-4fe7-8f74-992964edef1c.jsonl
-2026-02-09 15:42:40,579 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: cf328f08-ae09-4fe7-8f74-992964edef1c
-2026-02-09 15:42:42,181 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-61042a7e91cb8c894373f5a5beb45bea
-2026-02-09 15:51:16,675 - mlflow.claude_code.tracing - WARNING - Failed to set experiment: 401: Credential was not sent or was of an unsupported type for this API. [ReqId: 92022737-9e11-4670-9e07-9b51351b98f9]
-2026-02-09 15:51:16,676 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=cf328f08-ae09-4fe7-8f74-992964edef1c, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-full-coverage/cf328f08-ae09-4fe7-8f74-992964edef1c.jsonl
-2026-02-09 15:51:16,680 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: cf328f08-ae09-4fe7-8f74-992964edef1c
-2026-02-09 15:51:17,681 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-16e635ca90486cb8064369e97ab6b198
+2026-02-09 10:56:52,891 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=8fca8377-39aa-49cb-adfc-7e07cadfa992, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/8fca8377-39aa-49cb-adfc-7e07cadfa992.jsonl
+2026-02-09 10:56:52,899 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 8fca8377-39aa-49cb-adfc-7e07cadfa992
+2026-02-09 10:56:54,699 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-135a337503ec128af13a2b9cff6d26e2
+2026-02-09 10:58:49,145 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=8fca8377-39aa-49cb-adfc-7e07cadfa992, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/8fca8377-39aa-49cb-adfc-7e07cadfa992.jsonl
+2026-02-09 10:58:49,150 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 8fca8377-39aa-49cb-adfc-7e07cadfa992
+2026-02-09 10:58:50,917 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-db28b73399351b6f5e18e0494b37432d
+2026-02-09 12:13:45,993 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=c289f5e9-1661-412b-bae1-a46133be4f95, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/c289f5e9-1661-412b-bae1-a46133be4f95.jsonl
+2026-02-09 12:13:46,001 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: c289f5e9-1661-412b-bae1-a46133be4f95
+2026-02-09 12:13:48,205 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-d0dfb114572454f7f7d98e957e8ac32d
+2026-02-09 12:38:50,068 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=c289f5e9-1661-412b-bae1-a46133be4f95, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/c289f5e9-1661-412b-bae1-a46133be4f95.jsonl
+2026-02-09 12:38:50,082 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: c289f5e9-1661-412b-bae1-a46133be4f95
+2026-02-09 12:38:52,787 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-48546574da3af76f40bb53ba16075030
+2026-02-09 13:01:01,947 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=c289f5e9-1661-412b-bae1-a46133be4f95, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/c289f5e9-1661-412b-bae1-a46133be4f95.jsonl
+2026-02-09 13:01:01,959 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: c289f5e9-1661-412b-bae1-a46133be4f95
+2026-02-09 13:01:04,168 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-3c9d001aaf82d7493a7d1ebd5f00e4fe
+2026-02-09 13:58:35,547 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=c289f5e9-1661-412b-bae1-a46133be4f95, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/c289f5e9-1661-412b-bae1-a46133be4f95.jsonl
+2026-02-09 13:58:35,561 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: c289f5e9-1661-412b-bae1-a46133be4f95
+2026-02-09 13:58:37,801 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-d0a18d0fbd9f99e648fd5682302fa211
