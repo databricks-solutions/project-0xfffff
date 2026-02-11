@@ -322,6 +322,12 @@ test-affected base="HEAD~1":
     just test-server-spec "$spec" || true
   done
 
+# Check for spec coverage regressions against baseline
+# Use --update-baseline to snapshot current coverage as the new baseline
+[group('dev')]
+spec-coverage-gate *args:
+  uv run spec-coverage-gate {{args}}
+
 [group('dev')]
 spec-tagging-check:
   @echo "✅ Validating that all tests are tagged with specs..."

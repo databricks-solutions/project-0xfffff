@@ -20,6 +20,8 @@ Run these commands to verify code changes:
 | `just spec-coverage --affected` | Coverage for specs affected by changes | During development |
 | `just test-affected` | Run tests for affected specs only | Quick verification of changes |
 | `just test-spec SPEC` | All tests (unit+integration+E2E) for a spec | Full verification of a spec |
+| `just spec-coverage-gate` | Fails if coverage regressed vs baseline | CI / before committing |
+| `just spec-coverage-gate --update-baseline` | Snapshot current coverage as new baseline | After intentional changes |
 | `just spec-validate` | Validates all tests are spec-tagged | Before committing |
 
 ## Spec Coverage Report

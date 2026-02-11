@@ -10,8 +10,8 @@ import { test, expect } from '@playwright/test';
 import { TestScenario } from '../lib';
 
 test.describe('Authentication Flow', { tag: ['@spec:AUTHENTICATION_SPEC'] }, () => {
-  
-  test('loading indicator shown during login on slow network', async ({ page }) => {
+
+  test('loading indicator shown during login on slow network', { tag: "@req:Slow network: Loading indicator shown until ready" },  async ({ page }) => {
     const scenario = await TestScenario.create(page)
       .withWorkshop({ name: 'Slow Network Workshop' })
       .withFacilitator()

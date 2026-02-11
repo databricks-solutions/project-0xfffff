@@ -75,6 +75,7 @@ test = [
 [project.scripts]
 human-eval-workshop = "server.app:main"
 spec-coverage-analyzer = "tools.spec_coverage_analyzer:main"
+spec-coverage-gate = "tools.spec_coverage_gate:main"
 spec-tagging-validator = "tools.spec_tagging_validator:main"
 test-summary = "tools.test_summary:main"
 
