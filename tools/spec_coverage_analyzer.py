@@ -255,38 +255,85 @@ class SpecCoverageScanner:
         return "e2e-mocked"
 
     def _scan_pytest(self):
-        """Scan pytest files for @pytest.mark.spec and @pytest.mark.req markers."""
+        """Scan pytest tests using pytest's collection API to extract markers.
+
+        Runs pytest --collect-only with a custom plugin to extract @pytest.mark.spec
+        and @pytest.mark.req marker values without executing tests.
+
+        Falls back to source scanning if pytest collection fails.
+        """
         if not self.PYTEST_DIR.exists():
             return
 
+        try:
+            items = self._collect_pytest_markers()
+        except Exception:
+            self._scan_pytest_source_fallback()
+            return
+
+        for item in items:
+            spec_name = item["spec"]
+            if spec_name not in KNOWN_SPECS:
+                self.unknown_specs.add(spec_name)
+                continue
+
+            file_path = item["nodeid"].split("::")[0]
+            test_name = item["nodeid"].split("::")[-1]
+            test_type: TestType = "integration" if item.get("integration") else "unit"
+
+            self.tests.append(
+                TestCoverage(
+                    file_path=file_path,
+                    test_name=test_name,
+                    spec_name=spec_name,
+                    test_type=test_type,
+                    requirement=item.get("req"),
+                    line_number=item.get("lineno"),
+                )
+            )
+
+    @staticmethod
+    def _collect_pytest_markers() -> list[dict]:
+        """Run tools/collect_pytest_markers.py to extract spec/req marker values."""
+        result = subprocess.run(
+            ["uv", "run", "python", "tools/collect_pytest_markers.py"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        for line in result.stdout.splitlines():
+            if line.startswith("MARKER_JSON:"):
+                return json.loads(line[len("MARKER_JSON:"):])
+
+        raise RuntimeError(
+            f"pytest marker collection failed (rc={result.returncode}): "
+            f"{result.stderr[:500]}"
+        )
+
+    def _scan_pytest_source_fallback(self):
+        """Fallback: scan pytest source files directly for spec/req markers.
+
+        Used when pytest collection API is not available.
+        """
         for test_file in self.PYTEST_DIR.rglob("test_*.py"):
             content = test_file.read_text()
             file_path = str(test_file)
             test_type = self._detect_pytest_test_type(file_path, content)
 
-            # Find all spec markers with their positions
             for spec_match in self.PYTEST_SPEC_PATTERN.finditer(content):
                 spec_name = spec_match.group(1)
                 if spec_name not in KNOWN_SPECS:
                     self.unknown_specs.add(spec_name)
                     continue
-
                 line_number = content[: spec_match.start()].count("\n") + 1
-
-                # Find the test function name (next def test_* after the marker)
                 after_marker = content[spec_match.end() :]
                 func_match = re.search(r"def (test_\w+)", after_marker)
                 test_name = func_match.group(1) if func_match else None
-
-                # Look for @req marker near this spec marker (within 200 chars before)
                 before_marker = content[max(0, spec_match.start() - 200) : spec_match.start()]
                 req_match = self.PYTEST_REQ_PATTERN.search(before_marker)
-
-                # Also check after spec marker (some people put @req after @spec)
                 after_marker_small = content[spec_match.end() : spec_match.end() + 200]
                 if not req_match:
                     req_match = self.PYTEST_REQ_PATTERN.search(after_marker_small)
-
                 requirement = req_match.group(1) if req_match else None
 
                 self.tests.append(
@@ -301,31 +348,124 @@ class SpecCoverageScanner:
                 )
 
     def _scan_playwright(self):
-        """Scan Playwright files for spec tags."""
+        """Scan Playwright tests using the JSON reporter's --list mode.
+
+        Runs `npx playwright test --list --reporter=json` which outputs full tag
+        metadata (including inherited describe-level tags) without executing tests.
+        This correctly handles tag inheritance where @spec is on a parent describe
+        and @req tags are on child test() calls.
+
+        Falls back to source scanning if the playwright CLI is not available.
+        """
         if not self.PLAYWRIGHT_DIR.exists():
             return
 
+        # Build a cache of which files use withRealApi() (not expressed as a tag)
+        real_api_files: set[str] = set()
+        for test_file in self.PLAYWRIGHT_DIR.glob("*.spec.ts"):
+            content = test_file.read_text()
+            if self.PLAYWRIGHT_REAL_API_PATTERN.search(content):
+                real_api_files.add(str(test_file))
+
+        # Run playwright --list to get test metadata with inherited tags
+        client_dir = str(self.PLAYWRIGHT_DIR.parent.parent)  # client/
+        try:
+            result = subprocess.run(
+                ["npx", "playwright", "test", "--list", "--reporter=json"],
+                capture_output=True,
+                text=True,
+                cwd=client_dir,
+                timeout=30,
+            )
+            if result.returncode != 0 or not result.stdout.strip():
+                self._scan_playwright_source_fallback()
+                return
+
+            report = json.loads(result.stdout)
+        except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError):
+            self._scan_playwright_source_fallback()
+            return
+
+        self._walk_playwright_suites(report.get("suites", []), real_api_files)
+
+    def _walk_playwright_suites(
+        self, suites: list[dict], real_api_files: set[str]
+    ):
+        """Recursively walk Playwright JSON reporter suites to extract test coverage."""
+        for suite in suites:
+            for spec in suite.get("specs", []):
+                tags = spec.get("tags", [])
+                title = spec.get("title", "")
+                reporter_file = spec.get("file", "")
+                line = spec.get("line", 1)
+
+                # Only process e2e tests (skip top-level non-e2e spec files)
+                if not reporter_file.startswith("e2e/"):
+                    continue
+
+                # Normalize to project-relative path (reporter uses testDir-relative)
+                file_path = f"client/tests/{reporter_file}"
+
+                # Extract spec names and requirement from tags
+                spec_names: set[str] = set()
+                requirement: str | None = None
+                has_real_tag = False
+
+                for tag in tags:
+                    tag_clean = tag.lstrip("@")
+                    if tag_clean.startswith("spec:"):
+                        name = tag_clean[5:]
+                        if name in KNOWN_SPECS:
+                            spec_names.add(name)
+                        else:
+                            self.unknown_specs.add(name)
+                    elif tag_clean.startswith("req:"):
+                        requirement = tag_clean[4:]
+                    elif tag_clean == "e2e-real":
+                        has_real_tag = True
+
+                if not spec_names:
+                    continue
+
+                # Determine test type from @e2e-real tag or withRealApi() in source
+                is_real = has_real_tag or file_path in real_api_files
+                test_type: TestType = "e2e-real" if is_real else "e2e-mocked"
+
+                for spec_name in spec_names:
+                    self.tests.append(
+                        TestCoverage(
+                            file_path=file_path,
+                            test_name=title,
+                            spec_name=spec_name,
+                            test_type=test_type,
+                            requirement=requirement,
+                            line_number=line,
+                        )
+                    )
+
+            self._walk_playwright_suites(suite.get("suites", []), real_api_files)
+
+    def _scan_playwright_source_fallback(self):
+        """Fallback: scan Playwright source files directly for spec tags.
+
+        Used when `npx playwright test --list` is not available.
+        """
         for test_file in self.PLAYWRIGHT_DIR.glob("*.spec.ts"):
             content = test_file.read_text()
             file_path = str(test_file)
             test_type = self._detect_playwright_test_type(content)
 
-            # Check for tag-based markers
             for spec_match in self.PLAYWRIGHT_SPEC_TAG_PATTERN.finditer(content):
                 spec_name = spec_match.group(1)
                 if spec_name not in KNOWN_SPECS:
                     self.unknown_specs.add(spec_name)
                     continue
-
                 line_number = content[: spec_match.start()].count("\n") + 1
-
-                # Look for @req tag near this spec tag
                 context = content[
                     max(0, spec_match.start() - 100) : spec_match.end() + 100
                 ]
                 req_match = self.PLAYWRIGHT_REQ_TAG_PATTERN.search(context)
                 requirement = req_match.group(1) if req_match else None
-
                 self.tests.append(
                     TestCoverage(
                         file_path=file_path,
@@ -337,15 +477,12 @@ class SpecCoverageScanner:
                     )
                 )
 
-            # Check for title-based markers
             for spec_match in self.PLAYWRIGHT_TITLE_PATTERN.finditer(content):
                 spec_name = spec_match.group(1)
                 if spec_name not in KNOWN_SPECS:
                     self.unknown_specs.add(spec_name)
                     continue
-
                 line_number = content[: spec_match.start()].count("\n") + 1
-
                 self.tests.append(
                     TestCoverage(
                         file_path=file_path,
@@ -358,30 +495,146 @@ class SpecCoverageScanner:
                 )
 
     def _scan_vitest(self):
-        """Scan Vitest files for spec comments/tags."""
+        """Scan Vitest tests using `vitest list --json`.
+
+        Extracts @spec: from describe block names in the test name field.
+        For files that only use // @spec comments (not in describe names),
+        falls back to scanning the source for the comment pattern.
+
+        Falls back entirely to source scanning if the vitest CLI is not available.
+        """
         if not self.VITEST_DIR.exists():
             return
 
+        client_dir = str(self.VITEST_DIR.parent)  # client/
+        try:
+            result = subprocess.run(
+                ["npx", "vitest", "list", "--json"],
+                capture_output=True,
+                text=True,
+                cwd=client_dir,
+                timeout=30,
+            )
+            if result.returncode != 0 or not result.stdout.strip():
+                self._scan_vitest_source_fallback()
+                return
+
+            tests = json.loads(result.stdout)
+        except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError):
+            self._scan_vitest_source_fallback()
+            return
+
+        # Track which files had @spec: in their test names (via describe blocks)
+        files_with_spec_in_name: set[str] = set()
+        # Cache for // @spec and // @req comments per file
+        file_comment_cache: dict[str, tuple[str | None, str | None]] = {}
+
+        for test in tests:
+            name = test.get("name", "")
+            abs_file = test.get("file", "")
+
+            # Normalize to project-relative path
+            if "client/" in abs_file:
+                file_path = "client/" + abs_file.split("client/", 1)[1]
+            else:
+                file_path = abs_file
+
+            # Extract @spec: from the test name (set by describe block names)
+            spec_match = re.search(r"@spec:([A-Z_]+)", name)
+            if spec_match:
+                spec_name = spec_match.group(1)
+                files_with_spec_in_name.add(file_path)
+
+                if spec_name not in KNOWN_SPECS:
+                    self.unknown_specs.add(spec_name)
+                    continue
+
+                # Extract the leaf test name (after the last " > ")
+                test_name = name.rsplit(" > ", 1)[-1] if " > " in name else name
+
+                # Check source for // @req comment (vitest has no tag-based @req)
+                if file_path not in file_comment_cache:
+                    file_comment_cache[file_path] = self._read_vitest_req(abs_file)
+                requirement = file_comment_cache[file_path][1]
+
+                self.tests.append(
+                    TestCoverage(
+                        file_path=file_path,
+                        test_name=test_name,
+                        spec_name=spec_name,
+                        test_type="unit",
+                        requirement=requirement,
+                        line_number=None,
+                    )
+                )
+
+        # For files that only use // @spec comments (not in describe names),
+        # scan the source to pick up the spec association
+        all_files = {
+            "client/" + test.get("file", "").split("client/", 1)[1]
+            for test in tests
+            if "client/" in test.get("file", "")
+        }
+        comment_only_files = all_files - files_with_spec_in_name
+        for file_path in comment_only_files:
+            abs_path = Path(file_path)
+            if not abs_path.exists():
+                continue
+            content = abs_path.read_text()
+            for match in self.VITEST_SPEC_COMMENT_PATTERN.finditer(content):
+                spec_name = match.group(1)
+                if spec_name not in KNOWN_SPECS:
+                    self.unknown_specs.add(spec_name)
+                    continue
+                # Count how many tests are in this file from the reporter
+                file_tests = [
+                    t for t in tests
+                    if file_path in t.get("file", "")
+                ]
+                for t in file_tests:
+                    name = t.get("name", "")
+                    test_name = name.rsplit(" > ", 1)[-1] if " > " in name else name
+                    self.tests.append(
+                        TestCoverage(
+                            file_path=file_path,
+                            test_name=test_name,
+                            spec_name=spec_name,
+                            test_type="unit",
+                            requirement=None,
+                            line_number=None,
+                        )
+                    )
+                break  # One @spec per file
+
+    def _read_vitest_req(self, abs_file: str) -> tuple[str | None, str | None]:
+        """Read a vitest file for // @req comment. Returns (spec, req)."""
+        try:
+            content = Path(abs_file).read_text()
+            req_match = self.VITEST_REQ_COMMENT_PATTERN.search(content)
+            return (None, req_match.group(1).strip() if req_match else None)
+        except (OSError, UnicodeDecodeError):
+            return (None, None)
+
+    def _scan_vitest_source_fallback(self):
+        """Fallback: scan Vitest source files directly for spec comments/tags.
+
+        Used when `npx vitest list` is not available.
+        """
         for test_file in self.VITEST_DIR.rglob("*.test.ts"):
             content = test_file.read_text()
             file_path = str(test_file)
 
-            # Check for comment-based markers
             for spec_match in self.VITEST_SPEC_COMMENT_PATTERN.finditer(content):
                 spec_name = spec_match.group(1)
                 if spec_name not in KNOWN_SPECS:
                     self.unknown_specs.add(spec_name)
                     continue
-
                 line_number = content[: spec_match.start()].count("\n") + 1
-
-                # Look for @req comment near this spec comment
                 context = content[
                     max(0, spec_match.start() - 100) : spec_match.end() + 100
                 ]
                 req_match = self.VITEST_REQ_COMMENT_PATTERN.search(context)
                 requirement = req_match.group(1).strip() if req_match else None
-
                 self.tests.append(
                     TestCoverage(
                         file_path=file_path,
@@ -393,15 +646,12 @@ class SpecCoverageScanner:
                     )
                 )
 
-            # Check for describe-based markers
             for spec_match in self.VITEST_DESCRIBE_PATTERN.finditer(content):
                 spec_name = spec_match.group(1)
                 if spec_name not in KNOWN_SPECS:
                     self.unknown_specs.add(spec_name)
                     continue
-
                 line_number = content[: spec_match.start()].count("\n") + 1
-
                 self.tests.append(
                     TestCoverage(
                         file_path=file_path,
