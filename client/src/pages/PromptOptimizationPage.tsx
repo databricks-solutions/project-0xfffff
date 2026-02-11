@@ -118,6 +118,49 @@ export function PromptOptimizationPage() {
     loadHistory();
   }, [loadHistory]);
 
+  // Auto-reconnect to a running job when the page mounts (e.g. after navigating away and back).
+  // Checks history for any "running" entry and resumes polling + fetches all existing logs.
+  const reconnectedRef = useRef(false);
+  useEffect(() => {
+    if (reconnectedRef.current || !history.length || jobId) return;
+
+    const runningEntry = history.find(r => r.status === 'running');
+    if (!runningEntry) return;
+
+    reconnectedRef.current = true;
+    setJobId(runningEntry.job_id);
+    setJobStatus('running');
+
+    // Restore the original prompt so the user can still see it
+    if (runningEntry.original_prompt) {
+      setPromptText(runningEntry.original_prompt);
+      setPromptInputMode('text');
+    } else if (runningEntry.prompt_uri) {
+      setPromptUri(runningEntry.prompt_uri);
+      setPromptInputMode('uri');
+    }
+
+    // Fetch all existing logs from the backend (since_log_index=0)
+    if (workshopId) {
+      fetch(`/workshops/${workshopId}/prompt-optimization-job/${runningEntry.job_id}?since_log_index=0`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (!data) return;
+          if (data.logs && data.logs.length > 0) {
+            setJobLogs(data.logs);
+            logIndexRef.current = data.log_count;
+          }
+          setJobStatus(data.status);
+          if (data.result) setJobResult(data.result);
+          if (data.error) setJobError(data.error);
+          if (data.status === 'completed' || data.status === 'failed') {
+            loadHistory();
+          }
+        })
+        .catch(() => {});
+    }
+  }, [history, jobId, workshopId, loadHistory]);
+
   // Poll job status
   useEffect(() => {
     if (!jobId || !workshopId || jobStatus === 'completed' || jobStatus === 'failed') return;
