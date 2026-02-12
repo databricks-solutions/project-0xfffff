@@ -12,6 +12,7 @@ from server.services.database_service import DatabaseService
 
 
 @pytest.mark.spec("RUBRIC_SPEC")
+@pytest.mark.req("Per-question judge_type parsed from `[JUDGE_TYPE:xxx]` format")
 def test_parse_rubric_questions_with_judge_type_binary():
     """Parses [JUDGE_TYPE:binary] delimiter format (older format).
 
@@ -31,6 +32,7 @@ def test_parse_rubric_questions_with_judge_type_binary():
 
 
 @pytest.mark.spec("RUBRIC_SPEC")
+@pytest.mark.req("Per-question judge_type parsed from `[JUDGE_TYPE:xxx]` format")
 def test_parse_rubric_questions_with_judge_type_likert():
     """Parses [JUDGE_TYPE:likert] explicitly.
 
@@ -65,6 +67,7 @@ def test_parse_rubric_questions_default_to_likert():
 
 
 @pytest.mark.spec("RUBRIC_SPEC")
+@pytest.mark.req("Mixed rubrics support different scales per question")
 def test_parse_rubric_questions_mixed_types():
     """Handles mixed rubric with different judge types per question.
 
@@ -108,6 +111,7 @@ def test_parse_rubric_questions_with_freeform():
 
 
 @pytest.mark.spec("RUBRIC_SPEC")
+@pytest.mark.req("Empty/whitespace-only parts filtered out")
 def test_parse_rubric_questions_empty_input():
     """Handles empty input gracefully.
 
@@ -122,6 +126,7 @@ def test_parse_rubric_questions_empty_input():
 
 
 @pytest.mark.spec("RUBRIC_SPEC")
+@pytest.mark.req("Questions with multi-line descriptions parse correctly")
 def test_parse_rubric_questions_multiline_description():
     """Handles multi-line descriptions correctly.
 
