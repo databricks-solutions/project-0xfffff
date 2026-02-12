@@ -14,7 +14,7 @@ import { beginAnnotation, beginAnnotationViaSidebar } from '../lib/actions';
 
 test.describe('Auto-Evaluation UI', () => {
   test('begin annotation dialog shows model selection when auto-eval is available', {
-    tag: ['@spec:JUDGE_EVALUATION_SPEC'],
+    tag: ['@spec:JUDGE_EVALUATION_SPEC', '@req:Auto-evaluation runs in background when annotation phase starts'],
   }, async ({ page }) => {
     // Setup: Workshop with rubric, traces, ready for annotation
     const scenario = await TestScenario.create(page)
@@ -68,7 +68,7 @@ test.describe('Auto-Evaluation UI', () => {
   });
 
   test('annotation phase can start without auto-evaluation', {
-    tag: ['@spec:JUDGE_EVALUATION_SPEC'],
+    tag: ['@spec:JUDGE_EVALUATION_SPEC', '@req:Auto-evaluation runs in background when annotation phase starts'],
   }, async ({ page }) => {
     // Spec: JUDGE_EVALUATION_SPEC lines 219-226
     // evaluation_model_name=null should skip auto-evaluation
@@ -102,7 +102,7 @@ test.describe('Auto-Evaluation UI', () => {
 
 test.describe('Judge Tuning Page', () => {
   test('judge tuning page displays evaluation results section', {
-    tag: ['@spec:JUDGE_EVALUATION_SPEC'],
+    tag: ['@spec:JUDGE_EVALUATION_SPEC', '@req:Results appear in Judge Tuning page'],
   }, async ({ page }) => {
     // Spec: JUDGE_EVALUATION_SPEC lines 556-575
     // Judge Tuning page should show evaluation results
@@ -162,7 +162,7 @@ test.describe('Judge Tuning Page', () => {
 
 test.describe('Model Selection', () => {
   test('model dropdown shows available evaluation models', {
-    tag: ['@spec:JUDGE_EVALUATION_SPEC'],
+    tag: ['@spec:JUDGE_EVALUATION_SPEC', '@req:Auto-evaluation model stored for re-evaluation consistency'],
   }, async ({ page }) => {
     // Spec: JUDGE_EVALUATION_SPEC lines 237-249
     // Model selection options should be available

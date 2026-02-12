@@ -13,7 +13,7 @@ import { TestScenario } from '../lib';
 
 test.describe('Re-Evaluation UI', { tag: ['@spec:JUDGE_EVALUATION_SPEC']}, () => {
   test('re-evaluation spinner stops after completion', {
-    tag: ['@spec:JUDGE_EVALUATION_SPEC'],
+    tag: ['@spec:JUDGE_EVALUATION_SPEC', '@req:Spinner stops when re-evaluation completes'],
   }, async ({ page }) => {
     // Spec: JUDGE_EVALUATION_SPEC line 595
     // "Spinner stops when re-evaluation completes"
@@ -77,7 +77,7 @@ test.describe('Re-Evaluation UI', { tag: ['@spec:JUDGE_EVALUATION_SPEC']}, () =>
   });
 
   test('pre and post alignment scores visible in results', {
-    tag: ['@spec:JUDGE_EVALUATION_SPEC'],
+    tag: ['@spec:JUDGE_EVALUATION_SPEC', '@req:Pre-align and post-align scores directly comparable'],
   }, async ({ page }) => {
     // Spec: JUDGE_EVALUATION_SPEC lines 597-598
     // "Results stored against correct prompt version"

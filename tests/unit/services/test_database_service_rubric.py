@@ -209,6 +209,7 @@ def test_parse_reconstruct_roundtrip():
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Per-question judge_type parsed from rubric (`[JUDGE_TYPE:xxx]`)")
 def test_get_judge_type_from_rubric_binary(monkeypatch):
     """Binary rubric returns 'binary' judge type.
 
@@ -232,6 +233,7 @@ def test_get_judge_type_from_rubric_binary(monkeypatch):
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Per-question judge_type parsed from rubric (`[JUDGE_TYPE:xxx]`)")
 def test_get_judge_type_from_rubric_likert(monkeypatch):
     """Likert rubric returns 'likert' judge type.
 
@@ -255,6 +257,7 @@ def test_get_judge_type_from_rubric_likert(monkeypatch):
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Per-question judge_type parsed from rubric (`[JUDGE_TYPE:xxx]`)")
 def test_get_judge_type_from_rubric_mixed_prefers_binary(monkeypatch):
     """Mixed rubric with binary questions returns 'binary'.
 
@@ -282,6 +285,7 @@ def test_get_judge_type_from_rubric_mixed_prefers_binary(monkeypatch):
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Per-question judge_type parsed from rubric (`[JUDGE_TYPE:xxx]`)")
 def test_get_judge_type_from_rubric_no_rubric_defaults_likert():
     """No rubric defaults to 'likert'.
 
