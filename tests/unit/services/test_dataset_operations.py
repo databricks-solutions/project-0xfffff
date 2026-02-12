@@ -39,6 +39,7 @@ TRACE_IDS = [f"trace-{i}" for i in range(10)]
 
 
 @pytest.mark.spec("DATASETS_SPEC")
+@pytest.mark.req("Same user sees same order for same dataset (deterministic)")
 @pytest.mark.unit
 class TestRandomizedOrderDeterminism:
     """Randomized order is deterministic: same seed = same order."""
@@ -57,6 +58,7 @@ class TestRandomizedOrderDeterminism:
 
 
 @pytest.mark.spec("DATASETS_SPEC")
+@pytest.mark.req("Different users see different orders (per-user randomization)")
 @pytest.mark.unit
 class TestDifferentUsersGetDifferentOrders:
     """Different users see different orderings."""
@@ -80,6 +82,7 @@ class TestDifferentUsersGetDifferentOrders:
 
 
 @pytest.mark.spec("DATASETS_SPEC")
+@pytest.mark.req("Facilitators see chronological order (no randomization)")
 @pytest.mark.unit
 class TestFacilitatorChronologicalOrder:
     """Facilitators see traces in chronological (insertion) order, not randomized."""
@@ -99,6 +102,7 @@ class TestFacilitatorChronologicalOrder:
 
 
 @pytest.mark.spec("DATASETS_SPEC")
+@pytest.mark.req("Adding traces preserves existing order (incremental)")
 @pytest.mark.unit
 class TestIncrementalTraceAddition:
     """Adding traces preserves existing positions and appends new ones."""
@@ -142,6 +146,7 @@ class TestIncrementalTraceAddition:
 
 
 @pytest.mark.spec("DATASETS_SPEC")
+@pytest.mark.req("New round triggers fresh randomization")
 @pytest.mark.unit
 class TestNewRoundReRandomization:
     """New round triggers full re-randomization (different from prior round)."""

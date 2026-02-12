@@ -100,7 +100,7 @@ test.describe('Annotation Flow', {
     await scenario.cleanup();
   });
 
-  test('comment-only edit triggers updated toast', async ({ page }) => {
+  test('comment-only edit triggers updated toast', { tag: ['@req:Toast shows "Annotation updated!" only when changes detected'] }, async ({ page }) => {
     const scenario = await TestScenario.create(page)
       .withWorkshop({ name: 'Comment-Only Edit' })
       .withFacilitator()
@@ -144,7 +144,7 @@ test.describe('Annotation Flow', {
     await scenario.cleanup();
   });
 
-  test('annotation count is accurate', async ({ page }) => {
+  test('annotation count is accurate', { tag: ['@req:Annotation count reflects unique submissions (not re-submissions)'] }, async ({ page }) => {
     const scenario = await TestScenario.create(page)
       .withWorkshop({ name: 'Annotation Count' })
       .withFacilitator()

@@ -18,7 +18,9 @@ declare const process: { env: Record<string, string | undefined> };
 test.describe('Dataset Operations', {
   tag: ['@spec:DATASETS_SPEC'],
 }, () => {
-  test('facilitator creates dataset, traces appear', async ({ page }) => {
+  test('facilitator creates dataset, traces appear', {
+    tag: ['@req:Datasets can be created with arbitrary trace lists'],
+  }, async ({ page }) => {
     // Use a real API scenario so data is persisted
     const scenario = await TestScenario.create(page)
       .withWorkshop({ name: 'Dataset Creation Test' })
@@ -52,7 +54,9 @@ test.describe('Dataset Operations', {
     await scenario.cleanup();
   });
 
-  test('two users see different trace orders', async ({ page, browser }) => {
+  test('two users see different trace orders', {
+    tag: ['@req:Different users see different orders (per-user randomization)'],
+  }, async ({ page, browser }) => {
     // Create scenario with annotation phase and randomization
     const scenario = await TestScenario.create(page)
       .withWorkshop({ name: 'Trace Order Test' })

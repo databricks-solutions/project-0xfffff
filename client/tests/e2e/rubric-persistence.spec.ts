@@ -13,7 +13,7 @@ const API_URL = process.env.E2E_API_URL ?? 'http://127.0.0.1:8000';
 
 test.describe('Rubric Persistence', () => {
   test('mixed rubric with binary and likert questions persists after reload', {
-    tag: ['@spec:RUBRIC_SPEC'],
+    tag: ['@spec:RUBRIC_SPEC', '@req:Rubric persists and is retrievable via GET after creation'],
   }, async ({ page, request }) => {
     // Spec: RUBRIC_SPEC lines 297-300
     // "Mixed rubrics support different scales per question"
