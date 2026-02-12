@@ -40,6 +40,7 @@ interface OptimizationRun {
   optimizer_model: string | null;
   num_iterations: number | null;
   num_candidates: number | null;
+  target_endpoint: string | null;
   metrics: Record<string, any> | null;
   status: string;
   error: string | null;
@@ -91,6 +92,43 @@ export function PromptOptimizationPage() {
 
   const modelOptions = getModelOptions(hasMlflowConfig);
 
+  // Persist configuration to localStorage so it survives page navigation
+  const configStorageKey = `prompt-opt-config-${workshopId}`;
+
+  // Load saved configuration on mount
+  useEffect(() => {
+    if (!workshopId) return;
+    try {
+      const saved = localStorage.getItem(configStorageKey);
+      if (saved) {
+        const config = JSON.parse(saved);
+        if (config.promptText) setPromptText(config.promptText);
+        if (config.promptUri) setPromptUri(config.promptUri);
+        if (config.promptInputMode) setPromptInputMode(config.promptInputMode);
+        if (config.promptName) setPromptName(config.promptName);
+        if (config.ucCatalog) setUcCatalog(config.ucCatalog);
+        if (config.ucSchema) setUcSchema(config.ucSchema);
+        if (config.optimizerModel) setOptimizerModel(config.optimizerModel);
+        if (config.numIterations) setNumIterations(config.numIterations);
+        if (config.numCandidates) setNumCandidates(config.numCandidates);
+        if (config.targetEndpoint) setTargetEndpoint(config.targetEndpoint);
+      }
+    } catch (_) { /* localStorage unavailable */ }
+  }, [workshopId]);
+
+  // Save configuration whenever it changes
+  useEffect(() => {
+    if (!workshopId) return;
+    try {
+      localStorage.setItem(configStorageKey, JSON.stringify({
+        promptText, promptUri, promptInputMode, promptName,
+        ucCatalog, ucSchema, optimizerModel, numIterations,
+        numCandidates, targetEndpoint,
+      }));
+    } catch (_) { /* localStorage unavailable */ }
+  }, [workshopId, promptText, promptUri, promptInputMode, promptName,
+      ucCatalog, ucSchema, optimizerModel, numIterations, numCandidates, targetEndpoint]);
+
   // Check MLflow config
   useEffect(() => {
     if (!workshopId) return;
@@ -118,31 +156,64 @@ export function PromptOptimizationPage() {
     loadHistory();
   }, [loadHistory]);
 
-  // Auto-reconnect to a running job when the page mounts (e.g. after navigating away and back).
-  // Checks history for any "running" entry and resumes polling + fetches all existing logs.
+  // Auto-reconnect to a job when the page mounts (e.g. after navigating away and back).
+  // Restores running jobs (resumes polling) and the most recent completed/failed job (shows logs).
   const reconnectedRef = useRef(false);
   useEffect(() => {
     if (reconnectedRef.current || !history.length || jobId) return;
 
+    // Prefer a running job; fall back to the most recent completed/failed job
     const runningEntry = history.find(r => r.status === 'running');
-    if (!runningEntry) return;
+    const targetEntry = runningEntry || history[0]; // history is ordered newest-first
+    if (!targetEntry) return;
 
     reconnectedRef.current = true;
-    setJobId(runningEntry.job_id);
-    setJobStatus('running');
+    setJobId(targetEntry.job_id);
+    setJobStatus(targetEntry.status);
 
-    // Restore the original prompt so the user can still see it
-    if (runningEntry.original_prompt) {
-      setPromptText(runningEntry.original_prompt);
+    // Restore configuration from the history entry
+    if (targetEntry.original_prompt) {
+      setPromptText(targetEntry.original_prompt);
       setPromptInputMode('text');
-    } else if (runningEntry.prompt_uri) {
-      setPromptUri(runningEntry.prompt_uri);
+    } else if (targetEntry.prompt_uri) {
+      setPromptUri(targetEntry.prompt_uri);
       setPromptInputMode('uri');
     }
 
-    // Fetch all existing logs from the backend (since_log_index=0)
+    // Restore other config fields from the run record
+    if (targetEntry.optimizer_model) setOptimizerModel(targetEntry.optimizer_model);
+    if (targetEntry.num_iterations) setNumIterations(targetEntry.num_iterations);
+    if (targetEntry.num_candidates) setNumCandidates(targetEntry.num_candidates);
+    if (targetEntry.target_endpoint) setTargetEndpoint(targetEntry.target_endpoint);
+
+    // Extract UC catalog/schema/name from prompt_uri (format: "catalog.schema.name")
+    if (targetEntry.prompt_uri) {
+      const parts = targetEntry.prompt_uri.split('.');
+      if (parts.length >= 3) {
+        setUcCatalog(parts[0]);
+        setUcSchema(parts[1]);
+        setPromptName(parts.slice(2).join('.'));
+      }
+    }
+
+    // For completed/failed jobs, restore result/error from DB history immediately
+    // (logs will be fetched from the job store below if still available)
+    if (targetEntry.status === 'completed' && targetEntry.optimized_prompt) {
+      setJobResult({
+        original_prompt: targetEntry.original_prompt,
+        optimized_prompt: targetEntry.optimized_prompt,
+        optimized_uri: targetEntry.optimized_uri,
+        optimized_version: targetEntry.optimized_version,
+        metrics: targetEntry.metrics,
+      });
+    }
+    if (targetEntry.error) {
+      setJobError(targetEntry.error);
+    }
+
+    // Fetch all existing logs from the job store (since_log_index=0)
     if (workshopId) {
-      fetch(`/workshops/${workshopId}/prompt-optimization-job/${runningEntry.job_id}?since_log_index=0`)
+      fetch(`/workshops/${workshopId}/prompt-optimization-job/${targetEntry.job_id}?since_log_index=0`)
         .then(r => r.ok ? r.json() : null)
         .then(data => {
           if (!data) return;
@@ -150,6 +221,7 @@ export function PromptOptimizationPage() {
             setJobLogs(data.logs);
             logIndexRef.current = data.log_count;
           }
+          // Update status from job store (may be more current than DB)
           setJobStatus(data.status);
           if (data.result) setJobResult(data.result);
           if (data.error) setJobError(data.error);
@@ -238,7 +310,12 @@ export function PromptOptimizationPage() {
           body.uc_schema = ucSchema.trim();
         }
       } else {
-        body.prompt_uri = promptUri;
+        // Normalize prompts:// → prompts:/ (common user mistake)
+        let uri = promptUri.trim();
+        if (uri.startsWith('prompts://')) {
+          uri = 'prompts:/' + uri.slice('prompts://'.length);
+        }
+        body.prompt_uri = uri;
       }
 
       const response = await fetch(`/workshops/${workshopId}/start-prompt-optimization`, {
@@ -652,6 +729,12 @@ export function PromptOptimizationPage() {
                 <span className="ml-1">(Saved as version {jobResult.optimized_version})</span>
               )}
             </p>
+            {(jobResult.optimizer_model || jobResult.target_endpoint) && (
+              <p className="text-xs text-green-600 mt-0.5">
+                {jobResult.optimizer_model && <>Model: {jobResult.optimizer_model}</>}
+                {jobResult.target_endpoint && <>{jobResult.optimizer_model ? ' | ' : ''}Endpoint: <span className="font-mono">{jobResult.target_endpoint}</span></>}
+              </p>
+            )}
             {jobResult.optimized_uri && (
               <p className="text-xs text-green-600 mt-1 font-mono">
                 {jobResult.optimized_uri}
@@ -783,6 +866,7 @@ export function PromptOptimizationPage() {
                     {run.optimizer_model && (
                       <div className="text-xs text-gray-400 mt-1">
                         Model: {run.optimizer_model} | Iterations: {run.num_iterations} | Candidates: {run.num_candidates}
+                        {run.target_endpoint && <> | Endpoint: <span className="font-mono">{run.target_endpoint}</span></>}
                       </div>
                     )}
 
@@ -826,7 +910,7 @@ export function PromptOptimizationPage() {
 
                         {/* Optimized prompt (primary, open by default) */}
                         {run.optimized_prompt && (
-                          <details open>
+                          <details open onClick={(e) => e.stopPropagation()}>
                             <summary className="cursor-pointer text-sm font-medium text-green-700 hover:text-green-900">
                               Optimized Prompt
                             </summary>
@@ -848,7 +932,7 @@ export function PromptOptimizationPage() {
 
                         {/* Original prompt (collapsed by default) */}
                         {run.original_prompt && (
-                          <details>
+                          <details onClick={(e) => e.stopPropagation()}>
                             <summary className="cursor-pointer text-sm text-gray-500 hover:text-gray-700">
                               Original Prompt
                             </summary>

@@ -2,6 +2,7 @@
 
 Uses pairwise agreement percentage as the primary, interpretable metric
 (inspired by GDPval's approach), with Krippendorff's Alpha as a secondary detail.
+Includes GDPval human inter-rater agreement score (A^HH) as a normalized [0,1] metric.
 """
 
 import logging
@@ -58,6 +59,27 @@ def calculate_irr_for_workshop(workshop_id: str, annotations: List[Annotation], 
 
     # Add diagnostic information
     result['problematic_patterns'] = detect_problematic_patterns(annotations, db)
+
+    # Calculate GDPval human agreement score (works with 2+ raters)
+    try:
+      from server.services.fleiss_kappa import calculate_human_agreement_per_metric
+      ha_per_metric = calculate_human_agreement_per_metric(annotations)
+      if ha_per_metric:
+        for question_id, ha_score in ha_per_metric.items():
+          if question_id in result.get('per_metric_scores', {}):
+            result['per_metric_scores'][question_id]['human_agreement'] = (
+              round(ha_score, 3) if ha_score is not None else None
+            )
+
+        ha_values = [v for v in ha_per_metric.values() if v is not None]
+        if ha_values:
+          result['human_agreement'] = round(sum(ha_values) / len(ha_values), 3)
+          logger.info(
+            f"Human agreement (GDPval) for workshop {workshop_id}: "
+            f"{result['human_agreement']:.3f} ({analysis['num_raters']} raters)"
+          )
+    except Exception as ha_err:
+      logger.warning(f"Could not compute human agreement for workshop {workshop_id}: {ha_err}")
 
     logger.info(f'IRR calculated for workshop {workshop_id}: {result["metric_used"]} = {result["score"]:.1f}%')
 

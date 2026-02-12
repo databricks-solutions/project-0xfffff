@@ -449,6 +449,7 @@ class PromptOptimizationRunDB(Base):
     optimizer_model = Column(String, nullable=True)
     num_iterations = Column(Integer, nullable=True)
     num_candidates = Column(Integer, nullable=True)
+    target_endpoint = Column(String, nullable=True)
     metrics = Column(Text, nullable=True)  # JSON string
     status = Column(String, default="pending")  # pending, running, completed, failed
     error = Column(Text, nullable=True)

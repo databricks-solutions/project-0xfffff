@@ -814,16 +814,16 @@ async def get_irr(workshop_id: str, db: Session = Depends(get_db)) -> IRRResult:
         raise HTTPException(status_code=404, detail="Workshop not found")
 
     annotations = db_service.get_annotations(workshop_id)
-    
+
     # Get current rubric to filter ratings to only current questions
     rubric = db_service.get_rubric(workshop_id)
     if rubric:
         # Get the valid question IDs from the current rubric
         valid_question_ids = _get_valid_rubric_question_ids(rubric)
-        
+
         # Filter annotation ratings to only include current rubric questions
         annotations = _filter_annotations_to_current_rubric(annotations, valid_question_ids)
-    
+
     return calculate_irr_for_workshop(workshop_id, annotations, db)
 
 
@@ -4723,6 +4723,116 @@ async def get_auto_evaluation_results(
             latest_prompt = prompts[0]  # [0] is latest (version DESC order)
             if latest_prompt.performance_metrics:
                 metrics = latest_prompt.performance_metrics
+
+        # If no saved metrics, compute on-the-fly from evaluations + annotations
+        if metrics is None:
+            try:
+                from sklearn.metrics import cohen_kappa_score, accuracy_score, confusion_matrix
+                from collections import Counter
+                import numpy as np
+
+                # Build human ratings from annotations (evaluations may have human_rating=None
+                # in auto-eval mode, but annotations always have the actual ratings)
+                all_annotations = db_service.get_annotations(workshop_id)
+
+                # Build judge_name → question_id mapping from rubric
+                judge_to_question = {}
+                rubric_questions = db_service.get_rubric_questions_for_evaluation(workshop_id)
+                for rq in rubric_questions:
+                    judge_to_question[rq['judge_name']] = rq.get('question_id', 'q_1')
+
+                # Build trace_id → {question_id → mode_rating} from annotations
+                from collections import defaultdict
+                trace_question_ratings: Dict[str, Dict[str, list]] = defaultdict(lambda: defaultdict(list))
+                trace_legacy_ratings: Dict[str, list] = defaultdict(list)
+                for ann in all_annotations:
+                    if ann.ratings and isinstance(ann.ratings, dict):
+                        for qid, val in ann.ratings.items():
+                            if val is not None:
+                                trace_question_ratings[ann.trace_id][qid].append(val)
+                    if ann.rating is not None:
+                        trace_legacy_ratings[ann.trace_id].append(ann.rating)
+
+                def get_mode(values):
+                    if not values:
+                        return None
+                    return Counter(values).most_common(1)[0][0]
+
+                # Match evaluations with annotation-derived human ratings
+                human_ratings_list = []
+                predicted_ratings_list = []
+                total_evals = len(evaluations)
+
+                for e in evaluations:
+                    if e.predicted_rating is None:
+                        continue
+
+                    # First try the evaluation's own human_rating
+                    h_rating = e.human_rating
+
+                    # If null, look up from annotations
+                    if h_rating is None:
+                        judge_name = e.predicted_feedback or ''
+                        question_id = judge_to_question.get(judge_name)
+                        if question_id and e.trace_id in trace_question_ratings:
+                            h_rating = get_mode(trace_question_ratings[e.trace_id].get(question_id, []))
+                        # Fallback to legacy rating
+                        if h_rating is None and e.trace_id in trace_legacy_ratings:
+                            h_rating = get_mode(trace_legacy_ratings[e.trace_id])
+
+                    if h_rating is not None:
+                        human_ratings_list.append(h_rating)
+                        predicted_ratings_list.append(e.predicted_rating)
+
+                if len(human_ratings_list) >= 2:
+                    # Cohen's kappa
+                    try:
+                        kappa = cohen_kappa_score(human_ratings_list, predicted_ratings_list)
+                        if np.isnan(kappa):
+                            matches = sum(1 for h, p in zip(human_ratings_list, predicted_ratings_list) if h == p)
+                            kappa = matches / len(human_ratings_list)
+                    except Exception:
+                        matches = sum(1 for h, p in zip(human_ratings_list, predicted_ratings_list) if h == p)
+                        kappa = matches / len(human_ratings_list)
+
+                    accuracy = accuracy_score(human_ratings_list, predicted_ratings_list)
+
+                    # Agreement by rating level
+                    agreement_by_rating = {}
+                    for rating in range(1, 6):
+                        human_at = [h for h, p in zip(human_ratings_list, predicted_ratings_list) if h == rating]
+                        pred_at = [p for h, p in zip(human_ratings_list, predicted_ratings_list) if h == rating]
+                        agreement_by_rating[str(rating)] = accuracy_score(human_at, pred_at) if human_at else 0.0
+
+                    cm = confusion_matrix(human_ratings_list, predicted_ratings_list, labels=[1, 2, 3, 4, 5])
+
+                    prompt_id = evaluations[0].prompt_id if evaluations else ""
+                    metrics = {
+                        "prompt_id": prompt_id,
+                        "correlation": float(kappa),
+                        "accuracy": float(accuracy),
+                        "mean_absolute_error": 0.0,
+                        "agreement_by_rating": agreement_by_rating,
+                        "confusion_matrix": cm.tolist(),
+                        "total_evaluations": len(human_ratings_list),
+                    }
+
+                    # Include total_evaluations_all if some evals were missing human ratings
+                    if len(human_ratings_list) < total_evals:
+                        metrics["total_evaluations_all"] = total_evals
+
+                    # Save metrics back to the prompt for future requests
+                    if prompts:
+                        try:
+                            db_service.update_judge_prompt_metrics(prompts[0].id, metrics)
+                            logger.info(f"Computed and saved metrics for workshop {workshop_id}: "
+                                       f"{len(human_ratings_list)}/{total_evals} evals with human ratings")
+                        except Exception as save_err:
+                            logger.warning(f"Could not save computed metrics: {save_err}")
+            except ImportError:
+                logger.warning("sklearn not available for on-the-fly metrics computation")
+            except Exception as metrics_err:
+                logger.warning(f"Could not compute metrics for workshop {workshop_id}: {metrics_err}")
     
     # Build lookups for trace ID mapping (both directions)
     traces = db_service.get_traces(workshop_id)
@@ -5350,6 +5460,7 @@ async def start_prompt_optimization_job(
             optimizer_model=request.optimizer_model_name,
             num_iterations=request.num_iterations,
             num_candidates=request.num_candidates,
+            target_endpoint=request.target_endpoint,
             status="running",
         )
         _db.add(run_record)
@@ -5437,6 +5548,9 @@ async def start_prompt_optimization_job(
                             if run_rec:
                                 run_rec.status = "failed"
                                 run_rec.error = job.error
+                                # Save original_prompt even on failure so history can show it
+                                if result and result.get("original_prompt"):
+                                    run_rec.original_prompt = result["original_prompt"]
                                 _update_db.commit()
                             _update_db.close()
                         except Exception:
@@ -5577,6 +5691,7 @@ async def get_prompt_optimization_history(
             "optimizer_model": run.optimizer_model,
             "num_iterations": run.num_iterations,
             "num_candidates": run.num_candidates,
+            "target_endpoint": run.target_endpoint,
             "metrics": _json.loads(run.metrics) if run.metrics else None,
             "status": run.status,
             "error": run.error,
