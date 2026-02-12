@@ -26,6 +26,35 @@ import {
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useWorkshop } from '@/hooks/useWorkshopApi';
 
+interface ExportedTable {
+  table_name: string;
+  rows_exported: number;
+}
+
+interface ExportResult {
+  message: string;
+  total_rows: number;
+  tables_exported?: ExportedTable[];
+  errors?: string[];
+}
+
+interface UploadResult {
+  message?: string;
+  volume_path?: string;
+  file_name?: string;
+}
+
+interface ExportFormState {
+  databricksHost?: string;
+  databricksToken?: string;
+  httpPath?: string;
+  catalog?: string;
+  schemaName?: string;
+  volumePath?: string;
+  fileName?: string;
+  scrollPosition?: number;
+}
+
 interface ExportStatus {
   workshop_id: string;
   export_ready: boolean;
@@ -83,7 +112,7 @@ export function DBSQLExportPage() {
   const [volumePath, setVolumePath] = useState(() => loadStateFromStorage().volumePath || '');
   const [fileName, setFileName] = useState(() => loadStateFromStorage().fileName || '');
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadResult, setUploadResult] = useState<any>(null);
+  const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   
   const [isExporting, setIsExporting] = useState(false);
@@ -118,7 +147,7 @@ export function DBSQLExportPage() {
   });
 
   // Save state to localStorage whenever form fields change
-  const saveStateToStorage = (newState: any) => {
+  const saveStateToStorage = (newState: Partial<ExportFormState>) => {
     if (!workshopId) return;
     
     const storageKey = `dbsql-export-state-${workshopId}`;
@@ -276,9 +305,9 @@ export function DBSQLExportPage() {
       // Clear any previous errors
       setUploadError(null);
       
-    } catch (err: any) {
-      
-      setUploadError(err.message || 'Upload failed');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Upload failed';
+      setUploadError(message);
       setUploadResult(null);
     } finally {
       setIsUploading(false);
@@ -597,7 +626,7 @@ export function DBSQLExportPage() {
                   <div className="space-y-2">
                     <h4 className="text-sm font-medium">Exported Tables</h4>
                     <div className="space-y-2">
-                      {exportResult.tables_exported.map((table: any, index: number) => (
+                      {exportResult.tables_exported.map((table: ExportedTable, index: number) => (
                         <Card key={index} className="border-l-4 border-gray-300">
                           <CardContent className="p-3">
                             <div className="flex items-center justify-between">

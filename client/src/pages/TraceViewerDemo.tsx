@@ -254,7 +254,7 @@ export function TraceViewerDemo() {
     maxRetries: number = 3,
     baseDelay: number = 1000
   ): Promise<T> => {
-    let lastError: any;
+    let lastError: unknown;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         return await fn();
@@ -343,12 +343,11 @@ export function TraceViewerDemo() {
       }
       
       return true;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to save finding after retries:', error);
+      const errMsg = error instanceof Error ? error.message : String(error);
       console.error('Error details:', {
-        message: error?.message,
-        response: error?.response?.data,
-        status: error?.response?.status,
+        message: errMsg,
         traceId,
         q1Length: q1Trimmed.length,
         q2Length: q2Trimmed.length,

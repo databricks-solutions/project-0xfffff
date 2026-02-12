@@ -150,14 +150,14 @@ export function WorkshopDemoLanding() {
     // Prevent infinite loops - only attempt recovery once
     if (workshopError && !isAutoRecovering && !hasAttemptedRecovery.current) {
       const is404Error = (
-        ('status' in workshopError && (workshopError as any).status === 404) ||
-        ('response' in workshopError && (workshopError as any).response?.status === 404) ||
+        ('status' in workshopError && (workshopError as { status?: number }).status === 404) ||
+        ('response' in workshopError && (workshopError as { response?: { status?: number } }).response?.status === 404) ||
         (workshopError instanceof Error && workshopError.message?.includes('404'))
       );
       
       const is500Error = (
-        ('status' in workshopError && (workshopError as any).status === 500) ||
-        ('response' in workshopError && (workshopError as any).response?.status === 500) ||
+        ('status' in workshopError && (workshopError as { status?: number }).status === 500) ||
+        ('response' in workshopError && (workshopError as { response?: { status?: number } }).response?.status === 500) ||
         (workshopError instanceof Error && workshopError.message?.includes('500')) ||
         (workshopError instanceof Error && workshopError.message?.includes('Internal Server Error'))
       );
@@ -342,8 +342,8 @@ export function WorkshopDemoLanding() {
   // Show auto-recovery screen while handling invalid workshop
   if (workshopError) {
     const is404Error = (
-      ('status' in workshopError && (workshopError as any).status === 404) ||
-      ('response' in workshopError && (workshopError as any).response?.status === 404) ||
+      ('status' in workshopError && (workshopError as { status?: number }).status === 404) ||
+      ('response' in workshopError && (workshopError as { response?: { status?: number } }).response?.status === 404) ||
       (workshopError instanceof Error && workshopError.message?.includes('404'))
     );
     

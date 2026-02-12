@@ -17,9 +17,10 @@ import {
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useRubric } from '@/hooks/useWorkshopApi';
 import { parseRubricQuestions, type RubricQuestion } from '@/utils/rubricUtils';
+import type { Rubric } from '@/client';
 
 // Convert API Rubric to local RubricQuestion format
-const convertApiRubricToQuestions = (rubric: any): RubricQuestion[] => {
+const convertApiRubricToQuestions = (rubric: Rubric | null): RubricQuestion[] => {
   if (!rubric || !rubric.question) return [];
   
   return parseRubricQuestions(rubric.question).map((q, index) => ({

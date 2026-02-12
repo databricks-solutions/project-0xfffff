@@ -77,9 +77,9 @@ export const AnnotationAssignmentManager: React.FC = () => {
       setParticipants(participantsRes);
       setUsers(usersRes);
       setTraces(tracesRes);
-    } catch (err: any) {
-      
-      setError(err.response?.data?.detail || 'Failed to load data');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to load data';
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -96,9 +96,9 @@ export const AnnotationAssignmentManager: React.FC = () => {
       await loadData();
       
       toast.success(`Successfully assigned annotations to ${response.total_annotators} users across ${response.total_traces} traces`);
-    } catch (err: any) {
-      
-      setError(err.response?.data?.detail || 'Failed to auto-assign annotations');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to auto-assign annotations';
+      setError(message);
     } finally {
       setAssigning(false);
     }
@@ -117,9 +117,9 @@ export const AnnotationAssignmentManager: React.FC = () => {
       
       await loadData();
       toast.success(`Successfully assigned ${traceIds.length} traces`);
-    } catch (err: any) {
-      
-      setError(err.response?.data?.detail || 'Failed to assign traces');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to assign traces';
+      setError(message);
     } finally {
       setAssigning(false);
     }
