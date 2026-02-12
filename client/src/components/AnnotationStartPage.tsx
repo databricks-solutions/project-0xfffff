@@ -77,18 +77,14 @@ export const AnnotationStartPage: React.FC<AnnotationStartPageProps> = ({ onStar
       // Set fresh start flag so AnnotationDemo starts from trace 1
       localStorage.setItem(`annotation-fresh-start-${workshopId}`, 'true');
 
-      // Add a small delay to ensure backend has processed the change
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      // Clear all workshop-related queries from cache
-      queryClient.removeQueries({ queryKey: ['workshop', workshopId] });
-      queryClient.removeQueries({ queryKey: ['annotations', workshopId] });
-      queryClient.removeQueries({ queryKey: ['rubric', workshopId] });
-
-      // Force a fresh refetch of the workshop data
-      await queryClient.refetchQueries({ queryKey: ['workshop', workshopId] });
-      await queryClient.refetchQueries({ queryKey: ['annotations', workshopId] });
-      await queryClient.refetchQueries({ queryKey: ['rubric', workshopId] });
+      // Invalidate and refetch workshop data so sidebar updates immediately.
+      // NOTE: invalidateQueries marks queries stale and triggers a refetch for
+      // active observers, returning a promise that resolves when complete.
+      // Previously, removeQueries was used which destroyed the queries entirely,
+      // causing refetchQueries to be a no-op and the sidebar to stay stale.
+      await queryClient.invalidateQueries({ queryKey: ['workshop', workshopId] });
+      await queryClient.invalidateQueries({ queryKey: ['annotations', workshopId] });
+      await queryClient.invalidateQueries({ queryKey: ['rubric', workshopId] });
 
       // Navigate to annotation monitor if callback provided
       if (onStartAnnotation) {

@@ -22,6 +22,7 @@ import {
   Link,
   Zap,
   Download,
+  TrendingUp,
 } from 'lucide-react';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useUser, useRoleCheck } from '@/context/UserContext';
@@ -346,6 +347,18 @@ export function PromptOptimizationPage() {
     navigator.clipboard.writeText(text);
     toast.success('Copied to clipboard');
   };
+
+  // Extract score improvement from logs as fallback for runs that completed
+  // before the backend started including scores in metrics
+  const parsedScores = React.useMemo(() => {
+    for (const log of jobLogs) {
+      const match = log.match(/Score improvement:\s*([\d.]+)\s*→\s*([\d.]+)/);
+      if (match) {
+        return { initial_score: parseFloat(match[1]), final_score: parseFloat(match[2]) };
+      }
+    }
+    return null;
+  }, [jobLogs]);
 
   const isRunning = jobStatus === 'running';
 
@@ -745,6 +758,32 @@ export function PromptOptimizationPage() {
               </p>
             )}
 
+            {/* Score improvement banner */}
+            {(() => {
+              const scores = (jobResult.metrics?.initial_score != null && jobResult.metrics?.final_score != null)
+                ? { initial: jobResult.metrics.initial_score, final: jobResult.metrics.final_score }
+                : parsedScores
+                  ? { initial: parsedScores.initial_score, final: parsedScores.final_score }
+                  : null;
+              if (!scores) return null;
+              return (
+                <div className="mt-3 flex items-center gap-3 bg-white/90 rounded-lg p-3 border border-green-300">
+                  <TrendingUp className="h-5 w-5 text-green-600 shrink-0" />
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600">Score</span>
+                    <span className="text-lg font-semibold text-gray-500">{scores.initial.toFixed(3)}</span>
+                    <ArrowRight className="h-4 w-4 text-green-600" />
+                    <span className="text-lg font-bold text-green-700">{scores.final.toFixed(3)}</span>
+                    {scores.final > scores.initial && (
+                      <Badge className="bg-green-100 text-green-700 border-green-300 text-xs">
+                        +{((scores.final - scores.initial) * 100).toFixed(1)}%
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Metrics row */}
             {jobResult.metrics && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
@@ -874,6 +913,22 @@ export function PromptOptimizationPage() {
                     {/* Expanded view */}
                     {selectedRun?.id === run.id && (
                       <div className="mt-3 border-t pt-3 space-y-3">
+                        {/* Score improvement */}
+                        {run.metrics?.initial_score != null && run.metrics?.final_score != null && (
+                          <div className="flex items-center gap-2 bg-green-50 rounded p-2 border border-green-200">
+                            <TrendingUp className="h-4 w-4 text-green-600 shrink-0" />
+                            <span className="text-xs text-gray-600">Score</span>
+                            <span className="text-sm font-semibold text-gray-500">{run.metrics.initial_score.toFixed(3)}</span>
+                            <ArrowRight className="h-3 w-3 text-green-600" />
+                            <span className="text-sm font-bold text-green-700">{run.metrics.final_score.toFixed(3)}</span>
+                            {run.metrics.final_score > run.metrics.initial_score && (
+                              <Badge className="bg-green-100 text-green-700 border-green-300 text-[10px]">
+                                +{((run.metrics.final_score - run.metrics.initial_score) * 100).toFixed(1)}%
+                              </Badge>
+                            )}
+                          </div>
+                        )}
+
                         {/* Metrics row */}
                         {run.metrics && (
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">

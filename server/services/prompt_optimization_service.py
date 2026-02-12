@@ -889,6 +889,10 @@ class PromptOptimizationService:
                 "num_candidates": num_candidates,
                 "train_data_size": len(train_data),
             }
+            if initial_score is not None:
+                metrics["initial_score"] = round(float(initial_score), 3)
+            if final_score is not None:
+                metrics["final_score"] = round(float(final_score), 3)
 
             final_result = {
                 "success": True,
@@ -936,7 +940,7 @@ class PromptOptimizationService:
         import mlflow
 
         # Get traces tagged for alignment (these have human annotations)
-        filter_string = f"tags.label = 'align' AND tags.workshop_id = '{workshop_id}'"
+        filter_string = f"tags.annotation_status = 'align' AND tags.workshop_id = '{workshop_id}'"
         traces = mlflow.search_traces(
             experiment_ids=[mlflow_config.experiment_id],
             filter_string=filter_string,
