@@ -88,7 +88,7 @@ async def test_permission_api_returns_role_based_defaults_for_valid_user(async_c
 @pytest.mark.asyncio
 async def test_permission_api_failure_when_db_service_raises(async_client, app):
     """When the database service raises an unexpected error during permission lookup,
-    the server returns 500 - the frontend should then apply default permissions.
+    the exception propagates - the frontend should then apply default permissions.
 
     Per AUTHENTICATION_SPEC Permission Loading Flow:
     - On other error: Apply default permissions (fallback)
@@ -102,8 +102,7 @@ async def test_permission_api_failure_when_db_service_raises(async_client, app):
 
     app.dependency_overrides[users_router.get_database_service] = lambda: FakeDBService()
     try:
-        resp = await async_client.get("/users/u-broken/permissions")
-        # Server returns an error status on unexpected failure
-        assert resp.status_code >= 500
+        with pytest.raises(RuntimeError, match="Database connection lost"):
+            await async_client.get("/users/u-broken/permissions")
     finally:
         app.dependency_overrides.pop(users_router.get_database_service, None)

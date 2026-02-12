@@ -73,6 +73,7 @@ ALL_TRACES = ROUND1_TRACES + ROUND2_TRACES
 class TestActiveTracesScoping:
     """Participants only see traces in the current active dataset/round."""
 
+    @pytest.mark.req("Participants only see traces in current active discovery dataset")
     def test_active_traces_only_current_round(self):
         """Only traces in active_discovery_trace_ids are visible; old round traces are hidden."""
         # Round 1: traces 0-4
@@ -86,6 +87,7 @@ class TestActiveTracesScoping:
         for old_id in ROUND1_TRACES:
             assert old_id not in ws_round2.active_discovery_trace_ids
 
+    @pytest.mark.req("Participants only see traces in current active discovery dataset")
     def test_empty_active_traces_returns_nothing(self):
         """When active_discovery_trace_ids is empty, no traces are visible."""
         ws = _make_workshop(discovery_ids=[])
@@ -97,6 +99,7 @@ class TestActiveTracesScoping:
 class TestAnnotationRandomizationPerUser:
     """Annotation traces are randomized per user for bias reduction."""
 
+    @pytest.mark.req("Multiple participants can see same trace with different orders")
     def test_different_users_different_order(self):
         """Two users see the same traces but in different orders."""
         order_a = _generate_randomized_order(ALL_TRACES, "user-alpha")
@@ -107,12 +110,14 @@ class TestAnnotationRandomizationPerUser:
         # Different orders
         assert order_a != order_b
 
+    @pytest.mark.req("Randomization persistent across page reloads for same trace set")
     def test_order_deterministic_for_same_user(self):
         """Same user always gets the same randomized order."""
         order1 = _generate_randomized_order(ALL_TRACES, "user-gamma")
         order2 = _generate_randomized_order(ALL_TRACES, "user-gamma")
         assert order1 == order2
 
+    @pytest.mark.req("Inter-rater reliability (IRR) can be measured (same traces, different orders)")
     def test_irr_measurement_possible(self):
         """All annotators see the same set of traces (different order), enabling IRR."""
         users = [f"annotator-{i}" for i in range(5)]
@@ -137,6 +142,7 @@ class TestAnnotationRandomizationPerUser:
 class TestMidRoundTraceAddition:
     """Mid-round trace addition appends new traces without disrupting existing order."""
 
+    @pytest.mark.req("When annotation dataset changes mid-round, new traces appended")
     def test_append_preserves_existing_positions(self):
         """Adding traces mid-round keeps existing order and appends new ones at the end."""
         user_id = "user-delta"
@@ -161,6 +167,7 @@ class TestMidRoundTraceAddition:
         # All traces present
         assert set(updated_order) == set(initial_traces) | set(new_traces_raw)
 
+    @pytest.mark.req("When annotation dataset changes mid-round, new traces appended")
     def test_no_reshuffle_on_addition(self):
         """Adding traces does NOT reshuffle the already-seen traces."""
         user_id = "user-epsilon"
@@ -184,6 +191,7 @@ class TestMidRoundTraceAddition:
 class TestRoundChangeClearsOrder:
     """When a new round starts, trace orders are cleared and re-randomized."""
 
+    @pytest.mark.req("When annotation round changes, full re-randomization applied")
     def test_new_dataset_triggers_fresh_randomization(self):
         """A completely different dataset means the seed changes, producing new order."""
         user_id = "user-zeta"
@@ -193,6 +201,7 @@ class TestRoundChangeClearsOrder:
         # Different trace sets
         assert set(round1_order) != set(round2_order)
 
+    @pytest.mark.req("When annotation round changes, full re-randomization applied")
     def test_round_change_not_incremental(self):
         """Round change is NOT incremental — it's a full fresh randomization.
 
@@ -221,3 +230,56 @@ class TestRoundChangeClearsOrder:
         # With 5 overlapping traces in sets of 8, it's astronomically unlikely
         # that ALL positions match
         assert position_matches < len(overlap_positions_r1)
+
+
+@pytest.mark.spec("DISCOVERY_TRACE_ASSIGNMENT_SPEC")
+@pytest.mark.unit
+class TestRandomizationContext:
+    """Randomization seed incorporates phase and round info."""
+
+    @pytest.mark.req("Randomization context includes phase and round info")
+    def test_randomization_seed_includes_phase(self):
+        """Same traces + same user but different phase should produce different order."""
+        pytest.fail("Not implemented")
+
+    @pytest.mark.req("Randomization context includes phase and round info")
+    def test_randomization_seed_includes_round(self):
+        """Same traces + same user but different round number should produce different order."""
+        pytest.fail("Not implemented")
+
+
+@pytest.mark.spec("DISCOVERY_TRACE_ASSIGNMENT_SPEC")
+@pytest.mark.unit
+class TestDatasetOperations:
+    """Dataset composition operations maintain correctness and audit trail."""
+
+    @pytest.mark.req("Dataset operations (union, subtract) work correctly and maintain audit trail")
+    def test_dataset_union(self):
+        """Union of two trace sets contains all unique traces from both."""
+        pytest.fail("Not implemented")
+
+    @pytest.mark.req("Dataset operations (union, subtract) work correctly and maintain audit trail")
+    def test_dataset_subtract(self):
+        """Subtracting traces removes them from the active set."""
+        pytest.fail("Not implemented")
+
+    @pytest.mark.req("Dataset operations (union, subtract) work correctly and maintain audit trail")
+    def test_dataset_operations_maintain_audit_trail(self):
+        """Operations record their type in the dataset's operations list."""
+        pytest.fail("Not implemented")
+
+
+@pytest.mark.spec("DISCOVERY_TRACE_ASSIGNMENT_SPEC")
+@pytest.mark.unit
+class TestAssignmentMetadata:
+    """Assignment metadata tracks full context (phase, round, dataset)."""
+
+    @pytest.mark.req("Assignment metadata properly tracks all context")
+    def test_assignment_tracks_phase_and_round(self):
+        """Each trace assignment record includes phase and round context."""
+        pytest.fail("Not implemented")
+
+    @pytest.mark.req("Assignment metadata properly tracks all context")
+    def test_assignment_tracks_dataset_id(self):
+        """Each trace assignment record references the source dataset."""
+        pytest.fail("Not implemented")

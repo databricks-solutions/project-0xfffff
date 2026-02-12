@@ -55,6 +55,7 @@ Use these exact spec names (case-sensitive):
 | `DESIGN_SYSTEM_SPEC` | Design system |
 | `DISCOVERY_TRACE_ASSIGNMENT_SPEC` | Trace assignment |
 | `JUDGE_EVALUATION_SPEC` | Judge & alignment |
+| `ROLE_PERMISSIONS_SPEC` | Roles & permissions |
 | `RUBRIC_SPEC` | Rubric management |
 | `UI_COMPONENTS_SPEC` | UI components |
 

@@ -47,9 +47,14 @@ class TestDbBootstrapCreatesDatabase:
             mock_upgrade.assert_called_once_with(db_url)
 
     def test_bootstrap_skips_existing_db(self, tmp_path):
-        """bootstrap_if_missing does not run migrations if DB exists."""
+        """bootstrap_if_missing does not run migrations if DB already has tables."""
+        import sqlite3
+
         db_file = tmp_path / "test_workshop.db"
-        db_file.touch()  # Create the file so it "exists"
+        # Create a real SQLite DB with a user table so bootstrap sees it as populated
+        conn = sqlite3.connect(str(db_file))
+        conn.execute("CREATE TABLE users (id TEXT PRIMARY KEY)")
+        conn.close()
         db_url = f"sqlite:///{db_file}"
 
         with patch("server.db_bootstrap._run_alembic_upgrade_head") as mock_upgrade:
