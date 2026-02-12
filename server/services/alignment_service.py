@@ -115,19 +115,21 @@ class AlignmentService:
         tag_type: str = "eval",
     ):
         """Fetch traces labeled for this workshop via mlflow.search_traces.
-        
+
         Args:
             mlflow_config: MLflow configuration with experiment_id
             workshop_id: Workshop ID to filter by
             return_type: Either "pandas" or "list"
-            tag_type: Tag label to search for:
-                     - 'eval': Traces tagged for auto-evaluation (applied when annotation starts)
-                     - 'align': Traces tagged for alignment (applied after human annotation)
+            tag_type: Tag value to search for:
+                     - 'eval': tags.label='eval' — traces tagged for auto-evaluation
+                     - 'align': tags.annotation_status='align' — traces tagged after human annotation
         """
         import mlflow
 
+        # 'eval' uses tags.label, 'align' uses tags.annotation_status
+        tag_key = "annotation_status" if tag_type == "align" else "label"
         filter_parts = [
-            f"tags.label = '{tag_type}'",
+            f"tags.{tag_key} = '{tag_type}'",
             f"tags.workshop_id = '{workshop_id}'",
         ]
         filter_string = " AND ".join(filter_parts)
@@ -1004,7 +1006,7 @@ class AlignmentService:
                 yield {"error": f"Failed to set experiment {experiment_id}: {e}", "success": False}
                 return
             
-            # Fetch labeled traces - use 'align' tag for traces with human annotations
+            # Fetch labeled traces - use annotation_status='align' for traces with human annotations
             try:
                 mlflow_traces = self._search_tagged_traces(mlflow_config, workshop_id, return_type="list", tag_type="align")
             except Exception as exc:
@@ -1012,7 +1014,7 @@ class AlignmentService:
                 yield {"error": f"Failed to search MLflow traces: {exc}", "success": False}
                 return
 
-            logger.info("Found %d tagged traces with 'align' label for alignment", len(mlflow_traces))
+            logger.info("Found %d tagged traces with annotation_status='align' for alignment", len(mlflow_traces))
             if not mlflow_traces:
                 yield "ERROR: No labeled traces available for alignment"
                 yield {"error": "No labeled traces available", "success": False}

@@ -1797,9 +1797,9 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       return result
 
     set_trace_tag = getattr(mlflow, 'set_trace_tag', None)
-    # Tag with 'align' label for alignment after human annotation
+    # Tag with 'align' annotation_status for alignment after human annotation
     tags = {
-      'label': 'align',
+      'annotation_status': 'align',
       'workshop_id': workshop_id,
     }
     if set_trace_tag:
