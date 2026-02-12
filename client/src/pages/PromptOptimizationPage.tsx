@@ -26,7 +26,7 @@ import {
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useUser, useRoleCheck } from '@/context/UserContext';
 import { useWorkshop } from '@/hooks/useWorkshopApi';
-import { getModelOptions, getBackendModelName } from '@/utils/modelMapping';
+import { getModelOptions, getBackendModelName, getFrontendModelName } from '@/utils/modelMapping';
 import { toast } from 'sonner';
 
 interface OptimizationRun {
@@ -60,7 +60,7 @@ export function PromptOptimizationPage() {
   const [promptName, setPromptName] = useState('');
   const [ucCatalog, setUcCatalog] = useState('');
   const [ucSchema, setUcSchema] = useState('');
-  const [optimizerModel, setOptimizerModel] = useState('Claude Sonnet 4.5');
+  const [optimizerModel, setOptimizerModel] = useState('Claude Opus 4.5');
   const [numIterations, setNumIterations] = useState(3);
   const [numCandidates, setNumCandidates] = useState(5);
   const [targetEndpoint, setTargetEndpoint] = useState('');
@@ -90,7 +90,7 @@ export function PromptOptimizationPage() {
     }
   }, [jobLogs]);
 
-  const modelOptions = getModelOptions(hasMlflowConfig);
+  const modelOptions = getModelOptions(true); // Prompt optimization always requires MLflow
 
   // Persist configuration to localStorage so it survives page navigation
   const configStorageKey = `prompt-opt-config-${workshopId}`;
@@ -108,7 +108,8 @@ export function PromptOptimizationPage() {
         if (config.promptName) setPromptName(config.promptName);
         if (config.ucCatalog) setUcCatalog(config.ucCatalog);
         if (config.ucSchema) setUcSchema(config.ucSchema);
-        if (config.optimizerModel) setOptimizerModel(config.optimizerModel);
+        if (config.optimizerModel) setOptimizerModel(getFrontendModelName(config.optimizerModel));
+        else setOptimizerModel('Claude Opus 4.5');
         if (config.numIterations) setNumIterations(config.numIterations);
         if (config.numCandidates) setNumCandidates(config.numCandidates);
         if (config.targetEndpoint) setTargetEndpoint(config.targetEndpoint);
@@ -181,7 +182,7 @@ export function PromptOptimizationPage() {
     }
 
     // Restore other config fields from the run record
-    if (targetEntry.optimizer_model) setOptimizerModel(targetEntry.optimizer_model);
+    if (targetEntry.optimizer_model) setOptimizerModel(getFrontendModelName(targetEntry.optimizer_model));
     if (targetEntry.num_iterations) setNumIterations(targetEntry.num_iterations);
     if (targetEntry.num_candidates) setNumCandidates(targetEntry.num_candidates);
     if (targetEntry.target_endpoint) setTargetEndpoint(targetEntry.target_endpoint);
