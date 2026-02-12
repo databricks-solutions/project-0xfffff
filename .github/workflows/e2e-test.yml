@@ -2,7 +2,7 @@ name: E2E Tests
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, 'release/**']
 
 jobs:
   e2e-test:
@@ -43,18 +43,30 @@ jobs:
         working-directory: client
         run: npx playwright install --with-deps chromium
 
-      - name: Run E2E tests
-        run: |
-          # Set up environment
-          export ENVIRONMENT=development
+      - name: Run dead code checks
+        run: just lint-deadcode
+        env:
+          CI: true
 
-          # Run e2e tests using just
-          uv run just e2e headless 1
+      - name: Run frontend lint
+        run: just ui-lint
+        env:
+          CI: true
+
+      - name: Run frontend unit tests
+        run: just ui-test-unit
         env:
           CI: true
 
       - name: Run Python unit tests
-        run: uv run just test-server
+        run: just test-server
+        env:
+          CI: true
+
+      - name: Run E2E tests
+        run: |
+          export ENVIRONMENT=development
+          just e2e headless 4
         env:
           CI: true
 

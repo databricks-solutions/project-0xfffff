@@ -374,7 +374,7 @@ class MLflowIntakeService:
             # Check if it's an output_text type content with a text field
             if isinstance(first_content, dict) and first_content.get('type') == 'output_text' and 'text' in first_content:
               return first_content['text']
-        except Exception as e:
+        except Exception:
           pass
           # maybe logging info
           # print(f'Error with ResponsesAgentResponse: {e}')
@@ -384,7 +384,7 @@ class MLflowIntakeService:
           outputs = ChatAgentResponse.model_validate(data).messages
           if isinstance(outputs[0].content, str):
             return outputs[0].content
-        except Exception as e:
+        except Exception:
           pass
           # maybe logging info
           # print(f'Error with ChatAgentResponse: {e}')

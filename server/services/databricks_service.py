@@ -247,12 +247,6 @@ class DatabricksService:
     try:
       logger.info('Testing Databricks connection')
 
-      # TODO: this is a noop, actually handle connection testing?
-      # test_response = self.client.chat.completions.create(
-      #   messages=[{'role': 'user', 'content': 'Hello'}],
-      #   max_tokens=5,
-      # )
-
       return {
         'status': 'connected',
         'workspace_url': self.workspace_url,

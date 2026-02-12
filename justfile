@@ -280,6 +280,25 @@ ui-test-unit *args:
 ui-lint:
   npm -C {{client-dir}} run lint
 
+# Detect dead Python code with vulture
+[group('dev')]
+lint-vulture:
+  uv run vulture {{server-dir}}/ vulture_whitelist.py --min-confidence 80
+
+# Detect dead Python code with ruff F4xx rules
+[group('dev')]
+lint-ruff-deadcode:
+  uv run ruff check --select F {{server-dir}}/
+
+# Detect dead TypeScript/JS code with knip
+[group('dev')]
+lint-knip:
+  npm -C {{client-dir}} run knip
+
+# Run all dead-code linters (vulture + ruff F4xx + knip)
+[group('dev')]
+lint-deadcode: lint-vulture lint-ruff-deadcode lint-knip
+
 [group('dev')]
 ui-format:
   npm -C {{client-dir}} run format

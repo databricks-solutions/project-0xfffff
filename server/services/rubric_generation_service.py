@@ -7,7 +7,7 @@ rubric suggestions that facilitators can review and accept.
 
 import json
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 from server.services.database_service import DatabaseService
 from server.services.databricks_service import DatabricksService

@@ -243,7 +243,7 @@ def _widen_alembic_version_column(database_url: str) -> None:
                 )
             )
             conn.commit()
-            print(f"✅ Widened alembic_version.version_num to VARCHAR(128)")
+            print("✅ Widened alembic_version.version_num to VARCHAR(128)")
         engine.dispose()
     except Exception as e:
         # Table may not exist yet — that's fine
