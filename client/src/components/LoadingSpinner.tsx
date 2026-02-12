@@ -47,31 +47,3 @@ export function LoadingSpinner({
   );
 }
 
-interface ErrorDisplayProps {
-  title: string;
-  message: string;
-  showRetry?: boolean;
-  onRetry?: () => void;
-}
-
-export function ErrorDisplay({ title, message, showRetry = false, onRetry }: ErrorDisplayProps) {
-  return (
-    <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
-      <div className="text-center max-w-md">
-        <div className="text-lg font-medium text-gray-900 mb-2">{title}</div>
-        <div className="text-sm text-gray-500 mb-4">{message}</div>
-        {showRetry && onRetry && (
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={onRetry}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Retry
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-}

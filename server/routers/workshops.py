@@ -547,10 +547,6 @@ async def toggle_participant_notes(workshop_id: str, db: Session = Depends(get_d
     db.commit()
     db.refresh(workshop_db)
 
-    # Clear workshop cache so the next get_workshop returns fresh data
-    cache_key = db_service._get_cache_key('workshop', workshop_id)
-    db_service._cache.pop(cache_key, None)
-
     return db_service._workshop_from_db(workshop_db)
 
 
@@ -1315,7 +1311,6 @@ async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Sessi
     This also triggers automatic LLM evaluation in the background using a judge prompt
     derived from the rubric. Results are available immediately in the Results UI.
     """
-    import random
     import threading
 
     logger.info("begin_annotation_phase called with request: %s", request)
@@ -1624,10 +1619,10 @@ async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Sessi
                                 job.add_log(f"\n⚠ {len(successful)}/{len(questions_to_eval)} judges succeeded")
                             elif len(successful) > 0 and not save_succeeded:
                                 job.set_status("failed")
-                                job.add_log(f"\n✗ Evaluation succeeded but database save failed. Click 'Run Align()' to retry.")
+                                job.add_log("\n✗ Evaluation succeeded but database save failed. Click 'Run Align()' to retry.")
                             else:
                                 job.set_status("failed")
-                                job.add_log(f"\n✗ All judges failed")
+                                job.add_log("\n✗ All judges failed")
 
                         finally:
                             thread_db.close()
@@ -2880,9 +2875,6 @@ async def upload_csv_traces(
                     text = text.replace('\\n', '\n')
                 return text
             
-            request_text = clean_csv_text(row["request_preview"])
-            response_text = clean_csv_text(row["response_preview"])
-
             # Build rich context from MLflow metadata
             context = {"source": "mlflow_csv_upload", "filename": file.filename, "csv_row_number": row_number}
 
@@ -3775,7 +3767,6 @@ async def start_simple_evaluation(
       from server.services.databricks_service import DatabricksService
       from server.database import SessionLocal
       from sklearn.metrics import cohen_kappa_score, accuracy_score, confusion_matrix
-      import numpy as np
       
       thread_db = SessionLocal()
       try:
@@ -3815,12 +3806,12 @@ async def start_simple_evaluation(
                 # All questions are binary
                 is_binary_judge = True
                 judge_type_str = 'binary'
-                job.add_log(f"✅ All questions are binary - using binary judge type")
+                job.add_log("✅ All questions are binary - using binary judge type")
               elif likert_questions and not binary_questions:
                 # All questions are likert
                 is_binary_judge = False
                 judge_type_str = 'likert'
-                job.add_log(f"✅ All questions are likert - using likert judge type")
+                job.add_log("✅ All questions are likert - using likert judge type")
               elif binary_questions:
                 # Mixed - but if we have binary questions, prefer binary
                 # (most common case: rubric has default likert but questions are binary)
@@ -3828,7 +3819,7 @@ async def start_simple_evaluation(
                 judge_type_str = 'binary'
                 job.add_log(f"⚠️ Mixed judge types detected - using binary (found {len(binary_questions)} binary questions)")
               else:
-                job.add_log(f"⚠️ No judge_type found in questions - will fall back to rubric-level judge_type")
+                job.add_log("⚠️ No judge_type found in questions - will fall back to rubric-level judge_type")
           
           # Fallback to rubric-level judge_type if no questions parsed or all questions are likert
           if judge_type_str == 'likert' and not is_binary_judge:
@@ -3897,13 +3888,13 @@ async def start_simple_evaluation(
           if has_zero and not has_two_to_five:
             # We have 0s and no 2-5 values, so it's binary
             if not is_binary_judge:
-              job.add_log(f"⚠️ Judge type inferred from ratings: binary (found 0 values, no 2-5 values)")
+              job.add_log("⚠️ Judge type inferred from ratings: binary (found 0 values, no 2-5 values)")
               is_binary_judge = True
               judge_type_str = 'binary'
           elif has_two_to_five:
             # We have 2-5 values, so it's likert
             if is_binary_judge:
-              job.add_log(f"⚠️ Judge type inferred from ratings: likert (found 2-5 values)")
+              job.add_log("⚠️ Judge type inferred from ratings: likert (found 2-5 values)")
               is_binary_judge = False
               judge_type_str = 'likert'
         
@@ -4637,10 +4628,10 @@ async def restart_auto_evaluation(
                         job.add_log(f"  Failed: {f['judge_name']}")
                 elif len(successful) > 0 and not save_succeeded:
                     job.set_status("failed")
-                    job.add_log(f"\n✗ Evaluation succeeded but database save failed. Click 'Run Align()' to retry.")
+                    job.add_log("\n✗ Evaluation succeeded but database save failed. Click 'Run Align()' to retry.")
                 else:
                     job.set_status("failed")
-                    job.add_log(f"\n✗ All judges failed")
+                    job.add_log("\n✗ All judges failed")
 
             finally:
                 thread_db.close()

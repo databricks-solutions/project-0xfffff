@@ -441,13 +441,9 @@ class JudgeService:
     if 'specific' in prompt.lower() or 'detailed' in prompt.lower():
       # Better prompts have higher correlation (simulating GPT-4 level)
       variation = random.choice([-1, 0, 0, 0, 1])
-      # TODO: this was ostensibly here for a reason, but I don't know what it is.
-      # model_quality = 'gpt-4-like'
     else:
       # Basic prompts have more variation (simulating GPT-3.5 level)
       variation = random.choice([-2, -1, 0, 1, 2])
-      # TODO: this was ostensibly here for a reason, but I don't know what it is.
-      # model_quality = 'gpt-3.5-like'
 
     # Add occasional random noise (10% chance of bigger disagreement)
     noise = random.choice([-1, 0, 1]) if random.random() < 0.1 else 0

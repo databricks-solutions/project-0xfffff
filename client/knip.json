@@ -1,6 +1,25 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "tags": [
-    "-lintignore"
+  "tags": ["-lintignore"],
+  "ignore": [
+    "build/**",
+    "*.timestamp-*",
+    "src/assets.d.ts",
+    "src/components/ui/sheet.tsx",
+    "src/components/ui/skeleton.tsx"
+  ],
+  "entry": [
+    "src/main.tsx!",
+    "src/test/render.tsx!",
+    "src/client/**/*.ts!",
+    "src/components/ui/**/*.tsx!",
+    "src/context/UserContext.tsx!",
+    "tests/**/*.ts!"
+  ],
+  "ignoreDependencies": [
+    "@typescript-eslint/eslint-plugin",
+    "@typescript-eslint/parser",
+    "eslint-plugin-react-hooks",
+    "eslint-plugin-react-refresh"
   ]
 }

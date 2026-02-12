@@ -205,20 +205,6 @@ export function useOriginalTraces(workshopId: string) {
   });
 }
 
-export function useUploadTraces(workshopId: string) {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: (traces: TraceUpload[]) => 
-      WorkshopsService.uploadTracesWorkshopsWorkshopIdTracesPost(workshopId, traces),
-    onSuccess: () => {
-      // Invalidate both user-specific traces and all traces queries
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.traces(workshopId) });
-      queryClient.invalidateQueries({ queryKey: ['all-traces', workshopId] });
-    },
-  });
-}
-
 // Utility function to invalidate trace caches
 export function useInvalidateTraces() {
   const queryClient = useQueryClient();
@@ -597,20 +583,6 @@ export function useUpdateTraceAlignment(workshopId: string) {
   });
 }
 
-export function useTracesForAlignment(workshopId: string) {
-  return useQuery({
-    queryKey: ['traces-for-alignment', workshopId],
-    queryFn: async () => {
-      const response = await fetch(`/workshops/${workshopId}/traces-for-alignment`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch traces for alignment');
-      }
-      return response.json();
-    },
-    enabled: !!workshopId,
-  });
-}
-
 export function useAggregateAllFeedback(workshopId: string) {
   const queryClient = useQueryClient();
 
@@ -811,42 +783,3 @@ export function usePreviewJsonPath(workshopId: string) {
   });
 }
 
-// Rubric Generation hooks
-
-export interface RubricSuggestion {
-  title: string;
-  description: string;
-  positive?: string;
-  negative?: string;
-  examples?: string;
-  judgeType: 'likert' | 'binary' | 'freeform';
-}
-
-interface RubricGenerationRequest {
-  endpoint_name?: string;
-  temperature?: number;
-  include_notes?: boolean;
-}
-
-export function useGenerateRubricSuggestions(workshopId: string) {
-  return useMutation({
-    mutationFn: async (request?: RubricGenerationRequest): Promise<RubricSuggestion[]> => {
-      const response = await fetch(`/workshops/${workshopId}/generate-rubric-suggestions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(request || {
-          endpoint_name: 'databricks-claude-sonnet-4-5',
-          temperature: 0.3,
-          include_notes: true
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({ detail: 'Failed to generate suggestions' }));
-        throw new Error(error.detail || 'Failed to generate suggestions');
-      }
-
-      return response.json();
-    },
-  });
-}

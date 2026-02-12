@@ -57,7 +57,7 @@ async def login(login_data: UserLogin, db_service=Depends(get_database_service))
       if not participant:
         raise HTTPException(
           status_code=403, 
-          detail=f'You are not invited to this workshop. Please contact the facilitator to be added.'
+          detail='You are not invited to this workshop. Please contact the facilitator to be added.'
         )
 
   # Activate user if they were pending

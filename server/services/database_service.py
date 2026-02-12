@@ -77,12 +77,10 @@ def _retry_mlflow_operation(operation, max_retries: int = 3, base_delay: float =
   """
   import time
 
-  last_error = None
   for attempt in range(max_retries):
     try:
       return operation()
     except Exception as e:
-      last_error = e
       error_str = str(e).lower()
 
       # Don't retry on certain errors
@@ -108,35 +106,10 @@ def _retry_mlflow_operation(operation, max_retries: int = 3, base_delay: float =
 
 
 class DatabaseService:
-  """Service layer for database operations with caching support."""
+  """Service layer for database operations."""
 
   def __init__(self, db: Session):
     self.db = db
-    # Simple in-memory cache for frequently accessed data
-    self._cache = {}
-    self._cache_ttl = 30  # 30 seconds TTL
-
-  def _get_cache_key(self, prefix: str, *args) -> str:
-    """Generate a cache key from prefix and arguments."""
-    return f'{prefix}:{":".join(str(arg) for arg in args)}'
-
-  def _get_from_cache(self, key: str):
-    """Get value from cache if not expired."""
-    import time
-
-    if key in self._cache:
-      value, timestamp = self._cache[key]
-      if time.time() - timestamp < self._cache_ttl:
-        return value
-      else:
-        del self._cache[key]
-    return None
-
-  def _set_cache(self, key: str, value):
-    """Set value in cache with timestamp."""
-    import time
-
-    self._cache[key] = (value, time.time())
 
   # Workshop operations
   def create_workshop(self, workshop_data: WorkshopCreate) -> Workshop:
@@ -182,20 +155,12 @@ class DatabaseService:
     )
 
   def get_workshop(self, workshop_id: str) -> Optional[Workshop]:
-    """Get a workshop by ID with caching."""
-    cache_key = self._get_cache_key('workshop', workshop_id)
-    cached_workshop = self._get_from_cache(cache_key)
-    if cached_workshop is not None:
-      return cached_workshop
-
+    """Get a workshop by ID."""
     db_workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
     if not db_workshop:
       return None
 
-    workshop = self._workshop_from_db(db_workshop)
-
-    self._set_cache(cache_key, workshop)
-    return workshop
+    return self._workshop_from_db(db_workshop)
 
   def list_workshops(self, facilitator_id: Optional[str] = None) -> List[Workshop]:
     """List all workshops, optionally filtered by facilitator.
@@ -266,11 +231,6 @@ class DatabaseService:
     self.db.commit()
     self.db.refresh(db_workshop)
 
-    # Clear cache for this workshop
-    cache_key = self._get_cache_key('workshop', workshop_id)
-    if cache_key in self._cache:
-      del self._cache[cache_key]
-
     return self.get_workshop(workshop_id)
 
   def update_workshop_jsonpath_settings(
@@ -299,11 +259,6 @@ class DatabaseService:
 
     self.db.commit()
     self.db.refresh(db_workshop)
-
-    # Clear cache for this workshop
-    cache_key = self._get_cache_key('workshop', workshop_id)
-    if cache_key in self._cache:
-      del self._cache[cache_key]
 
     return self.get_workshop(workshop_id)
 
@@ -1040,10 +995,6 @@ class DatabaseService:
         workshop_db.judge_name = derived_judge_name
         self.db.commit()
         logger.info("Auto-derived judge_name '%s' from rubric title '%s'", derived_judge_name, title)
-        # Clear workshop cache
-        cache_key = self._get_cache_key('workshop', workshop_id)
-        if cache_key in self._cache:
-          del self._cache[cache_key]
 
     return Rubric(
       id=db_rubric.id,
@@ -1530,7 +1481,7 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
             # However, if we received ratings but got empty dict, log a warning
             if len(validated_ratings) == 0 and len(annotation_data.ratings) > 0:
               logger.warning(f"⚠️ All ratings failed validation! Received: {annotation_data.ratings}, but validated_ratings is empty")
-              logger.warning(f"⚠️ Not updating ratings to avoid clearing existing data")
+              logger.warning("⚠️ Not updating ratings to avoid clearing existing data")
             else:
               existing_annotation.ratings = validated_ratings
               logger.info(f"  → Updated ratings: {existing_annotation.ratings}")
@@ -1696,10 +1647,10 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
     if judge_type == 'binary':
       # Binary: only 0 or 1 are valid
       if rating_int == 0:
-        logger.debug(f"  → Binary rating 0 (Fail) - returning 0")
+        logger.debug("  → Binary rating 0 (Fail) - returning 0")
         return 0
       elif rating_int == 1:
-        logger.debug(f"  → Binary rating 1 (Pass) - returning 1")
+        logger.debug("  → Binary rating 1 (Pass) - returning 1")
         return 1
       else:
         # Normalize: any non-zero becomes 1, but log a warning
@@ -2735,19 +2686,6 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
     self.db.delete(db_participant)
     self.db.commit()
     return True
-
-    # TODO: this was ostensibly here for a reason, but I don't know what it is.
-    # if not db_participant:
-    #   raise ValueError(
-    #     f'Participant {participant.user_id} not found in workshop {participant.workshop_id}'
-    #   )
-
-    # db_participant.assigned_traces = participant.assigned_traces
-    # db_participant.annotation_quota = participant.annotation_quota
-
-    # self.db.commit()
-    # self.db.refresh(db_participant)
-    # return participant
 
   def update_user_role_in_workshop(self, workshop_id: str, user_id: str, new_role: str) -> Optional[User]:
     """Update a user's role in a workshop (SME <-> Participant)."""

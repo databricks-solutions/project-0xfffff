@@ -24,7 +24,6 @@ from server.services.krippendorff_alpha import (
   calculate_krippendorff_alpha,
   calculate_krippendorff_alpha_per_metric,
   get_krippendorff_improvement_suggestions,
-  get_unique_question_ids,
   interpret_krippendorff_alpha,
   is_krippendorff_alpha_acceptable,
 )
@@ -190,8 +189,6 @@ def _calculate_krippendorff_alpha_result(annotations: List[Annotation], analysis
     alpha = sum(per_metric_scores.values()) / len(per_metric_scores) if per_metric_scores else 0.0
   
   interpretation = interpret_krippendorff_alpha(alpha)
-  # TODO: this was ostensibly here for a reason, but I don't know what it is.
-  # ready_to_proceed = is_krippendorff_alpha_acceptable(alpha)
   suggestions = get_krippendorff_improvement_suggestions(alpha)
 
   result = format_irr_result(

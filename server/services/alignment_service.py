@@ -564,7 +564,7 @@ class AlignmentService:
             
             # Use explicit judge type if provided, otherwise detect from rubric (legacy)
             effective_judge_type = judge_type if judge_type else get_judge_type_from_rubric(self.db_service, workshop_id)
-            yield f"Using judge type: {effective_judge_type}" + (f" (explicitly set)" if judge_type else " (detected from rubric)")
+            yield f"Using judge type: {effective_judge_type}" + (" (explicitly set)" if judge_type else " (detected from rubric)")
             
             # Try to load registered judge if requested (for re-evaluation after alignment)
             judge = None
@@ -587,7 +587,7 @@ class AlignmentService:
                         yield f"WARNING: get_scorer returned None for '{judge_name}' - will create from prompt"
                 except Exception as load_err:
                     yield f"WARNING: Could not load registered judge: {load_err}"
-                    yield f"Falling back to creating judge from prompt text"
+                    yield "Falling back to creating judge from prompt text"
                     judge = None
             
             # If we didn't load a registered judge, create one from the prompt
@@ -607,10 +607,10 @@ class AlignmentService:
                 # NOTE: feedback_value_type only affects parsing, not model output. Strong prompt instructions are critical.
                 if effective_judge_type == 'binary':
                     feedback_type = float  # Use float, not bool - more reliable for 0/1 parsing
-                    yield f"Binary judge - creating with feedback_value_type=float (expecting 0 or 1)"
+                    yield "Binary judge - creating with feedback_value_type=float (expecting 0 or 1)"
                 else:
                     feedback_type = float
-                    yield f"Likert judge - creating with feedback_value_type=float (expecting 1-5)"
+                    yield "Likert judge - creating with feedback_value_type=float (expecting 1-5)"
                 
                 # Create judge with the judge name - this name is critical for alignment
                 # The judge can be used as a scorer in evaluate()
@@ -628,7 +628,7 @@ class AlignmentService:
             # Ensure eval_df has 'inputs' and 'outputs' columns required by MLflow evaluate()
             # MLflow's search_traces returns traces, but we need to fetch full trace data to get inputs/outputs
             if 'inputs' not in eval_df.columns or 'outputs' not in eval_df.columns:
-                yield f"Preparing inputs/outputs columns from MLflow trace data..."
+                yield "Preparing inputs/outputs columns from MLflow trace data..."
                 
                 # Fetch full trace data for each trace_id to extract inputs/outputs
                 eval_df = eval_df.copy()
@@ -685,7 +685,7 @@ class AlignmentService:
                 scorers=[judge],  # Judge can be used as scorer
             )
             
-            yield f"Evaluation complete. Processing results..."
+            yield "Evaluation complete. Processing results..."
             
             result_df = results.result_df
             judge_value_col = None
@@ -730,7 +730,7 @@ class AlignmentService:
                     is_binary = effective_judge_type == 'binary'
                     yield f"🔍 Processing results with judge_type='{effective_judge_type}', is_binary={is_binary}"
                     if is_binary:
-                        yield f"Binary judge - will convert PASS/FAIL to 1/0 and reject any values not 0 or 1"
+                        yield "Binary judge - will convert PASS/FAIL to 1/0 and reject any values not 0 or 1"
                     
                     for idx, (_, row) in enumerate(result_df.iterrows()):
                         raw_trace_id = row.get('trace_id')
@@ -905,7 +905,7 @@ class AlignmentService:
                 else:
                     yield f"ERROR: Column '{expected_value_col}' not found. Available: {columns_list}"
             else:
-                yield f"WARNING: Result DataFrame is None"
+                yield "WARNING: Result DataFrame is None"
             
             # Use effective_judge_type for appropriate metrics calculation
             yield f"Computing metrics for judge type: {effective_judge_type}"
@@ -1042,10 +1042,10 @@ class AlignmentService:
             # - Likert judges: use float for 1-5 scale
             if judge_type == 'binary':
                 feedback_type = float
-                yield f"Creating binary judge with feedback_value_type=float (expecting 0 or 1)"
+                yield "Creating binary judge with feedback_value_type=float (expecting 0 or 1)"
             else:
                 feedback_type = float
-                yield f"Creating Likert judge with feedback_value_type=float"
+                yield "Creating Likert judge with feedback_value_type=float"
 
             # Create judge with appropriate feedback_value_type
             judge = make_judge(
