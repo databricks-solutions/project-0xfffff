@@ -2555,8 +2555,6 @@ Think step by step about how well the output addresses the criteria, then provid
                 disabled={
                   isRunningAlignment ||
                   isRunningEvaluation ||
-                  isPollingAutoEval ||
-                  autoEvalStatus === 'running' ||
                   !judgeName.trim() ||
                   annotatedTraceCount < 10
                 }
@@ -2586,9 +2584,7 @@ Think step by step about how well the output addresses the criteria, then provid
                 onClick={handleReEvaluate}
                 disabled={
                   isRunningEvaluation ||
-                  isRunningAlignment ||
-                  isPollingAutoEval ||
-                  autoEvalStatus === 'running'
+                  isRunningAlignment
                 }
                 variant="outline"
                 className="border-purple-300 text-purple-700 hover:bg-purple-50"
@@ -2615,14 +2611,12 @@ Think step by step about how well the output addresses the criteria, then provid
                   isRunningAllEvaluations ||
                   isRunningEvaluation ||
                   isRunningAlignment ||
-                  isPollingAutoEval ||
-                  autoEvalStatus === 'running' ||
                   !currentPrompt.trim()
                 }
                 variant="outline"
                 className="border-green-400 text-green-700 hover:bg-green-50"
               >
-                {isRunningAllEvaluations || (isPollingAutoEval && autoEvalStatus === 'running') ? (
+                {isRunningAllEvaluations || isRunningEvaluation ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                     Evaluating...
@@ -2641,9 +2635,7 @@ Think step by step about how well the output addresses the criteria, then provid
               <Button
                 onClick={handleReEvaluate}
                 disabled={
-                  isRunningEvaluation ||
-                  isPollingAutoEval ||
-                  autoEvalStatus === 'running'
+                  isRunningEvaluation
                 }
                 className="bg-purple-600 hover:bg-purple-700"
               >
@@ -2666,6 +2658,13 @@ Think step by step about how well the output addresses the criteria, then provid
               <Badge className="bg-amber-100 text-amber-700 border-amber-300">
                 <AlertCircle className="h-3 w-3 mr-1" />
                 Need {10 - annotatedTraceCount} more annotations
+              </Badge>
+            )}
+
+            {isPollingAutoEval && autoEvalStatus === 'running' && (
+              <Badge className="bg-blue-50 text-blue-600 border-blue-200">
+                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                Background eval running
               </Badge>
             )}
 

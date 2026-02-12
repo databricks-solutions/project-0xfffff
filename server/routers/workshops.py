@@ -1195,7 +1195,7 @@ async def add_traces(workshop_id: str, request: dict, db: Session = Depends(get_
                                                             prompt_id=new_prompt.id,
                                                             trace_id=trace_id_for_db,
                                                             predicted_rating=pred_val,
-                                                            human_rating=int(eval_data["human_rating"]) if eval_data.get("human_rating") is not None else 0,
+                                                            human_rating=int(eval_data["human_rating"]) if eval_data.get("human_rating") is not None else None,
                                                             confidence=eval_data.get("confidence"),
                                                             reasoning=eval_data.get("reasoning"),
                                                         )
@@ -4332,7 +4332,15 @@ async def get_auto_evaluation_status(
             "derived_prompt": derived_prompt,
             "message": "Job record not found - may have expired",
         }
-    
+
+    # Detect stale "running" jobs (daemon thread crashed or server restarted)
+    if job.status == "running" and (time.time() - job.updated_at) > 300:
+        logger.warning(
+            f"Auto-eval job {job_id} stuck as 'running' for >5min. Marking as failed."
+        )
+        job.set_status("failed")
+        job.add_log("Job timed out — marked as failed after 5 minutes of inactivity")
+
     response = {
         "status": job.status,
         "job_id": job_id,
@@ -4720,15 +4728,25 @@ async def get_auto_evaluation_results(
         job = get_job(job_id)
         if job:
             job_status = job.status
+            # Detect stale "running" jobs: if updated_at is older than 5 minutes,
+            # the daemon thread likely crashed or the server restarted
+            if job_status == "running" and (time.time() - job.updated_at) > 300:
+                logger.warning(
+                    f"Auto-eval job {job_id} stuck as 'running' for >5min "
+                    f"(last update {time.time() - job.updated_at:.0f}s ago). Marking as failed."
+                )
+                job.set_status("failed")
+                job.add_log("Job timed out — marked as failed after 5 minutes of inactivity")
+                job_status = "failed"
 
     # Get the latest evaluations from the database
     # These are stored when the auto-evaluation job completes
     evaluations = db_service.get_latest_evaluations(workshop_id)
 
-    # If we have evaluations in DB but job status is unknown (e.g., after app restart
-    # when /tmp job files are lost), report status as "completed" so the frontend
-    # displays the results instead of showing "not_started"
-    if evaluations and job_status in ("not_started", "not_found"):
+    # If we have evaluations in DB but job status is stale (e.g., after app restart
+    # when /tmp job files are lost, or job timed out but evals were saved), report
+    # status as "completed" so the frontend displays the results
+    if evaluations and job_status in ("not_started", "not_found", "failed"):
         job_status = "completed"
     
     # Get metrics if available
@@ -4776,6 +4794,14 @@ async def get_auto_evaluation_results(
                         return None
                     return Counter(values).most_common(1)[0][0]
 
+                # Detect judge type: check rubric questions or infer from ratings
+                is_binary_judge = False
+                if rubric_questions:
+                    for rq in rubric_questions:
+                        if rq.get('judge_type') == 'binary':
+                            is_binary_judge = True
+                            break
+
                 # Match evaluations with annotation-derived human ratings
                 human_ratings_list = []
                 predicted_ratings_list = []
@@ -4785,22 +4811,32 @@ async def get_auto_evaluation_results(
                     if e.predicted_rating is None:
                         continue
 
-                    # First try the evaluation's own human_rating
-                    h_rating = e.human_rating
-
-                    # If null, look up from annotations
-                    if h_rating is None:
-                        judge_name = e.predicted_feedback or ''
-                        question_id = judge_to_question.get(judge_name)
-                        if question_id and e.trace_id in trace_question_ratings:
-                            h_rating = get_mode(trace_question_ratings[e.trace_id].get(question_id, []))
-                        # Fallback to legacy rating
-                        if h_rating is None and e.trace_id in trace_legacy_ratings:
-                            h_rating = get_mode(trace_legacy_ratings[e.trace_id])
+                    # Always look up human rating from annotations first
+                    # (evaluations in auto-eval mode store human_rating=0 as null,
+                    # which is ambiguous for binary judges where 0 is valid)
+                    h_rating = None
+                    judge_name = e.predicted_feedback or ''
+                    question_id = judge_to_question.get(judge_name)
+                    if question_id and e.trace_id in trace_question_ratings:
+                        h_rating = get_mode(trace_question_ratings[e.trace_id].get(question_id, []))
+                    # Fallback to legacy rating
+                    if h_rating is None and e.trace_id in trace_legacy_ratings:
+                        h_rating = get_mode(trace_legacy_ratings[e.trace_id])
+                    # Last resort: use evaluation's own human_rating if it looks real
+                    # (skip 0 for non-binary since Likert doesn't use 0)
+                    if h_rating is None and e.human_rating is not None:
+                        if is_binary_judge or e.human_rating != 0:
+                            h_rating = e.human_rating
 
                     if h_rating is not None:
                         human_ratings_list.append(h_rating)
                         predicted_ratings_list.append(e.predicted_rating)
+
+                # Also infer binary from the actual rating values
+                if not is_binary_judge:
+                    all_vals = set(human_ratings_list) | set(predicted_ratings_list)
+                    if all_vals and all_vals <= {0, 1}:
+                        is_binary_judge = True
 
                 if len(human_ratings_list) >= 2:
                     # Cohen's kappa
@@ -4815,14 +4851,19 @@ async def get_auto_evaluation_results(
 
                     accuracy = accuracy_score(human_ratings_list, predicted_ratings_list)
 
-                    # Agreement by rating level
+                    # Agreement by rating level — use correct labels for judge type
                     agreement_by_rating = {}
-                    for rating in range(1, 6):
+                    if is_binary_judge:
+                        rating_labels = [0, 1]
+                    else:
+                        rating_labels = [1, 2, 3, 4, 5]
+
+                    for rating in rating_labels:
                         human_at = [h for h, p in zip(human_ratings_list, predicted_ratings_list) if h == rating]
                         pred_at = [p for h, p in zip(human_ratings_list, predicted_ratings_list) if h == rating]
                         agreement_by_rating[str(rating)] = accuracy_score(human_at, pred_at) if human_at else 0.0
 
-                    cm = confusion_matrix(human_ratings_list, predicted_ratings_list, labels=[1, 2, 3, 4, 5])
+                    cm = confusion_matrix(human_ratings_list, predicted_ratings_list, labels=rating_labels)
 
                     prompt_id = evaluations[0].prompt_id if evaluations else ""
                     metrics = {
@@ -4833,6 +4874,7 @@ async def get_auto_evaluation_results(
                         "agreement_by_rating": agreement_by_rating,
                         "confusion_matrix": cm.tolist(),
                         "total_evaluations": len(human_ratings_list),
+                        "judge_type": "binary" if is_binary_judge else "likert",
                     }
 
                     # Include total_evaluations_all if some evals were missing human ratings
@@ -5092,7 +5134,7 @@ async def re_evaluate(
                                             prompt_id=new_prompt.id,
                                             trace_id=trace_id_for_db,
                                             predicted_rating=pred_val,
-                                            human_rating=int(eval_data["human_rating"]) if eval_data.get("human_rating") is not None else 0,
+                                            human_rating=int(eval_data["human_rating"]) if eval_data.get("human_rating") is not None else None,
                                             confidence=eval_data.get("confidence"),
                                             reasoning=eval_data.get("reasoning"),
                                             predicted_feedback=judge_name,  # Store judge name for per-question filtering
