@@ -22,7 +22,7 @@ import {
 test.describe('Annotation Flow', {
   tag: ['@spec:ANNOTATION_SPEC'],
 }, () => {
-  test('new annotation shows "Annotation saved!" toast', async ({ page }) => {
+  test('new annotation shows "Annotation saved!" toast', { tag: ['@req:Toast shows "Annotation saved!" for new submissions'] }, async ({ page }) => {
     const scenario = await TestScenario.create(page)
       .withWorkshop({ name: 'Toast - New Annotation' })
       .withFacilitator()
@@ -46,7 +46,7 @@ test.describe('Annotation Flow', {
     await scenario.cleanup();
   });
 
-  test('edit annotation shows "Annotation updated!" toast', async ({ page }) => {
+  test('edit annotation shows "Annotation updated!" toast', { tag: ['@req:Toast shows "Annotation updated!" only when changes detected'] }, async ({ page }) => {
     const scenario = await TestScenario.create(page)
       .withWorkshop({ name: 'Toast - Edit Annotation' })
       .withFacilitator()
@@ -70,7 +70,7 @@ test.describe('Annotation Flow', {
   });
 
 
-  test('multi-line comment preserves newlines', async ({ page }) => {
+  test('multi-line comment preserves newlines', { tag: ['@req:Multi-line comments preserved throughout the stack'] }, async ({ page }) => {
     const scenario = await TestScenario.create(page)
       .withWorkshop({ name: 'Multi-line Comment' })
       .withFacilitator()
@@ -123,7 +123,7 @@ test.describe('Annotation Flow', {
     await scenario.cleanup();
   });
 
-  test('next button enabled for annotated traces', async ({ page }) => {
+  test('next button enabled for annotated traces', { tag: ['@req:Next button enabled for annotated traces (allows re-navigation)'] }, async ({ page }) => {
     const scenario = await TestScenario.create(page)
       .withWorkshop({ name: 'Next Button State' })
       .withFacilitator()

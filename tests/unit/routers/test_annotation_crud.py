@@ -128,6 +128,7 @@ async def test_upsert_creates_new_annotation(async_client, override_get_db, monk
 
 
 @pytest.mark.spec("ANNOTATION_SPEC")
+@pytest.mark.req("Users can edit previously submitted annotations")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_upsert_updates_existing_annotation(async_client, override_get_db, monkeypatch):

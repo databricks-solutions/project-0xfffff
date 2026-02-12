@@ -306,6 +306,8 @@ Load logic detects format and normalizes to current structure.
 
 ## Success Criteria
 
+### Core Annotation Behavior
+
 - [ ] Users can edit previously submitted annotations
 - [ ] Changes automatically save on navigation (Next/Previous)
 - [ ] Toast shows "Annotation saved!" for new submissions
@@ -315,6 +317,30 @@ Load logic detects format and normalizes to current structure.
 - [ ] Comments display with proper line breaks
 - [ ] Next button enabled for annotated traces (allows re-navigation)
 - [ ] Annotation count reflects unique submissions (not re-submissions)
+
+### MLflow Sync
+
+- [ ] Annotations sync to MLflow as feedback on save (one entry per rubric question)
+- [ ] MLflow trace tagged with `label: "align"` and `workshop_id` on annotation
+- [ ] Feedback source is HUMAN with annotator's user_id
+- [ ] Annotation comment maps to MLflow feedback rationale
+- [ ] Duplicate feedback entries are detected and skipped
+- [ ] Bulk resync re-exports all annotations when rubric titles change
+
+### Save Reliability
+
+- [ ] Failed saves are queued and retried automatically with exponential backoff
+- [ ] Navigation is optimistic (UI advances immediately, save completes in background)
+- [ ] Navigation debounced at 300ms to prevent duplicate saves
+
+### Freeform Questions
+
+- [ ] Freeform question responses are optional (not required for navigation)
+- [ ] Freeform responses are encoded in the comment field as JSON
+
+### Backwards Compatibility
+
+- [ ] Legacy single-rating format loads correctly alongside multi-rating format
 
 ## Testing Scenarios
 
