@@ -150,6 +150,11 @@ class PromptOptimizationService:
             yield {"error": "No prompt provided", "success": False}
             return
 
+        # Normalize prompt URI: prompts:// → prompts:/ (common user mistake)
+        if prompt_uri and prompt_uri.startswith("prompts://"):
+            prompt_uri = "prompts:/" + prompt_uri[len("prompts://"):]
+            yield f"Normalized prompt URI to: {prompt_uri}"
+
         try:
             import mlflow
         except ImportError as e:
@@ -162,6 +167,9 @@ class PromptOptimizationService:
         # Track original stdout/stderr for safe restoration on any error
         _original_stdout_ref = sys.stdout
         _original_stderr_ref = sys.stderr
+
+        # Declare early so the error handler can include it if loaded before failure
+        original_prompt_text = None
 
         try:
             # Set up MLflow environment (same pattern as alignment_service.py)
@@ -245,12 +253,14 @@ class PromptOptimizationService:
                 train_data = self._build_train_data(workshop_id, mlflow_config)
             except Exception as e:
                 yield f"ERROR: Failed to build training data: {e}"
-                yield {"error": f"Failed to build training data: {e}", "success": False}
+                yield {"error": f"Failed to build training data: {e}", "success": False,
+                       "original_prompt": original_prompt_text}
                 return
 
             if not train_data or len(train_data) == 0:
                 yield "ERROR: No annotated traces available for optimization"
-                yield {"error": "No annotated traces available", "success": False}
+                yield {"error": "No annotated traces available", "success": False,
+                       "original_prompt": original_prompt_text}
                 return
 
             yield f"Training dataset: {len(train_data)} annotated traces"
@@ -275,12 +285,14 @@ class PromptOptimizationService:
 
                 if not scorers:
                     yield "ERROR: No judges could be loaded. Run alignment first."
-                    yield {"error": "No aligned judges found. Run alignment on at least one rubric question first.", "success": False}
+                    yield {"error": "No aligned judges found. Run alignment on at least one rubric question first.", "success": False,
+                           "original_prompt": original_prompt_text}
                     return
                 yield f"Loaded {len(scorers)} judge(s) as scorers"
             except Exception as e:
                 yield f"ERROR: Failed to load judges: {e}"
-                yield {"error": f"Failed to load judges: {e}", "success": False}
+                yield {"error": f"Failed to load judges: {e}", "success": False,
+                       "original_prompt": original_prompt_text}
                 return
 
             # Determine model URI for the optimizer
@@ -350,7 +362,8 @@ class PromptOptimizationService:
                     sys.stderr = _original_stderr
                     error_msg = f"GEPA optimizer not available: {e}. Ensure mlflow>=3.5 and gepa are installed."
                     yield f"ERROR: {error_msg}"
-                    yield {"error": error_msg, "success": False}
+                    yield {"error": error_msg, "success": False,
+                           "original_prompt": original_prompt_text}
                     return
 
             # Log the original prompt and training data so the user sees what's being optimized
@@ -417,7 +430,8 @@ class PromptOptimizationService:
                         _endpoint_task_type = None
                 except Exception as client_err:
                     yield f"ERROR: Failed to create deployments client: {client_err}"
-                    yield {"error": f"Failed to create deployments client: {client_err}", "success": False}
+                    yield {"error": f"Failed to create deployments client: {client_err}", "success": False,
+                           "original_prompt": original_prompt_text}
                     return
             else:
                 # Create OpenAI client via Databricks SDK (same pattern as reference notebook)
@@ -429,7 +443,8 @@ class PromptOptimizationService:
                     yield "Databricks OpenAI client ready"
                 except Exception as client_err:
                     yield f"ERROR: Failed to create Databricks client: {client_err}"
-                    yield {"error": f"Failed to create Databricks client: {client_err}", "success": False}
+                    yield {"error": f"Failed to create Databricks client: {client_err}", "success": False,
+                           "original_prompt": original_prompt_text}
                     return
 
             # Progress tracking counters (shared across predict_fn/aggregation_fn calls)
@@ -744,13 +759,15 @@ class PromptOptimizationService:
             if optimization_error:
                 error_msg = f"GEPA optimization failed: {optimization_error}"
                 yield f"ERROR: {error_msg}"
-                yield {"error": error_msg, "success": False}
+                yield {"error": error_msg, "success": False,
+                       "original_prompt": original_prompt_text}
                 return
 
             optimized_result = result_container.get("result")
             if not optimized_result:
                 yield "ERROR: Optimization returned no result"
-                yield {"error": "Optimization returned no result", "success": False}
+                yield {"error": "Optimization returned no result", "success": False,
+                       "original_prompt": original_prompt_text}
                 return
 
             # Extract optimized prompt from PromptOptimizationResult.
@@ -881,6 +898,8 @@ class PromptOptimizationService:
                 "optimized_uri": optimized_uri,
                 "optimized_prompt_name": optimized_prompt_name,
                 "optimized_version": optimized_version,
+                "optimizer_model": optimizer_model_name,
+                "target_endpoint": target_endpoint,
                 "metrics": metrics,
             }
 
@@ -900,7 +919,11 @@ class PromptOptimizationService:
             error_msg = f"Prompt optimization failed: {e}"
             logger.exception(error_msg)
             yield f"ERROR: {error_msg}"
-            yield {"error": error_msg, "success": False}
+            error_result: Dict[str, Any] = {"error": error_msg, "success": False}
+            # Include original_prompt if it was loaded before the failure
+            if original_prompt_text:
+                error_result["original_prompt"] = original_prompt_text
+            yield error_result
 
     def _build_train_data(
         self, workshop_id: str, mlflow_config: Any

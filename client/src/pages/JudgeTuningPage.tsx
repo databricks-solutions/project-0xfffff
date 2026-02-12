@@ -617,11 +617,10 @@ export function JudgeTuningPage() {
           setSelectedAlignmentModel('Claude Opus 4.5'); // Default to Opus 4.5 for alignment
         }
         
-        // Don't auto-load metrics from saved prompts - only show metrics after running evaluation
-        // This prevents showing stale metrics with "Mode" badge before user runs evaluation
-        // if (latestPrompt.performance_metrics) {
-        //   setMetrics(latestPrompt.performance_metrics as JudgePerformanceMetrics);
-        // }
+        // Load saved metrics so the performance bar shows on page return
+        if (latestPrompt.performance_metrics) {
+          setMetrics(latestPrompt.performance_metrics as JudgePerformanceMetrics);
+        }
 
       }
 
@@ -836,12 +835,11 @@ Think step by step about how well the output addresses the criteria, then provid
         }
       }
       
-      // Don't auto-load metrics from saved prompts when switching versions
-      // Metrics should only show after running evaluation in current session
-      // const prompt = prompts.find(p => p.id === promptId);
-      // if (prompt?.performance_metrics) {
-      //   setMetrics(prompt.performance_metrics as JudgePerformanceMetrics);
-      // }
+      // Load metrics from saved prompt so the performance bar shows on page return
+      const prompt = prompts.find(p => p.id === promptId);
+      if (prompt?.performance_metrics) {
+        setMetrics(prompt.performance_metrics as JudgePerformanceMetrics);
+      }
     } catch (err) {
       // Silent fail for evaluation loading
     }
