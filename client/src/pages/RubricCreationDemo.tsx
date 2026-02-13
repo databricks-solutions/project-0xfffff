@@ -48,7 +48,7 @@ import { RubricSuggestionPanel, type RubricSuggestion } from '@/components/Rubri
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useQueryClient } from '@tanstack/react-query';
 import { WorkshopsService } from '@/client';
-import type { Rubric, RubricCreate, JudgeType } from '@/client';
+import type { Rubric, RubricCreate, JudgeType, DiscoveryFinding, Trace } from '@/client';
 import { toast } from 'sonner';
 import { parseRubricQuestions, formatRubricQuestions, QUESTION_DELIMITER, type RubricQuestion } from '@/utils/rubricUtils';
 
@@ -65,15 +65,15 @@ const convertQuestionToApiRubric = (question: RubricQuestion): RubricCreate => (
 });
 
 // Get discovery responses from real findings data, enriched with trace information
-const useDiscoveryResponses = (findings: any[] | undefined, traces: any[] | undefined) => {
+const useDiscoveryResponses = (findings: DiscoveryFinding[] | undefined, traces: Trace[] | undefined) => {
   if (!findings || findings.length === 0 || !traces || traces.length === 0) return [];
-  
+
   // Create a map of trace IDs to trace data for quick lookup
   const traceMap = traces.reduce((acc, trace) => {
     acc[trace.id] = trace;
     return acc;
-  }, {} as Record<string, any>);
-  
+  }, {} as Record<string, Trace>);
+
   // Group findings by trace_id to organize responses better
   const groupedByTrace = findings.reduce((acc, finding) => {
     if (!acc[finding.trace_id]) {
@@ -81,7 +81,7 @@ const useDiscoveryResponses = (findings: any[] | undefined, traces: any[] | unde
     }
     acc[finding.trace_id].push(finding);
     return acc;
-  }, {} as Record<string, any[]>);
+  }, {} as Record<string, DiscoveryFinding[]>);
   
   return Object.entries(groupedByTrace).map(([traceId, traceFindings]) => {
     const trace = traceMap[traceId];
@@ -294,7 +294,7 @@ export function RubricCreationDemo() {
           // Only load if data is less than 7 days old (extended from 24 hours)
           if (Date.now() - parsed.timestamp < 7 * 24 * 60 * 60 * 1000) {
             // Convert timestamp strings back to Date objects
-            const entriesWithDates = parsed.scratchPad.map((entry: any) => ({
+            const entriesWithDates = parsed.scratchPad.map((entry: Omit<ScratchPadEntry, 'timestamp'> & { timestamp: string }) => ({
               ...entry,
               timestamp: new Date(entry.timestamp)
             }));

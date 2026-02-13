@@ -2,15 +2,17 @@
  * React Query hooks for workshop API operations
  */
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { WorkshopsService } from '@/client';
+import { useQuery, useMutation, useQueryClient, QueryClient } from '@tanstack/react-query';
+import type { Query } from '@tanstack/react-query';
+import { WorkshopsService, ApiError } from '@/client';
 import { useRoleCheck } from '@/context/UserContext';
-import type { 
-  Workshop, 
-  WorkshopCreate, 
-  Trace, 
-  TraceUpload, 
-  DiscoveryFinding, 
+import type { User } from '@/context/UserContext';
+import type {
+  Workshop,
+  WorkshopCreate,
+  Trace,
+  TraceUpload,
+  DiscoveryFinding,
   DiscoveryFindingCreate,
   Rubric,
   RubricCreate,
@@ -34,13 +36,13 @@ const QUERY_KEYS = {
 };
 
 // Helper function to invalidate all workshop-related queries
-export function invalidateAllWorkshopQueries(queryClient: any, workshopId: string) {
+export function invalidateAllWorkshopQueries(queryClient: QueryClient, workshopId: string) {
   // Invalidate all queries that start with the workshop ID
-  queryClient.invalidateQueries({ 
-    predicate: (query: any) => {
+  queryClient.invalidateQueries({
+    predicate: (query: Query) => {
       const queryKey = query.queryKey;
       return queryKey && (
-        queryKey.includes(workshopId) || 
+        queryKey.includes(workshopId) ||
         queryKey.includes('workshop') ||
         queryKey.includes('findings') ||
         queryKey.includes('annotations') ||
@@ -51,13 +53,13 @@ export function invalidateAllWorkshopQueries(queryClient: any, workshopId: strin
 }
 
 // Helper function to force refetch all workshop-related queries
-export function refetchAllWorkshopQueries(queryClient: any, workshopId: string) {
+export function refetchAllWorkshopQueries(queryClient: QueryClient, workshopId: string) {
   // Refetch all queries that start with the workshop ID
-  queryClient.refetchQueries({ 
-    predicate: (query: any) => {
+  queryClient.refetchQueries({
+    predicate: (query: Query) => {
       const queryKey = query.queryKey;
       return queryKey && (
-        queryKey.includes(workshopId) || 
+        queryKey.includes(workshopId) ||
         queryKey.includes('workshop') ||
         queryKey.includes('findings') ||
         queryKey.includes('annotations') ||
@@ -223,7 +225,7 @@ export function useFindings(workshopId: string, userId?: string) {
 }
 
 // User-aware findings hook - ALWAYS returns only user's own findings for personal progress
-export function useUserFindings(workshopId: string, user: any) {
+export function useUserFindings(workshopId: string, user: Pick<User, 'id'> | null) {
   return useQuery({
     queryKey: QUERY_KEYS.findings(workshopId, user?.id),
     queryFn: () => WorkshopsService.getFindingsWorkshopsWorkshopIdFindingsGet(
@@ -272,8 +274,9 @@ export function useSubmitFinding(workshopId: string) {
     mutationFn: (finding: DiscoveryFindingCreate) =>
       WorkshopsService.submitFindingWorkshopsWorkshopIdFindingsPost(workshopId, finding),
     // Retry on server errors (503 Service Unavailable due to database contention, or 500)
-    retry: (failureCount, error: any) => {
-      if (error?.status === 503 || error?.status === 500) {
+    retry: (failureCount, error: Error) => {
+      const status = error instanceof ApiError ? error.status : undefined;
+      if (status === 503 || status === 500) {
         return failureCount < 5;
       }
       return false;
@@ -291,8 +294,8 @@ export function useSubmitFinding(workshopId: string) {
       const previousFindings = queryClient.getQueryData(['findings', workshopId, newFinding.user_id]);
       
       // Optimistically update the cache - handle both new and update cases
-      queryClient.setQueryData(['findings', workshopId, newFinding.user_id], (old: any) => {
-        const optimisticFinding = {
+      queryClient.setQueryData<DiscoveryFinding[]>(['findings', workshopId, newFinding.user_id], (old) => {
+        const optimisticFinding: DiscoveryFinding = {
           id: `temp-${Date.now()}`,
           workshop_id: workshopId,
           trace_id: newFinding.trace_id,
@@ -300,18 +303,18 @@ export function useSubmitFinding(workshopId: string) {
           insight: newFinding.insight,
           created_at: new Date().toISOString(),
         };
-        
+
         if (!old) return [optimisticFinding];
-        
+
         // Check if finding for this trace already exists (update case)
-        const existingIndex = old.findIndex((f: any) => f.trace_id === newFinding.trace_id);
+        const existingIndex = old.findIndex((f) => f.trace_id === newFinding.trace_id);
         if (existingIndex >= 0) {
           // Replace existing finding with updated one
           const updated = [...old];
           updated[existingIndex] = { ...updated[existingIndex], insight: newFinding.insight };
           return updated;
         }
-        
+
         // New finding
         return [...old, optimisticFinding];
       });
@@ -326,11 +329,11 @@ export function useSubmitFinding(workshopId: string) {
     },
     onSuccess: (data, finding) => {
       // Update cache with actual server response
-      queryClient.setQueryData(['findings', workshopId, finding.user_id], (old: any) => {
+      queryClient.setQueryData<DiscoveryFinding[]>(['findings', workshopId, finding.user_id], (old) => {
         if (!old) return [data];
-        
+
         // Replace temp or existing finding with actual server data
-        const existingIndex = old.findIndex((f: any) => 
+        const existingIndex = old.findIndex((f) =>
           f.trace_id === finding.trace_id || f.id?.startsWith('temp-')
         );
         if (existingIndex >= 0) {
@@ -361,9 +364,9 @@ export function useRubric(workshopId: string) {
     queryFn: async () => {
       try {
         return await WorkshopsService.getRubricWorkshopsWorkshopIdRubricGet(workshopId);
-      } catch (error: any) {
+      } catch (error) {
         // If rubric doesn't exist (404), return null instead of throwing
-        if (error.status === 404) {
+        if (error instanceof ApiError && error.status === 404) {
           return null;
         }
         throw error;
@@ -399,7 +402,7 @@ export function useUpdateRubric(workshopId: string) {
 
 // Annotation hooks
 // User-aware annotations hook - ALWAYS returns only user's own annotations
-export function useUserAnnotations(workshopId: string, user: any) {
+export function useUserAnnotations(workshopId: string, user: Pick<User, 'id'> | null) {
   return useQuery({
     queryKey: QUERY_KEYS.annotations(workshopId, user?.id),
     queryFn: () => {
@@ -461,9 +464,10 @@ export function useSubmitAnnotation(workshopId: string) {
     mutationFn: (annotation: AnnotationCreate) =>
       WorkshopsService.submitAnnotationWorkshopsWorkshopIdAnnotationsPost(workshopId, annotation),
     // Retry on server errors (503 Service Unavailable due to SQLite lock contention)
-    retry: (failureCount, error: any) => {
+    retry: (failureCount, error: Error) => {
       // Retry up to 5 times on 503 (database busy) or 500 errors
-      if (error?.status === 503 || error?.status === 500) {
+      const status = error instanceof ApiError ? error.status : undefined;
+      if (status === 503 || status === 500) {
         return failureCount < 5;
       }
       // Don't retry on other errors (400, 401, 404, etc.)
@@ -483,8 +487,8 @@ export function useSubmitAnnotation(workshopId: string) {
       const previousAnnotations = queryClient.getQueryData(['annotations', workshopId, newAnnotation.user_id]);
       
       // Optimistically update the cache
-      queryClient.setQueryData(['annotations', workshopId, newAnnotation.user_id], (old: any) => {
-        const optimisticAnnotation = {
+      queryClient.setQueryData<Annotation[]>(['annotations', workshopId, newAnnotation.user_id], (old) => {
+        const optimisticAnnotation: Annotation = {
           id: `temp-${Date.now()}`,
           workshop_id: workshopId,
           trace_id: newAnnotation.trace_id,
@@ -497,7 +501,7 @@ export function useSubmitAnnotation(workshopId: string) {
         if (!old) return [optimisticAnnotation];
         // Update existing annotation for this trace instead of appending a duplicate
         const existingIndex = old.findIndex(
-          (a: any) => a.trace_id === newAnnotation.trace_id && a.user_id === newAnnotation.user_id
+          (a) => a.trace_id === newAnnotation.trace_id && a.user_id === newAnnotation.user_id
         );
         if (existingIndex >= 0) {
           const updated = [...old];
@@ -546,9 +550,9 @@ export function useMLflowConfig(workshopId: string) {
     queryFn: async () => {
       try {
         return await WorkshopsService.getMlflowConfigWorkshopsWorkshopIdMlflowConfigGet(workshopId);
-      } catch (error: any) {
+      } catch (error) {
         // If MLflow config doesn't exist (404), return null instead of throwing
-        if (error.status === 404) {
+        if (error instanceof ApiError && error.status === 404) {
           return null;
         }
         throw error;

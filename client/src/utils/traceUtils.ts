@@ -1,9 +1,10 @@
 import type { TraceData } from '@/components/TraceViewer';
+import type { Trace } from '@/client';
 
 /**
  * Convert API trace to TraceData format for use with TraceViewer component
  */
-export const convertTraceToTraceData = (trace: any): TraceData => ({
+export const convertTraceToTraceData = (trace: Trace): TraceData => ({
   id: trace.id,
   input: trace.input,
   output: trace.output,

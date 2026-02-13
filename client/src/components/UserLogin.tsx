@@ -34,9 +34,9 @@ export const UserLogin: React.FC = () => {
       });
 
       await setUser(newUser);
-    } catch (error: any) {
-      
-      setError(error.response?.data?.detail || 'Failed to create user');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to create user';
+      setError(message);
     } finally {
       setIsLoading(false);
     }
@@ -68,9 +68,9 @@ export const UserLogin: React.FC = () => {
           
           // Update URL to include workshop ID
           window.history.pushState({}, '', `?workshop=${currentWorkshopId}`);
-        } catch (error) {
-          
-          setError(`Failed to create workshop: ${error.message || 'Unknown error'}`);
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : 'Unknown error';
+          setError(`Failed to create workshop: ${message}`);
           return;
         }
       }
@@ -102,10 +102,9 @@ export const UserLogin: React.FC = () => {
         
         await setUser(newUser);
       }
-    } catch (error: any) {
-      
-      
-      setError(error.response?.data?.detail || 'Failed to login as demo user');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to login as demo user';
+      setError(message);
     } finally {
       setIsLoading(false);
     }
@@ -151,7 +150,7 @@ export const UserLogin: React.FC = () => {
 
             <div className="space-y-2">
               <Label htmlFor="role">Role</Label>
-              <Select value={formData.role} onValueChange={(value: any) => setFormData({ ...formData, role: value })}>
+              <Select value={formData.role} onValueChange={(value: string) => setFormData({ ...formData, role: value as 'facilitator' | 'sme' | 'participant' })}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select your role" />
                 </SelectTrigger>

@@ -4,6 +4,7 @@ import { Play, Pause } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useWorkshop } from '@/hooks/useWorkshopApi';
+import type { Workshop } from '@/client';
 import { toast } from 'sonner';
 
 interface PhaseControlButtonProps {
@@ -49,11 +50,11 @@ export const PhaseControlButton: React.FC<PhaseControlButtonProps> = ({
       }
       
       // Optimistically update the cache immediately for instant UI feedback
-      queryClient.setQueryData(['workshop', workshopId], (oldData: any) => {
+      queryClient.setQueryData<Workshop>(['workshop', workshopId], (oldData) => {
         if (!oldData) return oldData;
         const currentPhases = oldData.completed_phases || [];
         const newPhases = isCompleted
-          ? currentPhases.filter((p: string) => p !== phase) // Resume: remove from completed
+          ? currentPhases.filter((p) => p !== phase) // Resume: remove from completed
           : [...currentPhases, phase]; // Pause: add to completed
         return { ...oldData, completed_phases: newPhases };
       });
@@ -68,10 +69,11 @@ export const PhaseControlButton: React.FC<PhaseControlButtonProps> = ({
       
       toast.success(`Phase ${isCompleted ? 'resumed' : 'paused'}`, { description: `${phase} phase has been ${isCompleted ? 'resumed' : 'paused'}.` });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       // On error, refetch to restore correct state
       queryClient.refetchQueries({ queryKey: ['workshop', workshopId] });
-      toast.error(`Could not ${isCompleted ? 'resume' : 'pause'} phase`, { description: error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      toast.error(`Could not ${isCompleted ? 'resume' : 'pause'} phase`, { description: message });
     } finally {
       setIsLoading(false);
     }

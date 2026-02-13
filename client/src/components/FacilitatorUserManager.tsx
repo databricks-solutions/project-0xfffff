@@ -56,8 +56,9 @@ export const FacilitatorUserManager: React.FC = () => {
       const response = await UsersService.listWorkshopUsersUsersWorkshopsWorkshopIdUsersGet(workshopId);
       // The API returns { workshop_id, users: [], total_users }
       setUsers(response.users || []);
-    } catch (error: any) {
-      setError(`Failed to load users: ${error.message || 'Unknown error'}`);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setError(`Failed to load users: ${message}`);
     } finally {
       setIsLoadingUsers(false);
     }
@@ -85,8 +86,9 @@ export const FacilitatorUserManager: React.FC = () => {
       setSuccess(`User ${newUser.email} added successfully.`);
       setNewUser({ email: '', name: '', role: 'participant' });
       loadUsers(); // Refresh the user list
-    } catch (error: any) {
-      setError(error.response?.data?.detail || 'Failed to add user');
+    } catch (error: unknown) {
+      const detail = error instanceof Error ? error.message : 'Failed to add user';
+      setError(detail);
     } finally {
       setIsSubmitting(false);
     }
@@ -125,7 +127,7 @@ export const FacilitatorUserManager: React.FC = () => {
         const errorData = await response.json().catch(() => ({}));
         toast.error(errorData.detail || 'Failed to update role');
       }
-    } catch (error: any) {
+    } catch {
       toast.error('Failed to update role');
     } finally {
       setUpdatingRoleUserId(null);

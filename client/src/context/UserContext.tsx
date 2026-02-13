@@ -81,8 +81,9 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
             
             // Load permissions and wait for them before setting isLoading to false
             await loadPermissions(validatedUser.id);
-          } catch (validationError: any) {
-            const is404 = validationError.status === 404 || validationError.message?.includes('404');
+          } catch (validationError: unknown) {
+            const is404 = (validationError instanceof Error && validationError.message?.includes('404')) ||
+              (typeof validationError === 'object' && validationError !== null && 'status' in validationError && (validationError as { status: number }).status === 404);
             if (is404) {
               localStorage.removeItem('workshop_user');
               setUser(null);
@@ -134,10 +135,12 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
       const permissions = await UsersService.getUserPermissionsUsersUserIdPermissionsGet(userId);
       setPermissions(permissions);
       setError(null); // Clear any previous errors on successful load
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error loading permissions:', error);
       // Auto-recovery: If user not found (404), clear stale user data
-      const is404 = error.status === 404 || error.message?.includes('404') || error.body?.detail?.includes('not found');
+      const apiError = typeof error === 'object' && error !== null && 'status' in error ? error as { status: number; body?: { detail?: string } } : null;
+      const errorMessage = error instanceof Error ? error.message : '';
+      const is404 = apiError?.status === 404 || errorMessage.includes('404') || apiError?.body?.detail?.includes('not found');
       if (is404) {
         localStorage.removeItem('workshop_user');
         setUser(null);
@@ -218,9 +221,10 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
       await setUserWithPermissions(data.user);
       
       setError(null); // Clear errors on successful login
-    } catch (error: any) {
-      setError(error.message || 'Login failed');
-      throw new Error(error.message || 'Login failed');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Login failed';
+      setError(message);
+      throw new Error(message);
     } finally {
       setIsLoading(false); // Always set loading to false after login attempt
     }

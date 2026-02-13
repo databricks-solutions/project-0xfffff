@@ -69,9 +69,9 @@ export function UnityVolumePage() {
 
       toast.success('Workshop database downloaded successfully!');
 
-    } catch (err: any) {
-
-      setError(err.message || 'Failed to download database');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to download database';
+      setError(message);
       toast.error('Failed to download database');
     } finally {
       setIsDownloading(false);

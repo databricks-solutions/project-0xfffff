@@ -18,11 +18,23 @@ import {
   Database
 } from 'lucide-react';
 
+/** A block of content in an LLM response (text, output_text, etc.) */
+interface ContentBlock {
+  type: string;
+  text?: string;
+}
+
+/** A message in a chat-style LLM response */
+interface Message {
+  role: string;
+  content?: ContentBlock[] | string;
+}
+
 interface TraceData {
   id: string;
   input: string;
   output: string;
-  context?: any;
+  context?: Record<string, unknown> | null;
   mlflow_trace_id?: string;
 }
 
@@ -33,16 +45,19 @@ interface TraceDataViewerProps {
 }
 
 interface ParsedOutput {
-  result: any[];
+  result: unknown[];
   query_text?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 // Helper to extract actual content from various LLM response formats
-function extractLLMContent(output: any): { content: string | null; metadata: Record<string, any> | null } {
+function extractLLMContent(output: unknown): { content: string | null; metadata: Record<string, unknown> | null } {
   if (!output || typeof output !== 'object') {
     return { content: null, metadata: null };
   }
+
+  // After the guard, we know output is a non-null object. Cast to Record for property access.
+  const obj = output as Record<string, unknown>;
 
   // Helper to extract content from a string that might be JSON-encoded
   const extractContentFromString = (str: string): string => {
@@ -66,36 +81,38 @@ function extractLLMContent(output: any): { content: string | null; metadata: Rec
 
   // Handle FLATTENED format where choices have been unwrapped:
   // { id, model, object, finish_reason, role, content }
-  if (output.object === 'chat.completion' && output.role === 'assistant' && !output.choices) {
+  if (obj.object === 'chat.completion' && obj.role === 'assistant' && !obj.choices) {
     let content: string | null = null;
 
-    if (typeof output.content === 'string') {
-      content = extractContentFromString(output.content);
-    } else if (output.message?.content) {
-      if (typeof output.message.content === 'string') {
-        content = extractContentFromString(output.message.content);
+    if (typeof obj.content === 'string') {
+      content = extractContentFromString(obj.content);
+    } else if (obj.message && typeof obj.message === 'object' && (obj.message as Record<string, unknown>).content) {
+      const msgContent = (obj.message as Record<string, unknown>).content;
+      if (typeof msgContent === 'string') {
+        content = extractContentFromString(msgContent);
       }
     }
 
     if (content) {
-      const metadata: Record<string, any> = {};
-      if (output.id) metadata.id = output.id;
-      if (output.model) metadata.model = output.model;
-      if (output.object) metadata.object = output.object;
-      if (output.finish_reason) metadata.finish_reason = output.finish_reason;
-      if (output.usage) metadata.usage = output.usage;
+      const metadata: Record<string, unknown> = {};
+      if (obj.id) metadata.id = obj.id;
+      if (obj.model) metadata.model = obj.model;
+      if (obj.object) metadata.object = obj.object;
+      if (obj.finish_reason) metadata.finish_reason = obj.finish_reason;
+      if (obj.usage) metadata.usage = obj.usage;
       return { content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
     }
   }
 
   // Handle OpenAI/ChatCompletion format: { choices: [{ message: { content: "..." } }] }
-  if (output.choices && Array.isArray(output.choices) && output.choices.length > 0) {
-    const firstChoice = output.choices[0];
+  if (obj.choices && Array.isArray(obj.choices) && obj.choices.length > 0) {
+    const firstChoice = obj.choices[0] as Record<string, unknown>;
     let content: string | null = null;
 
     // Check message.content - handle both string and array formats
-    if (firstChoice.message?.content !== undefined && firstChoice.message?.content !== null) {
-      const msgContent = firstChoice.message.content;
+    const choiceMsg = firstChoice.message as Record<string, unknown> | undefined;
+    if (choiceMsg?.content !== undefined && choiceMsg?.content !== null) {
+      const msgContent = choiceMsg.content;
 
       if (typeof msgContent === 'string') {
         const trimmedContent = msgContent.trim();
@@ -123,14 +140,15 @@ function extractLLMContent(output: any): { content: string | null; metadata: Rec
         }
       } else if (typeof msgContent === 'object' && msgContent !== null) {
         // Handle content that's already parsed as an object (e.g., judge result)
-        if (msgContent.rationale && typeof msgContent.rationale === 'string') {
-          const resultLabel = msgContent.result !== undefined ? `**Rating: ${msgContent.result}**\n\n` : '';
-          content = resultLabel + msgContent.rationale;
+        const msgObj = msgContent as Record<string, unknown>;
+        if (msgObj.rationale && typeof msgObj.rationale === 'string') {
+          const resultLabel = msgObj.result !== undefined ? `**Rating: ${msgObj.result}**\n\n` : '';
+          content = resultLabel + msgObj.rationale;
         } else if (Array.isArray(msgContent)) {
           // Handle content as array of blocks (Anthropic/Databricks style)
-          const textParts = msgContent
-            .filter((c: any) => c.type === 'text' || c.type === 'output_text')
-            .map((c: any) => c.text)
+          const textParts = (msgContent as ContentBlock[])
+            .filter((c: ContentBlock) => c.type === 'text' || c.type === 'output_text')
+            .map((c: ContentBlock) => c.text)
             .filter(Boolean);
           if (textParts.length > 0) {
             content = textParts.join('\n');
@@ -155,104 +173,104 @@ function extractLLMContent(output: any): { content: string | null; metadata: Rec
 
     if (content) {
       // Extract metadata (everything except the actual content)
-      const metadata: Record<string, any> = {};
-      if (output.id) metadata.id = output.id;
-      if (output.model) metadata.model = output.model;
-      if (output.object) metadata.object = output.object;
-      if (output.usage) metadata.usage = output.usage;
+      const metadata: Record<string, unknown> = {};
+      if (obj.id) metadata.id = obj.id;
+      if (obj.model) metadata.model = obj.model;
+      if (obj.object) metadata.object = obj.object;
+      if (obj.usage) metadata.usage = obj.usage;
       if (firstChoice.finish_reason) metadata.finish_reason = firstChoice.finish_reason;
-      if (output.finish_reason) metadata.finish_reason = output.finish_reason;
+      if (obj.finish_reason) metadata.finish_reason = obj.finish_reason;
 
       return { content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
     }
   }
 
   // Handle Anthropic/Claude format: { content: [{ type: "text", text: "..." }] }
-  if (output.content && Array.isArray(output.content)) {
+  if (obj.content && Array.isArray(obj.content)) {
     // Try type: "text" format
-    let textContent = output.content
-      .filter((c: any) => c.type === 'text' && c.text)
-      .map((c: any) => c.text)
+    let textContent = (obj.content as ContentBlock[])
+      .filter((c: ContentBlock) => c.type === 'text' && c.text)
+      .map((c: ContentBlock) => c.text)
       .join('\n');
 
     // Also try type: "output_text" format (Databricks/MLflow style)
     if (!textContent) {
-      textContent = output.content
-        .filter((c: any) => c.type === 'output_text' && c.text)
-        .map((c: any) => c.text)
+      textContent = (obj.content as ContentBlock[])
+        .filter((c: ContentBlock) => c.type === 'output_text' && c.text)
+        .map((c: ContentBlock) => c.text)
         .join('\n');
     }
 
     if (textContent) {
-      const metadata: Record<string, any> = {};
-      if (output.id) metadata.id = output.id;
-      if (output.model) metadata.model = output.model;
-      if (output.type) metadata.type = output.type;
-      if (output.object) metadata.object = output.object;
-      if (output.role) metadata.role = output.role;
-      if (output.usage) metadata.usage = output.usage;
-      if (output.stop_reason) metadata.stop_reason = output.stop_reason;
-      if (output.finish_reason) metadata.finish_reason = output.finish_reason;
+      const metadata: Record<string, unknown> = {};
+      if (obj.id) metadata.id = obj.id;
+      if (obj.model) metadata.model = obj.model;
+      if (obj.type) metadata.type = obj.type;
+      if (obj.object) metadata.object = obj.object;
+      if (obj.role) metadata.role = obj.role;
+      if (obj.usage) metadata.usage = obj.usage;
+      if (obj.stop_reason) metadata.stop_reason = obj.stop_reason;
+      if (obj.finish_reason) metadata.finish_reason = obj.finish_reason;
 
       return { content: textContent, metadata: Object.keys(metadata).length > 0 ? metadata : null };
     }
   }
 
   // Handle messages array format: { messages: [{ role: "assistant", content: "..." }] }
-  if (output.messages && Array.isArray(output.messages)) {
+  if (obj.messages && Array.isArray(obj.messages)) {
     // Find assistant message
-    const assistantMsg = output.messages.find((m: any) => m.role === 'assistant');
+    const assistantMsg = (obj.messages as Message[]).find((m: Message) => m.role === 'assistant');
     if (assistantMsg) {
       let content: string | null = null;
       if (typeof assistantMsg.content === 'string') {
         content = assistantMsg.content;
       } else if (Array.isArray(assistantMsg.content)) {
-        content = assistantMsg.content
-          .filter((c: any) => (c.type === 'text' || c.type === 'output_text') && c.text)
-          .map((c: any) => c.text)
+        content = (assistantMsg.content as ContentBlock[])
+          .filter((c: ContentBlock) => (c.type === 'text' || c.type === 'output_text') && c.text)
+          .map((c: ContentBlock) => c.text)
           .join('\n');
       }
       if (content) {
-        const metadata: Record<string, any> = {};
-        if (output.id) metadata.id = output.id;
-        if (output.model) metadata.model = output.model;
+        const metadata: Record<string, unknown> = {};
+        if (obj.id) metadata.id = obj.id;
+        if (obj.model) metadata.model = obj.model;
         return { content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
       }
     }
   }
 
   // Handle direct content string
-  if (output.content && typeof output.content === 'string') {
-    const metadata: Record<string, any> = {};
-    if (output.id) metadata.id = output.id;
-    if (output.model) metadata.model = output.model;
-    if (output.role) metadata.role = output.role;
+  if (obj.content && typeof obj.content === 'string') {
+    const metadata: Record<string, unknown> = {};
+    if (obj.id) metadata.id = obj.id;
+    if (obj.model) metadata.model = obj.model;
+    if (obj.role) metadata.role = obj.role;
 
-    return { content: output.content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+    return { content: obj.content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
   }
 
   // Handle response with text field directly
-  if (output.text && typeof output.text === 'string') {
-    return { content: output.text, metadata: null };
+  if (obj.text && typeof obj.text === 'string') {
+    return { content: String(obj.text), metadata: null };
   }
 
   // Handle Databricks agent response format: { output: [{ type: "message", content: [...] }] }
-  if (output.output && Array.isArray(output.output)) {
-    for (const item of output.output) {
+  if (obj.output && Array.isArray(obj.output)) {
+    for (const item of obj.output as Record<string, unknown>[]) {
       if (item.type === 'message' && item.role === 'assistant' && item.content) {
         let content: string | null = null;
         if (typeof item.content === 'string') {
           content = item.content;
         } else if (Array.isArray(item.content)) {
-          content = item.content
-            .filter((c: any) => (c.type === 'text' || c.type === 'output_text') && c.text)
-            .map((c: any) => c.text)
+          content = (item.content as ContentBlock[])
+            .filter((c: ContentBlock) => (c.type === 'text' || c.type === 'output_text') && c.text)
+            .map((c: ContentBlock) => c.text)
             .join('\n');
         }
         if (content) {
-          const metadata: Record<string, any> = {};
-          if (output.id) metadata.id = output.id;
-          if (output.model) metadata.model = output.model;
+          const metadata: Record<string, unknown> = {};
+          if (obj.id) metadata.id = obj.id;
+          if (obj.model) metadata.model = obj.model;
           return { content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
         }
       }
@@ -260,19 +278,21 @@ function extractLLMContent(output: any): { content: string | null; metadata: Rec
   }
 
   // LAST RESORT: Recursively search for content/rationale fields anywhere in the structure
-  const findContentRecursively = (obj: any, depth: number = 0): string | null => {
-    if (depth > 5 || !obj || typeof obj !== 'object') return null;
+  const findContentRecursively = (node: unknown, depth: number = 0): string | null => {
+    if (depth > 5 || !node || typeof node !== 'object') return null;
+
+    const rec = node as Record<string, unknown>;
 
     // Check for rationale (judge output)
-    if (obj.rationale && typeof obj.rationale === 'string') {
-      const resultLabel = obj.result !== undefined ? `**Rating: ${obj.result}**\n\n` : '';
-      return resultLabel + obj.rationale;
+    if (rec.rationale && typeof rec.rationale === 'string') {
+      const resultLabel = rec.result !== undefined ? `**Rating: ${rec.result}**\n\n` : '';
+      return resultLabel + rec.rationale;
     }
 
     // Check for content field
-    if (obj.content !== undefined && obj.content !== null) {
-      if (typeof obj.content === 'string') {
-        const trimmed = obj.content.trim();
+    if (rec.content !== undefined && rec.content !== null) {
+      if (typeof rec.content === 'string') {
+        const trimmed = rec.content.trim();
         if (trimmed.startsWith('{')) {
           try {
             const parsed = JSON.parse(trimmed);
@@ -291,17 +311,17 @@ function extractLLMContent(output: any): { content: string | null; metadata: Rec
     }
 
     // Check arrays
-    if (Array.isArray(obj)) {
-      for (const item of obj) {
+    if (Array.isArray(node)) {
+      for (const item of node) {
         const found = findContentRecursively(item, depth + 1);
         if (found) return found;
       }
     }
 
     // Check object properties
-    for (const key of Object.keys(obj)) {
+    for (const key of Object.keys(rec)) {
       if (['id', 'model', 'object', 'usage', 'created'].includes(key)) continue;
-      const found = findContentRecursively(obj[key], depth + 1);
+      const found = findContentRecursively(rec[key], depth + 1);
       if (found) return found;
     }
 
@@ -310,11 +330,11 @@ function extractLLMContent(output: any): { content: string | null; metadata: Rec
 
   const foundContent = findContentRecursively(output);
   if (foundContent) {
-    const metadata: Record<string, any> = {};
-    if (output.id) metadata.id = output.id;
-    if (output.model) metadata.model = output.model;
-    if (output.object) metadata.object = output.object;
-    if (output.finish_reason) metadata.finish_reason = output.finish_reason;
+    const metadata: Record<string, unknown> = {};
+    if (obj.id) metadata.id = obj.id;
+    if (obj.model) metadata.model = obj.model;
+    if (obj.object) metadata.object = obj.object;
+    if (obj.finish_reason) metadata.finish_reason = obj.finish_reason;
     return { content: foundContent, metadata: Object.keys(metadata).length > 0 ? metadata : null };
   }
 
@@ -351,7 +371,7 @@ export function TraceDataViewer({
   }, [trace.output]);
 
   // Parse the input JSON
-  const parsedInput: any = useMemo(() => {
+  const parsedInput: unknown = useMemo(() => {
     try {
       if (typeof trace.input === 'string') {
         return JSON.parse(trace.input);

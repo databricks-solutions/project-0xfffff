@@ -67,7 +67,7 @@ export const DiscoveryStartPage: React.FC<DiscoveryStartPageProps> = ({ onStartD
       if (onStartDiscovery) {
         onStartDiscovery();
       }
-    } catch (error: any) {
+    } catch {
       toast.error('Could not start discovery', { description: 'Please try again.' });
     } finally {
       setIsStarting(false);
