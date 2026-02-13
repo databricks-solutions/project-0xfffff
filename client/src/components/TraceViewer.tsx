@@ -800,7 +800,7 @@ const extractLLMResponseContent = (output: unknown): { content: string | null; m
       try {
         const parsed = JSON.parse(trimmed);
         if (parsed.rationale && typeof parsed.rationale === 'string') {
-          const resultLabel = parsed.result !== undefined ? `**Rating: ${parsed.result}**\n\n` : '';
+          const resultLabel = parsed.result !== undefined ? `**Rating: ${String(parsed.result)}**\n\n` : '';
           return resultLabel + parsed.rationale;
         }
         if (parsed.content && typeof parsed.content === 'string') {
@@ -857,7 +857,7 @@ const extractLLMResponseContent = (output: unknown): { content: string | null; m
           try {
             const parsed = JSON.parse(trimmedContent);
             if (parsed.rationale && typeof parsed.rationale === 'string') {
-              const resultLabel = parsed.result !== undefined ? `**Rating: ${parsed.result}**\n\n` : '';
+              const resultLabel = parsed.result !== undefined ? `**Rating: ${String(parsed.result)}**\n\n` : '';
               content = resultLabel + parsed.rationale;
             } else if (parsed.content && typeof parsed.content === 'string') {
               // Handle nested content field
@@ -878,7 +878,7 @@ const extractLLMResponseContent = (output: unknown): { content: string | null; m
         // Handle content that's already parsed as an object (e.g., judge result)
         const contentRec = msgContent as Record<string, unknown>;
         if (contentRec.rationale && typeof contentRec.rationale === 'string') {
-          const resultLabel = contentRec.result !== undefined ? `**Rating: ${contentRec.result}**\n\n` : '';
+          const resultLabel = contentRec.result !== undefined ? `**Rating: ${String(contentRec.result)}**\n\n` : '';
           content = resultLabel + contentRec.rationale;
         } else if (Array.isArray(msgContent)) {
           // Handle content as array of blocks (Anthropic/Databricks style)
@@ -895,7 +895,7 @@ const extractLLMResponseContent = (output: unknown): { content: string | null; m
     // Handle judge output format: { choices: [{ result: ..., rationale: "..." }] }
     else if (firstChoice.rationale && typeof firstChoice.rationale === 'string') {
       // This is a judge evaluation output - show rationale as main content
-      const resultLabel = firstChoice.result !== undefined ? `**Rating: ${firstChoice.result}**\n\n` : '';
+      const resultLabel = firstChoice.result !== undefined ? `**Rating: ${String(firstChoice.result)}**\n\n` : '';
       content = resultLabel + firstChoice.rationale;
     }
     // Alternative format with direct content on choice
@@ -1023,7 +1023,7 @@ const extractLLMResponseContent = (output: unknown): { content: string | null; m
 
     // Check for rationale (judge output)
     if (rec.rationale && typeof rec.rationale === 'string') {
-      const resultLabel = rec.result !== undefined ? `**Rating: ${rec.result}**\n\n` : '';
+      const resultLabel = rec.result !== undefined ? `**Rating: ${String(rec.result)}**\n\n` : '';
       return resultLabel + rec.rationale;
     }
 
@@ -1036,7 +1036,7 @@ const extractLLMResponseContent = (output: unknown): { content: string | null; m
           try {
             const parsed = JSON.parse(trimmed);
             if (parsed.rationale && typeof parsed.rationale === 'string') {
-              const resultLabel = parsed.result !== undefined ? `**Rating: ${parsed.result}**\n\n` : '';
+              const resultLabel = parsed.result !== undefined ? `**Rating: ${String(parsed.result)}**\n\n` : '';
               return resultLabel + parsed.rationale;
             }
           } catch {
@@ -1328,7 +1328,7 @@ const OutputRenderer: React.FC<{
     if (typeof rawOutput === 'string') {
       const judgeResult = extractJudgeResultFromMalformed(rawOutput);
       if (judgeResult && judgeResult.rationale) {
-        const resultLabel = judgeResult.result !== undefined ? `**Rating: ${judgeResult.result}**\n\n` : '';
+        const resultLabel = judgeResult.result !== undefined ? `**Rating: ${String(judgeResult.result)}**\n\n` : '';
         const content = resultLabel + judgeResult.rationale;
 
         // Extract basic metadata from the raw string
