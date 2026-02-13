@@ -75,7 +75,7 @@ export const WorkshopHeader: React.FC<WorkshopHeaderProps> = ({
           </div>
           
           {showDescription && workshop.description && (
-            <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
+            <p className="text-sm text-muted-foreground mt-1 max-w-2xl line-clamp-1">
               {workshop.description}
             </p>
           )}
