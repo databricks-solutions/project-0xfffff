@@ -10,10 +10,11 @@
 
 import { test, expect } from '@playwright/test';
 import { TestScenario } from '../lib';
+import { beginAnnotation, beginAnnotationViaSidebar } from '../lib/actions';
 
 test.describe('Auto-Evaluation UI', () => {
   test('begin annotation dialog shows model selection when auto-eval is available', {
-    tag: ['@spec:JUDGE_EVALUATION_SPEC'],
+    tag: ['@spec:JUDGE_EVALUATION_SPEC', '@req:Auto-evaluation runs in background when annotation phase starts'],
   }, async ({ page }) => {
     // Setup: Workshop with rubric, traces, ready for annotation
     const scenario = await TestScenario.create(page)
@@ -38,39 +39,36 @@ test.describe('Auto-Evaluation UI', () => {
 
     // Navigate to annotation phase setup
     // The "Begin Annotation" button should be visible in rubric phase
-    const beginAnnotationButton = page.getByRole('button', { name: /Begin Annotation|Start Annotation/i });
-    if (await beginAnnotationButton.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await beginAnnotationButton.click();
+    await beginAnnotation(page, scenario.workshop.id);
 
-      // Wait for the annotation dialog/modal to appear
-      // The dialog should have options for auto-evaluation
-      await page.waitForTimeout(1000);
+    // Wait for the annotation dialog/modal to appear
+    // The dialog should have options for auto-evaluation
+    await page.waitForTimeout(1000);
 
-      // Look for auto-evaluation related elements
-      // Could be a toggle, checkbox, or model selector
-      const autoEvalToggle = page.locator('text=Auto-evaluation').or(
-        page.locator('text=Automatic evaluation')
-      ).or(
-        page.locator('text=LLM Judge')
-      );
+    // Look for auto-evaluation related elements
+    // Could be a toggle, checkbox, or model selector
+    const autoEvalToggle = page.locator('text=Auto-evaluation').or(
+      page.locator('text=Automatic evaluation')
+    ).or(
+      page.locator('text=LLM Judge')
+    );
 
-      // The dialog should have some form of auto-eval control
-      // Even if disabled by default
-      const dialogContent = page.locator('[role="dialog"]').or(
-        page.locator('.modal')
-      );
+    // The dialog should have some form of auto-eval control
+    // Even if disabled by default
+    const dialogContent = page.locator('[role="dialog"]').or(
+      page.locator('.modal')
+    );
 
-      if (await dialogContent.isVisible({ timeout: 2000 }).catch(() => false)) {
-        // Verify dialog has annotation configuration options
-        await expect(page.getByText(/traces/i).first()).toBeVisible();
-      }
+    if (await dialogContent.isVisible({ timeout: 2000 })) {
+      // Verify dialog has annotation configuration options
+      await expect(page.getByText(/traces/i).first()).toBeVisible();
     }
 
     await scenario.cleanup();
   });
 
   test('annotation phase can start without auto-evaluation', {
-    tag: ['@spec:JUDGE_EVALUATION_SPEC'],
+    tag: ['@spec:JUDGE_EVALUATION_SPEC', '@req:Auto-evaluation runs in background when annotation phase starts'],
   }, async ({ page }) => {
     // Spec: JUDGE_EVALUATION_SPEC lines 219-226
     // evaluation_model_name=null should skip auto-evaluation
@@ -104,7 +102,7 @@ test.describe('Auto-Evaluation UI', () => {
 
 test.describe('Judge Tuning Page', () => {
   test('judge tuning page displays evaluation results section', {
-    tag: ['@spec:JUDGE_EVALUATION_SPEC'],
+    tag: ['@spec:JUDGE_EVALUATION_SPEC', '@req:Results appear in Judge Tuning page'],
   }, async ({ page }) => {
     // Spec: JUDGE_EVALUATION_SPEC lines 556-575
     // Judge Tuning page should show evaluation results
@@ -131,7 +129,7 @@ test.describe('Judge Tuning Page', () => {
 
     // Navigate to Judge Tuning tab if available
     const judgeTuningTab = page.getByRole('tab', { name: /Judge Tuning|Results|Evaluation/i });
-    if (await judgeTuningTab.isVisible({ timeout: 3000 }).catch(() => false)) {
+    if (await judgeTuningTab.isVisible({ timeout: 3000 })) {
       await judgeTuningTab.click();
 
       // Should see some form of results or evaluation UI
@@ -148,7 +146,7 @@ test.describe('Judge Tuning Page', () => {
       // At least one results indicator should be present
       let foundResults = false;
       for (const indicator of resultsIndicators) {
-        if (await indicator.isVisible({ timeout: 1000 }).catch(() => false)) {
+        if (await indicator.isVisible({ timeout: 1000 })) {
           foundResults = true;
           break;
         }
@@ -164,7 +162,7 @@ test.describe('Judge Tuning Page', () => {
 
 test.describe('Model Selection', () => {
   test('model dropdown shows available evaluation models', {
-    tag: ['@spec:JUDGE_EVALUATION_SPEC'],
+    tag: ['@spec:JUDGE_EVALUATION_SPEC', '@req:Auto-evaluation model stored for re-evaluation consistency'],
   }, async ({ page }) => {
     // Spec: JUDGE_EVALUATION_SPEC lines 237-249
     // Model selection options should be available
@@ -188,7 +186,7 @@ test.describe('Model Selection', () => {
     // Look for model selection UI
     // This could be on Judge Tuning page or in evaluation controls
     const judgeTuningTab = page.getByRole('tab', { name: /Judge Tuning|Evaluation/i });
-    if (await judgeTuningTab.isVisible({ timeout: 3000 }).catch(() => false)) {
+    if (await judgeTuningTab.isVisible({ timeout: 3000 })) {
       await judgeTuningTab.click();
       await page.waitForTimeout(500);
 
@@ -200,7 +198,7 @@ test.describe('Model Selection', () => {
       );
 
       // Model selection UI might exist
-      if (await modelSelector.first().isVisible({ timeout: 2000 }).catch(() => false)) {
+      if (await modelSelector.first().isVisible({ timeout: 2000 })) {
         // Verify it has options
         expect(await modelSelector.count()).toBeGreaterThanOrEqual(0);
       }

@@ -1,4 +1,5 @@
 // @spec JUDGE_EVALUATION_SPEC
+// @req Binary judges return values 0 or 1
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { JudgeTypeSelector, defaultPromptTemplates, binaryLabelPresets } from './JudgeTypeSelector';

@@ -59,9 +59,10 @@ interface FocusedAnalysisViewProps {
   scratchPad: ScratchPadEntry[];
   setScratchPad: React.Dispatch<React.SetStateAction<ScratchPadEntry[]>>;
   participantNotes?: ParticipantNote[];
+  allTraces?: { id: string }[];
 }
 
-export function FocusedAnalysisView({ discoveryResponses, scratchPad, setScratchPad, participantNotes }: FocusedAnalysisViewProps) {
+export function FocusedAnalysisView({ discoveryResponses, scratchPad, setScratchPad, participantNotes, allTraces }: FocusedAnalysisViewProps) {
   const [currentTraceIndex, setCurrentTraceIndex] = useState(0);
   const [previousTraceIndex, setPreviousTraceIndex] = useState<number | null>(null);
   const [customNote, setCustomNote] = useState('');
@@ -455,11 +456,16 @@ export function FocusedAnalysisView({ discoveryResponses, scratchPad, setScratch
                   </div>
                   <div className="space-y-2">
                     {participantNotes.map((note) => {
-                      // Find trace index for this note
-                      const noteTraceIndex = note.trace_id 
-                        ? discoveryResponses.findIndex(r => r.traceId === note.trace_id) + 1
-                        : null;
-                      const isCurrentTrace = noteTraceIndex === currentTraceIndex + 1;
+                      // Find trace index in discoveryResponses (for navigation)
+                      const discoveryIndex = note.trace_id
+                        ? discoveryResponses.findIndex(r => r.traceId === note.trace_id)
+                        : -1;
+                      // Find trace index in allTraces (for display label)
+                      const allTracesIndex = note.trace_id && allTraces
+                        ? allTraces.findIndex(t => t.id === note.trace_id)
+                        : -1;
+                      const traceLabel = allTracesIndex >= 0 ? allTracesIndex + 1 : (discoveryIndex >= 0 ? discoveryIndex + 1 : null);
+                      const isCurrentTrace = discoveryIndex >= 0 && discoveryIndex === currentTraceIndex;
                       const isAnnotationNote = note.phase === 'annotation';
                       
                       return (
@@ -488,14 +494,20 @@ export function FocusedAnalysisView({ discoveryResponses, scratchPad, setScratch
                                 }`}>
                                   {isAnnotationNote ? 'Annotation' : 'Discovery'}
                                 </Badge>
-                                {noteTraceIndex && noteTraceIndex > 0 && (
-                                  <button
-                                    onClick={() => jumpToTrace(noteTraceIndex - 1)}
-                                    className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
-                                  >
-                                    Trace {noteTraceIndex}
-                                    <ArrowUpRight className="h-3 w-3" />
-                                  </button>
+                                {traceLabel != null && (
+                                  discoveryIndex >= 0 ? (
+                                    <button
+                                      onClick={() => jumpToTrace(discoveryIndex)}
+                                      className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                                    >
+                                      Trace {traceLabel}
+                                      <ArrowUpRight className="h-3 w-3" />
+                                    </button>
+                                  ) : (
+                                    <span className="text-xs text-gray-500 flex items-center gap-1">
+                                      Trace {traceLabel}
+                                    </span>
+                                  )
                                 )}
                               </div>
                               <span className="text-xs text-gray-400">

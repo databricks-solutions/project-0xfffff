@@ -303,12 +303,49 @@ lint-deadcode: lint-vulture lint-ruff-deadcode lint-knip
 ui-format:
   npm -C {{client-dir}} run format
 
+# Analyze spec test coverage (writes to SPEC_COVERAGE_MAP.md)
+# Use --json for JSON output, --affected [REF] for changes since REF (default HEAD~1)
+# Example: just spec-coverage --affected          # specs affected since last commit
+# Example: just spec-coverage --affected main     # specs affected since main branch
+# Example: just spec-coverage --specs AUTHENTICATION_SPEC ANNOTATION_SPEC
 [group('dev')]
-spec-coverage:
-  @echo "📊 Analyzing spec test coverage..."
-  uv run spec-coverage-analyzer
-  @echo ""
-  @echo "📋 Coverage report: SPEC_COVERAGE_MAP.md"
+spec-coverage *args:
+  #!/usr/bin/env bash
+  if [[ "{{args}}" == *"--json"* ]]; then
+    uv run spec-coverage-analyzer {{args}}
+  else
+    echo "📊 Analyzing spec test coverage..."
+    uv run spec-coverage-analyzer {{args}}
+    if [[ "{{args}}" != *"--affected"* ]]; then
+      echo ""
+      echo "📋 Coverage report: SPEC_COVERAGE_MAP.md"
+    fi
+  fi
+
+# Show specs affected by recent changes and run their tests
+[group('dev')]
+test-affected base="HEAD~1":
+  #!/usr/bin/env bash
+  echo "🔍 Detecting affected specs since {{base}}..."
+  AFFECTED=$(uv run spec-coverage-analyzer --affected {{base}} --json 2>/dev/null | jq -r '.affected_mode.affected_specs[]' 2>/dev/null)
+  if [ -z "$AFFECTED" ]; then
+    echo "No specs affected by changes since {{base}}"
+    exit 0
+  fi
+  echo "Affected specs:"
+  echo "$AFFECTED" | while read spec; do echo "  - $spec"; done
+  echo ""
+  echo "Running tests for affected specs..."
+  for spec in $AFFECTED; do
+    echo "=== Testing $spec ==="
+    just test-server-spec "$spec" || true
+  done
+
+# Check for spec coverage regressions against baseline
+# Use --update-baseline to snapshot current coverage as the new baseline
+[group('dev')]
+spec-coverage-gate *args:
+  uv run spec-coverage-gate {{args}}
 
 [group('dev')]
 spec-tagging-check:
@@ -323,13 +360,39 @@ test-server-spec spec *args:
 [group('dev')]
 ui-test-unit-spec spec *args:
   @echo "Running unit tests for {{spec}}..."
-  just ui-test-unit --grep "@spec:{{spec}}" {{args}}
+  just ui-test-unit -t "@spec:{{spec}}" {{args}}
 
 # Run E2E tests for a specific spec (writes JSON report to .test-results/)
 [group('e2e')]
 e2e-spec spec mode="headless" workers="1":
   @echo "Running E2E tests for {{spec}} in {{mode}} mode..."
   just e2e {{mode}} {{workers}} "@spec:{{spec}}"
+
+# Run all tests (unit, integration, E2E) for a specific spec
+[group('dev')]
+test-spec spec mode="headless" workers="1":
+  #!/usr/bin/env bash
+  set -euo pipefail
+  echo "🧪 Running all tests for {{spec}}"
+  echo "=================================="
+  FAILED=0
+  echo ""
+  echo "── Python tests ──"
+  just test-server-spec {{spec}} || FAILED=1
+  echo ""
+  echo "── Frontend unit tests ──"
+  just ui-test-unit-spec {{spec}} || FAILED=1
+  echo ""
+  echo "── E2E tests ──"
+  just e2e-spec {{spec}} {{mode}} {{workers}} || FAILED=1
+  echo ""
+  echo "=================================="
+  if [ "$FAILED" -eq 0 ]; then
+    echo "✅ All tests passed for {{spec}}"
+  else
+    echo "❌ Some tests failed for {{spec}}"
+    exit 1
+  fi
 
 # Get token-efficient test summary from JSON reports
 [group('dev')]

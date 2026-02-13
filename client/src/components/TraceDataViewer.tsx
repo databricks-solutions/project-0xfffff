@@ -428,7 +428,7 @@ export function TraceDataViewer({
       // You could add a toast notification here
       
     } catch (error) {
-      
+      // no-op
     }
   };
 

@@ -10,6 +10,7 @@ This directory contains declarative specifications for the Human Evaluation Work
 | [ANNOTATION_SPEC](./ANNOTATION_SPEC.md) | Annotation System | annotation, rating, editing, MLflow feedback, comments |
 | [DATASETS_SPEC](./DATASETS_SPEC.md) | Trace Datasets | dataset, labeling dataset, composition, randomization, per-user order |
 | [DISCOVERY_TRACE_ASSIGNMENT_SPEC](./DISCOVERY_TRACE_ASSIGNMENT_SPEC.md) | Trace Assignment | trace, assignment, phase, round, visibility, participant |
+| [ROLE_PERMISSIONS_SPEC](./ROLE_PERMISSIONS_SPEC.md) | Roles & Permissions | role, facilitator, SME, participant, permission, for_role, phase advancement |
 | [RUBRIC_SPEC](./RUBRIC_SPEC.md) | Rubric Management | rubric, question, parsing, delimiter, scale, binary, Likert |
 | [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md) | Judge & Alignment | judge, evaluation, MLflow, binary, SIMBA, IRR, alignment |
 | [CUSTOM_LLM_PROVIDER_SPEC](./CUSTOM_LLM_PROVIDER_SPEC.md) | Custom LLM Providers | custom provider, OpenAI-compatible, proxy_url, Azure, vLLM |
@@ -36,6 +37,21 @@ Use this index to find relevant specs by keyword.
 - **UserContext** → [AUTHENTICATION_SPEC](./AUTHENTICATION_SPEC.md)
 - **credentials** → [AUTHENTICATION_SPEC](./AUTHENTICATION_SPEC.md)
 - **fallback permissions** → [AUTHENTICATION_SPEC](./AUTHENTICATION_SPEC.md)
+
+### Roles & Permissions
+- **role** → [ROLE_PERMISSIONS_SPEC](./ROLE_PERMISSIONS_SPEC.md)
+- **facilitator** → [ROLE_PERMISSIONS_SPEC](./ROLE_PERMISSIONS_SPEC.md), [DISCOVERY_TRACE_ASSIGNMENT_SPEC](./DISCOVERY_TRACE_ASSIGNMENT_SPEC.md)
+- **SME** → [ROLE_PERMISSIONS_SPEC](./ROLE_PERMISSIONS_SPEC.md)
+- **participant** → [ROLE_PERMISSIONS_SPEC](./ROLE_PERMISSIONS_SPEC.md), [DISCOVERY_TRACE_ASSIGNMENT_SPEC](./DISCOVERY_TRACE_ASSIGNMENT_SPEC.md)
+- **permission** → [ROLE_PERMISSIONS_SPEC](./ROLE_PERMISSIONS_SPEC.md), [AUTHENTICATION_SPEC](./AUTHENTICATION_SPEC.md)
+- **for_role** → [ROLE_PERMISSIONS_SPEC](./ROLE_PERMISSIONS_SPEC.md)
+- **UserPermissions** → [ROLE_PERMISSIONS_SPEC](./ROLE_PERMISSIONS_SPEC.md)
+- **can_annotate** → [ROLE_PERMISSIONS_SPEC](./ROLE_PERMISSIONS_SPEC.md)
+- **can_create_rubric** → [ROLE_PERMISSIONS_SPEC](./ROLE_PERMISSIONS_SPEC.md)
+- **can_manage_workshop** → [ROLE_PERMISSIONS_SPEC](./ROLE_PERMISSIONS_SPEC.md)
+- **phase advancement** → [ROLE_PERMISSIONS_SPEC](./ROLE_PERMISSIONS_SPEC.md)
+- **advance phase** → [ROLE_PERMISSIONS_SPEC](./ROLE_PERMISSIONS_SPEC.md)
+- **UserRole** → [ROLE_PERMISSIONS_SPEC](./ROLE_PERMISSIONS_SPEC.md)
 
 ### Annotation System
 - **annotation** → [ANNOTATION_SPEC](./ANNOTATION_SPEC.md)
@@ -223,6 +239,18 @@ Each specification follows a consistent structure:
 5. **Implementation** - Technical implementation details
 6. **Success Criteria** - Acceptance criteria and verification steps
 7. **Future Work** - Out-of-scope items and roadmap
+
+---
+
+## Known Discrepancies
+
+Issues where the spec documents intended behavior but the implementation diverges.
+
+| Spec | Discrepancy | Current Implementation | Spec Says |
+|------|-------------|----------------------|-----------|
+| ROLE_PERMISSIONS_SPEC | Phase advancement has no backend role enforcement | All phase-advance endpoints accept any request; "(facilitator only)" is docstring-only | Only facilitators can advance workshop phases |
+| ROLE_PERMISSIONS_SPEC | Annotation endpoint has no backend permission check | `POST /workshops/{id}/annotations` accepts from any role | Annotation requires `can_annotate` permission |
+| DISCOVERY_TRACE_ASSIGNMENT_SPEC | `update_workshop_participant` is a no-op | Function queries DB but discards result, no commit | Trace assignments should persist |
 
 ---
 

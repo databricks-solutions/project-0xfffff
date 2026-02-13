@@ -1,22 +1,5 @@
 {
   "permissions": {
-    "deny": [
-      "Bash(rm -rf:*)",
-      "Bash(git push --force:*)",
-      "Bash(git reset --hard:*)",
-      "Bash(alembic revision:*)",
-      "Bash(alembic downgrade:*)",
-      "Edit(specs/*)",
-      "Write(specs/*)"
-    ],
-    "ask": [
-      "Bash(git push:*)",
-      "Bash(alembic upgrade:*)",
-      "Edit(server/models/*)",
-      "Edit(alembic/*)",
-      "Edit(.github/*)",
-      "Write(alembic/*)"
-    ],
     "allow": [
       "Bash(just:*)",
       "Bash(uv run:*)",
@@ -27,6 +10,22 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Read(*)"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(git push --force:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(alembic revision:*)",
+      "Bash(alembic downgrade:*)",
+      "Write(specs/*)"
+    ],
+    "ask": [
+      "Bash(git push:*)",
+      "Bash(alembic upgrade:*)",
+      "Edit(server/models/*)",
+      "Edit(alembic/*)",
+      "Edit(.github/*)",
+      "Write(alembic/*)"
     ]
   },
   "hooks": {

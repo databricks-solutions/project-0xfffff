@@ -97,6 +97,10 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
     enabled: !!workshopId && currentPhase === 'discovery' // Only enable during discovery phase
   });
 
+  // Check if rubric is available for phase logic (must be before early returns)
+  const { data: rubric } = useRubric(workshopId!);
+  const isRubricAvailable = !!rubric;
+
   // Use real user or show login prompt
   if (!user) {
     return (
@@ -132,10 +136,6 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
     }
     return "As a participant, you can contribute to discovery, annotations, and view results.";
   };
-  
-  // Check if rubric is available for phase logic
-  const { data: rubric } = useRubric(workshopId!);
-  const isRubricAvailable = !!rubric;
 
   const getWorkshopSteps = () => {
     const steps: WorkshopStep[] = [];

@@ -91,9 +91,7 @@ export function useListWorkshops(options?: { userId?: string; facilitatorId?: st
   const { userId, facilitatorId, enabled = true } = options || {};
   
   return useQuery({
-    queryKey: userId 
-      ? QUERY_KEYS.workshopsForUser(userId)
-      : QUERY_KEYS.workshops(),
+    queryKey: ['workshops', userId, facilitatorId],
     queryFn: () => listWorkshopsApi(userId, facilitatorId),
     enabled,
     staleTime: 30000, // Consider data stale after 30 seconds

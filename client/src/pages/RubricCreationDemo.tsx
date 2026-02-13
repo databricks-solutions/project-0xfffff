@@ -797,11 +797,12 @@ export function RubricCreationDemo() {
               </div>
             ) : (
               discoveryResponses.length > 0 ? (
-                <FocusedAnalysisView 
+                <FocusedAnalysisView
                   discoveryResponses={discoveryResponses}
                   scratchPad={scratchPad}
                   setScratchPad={setScratchPad}
                   participantNotes={participantNotes}
+                  allTraces={traces}
                 />
               ) : (
                 <div className="text-center py-16">

@@ -269,7 +269,7 @@ const tryParseJson = (str: string): { success: boolean; data: unknown } => {
   }
 
   // Clean the string - remove BOM and trim
-  let cleanStr = str.replace(/^\uFEFF/, '').trim();
+  const cleanStr = str.replace(/^\uFEFF/, '').trim();
 
   // First, try direct JSON parse
   try {
@@ -689,6 +689,9 @@ const SmartObjectField: React.FC<{
   value: unknown;
   depth: number;
 }> = ({ fieldKey, value, depth }) => {
+  // Top-level fields (depth 0-1) start expanded so users see content immediately
+  const [expanded, setExpanded] = useState(depth <= 1);
+
   // Skip rendering broken/partial values entirely
   if (isBrokenValue(value)) {
     return null;
@@ -703,9 +706,6 @@ const SmartObjectField: React.FC<{
   const isComplexValue = typeof value === 'object' && value !== null;
   const isLongString = typeof value === 'string' && value.length > 200;
   const shouldCollapse = isComplexValue || isLongString;
-
-  // Top-level fields (depth 0-1) start expanded so users see content immediately
-  const [expanded, setExpanded] = useState(depth <= 1);
 
   // Get count for display
   const itemCount = Array.isArray(value)

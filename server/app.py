@@ -67,6 +67,15 @@ async def lifespan(app: FastAPI):
     # Uvicorn workers) via an inter-process lock.
     maybe_bootstrap_db_on_startup()
 
+    # Safety net: ensure tables exist even if Alembic bootstrap failed/skipped.
+    # For SQLite the .db file may exist but be empty; for PG the schema may be missing.
+    from server.database import Base, engine
+    try:
+        Base.metadata.create_all(bind=engine, checkfirst=True)
+        print("✅ Database tables verified/created via SQLAlchemy metadata")
+    except Exception as e:
+        print(f"⚠️  Table creation safety net failed (non-fatal): {e}")
+
     # For PostgreSQL/Lakebase: ensure schema and tables exist.
     # Lakebase requires tables in a schema owned by the service principal.
     if db_backend == DatabaseBackend.POSTGRESQL:
@@ -167,6 +176,8 @@ class DatabaseErrorMiddleware(BaseHTTPMiddleware):
         "ssl connection has been closed", # PG SSL teardown
         "could not connect to server",  # PG unreachable
         "connection timed out",         # PG timeout
+        "invalid authorization",        # PG Lakebase expired OAuth token
+        "connection is closed",         # PG stale pooled connection
     )
 
     async def dispatch(self, request: Request, call_next):

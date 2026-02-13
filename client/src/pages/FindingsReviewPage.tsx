@@ -57,27 +57,10 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
     enabled: !!workshopId,
   });
 
-  // Redirect non-facilitators
-  if (!isFacilitator) {
-    return (
-      <div className="p-8 flex items-center justify-center h-full">
-        <div className="text-center">
-          <FileText className="h-12 w-12 text-amber-500 mx-auto mb-4" />
-          <div className="text-lg font-medium text-slate-900 mb-2">
-            Facilitator Access Required
-          </div>
-          <div className="text-sm text-slate-600">
-            This findings review is only available to workshop facilitators
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   // Process findings data
   const findingsByTrace = React.useMemo(() => {
     if (!allFindingsWithUsers || !traces) return new Map();
-    
+
     const map = new Map();
     allFindingsWithUsers.forEach(finding => {
       if (!map.has(finding.trace_id)) {
@@ -97,23 +80,23 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
   // Filter findings
   const filteredFindings = React.useMemo(() => {
     if (!allFindingsWithUsers) return [];
-    
+
     let filtered = allFindingsWithUsers;
-    
+
     // Filter by user if specified
     if (userFilter !== 'all') {
       filtered = filtered.filter(f => f.user_id === userFilter);
     }
-    
+
     // Filter by search text
     if (searchFilter) {
-      filtered = filtered.filter(f => 
+      filtered = filtered.filter(f =>
         f.insight.toLowerCase().includes(searchFilter.toLowerCase()) ||
         f.user_name.toLowerCase().includes(searchFilter.toLowerCase()) ||
         f.user_email.toLowerCase().includes(searchFilter.toLowerCase())
       );
     }
-    
+
     return filtered;
   }, [allFindingsWithUsers, userFilter, searchFilter]);
 
@@ -128,6 +111,23 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
     }
     return userId;
   };
+
+  // Redirect non-facilitators
+  if (!isFacilitator) {
+    return (
+      <div className="p-8 flex items-center justify-center h-full">
+        <div className="text-center">
+          <FileText className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+          <div className="text-lg font-medium text-slate-900 mb-2">
+            Facilitator Access Required
+          </div>
+          <div className="text-sm text-slate-600">
+            This findings review is only available to workshop facilitators
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 h-full overflow-auto">

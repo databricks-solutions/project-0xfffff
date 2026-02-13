@@ -292,4 +292,65 @@ test.describe('JSONPath Trace Display Customization', { tag }, () => {
 
     await scenario.cleanup();
   });
+
+  test('invalid JSONPath shows error message to user', {
+    tag: ['@spec:TRACE_DISPLAY_SPEC'],
+  }, async ({ page }) => {
+    // Spec: TRACE_DISPLAY_SPEC line 349
+    // "Invalid JSONPath syntax shows helpful error message in preview"
+    const runId = `${Date.now()}`;
+
+    // Create trace with valid JSON structure
+    const traceInput = JSON.stringify({
+      messages: [{ role: 'user', content: `Error test ${runId}` }]
+    });
+    const traceOutput = JSON.stringify({
+      response: { text: `Error output ${runId}` }
+    });
+
+    // Build scenario
+    const scenario = await TestScenario.create(page)
+      .withWorkshop({ name: `Invalid JSONPath Test ${runId}` })
+      .withFacilitator()
+      .withTrace({ input: traceInput, output: traceOutput })
+      .withRealApi()
+      .build();
+
+    // Login as facilitator
+    await page.goto('/');
+    await scenario.loginAs(scenario.facilitator);
+
+    // Click on the workshop
+    const workshopNamePattern = new RegExp(`Invalid JSONPath Test ${runId.toString().slice(0, 8)}`);
+    await page.getByRole('heading', { name: workshopNamePattern }).click();
+    await page.waitForLoadState('networkidle');
+
+    // Click Dashboard to see the general view with JsonPathSettings
+    await page.getByRole('button', { name: /^Dashboard$/i }).click();
+
+    // JsonPathSettings should be visible
+    await expect(page.getByText('Trace Display Settings')).toBeVisible();
+
+    // Enter invalid JSONPath syntax (malformed expression)
+    await page.locator('#input-jsonpath').fill('$.[invalid');
+    await page.locator('#output-jsonpath').fill('$.response.text');
+
+    // Click Preview
+    await page.getByRole('button', { name: /Preview/i }).click();
+
+    // Wait for preview results
+    await expect(page.getByText('Preview Results')).toBeVisible();
+
+    // Should show an error or "Showing original" for the invalid JSONPath
+    // The system should gracefully handle the error and show a fallback
+    const errorIndicator = page.getByText('Showing original').or(
+      page.getByText(/error/i)
+    ).or(
+      page.getByText(/invalid/i)
+    );
+
+    await expect(errorIndicator.first()).toBeVisible();
+
+    await scenario.cleanup();
+  });
 });
