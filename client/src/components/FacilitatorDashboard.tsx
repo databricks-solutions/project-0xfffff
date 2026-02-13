@@ -27,6 +27,31 @@ import { PhaseControlButton } from './PhaseControlButton';
 import { JsonPathSettings } from './JsonPathSettings';
 import { toast } from 'sonner';
 import { parseRubricQuestions } from '@/utils/rubricUtils';
+import type { DiscoveryFinding, Annotation } from '@/client';
+
+/** Finding extended with user details from the /findings-with-users endpoint */
+interface FindingWithUser extends DiscoveryFinding {
+  user_name?: string;
+  user_email?: string;
+  user_role?: string;
+}
+
+/** Annotation extended with user details from the /annotations-with-users endpoint */
+interface AnnotationWithUser extends Annotation {
+  user_name?: string;
+  user_email?: string;
+  user_role?: string;
+}
+
+/** Shape of each element in the traceCoverageDetails computed array */
+interface TraceCoverageDetail {
+  traceId: string;
+  input: string;
+  reviewCount: number;
+  uniqueReviewers: number;
+  reviewers: string[];
+  isFullyReviewed: boolean;
+}
 
 interface FacilitatorDashboardProps {
   onNavigate: (phase: string) => void;
@@ -199,9 +224,9 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
   const discoveryMetrics = React.useMemo(() => {
     if (!allFindings) return { totalFindings: 0, smeFindings: 0, participantFindings: 0, avgFindingsPerTrace: 0 };
 
-    const findingsToUse = allFindingsWithUserDetails || allFindings;
-    const smeFindings = findingsToUse.filter((f: any) => f.user_role === 'sme');
-    const participantFindings = findingsToUse.filter((f: any) => f.user_role !== 'sme');
+    const findingsToUse = (allFindingsWithUserDetails || allFindings) as FindingWithUser[];
+    const smeFindings = findingsToUse.filter((f: FindingWithUser) => f.user_role === 'sme');
+    const participantFindings = findingsToUse.filter((f: FindingWithUser) => f.user_role !== 'sme');
     const avgFindingsPerTrace = tracesWithFindings.size > 0
       ? Math.round((allFindings.length / tracesWithFindings.size) * 10) / 10
       : 0;
@@ -222,11 +247,11 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
     const annotationsToUse = annotationsWithUserDetails || annotations;
 
     // Separate SME and participant annotations using actual role data
-    const smeAnnotations = annotationsToUse.filter((a: any) => a.user_role === 'sme');
-    const participantAnnotations = annotationsToUse.filter((a: any) => a.user_role !== 'sme');
+    const smeAnnotations = (annotationsToUse as AnnotationWithUser[]).filter((a: AnnotationWithUser) => a.user_role === 'sme');
+    const participantAnnotations = (annotationsToUse as AnnotationWithUser[]).filter((a: AnnotationWithUser) => a.user_role !== 'sme');
 
     // Helper to get the actual rating from annotation based on judge type
-    const getRating = (a: any): number | null => {
+    const getRating = (a: Annotation | AnnotationWithUser): number | null => {
       if (effectiveJudgeType === 'binary') {
         // For binary, get from ratings object first
         if (a.ratings && typeof a.ratings === 'object') {
@@ -338,8 +363,8 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
       // Clear React Query cache to refresh all data
       queryClient.invalidateQueries();
       
-    } catch (error: any) {
-      toast.error('Could not start phase', { description: error.message });
+    } catch (error: unknown) {
+      toast.error('Could not start phase', { description: error instanceof Error ? error.message : String(error) });
     }
   };
 
@@ -395,8 +420,8 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
       } else {
         toast.success('Traces added', { description: `${result.traces_added} traces added to ${phaseLabel}. Total: ${result.total_active_traces}.` });
       }
-    } catch (error: any) {
-      toast.error('Could not add traces', { description: error.message });
+    } catch (error: unknown) {
+      toast.error('Could not add traces', { description: error instanceof Error ? error.message : String(error) });
     } finally {
       setIsAddingTraces(false);
     }
@@ -425,8 +450,8 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
       queryClient.invalidateQueries({ queryKey: ['annotations', workshopId] });
       
       toast.success('Traces reordered', { description: `${result.reordered_count} traces reordered. Completed traces now appear first.` });
-    } catch (error: any) {
-      toast.error('Could not reorder traces', { description: error.message });
+    } catch (error: unknown) {
+      toast.error('Could not reorder traces', { description: error instanceof Error ? error.message : String(error) });
     } finally {
       setIsReorderingTraces(false);
     }
@@ -470,8 +495,8 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
 
       // Force page reload to reflect phase change
       window.location.reload();
-    } catch (error: any) {
-      toast.error('Could not reset discovery', { description: error.message });
+    } catch (error: unknown) {
+      toast.error('Could not reset discovery', { description: error instanceof Error ? error.message : String(error) });
     } finally {
       setIsResettingDiscovery(false);
     }
@@ -506,8 +531,8 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
 
       // Force page reload to reflect phase change
       window.location.reload();
-    } catch (error: any) {
-      toast.error('Could not reset annotation', { description: error.message });
+    } catch (error: unknown) {
+      toast.error('Could not reset annotation', { description: error instanceof Error ? error.message : String(error) });
     } finally {
       setIsResettingAnnotation(false);
     }
@@ -894,7 +919,7 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                 {userContributions.length > 0 ? (
                   <div className="space-y-3">
                     {userContributions.map(({ userId, userName, count }) => {
-                      const userTraces = traceCoverageDetails.filter((t: any) => t.reviewers.includes(userId)).length;
+                      const userTraces = traceCoverageDetails.filter((t: TraceCoverageDetail) => t.reviewers.includes(userId)).length;
                       return (
                         <div key={userId} className="flex items-center justify-between p-4 bg-gradient-to-r from-slate-50 to-white border border-slate-200 rounded-lg hover:shadow-sm transition-shadow">
                           <div className="flex items-center gap-3">

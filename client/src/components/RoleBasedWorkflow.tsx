@@ -57,8 +57,9 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
       // Also invalidate related queries that depend on phase
       queryClient.invalidateQueries({ queryKey: ['traces', workshopId] });
       queryClient.invalidateQueries({ queryKey: ['all-traces', workshopId] });
-    } catch (error: any) {
-      setPhaseError(error.message || 'Failed to start discovery phase');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to start discovery phase';
+      setPhaseError(message);
     } finally {
       setIsStartingPhase(false);
     }

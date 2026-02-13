@@ -117,14 +117,15 @@ export const ProductionLogin: React.FC = () => {
         // Set the user in context
         await setUser(response.user);
         break; // Success — exit retry loop
-      } catch (error: any) {
-        const status = error.status || error.response?.status;
+      } catch (error: unknown) {
+        const apiErr = typeof error === 'object' && error !== null && 'status' in error ? error as { status?: number; body?: { detail?: string } } : null;
+        const status = apiErr?.status;
         // Retry on 503 (service waking up) unless we've exhausted retries
         if (status === 503 && attempt < maxRetries) {
           await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
           continue;
         }
-        const errorDetail = error.body?.detail || error.response?.data?.detail || 'Login failed. Please check your credentials.';
+        const errorDetail = apiErr?.body?.detail || (error instanceof Error ? error.message : 'Login failed. Please check your credentials.');
         setError(errorDetail);
         break;
       }

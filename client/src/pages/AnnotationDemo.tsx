@@ -202,7 +202,7 @@ export function AnnotationDemo() {
     maxRetries: number = 3,
     baseDelay: number = 1000
   ): Promise<T> => {
-    let lastError: any;
+    let lastError: unknown;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         return await fn();
@@ -499,7 +499,7 @@ export function AnnotationDemo() {
       }
       
       // Only count annotations for traces that currently exist in traceData
-      const validTraceIds = new Set(traceData.map((t: any) => t.id));
+      const validTraceIds = new Set(traceData.map((t) => t.id));
       const completedTraceIds = new Set(
         existingAnnotations
           .filter(a => validTraceIds.has(a.trace_id))
@@ -533,7 +533,7 @@ export function AnnotationDemo() {
       }
       
       // Find first incomplete trace
-      const firstIncompleteIndex = traceData.findIndex((trace: any) => !completedTraceIds.has(trace.id));
+      const firstIncompleteIndex = traceData.findIndex((trace) => !completedTraceIds.has(trace.id));
       if (firstIncompleteIndex !== -1) {
         setCurrentTraceIndex(firstIncompleteIndex);
       } else if (completedTraceIds.size === traceData.length) {
@@ -658,12 +658,11 @@ export function AnnotationDemo() {
       });
       
       return true;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to save annotation after retries:', error);
+      const errMsg = error instanceof Error ? error.message : String(error);
       console.error('Error details:', {
-        message: error?.message,
-        response: error?.response?.data,
-        status: error?.response?.status,
+        message: errMsg,
         traceId: targetTraceId,
         isBackground
       });

@@ -248,7 +248,7 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
 
                 {/* Participant Status */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {Object.values(completionStatus.participant_status).map((status: any) => (
+                  {Object.values(completionStatus.participant_status).map((status: { user_id: string; user_name: string; user_email: string; completed: boolean; findings_count: number }) => (
                     <div key={status.user_id} className="flex items-center justify-between p-2 bg-white rounded border">
                       <div className="flex items-center gap-2">
                         <div className={`w-3 h-3 rounded-full ${status.completed ? 'bg-green-500' : 'bg-gray-300'}`} />
