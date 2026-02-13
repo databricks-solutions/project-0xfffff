@@ -19,7 +19,9 @@ declare const process: { env: Record<string, string | undefined> };
 test.describe('Trace Visibility', {
   tag: ['@spec:DISCOVERY_TRACE_ASSIGNMENT_SPEC'],
 }, () => {
-  test('participant sees only current round traces', async ({ page }) => {
+  test('participant sees only current round traces', {
+    tag: ['@req:Participants only see traces in current active discovery dataset'],
+  }, async ({ page }) => {
     // Create scenario with discovery phase and specific traces
     const scenario = await TestScenario.create(page)
       .withWorkshop({ name: 'Current Round Traces' })
@@ -51,7 +53,9 @@ test.describe('Trace Visibility', {
     await scenario.cleanup();
   });
 
-  test('old traces hidden after round change', async ({ page }) => {
+  test('old traces hidden after round change', {
+    tag: ['@req:When new discovery round starts, old traces hidden (not deleted)'],
+  }, async ({ page }) => {
     // Create scenario with discovery phase
     const scenario = await TestScenario.create(page)
       .withWorkshop({ name: 'Round Change Visibility' })
@@ -116,7 +120,9 @@ test.describe('Trace Visibility', {
     await scenario.cleanup();
   });
 
-  test('annotation order persistent across reload', async ({ page }) => {
+  test('annotation order persistent across reload', {
+    tag: ['@req:Randomization persistent across page reloads for same trace set'],
+  }, async ({ page }) => {
     // Create scenario with annotation phase and randomization enabled
     const scenario = await TestScenario.create(page)
       .withWorkshop({ name: 'Persistent Order Test' })

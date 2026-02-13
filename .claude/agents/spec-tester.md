@@ -52,6 +52,64 @@ For requirements that have no existing test at all:
 3. Follow existing test patterns in the same directory
 4. Tag the new test with both `@spec` and `@req`
 
+### Phase 3.5: Self-review for vacuous tests
+
+After writing tests, review **every new test** against these rules. A vacuous test is one that passes without actually verifying production behavior — it inflates coverage numbers while catching zero bugs.
+
+**Rule 1 — Unconditional assertions.** Every test must execute at least one assertion unconditionally. Never wrap assertions in `if hasattr(...)`, `if result:`, `try/except`, or any other guard that allows the test to pass with zero assertions. If the code under test doesn't exist yet, the test should **fail**, not silently pass.
+
+```python
+# FORBIDDEN — passes when method is missing
+if hasattr(service, '_validate_suggestions'):
+    assert len(service._validate_suggestions(data)) == 1
+
+# CORRECT — fails when method is missing (which is the right signal)
+assert len(service._validate_suggestions(data)) == 1
+
+# ACCEPTABLE — if method is genuinely not-yet-implemented, use xfail
+@pytest.mark.xfail(reason="Method not yet implemented")
+def test_validate_suggestions():
+    assert len(service._validate_suggestions(data)) == 1
+```
+
+**Rule 2 — Assert on production output, not mock setup.** The asserted value must pass through production code. If you configure a mock to return X and then assert you got X without any production code in between, the test verifies nothing.
+
+```python
+# FORBIDDEN — testing your own mock
+mock_service.get_name.return_value = "alice"
+assert mock_service.get_name() == "alice"
+
+# CORRECT — assert on what production code derived
+result = service.derive_judge_name("Response Quality")
+assert result == "response_quality_judge"
+```
+
+**Rule 3 — Exact-value assertions.** Prefer `==` over shape checks. Assertions like `is not None`, `len(x) > 0`, `isinstance(x, str)` are too weak to catch real bugs. They are acceptable only **alongside** an exact-value assertion.
+
+```python
+# WEAK — almost any return value passes
+assert result is not None
+assert len(result) > 0
+
+# STRONG — catches actual regressions
+assert result == "response_helpfulness_judge"
+```
+
+**Rule 4 — No disjunctive assertions.** Never use `or` in assertions. Each condition must be independently required.
+
+```python
+# FORBIDDEN — one branch always true
+assert existing.question == "New question" or mock_session.commit.called
+
+# CORRECT — both must hold
+assert existing.question == "New question"
+assert mock_session.commit.called
+```
+
+**Rule 5 — No swallowed exceptions.** Tests must not catch and discard exceptions. Use `pytest.raises` for expected exceptions.
+
+**Rule 6 — The deletion test.** Mentally simulate deleting the production code under test. If the test would still pass, it is vacuous — rewrite it.
+
 ### Phase 4: Verify
 
 1. Run `just test-spec {SPEC_NAME}` — all tests must pass
