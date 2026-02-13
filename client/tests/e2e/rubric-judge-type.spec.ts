@@ -17,7 +17,7 @@ const API_URL = process.env.E2E_API_URL ?? 'http://127.0.0.1:8000';
 
 test.describe('Per-Question Judge Type', () => {
   test('likert questions show 1-5 star rating controls', {
-    tag: ['@spec:RUBRIC_SPEC'],
+    tag: ['@spec:RUBRIC_SPEC', '@req:Likert scale shows 1-5 rating options'],
   }, async ({ page }) => {
     // Spec: RUBRIC_SPEC lines 71-91
     // Likert questions should display 1-5 rating options
@@ -77,7 +77,7 @@ test.describe('Per-Question Judge Type', () => {
   });
 
   test('binary questions show Pass/Fail buttons (not stars)', {
-    tag: ['@spec:RUBRIC_SPEC'],
+    tag: ['@spec:RUBRIC_SPEC', '@req:Binary scale shows Pass/Fail buttons (not star ratings)'],
   }, async ({ page, request }) => {
     // Spec: RUBRIC_SPEC lines 329-339 (Test 3)
     // Binary questions should show Pass/Fail buttons, not star ratings
@@ -149,7 +149,7 @@ test.describe('Per-Question Judge Type', () => {
   });
 
   test('mixed rubric renders correct controls per question', {
-    tag: ['@spec:RUBRIC_SPEC'],
+    tag: ['@spec:RUBRIC_SPEC', '@req:Mixed rubrics support different scales per question'],
   }, async ({ page, request }) => {
     // Spec: RUBRIC_SPEC lines 341-365 (Test 4 & 5)
     // Mixed rubrics should show different controls per question
@@ -261,7 +261,7 @@ test.describe('Per-Question Judge Type', () => {
 
 test.describe('Binary Scale Feedback to MLflow', () => {
   test('binary rubric annotation logs 0/1 values (not 3)', {
-    tag: ['@spec:RUBRIC_SPEC'],
+    tag: ['@spec:RUBRIC_SPEC', '@req:Binary feedback logged as 0/1 to MLflow (not 3)'],
   }, async ({ page, request }) => {
     // Spec: RUBRIC_SPEC lines 329-339 (Test 3)
     // "MLflow feedback logged: 0 or 1 (NOT 3 for neutral)"

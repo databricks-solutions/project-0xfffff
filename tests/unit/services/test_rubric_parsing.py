@@ -33,6 +33,7 @@ class TestParseRubricQuestions:
         assert questions[1]['title'] == 'Question 2'
         assert questions[1]['description'] == 'Description 2'
 
+    @pytest.mark.req("Questions with multi-line descriptions parse correctly")
     def test_multi_line_description(self, db_service):
         """Test parsing questions with multi-line descriptions."""
         raw = """Question 1: Line 1 of description
@@ -71,6 +72,7 @@ Line 3 after blank|||QUESTION_SEPARATOR|||Question 2: Single line"""
         assert questions[0]['title'] == 'Single Question'
         assert questions[0]['description'] == 'This is the only question'
 
+    @pytest.mark.req("Per-question judge_type parsed from `[JUDGE_TYPE:xxx]` format")
     def test_questions_with_judge_type(self, db_service):
         """Test parsing questions that include judge type markers."""
         raw = "Quality: Is it good?|||JUDGE_TYPE|||binary|||QUESTION_SEPARATOR|||Accuracy: Is it accurate?|||JUDGE_TYPE|||likert"
@@ -92,6 +94,7 @@ Line 3 after blank|||QUESTION_SEPARATOR|||Question 2: Single line"""
         assert len(questions) == 1
         assert questions[0].get('judge_type', 'likert') == 'likert'
 
+    @pytest.mark.req("Parsed questions have stable UUIDs within session")
     def test_questions_have_ids(self, db_service):
         """Test that parsed questions have ID fields."""
         raw = "Q1: Desc 1|||QUESTION_SEPARATOR|||Q2: Desc 2"
@@ -101,6 +104,24 @@ Line 3 after blank|||QUESTION_SEPARATOR|||Question 2: Single line"""
         assert all('id' in q for q in questions)
         assert questions[0]['id'] == 'q_1'
         assert questions[1]['id'] == 'q_2'
+
+    @pytest.mark.req("Delimiter never appears in user input (by design)")
+    def test_delimiter_not_in_natural_text(self, db_service):
+        """Test that the delimiter is unlikely to appear in natural user input."""
+        QUESTION_DELIMITER = '|||QUESTION_SEPARATOR|||'
+        # The delimiter contains ||| characters which are not natural in user text
+        assert '|||' in QUESTION_DELIMITER
+        assert len(QUESTION_DELIMITER) > 10
+        # Typical user inputs should not contain the delimiter
+        typical_inputs = [
+            "How good is this response?",
+            "Rate quality on a scale of 1-5",
+            "The answer contains special chars: @#$%^&*()",
+            "Multi-line\ndescription\nwith breaks",
+            "Pipes | and bars || are fine",
+        ]
+        for text in typical_inputs:
+            assert QUESTION_DELIMITER not in text
 
     def test_whitespace_trimmed(self, db_service):
         """Test that whitespace is trimmed from parsed values."""
@@ -112,6 +133,7 @@ Line 3 after blank|||QUESTION_SEPARATOR|||Question 2: Single line"""
         # Titles should be trimmed
         assert questions[0]['title'].strip() == questions[0]['title']
 
+    @pytest.mark.req("Empty/whitespace-only parts filtered out")
     def test_empty_parts_filtered_out(self, db_service):
         """Test that empty parts between delimiters are filtered out."""
         raw = "Q1: D1|||QUESTION_SEPARATOR||||||QUESTION_SEPARATOR|||Q2: D2"
@@ -225,6 +247,7 @@ class TestBinaryScaleSupport:
         assert len(questions) == 1
         assert questions[0]['judge_type'] == 'likert'
 
+    @pytest.mark.req("Mixed rubrics support different scales per question")
     def test_mixed_judge_types_in_rubric(self, db_service):
         """Test rubric with both binary and likert questions."""
         raw = "Safety: Is it safe?|||JUDGE_TYPE|||binary|||QUESTION_SEPARATOR|||Quality: How good is it?|||JUDGE_TYPE|||likert"

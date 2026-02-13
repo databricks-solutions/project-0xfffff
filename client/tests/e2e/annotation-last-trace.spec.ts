@@ -16,7 +16,9 @@ const API_URL = 'http://127.0.0.1:8000';
 test.describe('Annotation - Last Trace Bug', {
   tag: ['@spec:ANNOTATION_SPEC'],
 }, () => {
-  test('all 10 annotations should be saved when annotating via API', async ({
+  test('all 10 annotations should be saved when annotating via API', {
+    tag: ['@spec:ANNOTATION_SPEC', '@req:Annotation count reflects unique submissions (not re-submissions)'],
+  }, async ({
     page,
   }) => {
     // Create a real API scenario
@@ -73,7 +75,9 @@ test.describe('Annotation - Last Trace Bug', {
     await scenario.cleanup();
   });
 
-  test('10th trace annotation should be saved correctly', async ({ page }) => {
+  test('10th trace annotation should be saved correctly', {
+    tag: ['@spec:ANNOTATION_SPEC', '@req:Changes automatically save on navigation (Next/Previous)'],
+  }, async ({ page }) => {
     // Create scenario with real API
     const scenario = await TestScenario.create(page)
       .withWorkshop({ name: 'Tenth Trace Test' })
@@ -133,7 +137,9 @@ test.describe('Annotation - Last Trace Bug', {
     await scenario.cleanup();
   });
 
-  test('concurrent annotations from multiple users should all be saved', async ({
+  test('concurrent annotations from multiple users should all be saved', {
+    tag: ['@spec:ANNOTATION_SPEC', '@req:Annotation count reflects unique submissions (not re-submissions)'],
+  }, async ({
     page,
   }) => {
     // Create scenario with real API
@@ -344,7 +350,9 @@ test.describe('Annotation - Last Trace Bug', {
    * This test reproduces the bug where the 10th annotation fails to save
    * when clicking the Complete button in the UI.
    */
-  test('UI: 10th annotation should be saved when clicking Complete button', async ({
+  test('UI: 10th annotation should be saved when clicking Complete button', {
+    tag: ['@spec:ANNOTATION_SPEC', '@req:Changes automatically save on navigation (Next/Previous)'],
+  }, async ({
     page,
   }) => {
     // Create a real API scenario with exactly 10 traces

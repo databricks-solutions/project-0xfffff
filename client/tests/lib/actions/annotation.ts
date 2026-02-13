@@ -18,7 +18,7 @@ export async function submitAnnotation(
 
   // Find and click the rating button (1-5 scale)
   // The app typically uses radio buttons or clickable rating elements
-  const ratingButton = page.locator(`[data-rating="${rating}"]`);
+  const ratingButton = page.locator(`[data-rating="${rating}"]`).first();
   if (await ratingButton.isVisible().catch(() => false)) {
     await ratingButton.click();
   } else {
@@ -36,26 +36,18 @@ export async function submitAnnotation(
     }
   }
 
-  // Fill comment if provided
-  if (comment) {
-    const commentField = page.locator('textarea[name="comment"]');
-    if (await commentField.isVisible().catch(() => false)) {
-      await commentField.fill(comment);
-    } else {
-      // Try generic comment textarea
-      const textarea = page.locator('textarea').first();
-      if (await textarea.isVisible().catch(() => false)) {
-        await textarea.fill(comment);
-      }
+  // Fill comment if provided (AnnotationDemo uses id="comment")
+  if (comment !== undefined && comment !== '') {
+    const commentField = page.locator('#comment').or(page.locator('textarea[name="comment"]'));
+    if (await commentField.first().isVisible().catch(() => false)) {
+      await commentField.first().fill(comment);
     }
   }
 
-  // Submit the annotation
-  const submitButton = page.getByRole('button', {
-    name: /submit|save|next/i,
-  });
-  if (await submitButton.isVisible().catch(() => false)) {
-    await submitButton.click();
+  // Submit the annotation (Next or Complete button)
+  const submitButton = page.getByRole('button', { name: /submit|save|next|complete/i });
+  if (await submitButton.first().isVisible().catch(() => false)) {
+    await submitButton.first().click();
   }
 }
 
@@ -116,12 +108,12 @@ export async function getAnnotations(
 }
 
 /**
- * Navigate to the next trace for annotation
+ * Navigate to the next trace for annotation (or Complete on last trace)
  */
 export async function goToNextTrace(page: Page): Promise<void> {
-  const nextButton = page.getByRole('button', { name: /next/i });
-  if (await nextButton.isVisible().catch(() => false)) {
-    await nextButton.click();
+  const nextButton = page.getByRole('button', { name: /next|complete/i });
+  if (await nextButton.first().isVisible().catch(() => false)) {
+    await nextButton.first().click();
   }
 }
 
@@ -129,22 +121,48 @@ export async function goToNextTrace(page: Page): Promise<void> {
  * Navigate to the previous trace for annotation
  */
 export async function goToPreviousTrace(page: Page): Promise<void> {
-  const prevButton = page.getByRole('button', { name: /prev|back/i });
+  const prevButton = page.getByRole('button', { name: /prev|back|previous/i });
   if (await prevButton.isVisible().catch(() => false)) {
     await prevButton.click();
   }
 }
 
 /**
- * Wait for the annotation interface to be ready
+ * Wait for the annotation interface to be ready.
+ * AnnotationDemo shows "Rate this Response" and a trace counter "Trace 1/N".
  */
 export async function waitForAnnotationInterface(page: Page): Promise<void> {
-  // Wait for trace content or annotation form to be visible
   await expect(
-    page.locator('[data-testid="trace-content"], .annotation-form, .trace-viewer')
-  ).toBeVisible({
-    timeout: 10000,
-  });
+    page.getByText(/Rate this Response|Trace \d+\/\d+/).first()
+  ).toBeVisible({ timeout: 10000 });
+}
+
+/**
+ * Get the current comment/feedback value from the annotation form (id="comment").
+ */
+export async function getCommentValue(page: Page): Promise<string> {
+  const field = page.locator('#comment').or(page.locator('textarea').first());
+  return field.inputValue();
+}
+
+/**
+ * Whether the Next (or Complete) button is enabled.
+ */
+export async function isNextButtonEnabled(page: Page): Promise<boolean> {
+  const btn = page.getByRole('button', { name: /next|complete/i }).first();
+  return btn.isEnabled();
+}
+
+/**
+ * Wait for the annotation progress indicator to show completed/total (e.g. "2/5").
+ */
+export async function waitForAnnotationProgress(
+  page: Page,
+  completed: number,
+  total: number
+): Promise<void> {
+  const pattern = new RegExp(`${completed}/${total}`);
+  await expect(page.getByText(pattern)).toBeVisible({ timeout: 5000 });
 }
 
 /**

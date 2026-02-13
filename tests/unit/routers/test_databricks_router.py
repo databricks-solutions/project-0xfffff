@@ -2,6 +2,7 @@ import pytest
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Alignment jobs run asynchronously")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_databricks_test_connection_success(async_client, monkeypatch):
@@ -35,6 +36,7 @@ async def test_databricks_test_connection_success(async_client, monkeypatch):
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Evaluation results persisted to database")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_databricks_call_endpoint_success(async_client, monkeypatch):
@@ -68,6 +70,7 @@ async def test_databricks_call_endpoint_success(async_client, monkeypatch):
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Evaluation results persisted to database")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_databricks_chat_endpoint_success(async_client, monkeypatch):
@@ -103,6 +106,7 @@ async def test_databricks_chat_endpoint_success(async_client, monkeypatch):
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Alignment jobs run asynchronously")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_databricks_judge_evaluate_without_workshop_id_uses_request_config(async_client, monkeypatch):

@@ -13,7 +13,7 @@
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
     "test:unit:coverage": "vitest run --coverage",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "lint": "eslint .",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json,css}\"",
     "knip": "knip"
   },
@@ -48,7 +48,9 @@
     "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
+    "@eslint/js": "^8.57.1",
     "@playwright/test": "^1.54.1",
+    "@tanstack/eslint-plugin-query": "^5.91.3",
     "@testing-library/jest-dom": "^6.8.0",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
@@ -63,6 +65,8 @@
     "eslint": "^8.55.0",
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.5",
+    "glob": "^10.5.0",
+    "globals": "^13.24.0",
     "jsdom": "^24.1.3",
     "knip": "^5.81.0",
     "postcss": "^8.4.32",
@@ -70,6 +74,7 @@
     "tailwindcss": "^3.4.0",
     "terser": "^5.44.1",
     "typescript": "^5.9.3",
+    "typescript-eslint": "^8.54.0",
     "vite": "^5.0.8",
     "vitest": "^2.1.9"
   }

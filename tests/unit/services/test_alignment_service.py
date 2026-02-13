@@ -4,6 +4,7 @@ from server.services.alignment_service import AlignmentService
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Judge prompt auto-derived from rubric questions")
 def test_normalize_judge_prompt_converts_placeholders_to_mlflow_style():
     prompt = "Rate {{ inputs }} vs {{ outputs }} and also {input}/{output}"
     normalized = AlignmentService._normalize_judge_prompt(prompt)
@@ -38,10 +39,13 @@ def test_calculate_eval_metrics_simple_case():
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Binary rubrics evaluated with 0/1 scale (not 1-5)")
+@pytest.mark.req("Binary judges return values 0 or 1")
 def test_calculate_eval_metrics_binary_scale():
     """Binary metrics use 2x2 confusion matrix and pass/fail agreement.
 
     Spec: JUDGE_EVALUATION_SPEC lines 65-79
+    - Binary rubrics evaluated with 0/1 scale (not 1-5)
     - Binary judges return values 0 or 1
     - Metrics include pass/fail agreement
     """
@@ -63,6 +67,7 @@ def test_calculate_eval_metrics_binary_scale():
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Binary judges return values 0 or 1")
 def test_calculate_eval_metrics_binary_all_pass():
     """Binary metrics handle all-pass case with perfect agreement.
 
@@ -80,6 +85,7 @@ def test_calculate_eval_metrics_binary_all_pass():
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Binary judges return values 0 or 1")
 def test_calculate_eval_metrics_binary_all_fail():
     """Binary metrics handle all-fail case with perfect agreement.
 
@@ -96,6 +102,7 @@ def test_calculate_eval_metrics_binary_all_fail():
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Binary judges return values 0 or 1")
 def test_calculate_eval_metrics_binary_mixed_ratings():
     """Binary metrics calculate correctly for mixed ratings.
 
@@ -115,6 +122,7 @@ def test_calculate_eval_metrics_binary_mixed_ratings():
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Binary judges return values 0 or 1")
 def test_calculate_eval_metrics_binary_empty():
     """Binary metrics handle empty evaluations.
 
@@ -130,6 +138,7 @@ def test_calculate_eval_metrics_binary_empty():
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Fallback conversion handles Likert-style returns for binary")
 def test_calculate_eval_metrics_binary_threshold_conversion():
     """Binary metrics convert float values using 0.5 threshold.
 
@@ -153,6 +162,7 @@ def test_calculate_eval_metrics_binary_threshold_conversion():
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Likert judges return values 1-5")
 def test_calculate_eval_metrics_likert_default():
     """Likert metrics use 5x5 confusion matrix by default.
 
@@ -171,3 +181,31 @@ def test_calculate_eval_metrics_likert_default():
     # All ratings 1-5 should be in agreement_by_rating
     for rating in ['1', '2', '3', '4', '5']:
         assert rating in metrics['agreement_by_rating']
+
+
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("MemAlign distills semantic memory (guidelines)")
+def test_alignment_extracts_semantic_memory():
+    """Vacuous: needs real MLflow integration test, not mock-everything."""
+    assert False, "TODO: replace with non-vacuous test (current version mocks all of mlflow)"
+
+
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Aligned judge registered to MLflow")
+def test_aligned_judge_registered_to_mlflow():
+    """Vacuous: needs real MLflow integration test, not mock-everything."""
+    assert False, "TODO: replace with non-vacuous test (current version mocks all of mlflow)"
+
+
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Metrics reported (guideline count, example count)")
+def test_alignment_reports_guideline_and_example_counts():
+    """Vacuous: needs real MLflow integration test, not mock-everything."""
+    assert False, "TODO: replace with non-vacuous test (current version mocks all of mlflow)"
+
+
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Re-evaluate loads registered judge with aligned instructions")
+def test_reevaluation_loads_registered_judge_via_get_scorer():
+    """Vacuous: needs real MLflow integration test, not mock-everything."""
+    assert False, "TODO: replace with non-vacuous test (current version mocks all of mlflow)"

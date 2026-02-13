@@ -221,10 +221,12 @@ describe('@spec:RUBRIC_SPEC rubricUtils', () => {
   });
 
   describe('QUESTION_DELIMITER constant', () => {
+    // @req Frontend and backend use same delimiter constant
     it('exports the correct delimiter', () => {
       expect(QUESTION_DELIMITER).toBe('|||QUESTION_SEPARATOR|||');
     });
 
+    // @req Delimiter never appears in user input (by design)
     it('delimiter is unique and unlikely in user input', () => {
       // Verify the delimiter contains special characters that are unlikely in natural text
       expect(QUESTION_DELIMITER).toContain('|||');

@@ -271,6 +271,73 @@ Response:
 }
 ```
 
+## Rubric Lifecycle
+
+### CRUD Operations
+
+Only one rubric exists per workshop. Create and update are upsert — `POST` and `PUT /workshops/{id}/rubric` both call the same underlying method. If a rubric exists, it is updated; otherwise a new one is created.
+
+**Create/Add Question**: Facilitator opens the "Add Criterion" dialog and provides:
+- **Title** (required) — short label for the criterion
+- **Description/Definition** (required) — what the criterion measures
+- **Positive direction** (optional) — what a good response looks like
+- **Negative direction** (optional) — what a poor response looks like
+- **Examples** (optional) — concrete good/bad examples
+- **Evaluation type** — Likert, Binary, or Free-form (per-question)
+
+The optional structured fields are serialized into the description text by the frontend.
+
+**Edit Question**: Facilitator clicks the edit icon on an existing question card. The dialog pre-populates with the question's current data. Updates are sent via `PUT /workshops/{id}/rubric/questions/{question_id}`.
+
+**Delete Question**: Facilitator clicks the delete icon. The question is removed from the serialized list and remaining questions are re-indexed sequentially (`q_1`, `q_2`, ...). If the last question is deleted, the entire rubric record is removed from the database. Annotation data for deleted questions is preserved in the database but excluded from IRR calculations and UI display.
+
+**No phase restriction**: Rubric CRUD is allowed regardless of workshop phase — facilitators can refine criteria at any time.
+
+### Phase Integration
+
+- Workshop advances from Discovery to Rubric phase when at least one finding exists
+- Rubric must exist before the workshop can advance from Rubric to Annotation phase
+- `begin_annotation_phase()` also validates that a rubric exists before starting auto-evaluation
+
+### MLflow Integration
+
+On rubric create or update:
+1. A workshop `judge_name` is auto-derived from the first rubric question title (e.g., "Response Accuracy" → `response_accuracy_judge`)
+2. A background MLflow re-sync is triggered to update all annotation feedback entries with current judge names
+3. MLflow sync is best-effort — failures are logged but do not block the rubric operation
+
+### Rating Validation
+
+Annotation submissions validate each rating against its question's judge type:
+- **Binary**: only 0 or 1 accepted
+- **Likert**: only 1–5 accepted
+- If all ratings in a submission fail validation, existing annotation data is preserved (not overwritten)
+
+## AI-Powered Rubric Generation
+
+Facilitators can generate rubric suggestions using an AI model that analyzes discovery findings and participant notes.
+
+### Workflow
+
+1. Facilitator opens the suggestion panel and selects an AI model
+2. System calls `POST /workshops/{id}/generate-rubric-suggestions` with endpoint name, temperature, and whether to include notes
+3. Service fetches all discovery findings (grouped by trace, max 15) and participant notes (max 15)
+4. AI returns a JSON array of suggested criteria
+5. Facilitator can accept, reject, or edit each suggestion before adding it to the rubric
+
+### Validation Rules
+
+- At least one finding or note must exist (400 if both empty)
+- Suggestions with title < 3 characters are filtered out
+- Suggestions with description < 10 characters are filtered out
+- Title truncated at 100 characters, description at 1000
+- Invalid `judgeType` values default to `'likert'`
+- If zero suggestions pass validation, the request fails
+
+### No Phase Restriction
+
+AI generation is allowed at any workshop phase — facilitators can regenerate or refine criteria at any time.
+
 ## Migration Considerations
 
 ### Existing Data
@@ -287,16 +354,48 @@ Rubrics created before the delimiter change use `\n\n` as separator:
 
 ## Success Criteria
 
+### Parsing & Serialization
+
 - [ ] Questions with multi-line descriptions parse correctly
 - [ ] Delimiter never appears in user input (by design)
 - [ ] Frontend and backend use same delimiter constant
+- [ ] Per-question judge_type parsed from `[JUDGE_TYPE:xxx]` format
+- [ ] Parsed questions have stable UUIDs within session
+- [ ] Empty/whitespace-only parts filtered out
+
+### Scale Rendering
+
 - [ ] Likert scale shows 1-5 rating options
 - [ ] Binary scale shows Pass/Fail buttons (not star ratings)
 - [ ] Binary feedback logged as 0/1 to MLflow (not 3)
-- [ ] Per-question judge_type parsed from `[JUDGE_TYPE:xxx]` format
 - [ ] Mixed rubrics support different scales per question
-- [ ] Parsed questions have stable UUIDs within session
-- [ ] Empty/whitespace-only parts filtered out
+
+### CRUD Lifecycle
+
+- [ ] Facilitator can create a rubric question with title and description
+- [ ] Facilitator can edit an existing rubric question
+- [ ] Facilitator can delete a rubric question
+- [ ] Only one rubric exists per workshop (upsert semantics)
+- [ ] Rubric persists and is retrievable via GET after creation
+
+### Phase & Workflow Integration
+
+- [ ] Rubric required before advancing to annotation phase
+- [ ] No phase restriction on rubric CRUD
+- [ ] Question IDs re-indexed sequentially after deletion
+- [ ] Annotation data preserved when rubric questions are deleted
+
+### MLflow Integration
+
+- [ ] Judge name auto-derived from first rubric question title
+- [ ] MLflow re-sync triggered on rubric create/update (best-effort)
+
+### AI-Powered Generation
+
+- [ ] AI suggestions generated from discovery findings and participant notes
+- [ ] Suggestions validated: title >= 3 chars, description >= 10 chars
+- [ ] Invalid judge type in suggestions defaults to likert
+- [ ] Facilitator can accept, reject, or edit suggestions before adding to rubric
 
 ## Testing Scenarios
 

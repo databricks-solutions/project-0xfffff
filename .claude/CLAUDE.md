@@ -55,9 +55,19 @@ just e2e mode (headless|headed) extra-args      # End-to-end tests
 
 if you want to do something not covered here consult @justfile
 
+## Improving Spec Coverage
+
+When asked to improve coverage for a spec, use the `/spec-audit` skill. Key points:
+
+1. **Start with `just spec-coverage --json`** — don't over-research before knowing the current state
+2. **Tag existing tests first** — unlinked tests are free coverage, just add `@req` markers
+3. **Only read implementation code if looking for spec drift** — not needed for tagging
+4. **Vitest limitation**: only one `// @req` per file is detected; use pytest for per-test `@req`
+
 ## References
 
 - **Workflow details**: See `CONTRIBUTING.md`
 - **Test patterns**: `.claude/skills/verification-testing/SKILL.md`
 - **MLflow patterns**: `.claude/skills/mlflow-evaluation/SKILL.md`
+- **Spec audit**: `.claude/skills/spec-audit/SKILL.md`
 - **Spec index**: `/specs/README.md`
