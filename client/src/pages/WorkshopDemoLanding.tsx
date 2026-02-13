@@ -41,6 +41,7 @@ import { AnnotationPendingPage } from '@/components/AnnotationPendingPage';
 import { FacilitatorScreenShare } from '@/components/FacilitatorScreenShare';
 import { PhasePausedView } from '@/components/PhasePausedView';
 import { GeneralDashboard } from '@/components/GeneralDashboard';
+import { ErrorBoundary, PageErrorFallback } from '@/components/ErrorBoundary';
 
 
 
@@ -639,9 +640,17 @@ export function WorkshopDemoLanding() {
                 </div>
               );
             }
-            
-            // Render the appropriate component
-            return renderCurrentView();
+
+            // Render the appropriate component inside a page-level error boundary
+            // so a crash in any page keeps the sidebar/header functional
+            return (
+              <ErrorBoundary
+                key={currentView}
+                fallback={(props) => <PageErrorFallback {...props} />}
+              >
+                {renderCurrentView()}
+              </ErrorBoundary>
+            );
           })()}
         </div>
       </div>
