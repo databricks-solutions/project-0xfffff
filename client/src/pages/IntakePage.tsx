@@ -123,7 +123,7 @@ export function IntakePage() {
         }
       }
     } catch (err) {
-
+      // Status load failed — non-critical, UI shows stale data
     }
   };
 

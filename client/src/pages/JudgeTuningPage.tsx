@@ -2209,7 +2209,7 @@ Think step by step about how well the output addresses the criteria, then provid
                           };
                           // If evaluations have judge labels, filter by the selected question
                           // Otherwise fall back to first match (legacy data without labels)
-                          let evaluation = hasJudgeLabels && expectedJudgeName
+                          const evaluation = hasJudgeLabels && expectedJudgeName
                             ? evaluations.find((e: any) => matchesTrace(e) && e.predicted_feedback === expectedJudgeName)
                             : evaluations.find((e: any) => matchesTrace(e));
                           // REMOVED fallback: Don't show other judges' scores when filtering by judge name
