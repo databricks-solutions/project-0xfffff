@@ -63,7 +63,7 @@ export function PromptOptimizationPage() {
   const [ucSchema, setUcSchema] = useState('');
   const [optimizerModel, setOptimizerModel] = useState('Claude Opus 4.5');
   const [numIterations, setNumIterations] = useState(3);
-  const [numCandidates, setNumCandidates] = useState(5);
+  const [numCandidates, setNumCandidates] = useState(3);
   const [targetEndpoint, setTargetEndpoint] = useState('');
 
   // Job state
@@ -80,6 +80,11 @@ export function PromptOptimizationPage() {
   const [history, setHistory] = useState<OptimizationRun[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [selectedRun, setSelectedRun] = useState<OptimizationRun | null>(null);
+
+  // Scorer/judge state
+  const [scorers, setScorers] = useState<{ name: string; model: string | null }[]>([]);
+  const [selectedScorer, setSelectedScorer] = useState('');
+  const [isLoadingScorers, setIsLoadingScorers] = useState(false);
 
   // MLflow config check
   const [hasMlflowConfig, setHasMlflowConfig] = useState(false);
@@ -139,6 +144,24 @@ export function PromptOptimizationPage() {
       .then(config => setHasMlflowConfig(!!config))
       .catch(() => setHasMlflowConfig(false));
   }, [workshopId]);
+
+  // Fetch available scorers/judges from MLflow
+  useEffect(() => {
+    if (!workshopId) return;
+    setIsLoadingScorers(true);
+    fetch(`/workshops/${workshopId}/list-scorers`)
+      .then(r => r.ok ? r.json() : [])
+      .then(data => {
+        setScorers(data);
+        // Auto-select workshop judge if available and nothing selected yet
+        if (data.length > 0 && !selectedScorer) {
+          const workshopJudge = data.find((s: any) => s.name === (workshop?.judge_name || 'workshop_judge'));
+          setSelectedScorer(workshopJudge ? workshopJudge.name : data[0].name);
+        }
+      })
+      .catch(() => setScorers([]))
+      .finally(() => setIsLoadingScorers(false));
+  }, [workshopId, workshop?.judge_name]);
 
   // Load history
   const loadHistory = useCallback(async () => {
@@ -293,7 +316,7 @@ export function PromptOptimizationPage() {
         optimizer_model_name: getBackendModelName(optimizerModel),
         num_iterations: numIterations,
         num_candidates: numCandidates,
-        judge_name: workshop?.judge_name || 'workshop_judge',
+        judge_name: selectedScorer || workshop?.judge_name || 'workshop_judge',
       };
 
       if (targetEndpoint.trim()) {
@@ -515,6 +538,55 @@ export function PromptOptimizationPage() {
             <p className="text-xs text-gray-400 mt-1">
               Serving endpoint name or full invocation URL. Leave blank to use the optimizer model.
             </p>
+          </div>
+
+          {/* Scorer / Judge Selection */}
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-1">
+              Scorer / Judge
+            </label>
+            {isLoadingScorers ? (
+              <div className="flex items-center gap-2 h-10 px-3 border rounded-md bg-gray-50 text-sm text-gray-500">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Loading scorers...
+              </div>
+            ) : scorers.length === 0 ? (
+              <div>
+                <Input
+                  value={selectedScorer || workshop?.judge_name || 'workshop_judge'}
+                  onChange={(e) => setSelectedScorer(e.target.value)}
+                  disabled={isRunning}
+                  placeholder="workshop_judge"
+                  className="text-sm"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  No registered scorers found. Enter a judge name manually.
+                </p>
+              </div>
+            ) : (
+              <div>
+                <Select
+                  value={selectedScorer}
+                  onValueChange={setSelectedScorer}
+                  disabled={isRunning}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a scorer/judge" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {scorers.map(scorer => (
+                      <SelectItem key={scorer.name} value={scorer.name}>
+                        {scorer.name}
+                        {scorer.model && <span className="text-gray-400 ml-1">({scorer.model})</span>}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-400 mt-1">
+                  {scorers.length} scorer{scorers.length !== 1 ? 's' : ''} registered in MLflow experiment
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

@@ -54,9 +54,20 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
   const [phaseError, setPhaseError] = React.useState<string | null>(null);
 
   // Track which post-annotation phase the user is currently viewing (shows as blue)
-  // Phases before it in the click order show as green (completed)
-  // This is in-memory only — resets on page refresh or when annotation restarts
+  // and the highest phase they've visited (everything up to it stays green).
+  // This is in-memory only — resets on page refresh or when annotation resumes.
   const [activeViewedPhase, setActiveViewedPhase] = React.useState<string | null>(null);
+  const [highestVisitedPhaseIdx, setHighestVisitedPhaseIdx] = React.useState<number>(-1);
+
+  // Wrap setActiveViewedPhase to also update the high-water mark
+  const CLICK_PHASE_ORDER_REF = React.useRef(['results', 'judge_tuning', 'prompt_optimization', 'unity_volume']);
+  const handleSetActiveViewedPhase = React.useCallback((phaseId: string) => {
+    setActiveViewedPhase(phaseId);
+    const idx = CLICK_PHASE_ORDER_REF.current.indexOf(phaseId);
+    if (idx >= 0) {
+      setHighestVisitedPhaseIdx(prev => Math.max(prev, idx));
+    }
+  }, []);
 
   // Clear post-annotation progress when workshop phase moves back to annotation or earlier
   const prevCurrentPhaseRef = React.useRef(currentPhase);
@@ -74,6 +85,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
 
       if (newIdx >= 0 && newIdx <= annotationIdx) {
         setActiveViewedPhase(null);
+        setHighestVisitedPhaseIdx(-1);
       }
     }
   }, [currentPhase]);
@@ -465,7 +477,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
     } else {
       steps.push({
         title: 'Manage Data',
-        description: 'Available after optimization',
+        description: 'Available after judge tuning',
         status: 'upcoming',
         action: () => onNavigate('unity_volume'),
         accessible: true
@@ -606,14 +618,16 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
       <div className="space-y-2">
         {getWorkshopSteps().map((step, index) => {
           // Derive post-annotation phase visual state from activeViewedPhase position
+          // Only apply click-to-complete visuals when annotation phase is actually complete
           const CLICK_PHASE_ORDER = ['results', 'judge_tuning', 'prompt_optimization', 'unity_volume'];
           const stepPhaseId = CLICK_TO_COMPLETE_PHASES[step.title.toLowerCase()];
           const stepIdx = stepPhaseId ? CLICK_PHASE_ORDER.indexOf(stepPhaseId) : -1;
           const activeIdx = activeViewedPhase ? CLICK_PHASE_ORDER.indexOf(activeViewedPhase) : -1;
 
           // Active = currently viewing (blue), before active = already visited (green)
-          const isActivelyViewed = stepIdx >= 0 && stepIdx === activeIdx;
-          const isBeforeActive = stepIdx >= 0 && activeIdx >= 0 && stepIdx < activeIdx;
+          // But only when annotation is complete — otherwise these phases stay grey
+          const isActivelyViewed = isAnnotationComplete && stepIdx >= 0 && stepIdx === activeIdx;
+          const isBeforeActive = isAnnotationComplete && stepIdx >= 0 && stepIdx <= highestVisitedPhaseIdx && stepIdx !== activeIdx;
 
           // Override status based on click-through position
           let effectiveStatus = step.status;
@@ -649,7 +663,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
                 if (!isStartingPhase && step.accessible) {
                   const phaseId = CLICK_TO_COMPLETE_PHASES[step.title.toLowerCase()];
                   if (phaseId) {
-                    setActiveViewedPhase(phaseId);
+                    handleSetActiveViewedPhase(phaseId);
                   }
                   step.action();
                 }

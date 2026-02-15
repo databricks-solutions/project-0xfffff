@@ -5670,6 +5670,60 @@ async def get_prompt_optimization_job_status(
     return response
 
 
+@router.get("/{workshop_id}/list-scorers")
+async def list_scorers(workshop_id: str, db: Session = Depends(get_db)) -> List[Dict[str, Any]]:
+    """List all MLflow scorers/judges registered in the workshop's experiment."""
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    mlflow_config = db_service.get_mlflow_config(workshop_id)
+    if not mlflow_config or not mlflow_config.experiment_id:
+        return []
+
+    try:
+        import os
+
+        import mlflow as _mlflow
+
+        from server.services.token_storage_service import token_storage
+
+        # Set up MLflow environment (same pattern as alignment/optimization services)
+        if mlflow_config.databricks_host:
+            os.environ["DATABRICKS_HOST"] = mlflow_config.databricks_host.rstrip("/")
+
+        databricks_token = token_storage.get_token(workshop_id)
+        if not databricks_token:
+            databricks_token = db_service.get_databricks_token(workshop_id)
+
+        has_oauth = bool(
+            os.environ.get("DATABRICKS_CLIENT_ID")
+            and os.environ.get("DATABRICKS_CLIENT_SECRET")
+        )
+        if has_oauth:
+            os.environ.pop("DATABRICKS_TOKEN", None)
+        elif databricks_token:
+            os.environ["DATABRICKS_TOKEN"] = databricks_token
+            os.environ.pop("DATABRICKS_CLIENT_ID", None)
+            os.environ.pop("DATABRICKS_CLIENT_SECRET", None)
+
+        _mlflow.set_tracking_uri("databricks")
+        _mlflow.set_experiment(experiment_id=mlflow_config.experiment_id)
+
+        scorers = _mlflow.genai.list_scorers(experiment_id=mlflow_config.experiment_id)
+        return [
+            {
+                "name": s.name,
+                "model": getattr(s, "model", None),
+            }
+            for s in scorers
+        ]
+    except Exception as e:
+        logger.warning("Failed to list scorers for workshop %s: %s", workshop_id, e)
+        return []
+
+
 @router.get("/{workshop_id}/prompt-optimization-history")
 async def get_prompt_optimization_history(
     workshop_id: str,
