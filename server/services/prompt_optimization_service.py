@@ -111,6 +111,7 @@ class PromptOptimizationService:
         uc_schema: Optional[str] = None,
         judge_names: Optional[List[str]] = None,
         target_endpoint: Optional[str] = None,
+        max_traces: int = 20,
     ) -> Generator[Any, None, None]:
         """Run GEPA prompt optimization.
 
@@ -250,7 +251,7 @@ class PromptOptimizationService:
             # Build training data from human-annotated traces
             yield "Building training dataset from annotated traces..."
             try:
-                train_data = self._build_train_data(workshop_id, mlflow_config)
+                train_data = self._build_train_data(workshop_id, mlflow_config, max_traces=max_traces)
             except Exception as e:
                 yield f"ERROR: Failed to build training data: {e}"
                 yield {"error": f"Failed to build training data: {e}", "success": False,
@@ -930,7 +931,7 @@ class PromptOptimizationService:
             yield error_result
 
     def _build_train_data(
-        self, workshop_id: str, mlflow_config: Any
+        self, workshop_id: str, mlflow_config: Any, max_traces: int = 20
     ) -> List[Dict[str, Any]]:
         """Build training dataset from human-annotated traces.
 
@@ -940,21 +941,22 @@ class PromptOptimizationService:
         import mlflow
 
         # Get traces tagged for alignment (these have human annotations)
-        filter_string = f"tags.annotation_status = 'align' AND tags.workshop_id = '{workshop_id}'"
+        # filter_string = f"tags.annotation_status = 'align' AND tags.workshop_id = '{workshop_id}'"
         traces = mlflow.search_traces(
             experiment_ids=[mlflow_config.experiment_id],
-            filter_string=filter_string,
+            # filter_string=filter_string,
+            max_results=max_traces,
             return_type="list",
         )
 
-        if not traces:
-            # Fall back to eval-tagged traces
-            filter_string = f"tags.label = 'eval' AND tags.workshop_id = '{workshop_id}'"
-            traces = mlflow.search_traces(
-                experiment_ids=[mlflow_config.experiment_id],
-                filter_string=filter_string,
-                return_type="list",
-            )
+        # if not traces:
+        #     # Fall back to eval-tagged traces
+        #     filter_string = f"tags.label = 'eval' AND tags.workshop_id = '{workshop_id}'"
+        #     traces = mlflow.search_traces(
+        #         experiment_ids=[mlflow_config.experiment_id],
+        #         filter_string=filter_string,
+        #         return_type="list",
+        #     )
 
         # Also get annotations for ground truth
         annotations = self.db_service.get_annotations(workshop_id)

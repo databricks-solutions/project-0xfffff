@@ -656,7 +656,9 @@ class PromptOptimizationRequest(BaseModel):
   num_iterations: int = Field(default=3, ge=1, le=10, description='Number of GEPA optimization iterations')
   num_candidates: int = Field(default=5, ge=2, le=20, description='Number of candidate prompts per iteration')
   judge_name: Optional[str] = Field(default=None, description='Aligned judge name to use as scorer (defaults to workshop judge)')
-  target_endpoint: Optional[str] = Field(default=None, description='Target serving endpoint name or URL for predict_fn (uses optimizer model if not set)')
+  judge_names: Optional[List[str]] = Field(default=None, description='List of judge names to use as scorers (overrides judge_name and rubric-derived names)')
+  target_endpoint: str = Field(description='Target serving endpoint name or URL for predict_fn')
+  max_traces: int = Field(default=20, ge=1, le=100, description='Maximum number of traces to use for training data')
 
 
 class PromptOptimizationResult(BaseModel):
