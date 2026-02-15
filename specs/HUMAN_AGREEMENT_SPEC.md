@@ -10,9 +10,8 @@ This specification defines the GDPVal Human Inter-Rater Agreement system for the
 |--------|-----------------|-----------------|
 | **GDPVal A^HH** (this spec) | Human vs Human agreement | IRR Results page |
 | Pairwise Agreement % | Human vs Human agreement (percentage) | IRR Results page |
-| Cohen's Kappa | Judge vs Human agreement | Judge Tuning page |
 
-GDPVal A^HH and Pairwise Agreement % both measure inter-rater reliability between human annotators, but use different formulas. Cohen's Kappa is a separate metric used on the Judge Tuning page.
+GDPVal A^HH and Pairwise Agreement % both measure inter-rater reliability between human annotators, but use different formulas. 
 
 ## Position in Workshop Pipeline
 
