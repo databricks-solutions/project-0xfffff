@@ -643,7 +643,7 @@ export function PromptOptimizationPage() {
               <input
                 type="range"
                 min={2}
-                max={20}
+                max={10}
                 value={numCandidates}
                 onChange={(e) => setNumCandidates(Number(e.target.value))}
                 disabled={isRunning}
@@ -651,7 +651,7 @@ export function PromptOptimizationPage() {
               />
               <div className="flex justify-between text-xs text-gray-400">
                 <span>2</span>
-                <span>20</span>
+                <span>10</span>
               </div>
             </div>
           </div>
