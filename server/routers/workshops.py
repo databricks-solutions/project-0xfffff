@@ -5509,14 +5509,21 @@ async def start_prompt_optimization_job(
     job.set_status("running")
     job.add_log("Prompt optimization job started")
 
-    # Determine judge name(s) — load all aligned judges from rubric questions
+    # Determine judge name(s):
+    # 1. If request.judge_names is provided (from UI multi-select), use those directly
+    # 2. Otherwise, derive from rubric questions
+    # 3. Fall back to single judge_name
     judge_name = request.judge_name or workshop.judge_name or "workshop_judge"
-    rubric_questions = db_service.get_rubric_questions_for_evaluation(workshop_id)
-    judge_names = [q['judge_name'] for q in rubric_questions] if rubric_questions else []
-    if judge_names:
-        logger.info("Found %d rubric judges for optimization: %s", len(judge_names), judge_names)
+    if request.judge_names:
+        judge_names = request.judge_names
+        logger.info("Using %d user-selected judges for optimization: %s", len(judge_names), judge_names)
     else:
-        logger.info("No rubric judges found, falling back to single judge: %s", judge_name)
+        rubric_questions = db_service.get_rubric_questions_for_evaluation(workshop_id)
+        judge_names = [q['judge_name'] for q in rubric_questions] if rubric_questions else []
+        if judge_names:
+            logger.info("Found %d rubric judges for optimization: %s", len(judge_names), judge_names)
+        else:
+            logger.info("No rubric judges found, falling back to single judge: %s", judge_name)
 
     # Create DB record for the optimization run
     from server.database import PromptOptimizationRunDB, SessionLocal as _SessionLocal
@@ -5570,6 +5577,7 @@ async def start_prompt_optimization_job(
                     uc_schema=request.uc_schema,
                     judge_names=judge_names,
                     target_endpoint=request.target_endpoint,
+                    max_traces=request.max_traces,
                 ):
                     if isinstance(message, dict):
                         result = message
@@ -5681,6 +5689,19 @@ async def get_prompt_optimization_job_status(
     if job.workshop_id != workshop_id:
         raise HTTPException(status_code=403, detail="Job does not belong to this workshop")
 
+    # Detect stale "running" job — background thread likely died (e.g. server restart).
+    # If neither the log file nor metadata file has been modified in 2 minutes,
+    # the optimization thread is dead; mark the job as failed so the UI stops polling.
+    if job.status == "running":
+        last_modified = max(
+            os.path.getmtime(job._log_path) if os.path.exists(job._log_path) else 0,
+            os.path.getmtime(job._meta_path) if os.path.exists(job._meta_path) else 0,
+        )
+        if time.time() - last_modified > 120:
+            job.add_log("Optimization interrupted — the server may have restarted.")
+            job.error = "Optimization interrupted — the server may have restarted."
+            job.set_status("failed")
+
     new_logs = job.logs[since_log_index:] if since_log_index > 0 else job.logs
 
     response = {
@@ -5697,6 +5718,28 @@ async def get_prompt_optimization_job_status(
         response["error"] = job.error
 
     return response
+
+
+@router.post("/{workshop_id}/cancel-prompt-optimization/{job_id}")
+async def cancel_prompt_optimization(
+    workshop_id: str,
+    job_id: str,
+) -> Dict[str, Any]:
+    """Cancel a running prompt optimization job."""
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Optimization job not found")
+
+    if job.workshop_id != workshop_id:
+        raise HTTPException(status_code=403, detail="Job does not belong to this workshop")
+
+    if job.status != "running":
+        return {"status": job.status, "message": "Job is not running"}
+
+    job.add_log("Optimization cancelled by user.")
+    job.error = "Cancelled by user"
+    job.set_status("failed")
+    return {"status": "failed", "message": "Job cancelled"}
 
 
 @router.get("/{workshop_id}/list-scorers")

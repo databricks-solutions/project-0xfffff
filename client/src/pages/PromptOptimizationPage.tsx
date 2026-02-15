@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -11,7 +11,6 @@ import {
   Play,
   AlertCircle,
   CheckCircle,
-  Clock,
   Loader2,
   History,
   ArrowRight,
@@ -23,9 +22,13 @@ import {
   Zap,
   Download,
   TrendingUp,
+  Square,
+  SlidersHorizontal,
+  Target,
+  Database,
 } from 'lucide-react';
 import { useWorkshopContext } from '@/context/WorkshopContext';
-import { useUser, useRoleCheck } from '@/context/UserContext';
+import { useRoleCheck } from '@/context/UserContext';
 import { useWorkshop } from '@/hooks/useWorkshopApi';
 import { getModelOptions, getBackendModelName, getFrontendModelName } from '@/utils/modelMapping';
 import { toast } from 'sonner';
@@ -50,7 +53,6 @@ interface OptimizationRun {
 
 export function PromptOptimizationPage() {
   const { workshopId } = useWorkshopContext();
-  const { user } = useUser();
   const { isFacilitator } = useRoleCheck();
   const { data: workshop } = useWorkshop(workshopId!);
 
@@ -64,6 +66,7 @@ export function PromptOptimizationPage() {
   const [optimizerModel, setOptimizerModel] = useState('Claude Opus 4.5');
   const [numIterations, setNumIterations] = useState(3);
   const [numCandidates, setNumCandidates] = useState(3);
+  const [maxTraces, setMaxTraces] = useState(20);
   const [targetEndpoint, setTargetEndpoint] = useState('');
 
   // Job state
@@ -83,11 +86,8 @@ export function PromptOptimizationPage() {
 
   // Scorer/judge state
   const [scorers, setScorers] = useState<{ name: string; model: string | null }[]>([]);
-  const [selectedScorer, setSelectedScorer] = useState('');
+  const [selectedScorers, setSelectedScorers] = useState<string[]>([]);
   const [isLoadingScorers, setIsLoadingScorers] = useState(false);
-
-  // MLflow config check
-  const [hasMlflowConfig, setHasMlflowConfig] = useState(false);
 
   // Auto-scroll logs to bottom when new logs arrive
   useEffect(() => {
@@ -118,6 +118,7 @@ export function PromptOptimizationPage() {
         else setOptimizerModel('Claude Opus 4.5');
         if (config.numIterations) setNumIterations(config.numIterations);
         if (config.numCandidates) setNumCandidates(config.numCandidates);
+        if (config.maxTraces) setMaxTraces(config.maxTraces);
         if (config.targetEndpoint) setTargetEndpoint(config.targetEndpoint);
       }
     } catch (_) { /* localStorage unavailable */ }
@@ -130,20 +131,11 @@ export function PromptOptimizationPage() {
       localStorage.setItem(configStorageKey, JSON.stringify({
         promptText, promptUri, promptInputMode, promptName,
         ucCatalog, ucSchema, optimizerModel, numIterations,
-        numCandidates, targetEndpoint,
+        numCandidates, maxTraces, targetEndpoint,
       }));
     } catch (_) { /* localStorage unavailable */ }
   }, [workshopId, promptText, promptUri, promptInputMode, promptName,
-      ucCatalog, ucSchema, optimizerModel, numIterations, numCandidates, targetEndpoint]);
-
-  // Check MLflow config
-  useEffect(() => {
-    if (!workshopId) return;
-    fetch(`/workshops/${workshopId}/mlflow-config`)
-      .then(r => r.ok ? r.json() : null)
-      .then(config => setHasMlflowConfig(!!config))
-      .catch(() => setHasMlflowConfig(false));
-  }, [workshopId]);
+      ucCatalog, ucSchema, optimizerModel, numIterations, numCandidates, maxTraces, targetEndpoint]);
 
   // Fetch available scorers/judges from MLflow
   useEffect(() => {
@@ -153,10 +145,9 @@ export function PromptOptimizationPage() {
       .then(r => r.ok ? r.json() : [])
       .then(data => {
         setScorers(data);
-        // Auto-select workshop judge if available and nothing selected yet
-        if (data.length > 0 && !selectedScorer) {
-          const workshopJudge = data.find((s: any) => s.name === (workshop?.judge_name || 'workshop_judge'));
-          setSelectedScorer(workshopJudge ? workshopJudge.name : data[0].name);
+        // Auto-select all scorers when loaded
+        if (data.length > 0 && selectedScorers.length === 0) {
+          setSelectedScorers(data.map((s: any) => s.name));
         }
       })
       .catch(() => setScorers([]))
@@ -236,43 +227,43 @@ export function PromptOptimizationPage() {
       setJobError(targetEntry.error);
     }
 
-    // Fetch all existing logs from the job store (since_log_index=0)
-    if (workshopId) {
-      fetch(`/workshops/${workshopId}/prompt-optimization-job/${targetEntry.job_id}?since_log_index=0`)
-        .then(r => r.ok ? r.json() : null)
-        .then(data => {
-          if (!data) return;
-          if (data.logs && data.logs.length > 0) {
-            setJobLogs(data.logs);
-            logIndexRef.current = data.log_count;
-          }
-          // Update status from job store (may be more current than DB)
-          setJobStatus(data.status);
-          if (data.result) setJobResult(data.result);
-          if (data.error) setJobError(data.error);
-          if (data.status === 'completed' || data.status === 'failed') {
-            loadHistory();
-          }
-        })
-        .catch(() => {});
-    }
+    // Logs will be fetched by the poll effect (fires immediately on jobId change).
+    // No separate fetch here to avoid duplicate logs.
   }, [history, jobId, workshopId, loadHistory]);
 
-  // Poll job status
+  // Poll job status — fires immediately on first run, then every 2s
   useEffect(() => {
     if (!jobId || !workshopId || jobStatus === 'completed' || jobStatus === 'failed') return;
 
-    const interval = setInterval(async () => {
+    let consecutiveErrors = 0;
+    let cancelled = false;
+
+    const poll = async () => {
+      if (cancelled) return;
       try {
         const response = await fetch(
           `/workshops/${workshopId}/prompt-optimization-job/${jobId}?since_log_index=${logIndexRef.current}`
         );
-        if (!response.ok) return;
+        if (!response.ok) {
+          consecutiveErrors++;
+          if (consecutiveErrors >= 3) {
+            setJobStatus('failed');
+            setJobError('Job lost — server may have restarted. Please try again.');
+            loadHistory();
+          }
+          return;
+        }
+        consecutiveErrors = 0;
 
         const data = await response.json();
 
         if (data.logs && data.logs.length > 0) {
-          setJobLogs(prev => [...prev, ...data.logs]);
+          // On first fetch (from index 0), replace logs to avoid duplicates
+          if (logIndexRef.current === 0) {
+            setJobLogs(data.logs);
+          } else {
+            setJobLogs(prev => [...prev, ...data.logs]);
+          }
           logIndexRef.current = data.log_count;
         }
 
@@ -290,10 +281,23 @@ export function PromptOptimizationPage() {
         }
       } catch (e) {
         console.error('Poll error:', e);
+        consecutiveErrors++;
+        if (consecutiveErrors >= 3) {
+          setJobStatus('failed');
+          setJobError('Connection lost — server may be down. Please try again.');
+          loadHistory();
+        }
       }
-    }, 2000);
+    };
 
-    return () => clearInterval(interval);
+    // Fire immediately, then poll every 2s
+    poll();
+    const interval = setInterval(poll, 2000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [jobId, workshopId, jobStatus, loadHistory]);
 
   const handleStartOptimization = async () => {
@@ -302,6 +306,10 @@ export function PromptOptimizationPage() {
     const hasPrompt = promptInputMode === 'text' ? promptText.trim() : promptUri.trim();
     if (!hasPrompt) {
       toast.error(promptInputMode === 'text' ? 'Please enter your agent prompt' : 'Please enter a prompt URI');
+      return;
+    }
+    if (!targetEndpoint.trim()) {
+      toast.error('Please enter a target endpoint');
       return;
     }
 
@@ -316,11 +324,15 @@ export function PromptOptimizationPage() {
         optimizer_model_name: getBackendModelName(optimizerModel),
         num_iterations: numIterations,
         num_candidates: numCandidates,
-        judge_name: selectedScorer || workshop?.judge_name || 'workshop_judge',
+        max_traces: maxTraces,
+        target_endpoint: targetEndpoint.trim(),
       };
 
-      if (targetEndpoint.trim()) {
-        body.target_endpoint = targetEndpoint.trim();
+      // Pass selected judges — if user selected specific scorers, send as judge_names
+      if (selectedScorers.length > 0) {
+        body.judge_names = selectedScorers;
+      } else {
+        body.judge_name = workshop?.judge_name || 'workshop_judge';
       }
 
       if (promptInputMode === 'text') {
@@ -366,6 +378,27 @@ export function PromptOptimizationPage() {
     }
   };
 
+  const handleCancelOptimization = async () => {
+    if (!workshopId || !jobId) return;
+    try {
+      const response = await fetch(`/workshops/${workshopId}/cancel-prompt-optimization/${jobId}`, {
+        method: 'POST',
+      });
+      if (response.ok) {
+        setJobStatus('failed');
+        setJobError('Cancelled by user');
+        setJobLogs(prev => [...prev, 'Optimization cancelled by user.']);
+        loadHistory();
+        toast.success('Optimization cancelled');
+      }
+    } catch (e) {
+      // If server is down, just reset local state
+      setJobStatus('failed');
+      setJobError('Cancelled — server may be unreachable.');
+      toast.error('Could not reach server, but UI has been reset.');
+    }
+  };
+
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     toast.success('Copied to clipboard');
@@ -390,7 +423,7 @@ export function PromptOptimizationPage() {
       <div className="flex items-center justify-center min-h-[400px]">
         <Card className="max-w-md">
           <CardContent className="pt-6 text-center">
-            <Sparkles className="h-12 w-12 mx-auto mb-4 text-violet-400" />
+            <Sparkles className="h-12 w-12 mx-auto mb-4 text-gray-300" />
             <h3 className="text-lg font-semibold mb-2">Prompt Optimization</h3>
             <p className="text-sm text-gray-500">
               The facilitator is optimizing the agent's system prompt using GEPA.
@@ -403,332 +436,356 @@ export function PromptOptimizationPage() {
   }
 
   return (
-    <div className="space-y-6 p-6 max-w-5xl mx-auto">
+    <div className="space-y-4 p-6 max-w-6xl mx-auto">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Sparkles className="h-6 w-6 text-violet-600" />
-          Prompt Optimization (GEPA)
-        </h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Use MLflow's GEPA optimizer to improve the agent's system prompt based on human evaluation feedback.
-        </p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-teal-600 to-teal-700 flex items-center justify-center shadow-sm">
+            <Sparkles className="h-4.5 w-4.5 text-teal-100" />
+          </div>
+          <div>
+            <h1 className="text-base font-semibold text-gray-900">Prompt Optimization</h1>
+            <p className="text-xs text-gray-400 mt-0.5">GEPA &mdash; improve prompts using human evaluation feedback</p>
+          </div>
+        </div>
+        {jobStatus && (
+          <Badge
+            variant="outline"
+            className={`text-[11px] font-medium px-2 py-0.5 ${
+              jobStatus === 'completed' ? 'text-green-600 border-green-200 bg-green-50' :
+              jobStatus === 'failed' ? 'text-red-500 border-red-200 bg-red-50' :
+              jobStatus === 'running' ? 'text-teal-600 border-teal-300 bg-teal-50' :
+              'text-gray-500 border-gray-200'
+            }`}
+          >
+            {jobStatus === 'completed' && <CheckCircle className="h-3 w-3 mr-1" />}
+            {jobStatus === 'failed' && <AlertCircle className="h-3 w-3 mr-1" />}
+            {jobStatus === 'running' && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+            {jobStatus}
+          </Badge>
+        )}
       </div>
 
-      {/* Configuration Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Configuration</CardTitle>
-          <CardDescription>
-            Configure the GEPA optimization parameters. The aligned judge from the previous phase will be used as the scorer.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Prompt Input Mode Toggle */}
-          <div>
-            <label className="text-sm font-medium text-gray-700 block mb-2">
-              Agent System Prompt
-            </label>
-            <div className="flex gap-1 mb-3 bg-gray-100 rounded-lg p-1 w-fit">
-              <button
-                onClick={() => setPromptInputMode('text')}
-                disabled={isRunning}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                  promptInputMode === 'text'
-                    ? 'bg-white text-violet-700 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                <FileText className="h-3.5 w-3.5" />
-                Enter Prompt
-              </button>
-              <button
-                onClick={() => setPromptInputMode('uri')}
-                disabled={isRunning}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                  promptInputMode === 'uri'
-                    ? 'bg-white text-violet-700 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                <Link className="h-3.5 w-3.5" />
-                Load from MLflow
-              </button>
-            </div>
-
-            {promptInputMode === 'text' ? (
-              <div className="space-y-3">
-                <Textarea
-                  placeholder="Paste your agent's system prompt here...&#10;&#10;Example:&#10;You are a helpful customer support agent. Your job is to..."
-                  value={promptText}
-                  onChange={(e) => setPromptText(e.target.value)}
-                  disabled={isRunning}
-                  className="font-mono text-sm min-h-[200px] resize-y"
-                />
-                {/* UC Catalog, Schema, and Prompt Name */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div>
-                    <label className="text-xs font-medium text-gray-500 block mb-1">UC Catalog</label>
-                    <Input
-                      placeholder="e.g. main"
-                      value={ucCatalog}
-                      onChange={(e) => setUcCatalog(e.target.value)}
-                      disabled={isRunning}
-                      className="text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-gray-500 block mb-1">UC Schema</label>
-                    <Input
-                      placeholder="e.g. my_schema"
-                      value={ucSchema}
-                      onChange={(e) => setUcSchema(e.target.value)}
-                      disabled={isRunning}
-                      className="text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-gray-500 block mb-1">Prompt Name</label>
-                    <Input
-                      placeholder="e.g. my_agent_prompt"
-                      value={promptName}
-                      onChange={(e) => setPromptName(e.target.value)}
-                      disabled={isRunning}
-                      className="text-sm"
-                    />
-                  </div>
+      {/* Two-column config layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+        {/* Left column — Prompt & Endpoint (3/5) */}
+        <div className="lg:col-span-3 space-y-4">
+          {/* Prompt Card */}
+          <div className="rounded-xl border bg-white shadow-sm overflow-hidden flex">
+            <div className="w-1.5 bg-gradient-to-b from-teal-500 to-teal-400 shrink-0" />
+            <div className="flex-1">
+              <div className="flex items-center justify-between px-4 py-2.5 border-b bg-gray-50/60">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-3.5 w-3.5 text-teal-600" />
+                  <span className="text-[13px] font-semibold text-gray-800">Agent System Prompt</span>
                 </div>
-                <p className="text-xs text-gray-400">
-                  {ucCatalog && ucSchema && promptName
-                    ? `Will register as: ${ucCatalog}.${ucSchema}.${promptName}`
-                    : ucCatalog && ucSchema
-                    ? `Will register as: ${ucCatalog}.${ucSchema}.<auto_generated_name>`
-                    : 'Enter UC catalog and schema to register prompts to Unity Catalog (required for Databricks)'}
-                  {promptText ? ` | ${promptText.length} characters` : ''}
-                </p>
+                <div className="flex gap-0.5 bg-white rounded-md p-0.5 border border-gray-200">
+                  <button
+                    onClick={() => setPromptInputMode('text')}
+                    disabled={isRunning}
+                    className={`px-2 py-0.5 rounded text-[11px] font-medium transition-all ${
+                      promptInputMode === 'text'
+                        ? 'bg-teal-50 text-teal-700'
+                        : 'text-gray-400 hover:text-gray-600'
+                    }`}
+                  >
+                    Text
+                  </button>
+                  <button
+                    onClick={() => setPromptInputMode('uri')}
+                    disabled={isRunning}
+                    className={`px-2 py-0.5 rounded text-[11px] font-medium transition-all ${
+                      promptInputMode === 'uri'
+                        ? 'bg-teal-50 text-teal-700'
+                        : 'text-gray-400 hover:text-gray-600'
+                    }`}
+                  >
+                    MLflow URI
+                  </button>
+                </div>
               </div>
-            ) : (
-              <div>
+              <div className="p-4 space-y-3">
+                {promptInputMode === 'text' ? (
+                  <>
+                    <Textarea
+                      placeholder="Paste your agent's system prompt here..."
+                      value={promptText}
+                      onChange={(e) => setPromptText(e.target.value)}
+                      disabled={isRunning}
+                      className="font-mono text-sm min-h-[130px] resize-y border-gray-200 focus:border-teal-400 focus:ring-teal-100"
+                    />
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="text-[11px] font-medium text-gray-500 block mb-1">UC Catalog</label>
+                        <Input placeholder="main" value={ucCatalog} onChange={(e) => setUcCatalog(e.target.value)} disabled={isRunning} className="text-sm h-8" />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-medium text-gray-500 block mb-1">UC Schema</label>
+                        <Input placeholder="my_schema" value={ucSchema} onChange={(e) => setUcSchema(e.target.value)} disabled={isRunning} className="text-sm h-8" />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-medium text-gray-500 block mb-1">Prompt Name</label>
+                        <Input placeholder="my_prompt" value={promptName} onChange={(e) => setPromptName(e.target.value)} disabled={isRunning} className="text-sm h-8" />
+                      </div>
+                    </div>
+                    {(ucCatalog || ucSchema || promptName || promptText) && (
+                      <p className="text-[11px] text-gray-400 font-mono">
+                        {ucCatalog && ucSchema && promptName
+                          ? `${ucCatalog}.${ucSchema}.${promptName}`
+                          : ucCatalog && ucSchema
+                          ? `${ucCatalog}.${ucSchema}.<auto>`
+                          : 'Set UC catalog + schema to register'}
+                        {promptText ? ` \u00b7 ${promptText.length} chars` : ''}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <Input
+                      placeholder="prompts:/catalog.schema.my_agent_prompt/1"
+                      value={promptUri}
+                      onChange={(e) => setPromptUri(e.target.value)}
+                      disabled={isRunning}
+                      className="font-mono text-sm"
+                    />
+                    <p className="text-[11px] text-gray-400">
+                      e.g. prompts:/main.my_schema.agent_prompt/latest
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Target Endpoint Card */}
+          <div className="rounded-xl border bg-white shadow-sm overflow-hidden flex">
+            <div className="w-1.5 bg-gradient-to-b from-sky-400 to-sky-300 shrink-0" />
+            <div className="flex-1">
+              <div className="flex items-center gap-2 px-4 py-2.5 border-b bg-gray-50/60">
+                <Target className="h-3.5 w-3.5 text-sky-600" />
+                <label className="text-[13px] font-semibold text-gray-800">Target Endpoint</label>
+              </div>
+              <div className="p-4">
                 <Input
-                  placeholder="prompts:/catalog.schema.my_agent_prompt/1"
-                  value={promptUri}
-                  onChange={(e) => setPromptUri(e.target.value)}
+                  placeholder="my-agent-endpoint"
+                  value={targetEndpoint}
+                  onChange={(e) => setTargetEndpoint(e.target.value)}
                   disabled={isRunning}
-                  className="font-mono text-sm"
+                  className="text-sm font-mono"
                 />
-                <p className="text-xs text-gray-400 mt-1">
-                  The registered MLflow prompt to optimize (e.g., prompts:/main.my_schema.agent_prompt/latest)
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* Target Endpoint */}
-          <div>
-            <label className="text-sm font-medium text-gray-700 block mb-1">
-              Target Endpoint <span className="text-xs text-gray-400 font-normal">(optional)</span>
-            </label>
-            <Input
-              placeholder="e.g. my-agent-endpoint or https://host/serving-endpoints/name/invocations"
-              value={targetEndpoint}
-              onChange={(e) => setTargetEndpoint(e.target.value)}
-              disabled={isRunning}
-              className="text-sm font-mono"
-            />
-            <p className="text-xs text-gray-400 mt-1">
-              Serving endpoint name or full invocation URL. Leave blank to use the optimizer model.
-            </p>
-          </div>
-
-          {/* Scorer / Judge Selection */}
-          <div>
-            <label className="text-sm font-medium text-gray-700 block mb-1">
-              Scorer / Judge
-            </label>
-            {isLoadingScorers ? (
-              <div className="flex items-center gap-2 h-10 px-3 border rounded-md bg-gray-50 text-sm text-gray-500">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Loading scorers...
-              </div>
-            ) : scorers.length === 0 ? (
-              <div>
-                <Input
-                  value={selectedScorer || workshop?.judge_name || 'workshop_judge'}
-                  onChange={(e) => setSelectedScorer(e.target.value)}
-                  disabled={isRunning}
-                  placeholder="workshop_judge"
-                  className="text-sm"
-                />
-                <p className="text-xs text-gray-400 mt-1">
-                  No registered scorers found. Enter a judge name manually.
-                </p>
-              </div>
-            ) : (
-              <div>
-                <Select
-                  value={selectedScorer}
-                  onValueChange={setSelectedScorer}
-                  disabled={isRunning}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a scorer/judge" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {scorers.map(scorer => (
-                      <SelectItem key={scorer.name} value={scorer.name}>
-                        {scorer.name}
-                        {scorer.model && <span className="text-gray-400 ml-1">({scorer.model})</span>}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-gray-400 mt-1">
-                  {scorers.length} scorer{scorers.length !== 1 ? 's' : ''} registered in MLflow experiment
-                </p>
-              </div>
-            )}
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Optimizer Model */}
-            <div>
-              <label className="text-sm font-medium text-gray-700 block mb-1">
-                Optimizer Model
-              </label>
-              <Select
-                value={optimizerModel}
-                onValueChange={setOptimizerModel}
-                disabled={isRunning}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select model" />
-                </SelectTrigger>
-                <SelectContent>
-                  {modelOptions
-                    .filter(m => !m.disabled)
-                    .map(option => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Iterations */}
-            <div>
-              <label className="text-sm font-medium text-gray-700 block mb-1">
-                Iterations ({numIterations})
-              </label>
-              <input
-                type="range"
-                min={1}
-                max={10}
-                value={numIterations}
-                onChange={(e) => setNumIterations(Number(e.target.value))}
-                disabled={isRunning}
-                className="w-full"
-              />
-              <div className="flex justify-between text-xs text-gray-400">
-                <span>1</span>
-                <span>10</span>
               </div>
             </div>
+          </div>
+        </div>
 
-            {/* Candidates */}
-            <div>
-              <label className="text-sm font-medium text-gray-700 block mb-1">
-                Candidates per iteration ({numCandidates})
-              </label>
-              <input
-                type="range"
-                min={2}
-                max={10}
-                value={numCandidates}
-                onChange={(e) => setNumCandidates(Number(e.target.value))}
-                disabled={isRunning}
-                className="w-full"
-              />
-              <div className="flex justify-between text-xs text-gray-400">
-                <span>2</span>
-                <span>10</span>
+        {/* Right column — Scorers & Parameters (2/5) */}
+        <div className="lg:col-span-2 space-y-4">
+          {/* Scorers Card */}
+          <div className="rounded-xl border bg-white shadow-sm overflow-hidden flex">
+            <div className="w-1.5 bg-gradient-to-b from-emerald-400 to-emerald-300 shrink-0" />
+            <div className="flex-1">
+              <div className="flex items-center justify-between px-4 py-2.5 border-b bg-gray-50/60">
+                <div className="flex items-center gap-2">
+                  <Database className="h-3.5 w-3.5 text-emerald-600" />
+                  <span className="text-[13px] font-semibold text-gray-800">Scorers</span>
+                </div>
+                {scorers.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selectedScorers.length === scorers.length) {
+                        setSelectedScorers([]);
+                      } else {
+                        setSelectedScorers(scorers.map(s => s.name));
+                      }
+                    }}
+                    disabled={isRunning}
+                    className="text-[11px] text-emerald-600 hover:text-emerald-800 disabled:text-gray-300 font-medium"
+                  >
+                    {selectedScorers.length === scorers.length ? 'Deselect all' : 'Select all'}
+                  </button>
+                )}
+              </div>
+              <div className="p-3">
+                {isLoadingScorers ? (
+                  <div className="flex items-center gap-2 h-10 px-3 rounded-lg bg-gray-50 text-sm text-gray-500">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Loading scorers...
+                  </div>
+                ) : scorers.length === 0 ? (
+                  <div className="text-xs text-gray-400 bg-gray-50 rounded-lg p-3 text-center">
+                    No scorers found. Rubric judges will be used.
+                  </div>
+                ) : (
+                  <>
+                    <div className="max-h-[180px] overflow-y-auto space-y-0.5">
+                      {scorers.map(scorer => (
+                        <label
+                          key={scorer.name}
+                          className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-sm cursor-pointer hover:bg-emerald-50/50 transition-colors ${
+                            isRunning ? 'opacity-60 pointer-events-none' : ''
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedScorers.includes(scorer.name)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedScorers(prev => [...prev, scorer.name]);
+                              } else {
+                                setSelectedScorers(prev => prev.filter(n => n !== scorer.name));
+                              }
+                            }}
+                            disabled={isRunning}
+                            className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-300"
+                          />
+                          <span className="font-medium text-gray-700 text-xs truncate">{scorer.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-gray-400 mt-2 text-center">
+                      {selectedScorers.length}/{scorers.length} selected
+                    </p>
+                  </>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Start Button */}
-          <div className="flex items-center gap-3">
-            <Button
-              onClick={handleStartOptimization}
-              disabled={isRunning || isStarting || !(promptInputMode === 'text' ? promptText.trim() : promptUri.trim())}
-              className=""
-            >
-              {isRunning ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Optimizing...
-                </>
-              ) : isStarting ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Starting...
-                </>
-              ) : (
-                <>
-                  <Play className="h-4 w-4 mr-2" />
-                  Start Optimization
-                </>
-              )}
-            </Button>
+          {/* Parameters Card */}
+          <div className="rounded-xl border bg-white shadow-sm overflow-hidden flex">
+            <div className="w-1.5 bg-gradient-to-b from-blue-400 to-blue-300 shrink-0" />
+            <div className="flex-1">
+              <div className="flex items-center gap-2 px-4 py-2.5 border-b bg-gray-50/60">
+                <SlidersHorizontal className="h-3.5 w-3.5 text-blue-600" />
+                <span className="text-[13px] font-semibold text-gray-800">Parameters</span>
+              </div>
+              <div className="p-4 space-y-3.5">
+                {/* Optimizer Model */}
+                <div>
+                  <label className="text-[11px] font-medium text-gray-500 block mb-1">Optimizer Model</label>
+                  <Select value={optimizerModel} onValueChange={setOptimizerModel} disabled={isRunning}>
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder="Select model" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {modelOptions
+                        .filter(m => !m.disabled)
+                        .map(option => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            {jobStatus && (
-              <Badge
-                variant={
-                  jobStatus === 'completed' ? 'default' :
-                  jobStatus === 'failed' ? 'destructive' :
-                  'secondary'
-                }
-                className="flex items-center gap-1"
-              >
-                {jobStatus === 'completed' && <CheckCircle className="h-3 w-3" />}
-                {jobStatus === 'failed' && <AlertCircle className="h-3 w-3" />}
-                {jobStatus === 'running' && <Clock className="h-3 w-3" />}
-                {jobStatus}
-              </Badge>
-            )}
+                {/* Sliders */}
+                <div className="space-y-2.5">
+                  {[
+                    { label: 'Iterations', value: numIterations, setter: setNumIterations, min: 1, max: 10, step: 1 },
+                    { label: 'Candidates', value: numCandidates, setter: setNumCandidates, min: 2, max: 10, step: 1 },
+                    { label: 'Max Traces', value: maxTraces, setter: setMaxTraces, min: 5, max: 100, step: 5 },
+                  ].map(({ label, value, setter, min, max, step }) => (
+                    <div key={label}>
+                      <div className="flex items-center justify-between mb-0.5">
+                        <label className="text-[11px] font-medium text-gray-500">{label}</label>
+                        <span className="text-[11px] font-semibold text-blue-700 tabular-nums">{value}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={min}
+                        max={max}
+                        step={step}
+                        value={value}
+                        onChange={(e) => setter(Number(e.target.value))}
+                        disabled={isRunning}
+                        className="w-full accent-blue-500 h-1.5"
+                      />
+                      <div className="flex justify-between text-[10px] text-gray-300">
+                        <span>{min}</span>
+                        <span>{max}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      {/* Progress / Logs Card */}
+      {/* Action bar */}
+      <div className="flex items-center gap-3 pt-1">
+        <Button
+          onClick={handleStartOptimization}
+          disabled={isRunning || isStarting || !(promptInputMode === 'text' ? promptText.trim() : promptUri.trim()) || !targetEndpoint.trim()}
+          size="lg"
+          className="shadow-md px-8 bg-teal-600 hover:bg-teal-700 text-white"
+        >
+          {isRunning ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Optimizing...
+            </>
+          ) : isStarting ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Starting...
+            </>
+          ) : (
+            <>
+              <Play className="h-4 w-4 mr-2" />
+              Start Optimization
+            </>
+          )}
+        </Button>
+
+        {isRunning && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleCancelOptimization}
+            className="text-gray-500 hover:text-red-600 hover:bg-red-50"
+          >
+            <Square className="h-3 w-3 mr-1" />
+            Stop
+          </Button>
+        )}
+
+        {isRunning && (
+          <span className="text-[11px] text-gray-400 ml-auto tabular-nums">
+            {jobLogs.length} log entries
+          </span>
+        )}
+      </div>
+
+      {/* Progress / Logs */}
       {jobLogs.length > 0 && (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-lg flex items-center gap-2">
-              {isRunning ? (
-                <Loader2 className="h-5 w-5 animate-spin text-violet-600" />
-              ) : jobStatus === 'completed' ? (
-                <CheckCircle className="h-5 w-5 text-green-600" />
-              ) : jobStatus === 'failed' ? (
-                <AlertCircle className="h-5 w-5 text-red-600" />
-              ) : null}
-              Optimization Progress
-            </CardTitle>
-            <div className="flex gap-1">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 px-2 text-gray-500 hover:text-gray-700"
-                onClick={() => copyToClipboard(jobLogs.join('\n'))}
-              >
-                <Copy className="h-3.5 w-3.5 mr-1" />
-                <span className="text-xs">Copy</span>
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 px-2 text-gray-500 hover:text-gray-700"
-                onClick={() => {
+        <div className="rounded-xl border bg-white shadow-sm overflow-hidden flex">
+          <div className={`w-1.5 shrink-0 ${
+            isRunning ? 'bg-gradient-to-b from-teal-400 to-teal-300' :
+            jobStatus === 'completed' ? 'bg-gradient-to-b from-teal-400 to-emerald-400' :
+            jobStatus === 'failed' ? 'bg-gradient-to-b from-rose-400 to-rose-300' :
+            'bg-gray-200'
+          }`} />
+          <div className="flex-1">
+            <div className="flex items-center justify-between px-4 py-2.5 border-b bg-gray-50/60">
+              <div className="flex items-center gap-2 text-[13px] font-semibold text-gray-800">
+                {isRunning ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-teal-500" />
+                ) : jobStatus === 'completed' ? (
+                  <CheckCircle className="h-3.5 w-3.5 text-green-600" />
+                ) : jobStatus === 'failed' ? (
+                  <AlertCircle className="h-3.5 w-3.5 text-red-500" />
+                ) : null}
+                Logs
+              </div>
+              <div className="flex gap-1">
+                <Button variant="ghost" size="sm" className="h-7 px-2 text-gray-400 hover:text-gray-700" onClick={() => copyToClipboard(jobLogs.join('\n'))}>
+                  <Copy className="h-3.5 w-3.5 mr-1" /><span className="text-xs">Copy</span>
+                </Button>
+                <Button variant="ghost" size="sm" className="h-7 px-2 text-gray-400 hover:text-gray-700" onClick={() => {
                   const blob = new Blob([jobLogs.join('\n')], { type: 'text/plain' });
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement('a');
@@ -736,26 +793,20 @@ export function PromptOptimizationPage() {
                   a.download = `gepa-optimization-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.log`;
                   a.click();
                   URL.revokeObjectURL(url);
-                }}
-              >
-                <Download className="h-3.5 w-3.5 mr-1" />
-                <span className="text-xs">Download</span>
-              </Button>
+                }}>
+                  <Download className="h-3.5 w-3.5 mr-1" /><span className="text-xs">Download</span>
+                </Button>
+              </div>
             </div>
-          </CardHeader>
-          <CardContent>
-            <div
-              ref={logContainerRef}
-              className="bg-gray-900 rounded-lg p-4 max-h-[400px] overflow-y-auto border border-gray-700 shadow-inner"
-            >
-              <pre className="text-sm text-green-400 font-mono whitespace-pre-wrap">
+            <div ref={logContainerRef} className="bg-[#0d1117] p-4 max-h-[400px] overflow-y-auto">
+              <pre className="text-[13px] text-green-400 font-mono whitespace-pre-wrap leading-relaxed">
                 {jobLogs.map((log, i) => (
                   <div
                     key={i}
                     className={`${
                       log.includes('ERROR') ? 'text-red-400 font-semibold' :
                       log.includes('WARNING') ? 'text-yellow-400' :
-                      log.includes('━━━') ? 'text-violet-400 font-semibold' :
+                      log.includes('\u2501\u2501\u2501') ? 'text-sky-400 font-semibold' :
                       log.includes('Proposed new text') ? 'text-orange-400 font-semibold' :
                       log.includes('Iteration ') && (log.includes('score') || log.includes('Score')) ? 'text-amber-400 font-medium' :
                       log.includes('Iteration ') && log.includes('Best') ? 'text-emerald-400 font-semibold' :
@@ -778,19 +829,13 @@ export function PromptOptimizationPage() {
                 ))}
               </pre>
             </div>
-            {isRunning && (
-              <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                <span>{jobLogs.length} log entries | Polling every 2s</span>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       {/* Error */}
       {jobError && jobStatus === 'failed' && (
-        <Alert variant="destructive">
+        <Alert variant="destructive" className="shadow-sm">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>{jobError}</AlertDescription>
         </Alert>
@@ -953,7 +998,7 @@ export function PromptOptimizationPage() {
                   <div
                     key={run.id}
                     className={`border rounded-lg p-3 cursor-pointer transition-colors ${
-                      selectedRun?.id === run.id ? 'border-violet-300 bg-violet-50/30' : 'hover:bg-gray-50'
+                      selectedRun?.id === run.id ? 'border-teal-300 bg-teal-50/30' : 'hover:bg-gray-50'
                     }`}
                     onClick={() => setSelectedRun(selectedRun?.id === run.id ? null : run)}
                   >
