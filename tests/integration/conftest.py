@@ -63,7 +63,7 @@ def _create_postgres_engine():
     container.start()
 
     engine = create_engine(
-        container.get_connection_url(),
+        container.get_connection_url(driver="psycopg"),
         pool_size=5,
         max_overflow=10,
         pool_pre_ping=True,
