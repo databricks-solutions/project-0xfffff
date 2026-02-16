@@ -84,6 +84,7 @@ async def test_permission_api_returns_role_based_defaults_for_valid_user(async_c
 
 
 @pytest.mark.spec("AUTHENTICATION_SPEC")
+@pytest.mark.req("Permission API failure: User can log in with defaults")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_permission_api_failure_when_db_service_raises(async_client, app):

@@ -1,6 +1,6 @@
 # Spec Test Coverage Map
 
-**Generated**: 2026-02-11 22:01:15
+**Generated**: 2026-02-13 16:11:49
 
 This report shows test coverage for each specification's success criteria.
 
@@ -8,7 +8,7 @@ This report shows test coverage for each specification's success criteria.
 
 | Type | Count | Description |
 |------|-------|-------------|
-| Unit | 421 | pytest unit tests, Vitest tests |
+| Unit | 527 | pytest unit tests, Vitest tests |
 | Integration | 0 | pytest with real DB/API |
 | E2E (Mocked) | 13 | Playwright with mocked API |
 | E2E (Real) | 37 | Playwright with real API |
@@ -17,48 +17,57 @@ This report shows test coverage for each specification's success criteria.
 
 | Spec | Reqs | Covered | Cover% | Unit | Int | E2E-M | E2E-R |
 |------|------|---------|--------|------|-----|-------|-------|
-| [ANNOTATION_SPEC](#annotation-spec) | 9 | 2 | 22% | 41 | 0 | 0 | 12 |
-| [AUTHENTICATION_SPEC](#authentication-spec) | 7 | 5 | 71% | 11 | 0 | 3 | 0 |
-| [BUILD_AND_DEPLOY_SPEC](#build-and-deploy-spec) | 15 | 1 | 6% | 43 | 0 | 0 | 0 |
+| [ANNOTATION_SPEC](#annotation-spec) | 21 | 21 | 100% | 60 | 0 | 0 | 12 |
+| [AUTHENTICATION_SPEC](#authentication-spec) | 7 | 7 | 100% | 12 | 0 | 3 | 0 |
+| [BUILD_AND_DEPLOY_SPEC](#build-and-deploy-spec) | 15 | 12 | 80% | 56 | 0 | 0 | 0 |
 | [CUSTOM_LLM_PROVIDER_SPEC](#custom-llm-provider-spec) | 15 | 0 | 0% | 13 | 0 | 7 | 0 |
-| [DATASETS_SPEC](#datasets-spec) | 9 | 2 | 22% | 19 | 0 | 0 | 2 |
+| [DATASETS_SPEC](#datasets-spec) | 9 | 9 | 100% | 33 | 0 | 0 | 2 |
 | [DESIGN_SYSTEM_SPEC](#design-system-spec) | 7 | 0 | 0% | 40 | 0 | 0 | 0 |
-| [DISCOVERY_TRACE_ASSIGNMENT_SPEC](#discovery-trace-assignment-spec) | 13 | 3 | 23% | 14 | 0 | 2 | 3 |
-| [JUDGE_EVALUATION_SPEC](#judge-evaluation-spec) | 25 | 7 | 28% | 76 | 0 | 0 | 6 |
-| [RUBRIC_SPEC](#rubric-spec) | 25 | 10 | 40% | 52 | 0 | 1 | 6 |
+| [DISCOVERY_TRACE_ASSIGNMENT_SPEC](#discovery-trace-assignment-spec) | 13 | 13 | 100% | 21 | 0 | 2 | 3 |
+| [JUDGE_EVALUATION_SPEC](#judge-evaluation-spec) | 25 | 25 | 100% | 82 | 0 | 0 | 6 |
+| [ROLE_PERMISSIONS_SPEC](#role-permissions-spec) | 16 | 16 | 100% | 24 | 0 | 0 | 0 |
+| [RUBRIC_SPEC](#rubric-spec) | 25 | 22 | 88% | 74 | 0 | 1 | 6 |
 | [TESTING_SPEC](#testing-spec) | 7 | 0 | 0% | 12 | 0 | 0 | 0 |
 | [TRACE_DISPLAY_SPEC](#trace-display-spec) | 0 | 0 | 100% | 43 | 0 | 0 | 6 |
 | [UI_COMPONENTS_SPEC](#ui-components-spec) | 16 | 0 | 0% | 57 | 0 | 0 | 2 |
 
-**Total**: 30/148 requirements covered (20%)
+**Total**: 125/176 requirements covered (71%)
 
 ---
 
 ## ANNOTATION_SPEC
 
-**Coverage**: 2/9 requirements (22%)
-
-### Uncovered Requirements
-
-- [ ] Users can edit previously submitted annotations
-- [ ] Toast shows "Annotation saved!" for new submissions
-- [ ] Toast shows "Annotation updated!" only when changes detected
-- [ ] No toast when navigating without changes
-- [ ] Multi-line comments preserved throughout the stack
-- [ ] Comments display with proper line breaks
-- [ ] Next button enabled for annotated traces (allows re-navigation)
+**Coverage**: 21/21 requirements (100%)
 
 ### Covered Requirements
 
+- [x] Users can edit previously submitted annotations (unit)
 - [x] Changes automatically save on navigation (Next/Previous) (e2e-real, unit)
+- [x] Toast shows "Annotation saved!" for new submissions (e2e-real)
+- [x] Toast shows "Annotation updated!" only when changes detected (e2e-real)
+- [x] No toast when navigating without changes (unit)
+- [x] Multi-line comments preserved throughout the stack (e2e-real)
+- [x] Comments display with proper line breaks (unit)
+- [x] Next button enabled for annotated traces (allows re-navigation) (e2e-real)
 - [x] Annotation count reflects unique submissions (not re-submissions) (e2e-real, unit)
+- [x] Annotations sync to MLflow as feedback on save (one entry per rubric question) (unit)
+- [x] MLflow trace tagged with `label: "align"` and `workshop_id` on annotation (unit)
+- [x] Feedback source is HUMAN with annotator's user_id (unit)
+- [x] Annotation comment maps to MLflow feedback rationale (unit)
+- [x] Duplicate feedback entries are detected and skipped (unit)
+- [x] Bulk resync re-exports all annotations when rubric titles change (unit)
+- [x] Failed saves are queued and retried automatically with exponential backoff (unit)
+- [x] Navigation is optimistic (UI advances immediately, save completes in background) (unit)
+- [x] Navigation debounced at 300ms to prevent duplicate saves (unit)
+- [x] Freeform question responses are optional (not required for navigation) (unit)
+- [x] Freeform responses are encoded in the comment field as JSON (unit)
+- [x] Legacy single-rating format loads correctly alongside multi-rating format (unit)
 
 ### Tests Without Requirement Links
 
 These tests are tagged with the spec but don't link to specific requirements:
 
 - `tests/unit/routers/test_annotation_crud.py` (test_upsert_creates_new_annotation) [unit]
-- `tests/unit/routers/test_annotation_crud.py` (test_upsert_updates_existing_annotation) [unit]
 - `tests/unit/routers/test_participant_notes.py` (test_create_discovery_note) [unit]
 - `tests/unit/routers/test_participant_notes.py` (test_create_annotation_note) [unit]
 - `tests/unit/routers/test_participant_notes.py` (test_create_note_defaults_to_discovery_phase) [unit]
@@ -94,30 +103,21 @@ These tests are tagged with the spec but don't link to specific requirements:
 - `tests/unit/services/test_database_service_participant_notes.py` (test_get_participant_notes_empty_result) [unit]
 - `tests/unit/services/test_database_service_participant_notes.py` (test_delete_participant_note_success) [unit]
 - `tests/unit/services/test_database_service_participant_notes.py` (test_delete_participant_note_not_found) [unit]
-- `client/tests/e2e/annotation-flow.spec.ts` (new annotation shows "Annotation saved!" toast) [e2e-real]
-- `client/tests/e2e/annotation-flow.spec.ts` (edit annotation shows "Annotation updated!" toast) [e2e-real]
-- `client/tests/e2e/annotation-flow.spec.ts` (multi-line comment preserves newlines) [e2e-real]
-- `client/tests/e2e/annotation-flow.spec.ts` (comment-only edit triggers updated toast) [e2e-real]
-- `client/tests/e2e/annotation-flow.spec.ts` (next button enabled for annotated traces) [e2e-real]
-- `client/tests/e2e/annotation-flow.spec.ts` (annotation count is accurate) [e2e-real]
 - `client/tests/e2e/annotation-last-trace.spec.ts` (10 users annotating same trace simultaneously should all succeed) [e2e-real]
 - `client/tests/e2e/annotation-last-trace.spec.ts` (10 users annotating 10 traces simultaneously (100 concurrent writes)) [e2e-real]
 
 ## AUTHENTICATION_SPEC
 
-**Coverage**: 5/7 requirements (71%)
-
-### Uncovered Requirements
-
-- [ ] Permission API failure: User can log in with defaults
-- [ ] Rapid navigation: Components wait for `isLoading = false`
+**Coverage**: 7/7 requirements (100%)
 
 ### Covered Requirements
 
 - [x] No "permission denied" errors on normal login (unit)
 - [x] No page refresh required after login (unit)
 - [x] Slow network: Loading indicator shown until ready (e2e-mocked)
+- [x] Permission API failure: User can log in with defaults (unit)
 - [x] 404 on validation: Session cleared, fresh login allowed (unit)
+- [x] Rapid navigation: Components wait for `isLoading = false` (unit)
 - [x] Error recovery: Errors cleared on new login attempt (unit)
 
 ### Tests Without Requirement Links
@@ -126,58 +126,38 @@ These tests are tagged with the spec but don't link to specific requirements:
 
 - `tests/unit/routers/test_auth_edge_cases.py` (test_permission_api_failure_returns_defaults_when_user_not_found) [unit]
 - `tests/unit/routers/test_auth_edge_cases.py` (test_permission_api_returns_role_based_defaults_for_valid_user) [unit]
-- `tests/unit/routers/test_auth_edge_cases.py` (test_permission_api_failure_when_db_service_raises) [unit]
 - `client/tests/e2e/authentication.spec.ts` (error clears on new login attempt) [e2e-mocked]
 - `client/tests/e2e/facilitator-create-workshop.spec.ts` (facilitator can log in and create a workshop) [e2e-mocked]
 
 ## BUILD_AND_DEPLOY_SPEC
 
-**Coverage**: 1/15 requirements (6%)
+**Coverage**: 12/15 requirements (80%)
 
 ### Uncovered Requirements
 
 - [ ] Production build completes without errors
 - [ ] Console statements removed in production
-- [ ] Assets minified and hashed
-- [ ] Build directory contains all required files
-- [ ] `just db-bootstrap` creates database if missing
-- [ ] Migrations apply without errors
-- [ ] Batch mode works for SQLite ALTER TABLE
-- [ ] File lock prevents race conditions with multiple workers
 - [ ] Full deployment completes successfully
-- [ ] API endpoints respond correctly
-- [ ] Database connection established
-- [ ] Release workflow creates zip artifact
-- [ ] Pre-built client included in release
-- [ ] No sensitive files in artifact
 
 ### Covered Requirements
 
+- [x] Assets minified and hashed (unit)
+- [x] Build directory contains all required files (unit)
+- [x] `just db-bootstrap` creates database if missing (unit)
+- [x] Migrations apply without errors (unit)
+- [x] Batch mode works for SQLite ALTER TABLE (unit)
+- [x] File lock prevents race conditions with multiple workers (unit)
 - [x] Server starts and serves frontend (unit)
+- [x] API endpoints respond correctly (unit)
+- [x] Database connection established (unit)
+- [x] Release workflow creates zip artifact (unit)
+- [x] Pre-built client included in release (unit)
+- [x] No sensitive files in artifact (unit)
 
 ### Tests Without Requirement Links
 
 These tests are tagged with the spec but don't link to specific requirements:
 
-- `tests/unit/test_build_deploy.py` (test_bootstrap_creates_db_file) [unit]
-- `tests/unit/test_build_deploy.py` (test_bootstrap_full_creates_db_when_missing) [unit]
-- `tests/unit/test_build_deploy.py` (test_bootstrap_skips_existing_db) [unit]
-- `tests/unit/test_build_deploy.py` (test_migrations_directory_exists) [unit]
-- `tests/unit/test_build_deploy.py` (test_baseline_migration_exists) [unit]
-- `tests/unit/test_build_deploy.py` (test_alembic_ini_exists) [unit]
-- `tests/unit/test_build_deploy.py` (test_migration_env_exists) [unit]
-- `tests/unit/test_build_deploy.py` (test_lock_is_exclusive) [unit]
-- `tests/unit/test_build_deploy.py` (test_lock_timeout_raises) [unit]
-- `tests/unit/test_build_deploy.py` (test_vite_config_specifies_terser) [unit]
-- `tests/unit/test_build_deploy.py` (test_vite_config_has_drop_debugger) [unit]
-- `tests/unit/test_build_deploy.py` (test_vite_config_drop_console_current_behavior) [unit]
-- `tests/unit/test_build_deploy.py` (test_vite_config_output_dir_is_build) [unit]
-- `tests/unit/test_build_deploy.py` (test_release_workflow_exists) [unit]
-- `tests/unit/test_build_deploy.py` (test_excludes_git_directory) [unit]
-- `tests/unit/test_build_deploy.py` (test_excludes_node_modules) [unit]
-- `tests/unit/test_build_deploy.py` (test_excludes_database_files) [unit]
-- `tests/unit/test_build_deploy.py` (test_excludes_pycache) [unit]
-- `tests/unit/test_build_deploy.py` (test_excludes_env_files) [unit]
 - `tests/unit/test_sqlite_rescue.py` (test_default_database_url) [unit]
 - `tests/unit/test_sqlite_rescue.py` (test_sqlite_triple_slash_url) [unit]
 - `tests/unit/test_sqlite_rescue.py` (test_sqlite_double_slash_url) [unit]
@@ -251,38 +231,34 @@ These tests are tagged with the spec but don't link to specific requirements:
 
 ## DATASETS_SPEC
 
-**Coverage**: 2/9 requirements (22%)
-
-### Uncovered Requirements
-
-- [ ] Union operation combines traces from multiple datasets
-- [ ] Subtract operation removes specified traces
-- [ ] Same user sees same order for same dataset (deterministic)
-- [ ] Different users see different orders (per-user randomization)
-- [ ] Adding traces preserves existing order (incremental)
-- [ ] New round triggers fresh randomization
-- [ ] Facilitators see chronological order (no randomization)
+**Coverage**: 9/9 requirements (100%)
 
 ### Covered Requirements
 
-- [x] Datasets can be created with arbitrary trace lists (unit)
+- [x] Datasets can be created with arbitrary trace lists (e2e-real, unit)
+- [x] Union operation combines traces from multiple datasets (unit)
+- [x] Subtract operation removes specified traces (unit)
+- [x] Same user sees same order for same dataset (deterministic) (unit)
+- [x] Different users see different orders (per-user randomization) (e2e-real, unit)
+- [x] Adding traces preserves existing order (incremental) (unit)
+- [x] New round triggers fresh randomization (unit)
 - [x] Dataset lineage tracked (source datasets, operations) (unit)
+- [x] Facilitators see chronological order (no randomization) (unit)
 
 ### Tests Without Requirement Links
 
 These tests are tagged with the spec but don't link to specific requirements:
 
-- `tests/unit/services/test_dataset_operations.py` (test_same_user_same_traces_same_order) [unit]
-- `tests/unit/services/test_dataset_operations.py` (test_order_stable_across_many_calls) [unit]
-- `tests/unit/services/test_dataset_operations.py` (test_two_users_different_orders) [unit]
-- `tests/unit/services/test_dataset_operations.py` (test_many_users_all_distinct) [unit]
-- `tests/unit/services/test_dataset_operations.py` (test_facilitator_order_is_chronological) [unit]
-- `tests/unit/services/test_dataset_operations.py` (test_incremental_addition_preserves_existing_order) [unit]
-- `tests/unit/services/test_dataset_operations.py` (test_incremental_addition_no_duplicates) [unit]
-- `tests/unit/services/test_dataset_operations.py` (test_new_round_produces_different_order) [unit]
-- `tests/unit/services/test_dataset_operations.py` (test_same_traces_new_round_still_same_order) [unit]
-- `client/tests/e2e/dataset-operations.spec.ts` (facilitator creates dataset, traces appear) [e2e-real]
-- `client/tests/e2e/dataset-operations.spec.ts` (two users see different trace orders) [e2e-real]
+- `tests/unit/services/test_dataset_operations.py` (test_union_preserves_first_occurrence_order) [unit]
+- `tests/unit/services/test_dataset_operations.py` (test_union_three_datasets) [unit]
+- `tests/unit/services/test_dataset_operations.py` (test_union_with_empty_dataset) [unit]
+- `tests/unit/services/test_dataset_operations.py` (test_union_identical_datasets) [unit]
+- `tests/unit/services/test_dataset_operations.py` (test_union_result_has_no_duplicates) [unit]
+- `tests/unit/services/test_dataset_operations.py` (test_subtract_empty_removal_set) [unit]
+- `tests/unit/services/test_dataset_operations.py` (test_subtract_all_traces) [unit]
+- `tests/unit/services/test_dataset_operations.py` (test_subtract_nonexistent_traces_ignored) [unit]
+- `tests/unit/services/test_dataset_operations.py` (test_subtract_single_trace) [unit]
+- `tests/unit/services/test_dataset_operations.py` (test_subtract_result_has_correct_length) [unit]
 - `client/src/utils/traceUtils.test.ts` (converts basic API trace fields) [unit]
 - `client/src/utils/traceUtils.test.ts` (normalizes null optional fields to undefined) [unit]
 - `client/src/utils/traceUtils.test.ts` (normalizes empty string optional fields to undefined) [unit]
@@ -353,77 +329,59 @@ These tests are tagged with the spec but don't link to specific requirements:
 
 ## DISCOVERY_TRACE_ASSIGNMENT_SPEC
 
-**Coverage**: 3/13 requirements (23%)
-
-### Uncovered Requirements
-
-- [ ] Participants only see traces in current active discovery dataset
-- [ ] When new discovery round starts, old traces hidden (not deleted)
-- [ ] Randomization persistent across page reloads for same trace set
-- [ ] When annotation dataset changes mid-round, new traces appended
-- [ ] When annotation round changes, full re-randomization applied
-- [ ] Randomization context includes phase and round info
-- [ ] Dataset operations (union, subtract) work correctly and maintain audit trail
-- [ ] Multiple participants can see same trace with different orders
-- [ ] Assignment metadata properly tracks all context
-- [ ] Inter-rater reliability (IRR) can be measured (same traces, different orders)
+**Coverage**: 13/13 requirements (100%)
 
 ### Covered Requirements
 
+- [x] Participants only see traces in current active discovery dataset (e2e-real, unit)
+- [x] When new discovery round starts, old traces hidden (not deleted) (e2e-real)
 - [x] Switching between discovery rounds hides/shows appropriate traces (unit)
 - [x] Phase/round context properly scoped in database (unit)
 - [x] Annotation traces randomized per (user_id, trace_set) pair (unit)
+- [x] Randomization persistent across page reloads for same trace set (e2e-real, unit)
+- [x] When annotation dataset changes mid-round, new traces appended (unit)
+- [x] When annotation round changes, full re-randomization applied (unit)
+- [x] Randomization context includes phase and round info (unit)
+- [x] Dataset operations (union, subtract) work correctly and maintain audit trail (unit)
+- [x] Multiple participants can see same trace with different orders (unit)
+- [x] Assignment metadata properly tracks all context (unit)
+- [x] Inter-rater reliability (IRR) can be measured (same traces, different orders) (unit)
 
 ### Tests Without Requirement Links
 
 These tests are tagged with the spec but don't link to specific requirements:
 
-- `tests/unit/services/test_trace_assignment.py` (test_active_traces_only_current_round) [unit]
-- `tests/unit/services/test_trace_assignment.py` (test_empty_active_traces_returns_nothing) [unit]
-- `tests/unit/services/test_trace_assignment.py` (test_different_users_different_order) [unit]
-- `tests/unit/services/test_trace_assignment.py` (test_order_deterministic_for_same_user) [unit]
-- `tests/unit/services/test_trace_assignment.py` (test_irr_measurement_possible) [unit]
-- `tests/unit/services/test_trace_assignment.py` (test_append_preserves_existing_positions) [unit]
-- `tests/unit/services/test_trace_assignment.py` (test_no_reshuffle_on_addition) [unit]
-- `tests/unit/services/test_trace_assignment.py` (test_new_dataset_triggers_fresh_randomization) [unit]
-- `tests/unit/services/test_trace_assignment.py` (test_round_change_not_incremental) [unit]
 - `client/tests/e2e/discovery-invite-traces.spec.ts` (discovery blocks until multiple participants complete; facilitator-driven phase with trace-based discovery) [e2e-mocked]
 - `client/tests/e2e/facilitator-create-workshop.spec.ts` (facilitator can log in and create a workshop) [e2e-mocked]
-- `client/tests/e2e/trace-visibility.spec.ts` (participant sees only current round traces) [e2e-real]
-- `client/tests/e2e/trace-visibility.spec.ts` (old traces hidden after round change) [e2e-real]
-- `client/tests/e2e/trace-visibility.spec.ts` (annotation order persistent across reload) [e2e-real]
 - `client/src/hooks/useWorkshopApi.test.ts` (invalidateAllWorkshopQueries passes a predicate that matches workshop-related keys) [unit]
 - `client/src/hooks/useWorkshopApi.test.ts` (refetchAllWorkshopQueries passes a predicate that matches workshop-related keys) [unit]
 
 ## JUDGE_EVALUATION_SPEC
 
-**Coverage**: 7/25 requirements (28%)
-
-### Uncovered Requirements
-
-- [ ] Likert judges return values 1-5
-- [ ] Binary judges return values 0 or 1
-- [ ] Fallback conversion handles Likert-style returns for binary
-- [ ] Results reload correctly in UI
-- [ ] Auto-evaluation runs in background when annotation phase starts
-- [ ] Judge prompt auto-derived from rubric questions
-- [ ] Per-question judge_type parsed from rubric (`[JUDGE_TYPE:xxx]`)
-- [ ] Binary rubrics evaluated with 0/1 scale (not 1-5)
-- [ ] Auto-evaluation model stored for re-evaluation consistency
-- [ ] Results appear in Judge Tuning page
-- [ ] Re-evaluate loads registered judge with aligned instructions
-- [ ] Uses same model as initial auto-evaluation
-- [ ] Spinner stops when re-evaluation completes
-- [ ] Results stored against correct prompt version
-- [ ] Pre-align and post-align scores directly comparable
-- [ ] MemAlign distills semantic memory (guidelines)
-- [ ] Aligned judge registered to MLflow
-- [ ] Metrics reported (guideline count, example count)
+**Coverage**: 25/25 requirements (100%)
 
 ### Covered Requirements
 
+- [x] Likert judges return values 1-5 (unit)
+- [x] Binary judges return values 0 or 1 (unit)
+- [x] Fallback conversion handles Likert-style returns for binary (unit)
 - [x] Evaluation results persisted to database (unit)
+- [x] Results reload correctly in UI (unit)
+- [x] Auto-evaluation runs in background when annotation phase starts (e2e-real, unit)
+- [x] Judge prompt auto-derived from rubric questions (unit)
+- [x] Per-question judge_type parsed from rubric (`[JUDGE_TYPE:xxx]`) (unit)
+- [x] Binary rubrics evaluated with 0/1 scale (not 1-5) (unit)
+- [x] Auto-evaluation model stored for re-evaluation consistency (e2e-real)
+- [x] Results appear in Judge Tuning page (e2e-real)
+- [x] Re-evaluate loads registered judge with aligned instructions (unit)
+- [x] Uses same model as initial auto-evaluation (unit)
+- [x] Spinner stops when re-evaluation completes (e2e-real)
+- [x] Results stored against correct prompt version (unit)
+- [x] Pre-align and post-align scores directly comparable (e2e-real)
 - [x] Alignment jobs run asynchronously (unit)
+- [x] MemAlign distills semantic memory (guidelines) (unit)
+- [x] Aligned judge registered to MLflow (unit)
+- [x] Metrics reported (guideline count, example count) (unit)
 - [x] Works for both Likert and Binary scales (unit)
 - [x] Krippendorff's Alpha calculated correctly (unit)
 - [x] Cohen's Kappa calculated for rater pairs (unit)
@@ -434,82 +392,46 @@ These tests are tagged with the spec but don't link to specific requirements:
 
 These tests are tagged with the spec but don't link to specific requirements:
 
-- `tests/unit/routers/test_workshops_begin_annotation.py` (test_begin_annotation_with_auto_eval_enabled) [unit]
-- `tests/unit/routers/test_workshops_begin_annotation.py` (test_begin_annotation_with_auto_eval_disabled) [unit]
 - `tests/unit/routers/test_workshops_begin_annotation.py` (test_begin_annotation_requires_rubric) [unit]
-- `tests/unit/routers/test_workshops_router.py` (test_re_evaluate_uses_stored_auto_evaluation_model) [unit]
-- `tests/unit/services/test_alignment_service.py` (test_normalize_judge_prompt_converts_placeholders_to_mlflow_style) [unit]
-- `tests/unit/services/test_alignment_service.py` (test_calculate_eval_metrics_binary_scale) [unit]
-- `tests/unit/services/test_alignment_service.py` (test_calculate_eval_metrics_binary_all_pass) [unit]
-- `tests/unit/services/test_alignment_service.py` (test_calculate_eval_metrics_binary_all_fail) [unit]
-- `tests/unit/services/test_alignment_service.py` (test_calculate_eval_metrics_binary_mixed_ratings) [unit]
-- `tests/unit/services/test_alignment_service.py` (test_calculate_eval_metrics_binary_empty) [unit]
-- `tests/unit/services/test_alignment_service.py` (test_calculate_eval_metrics_binary_threshold_conversion) [unit]
-- `tests/unit/services/test_alignment_service.py` (test_calculate_eval_metrics_likert_default) [unit]
 - `tests/unit/services/test_cohens_kappa.py` (test_interpret_cohens_kappa_bucket_edges) [unit]
 - `tests/unit/services/test_cohens_kappa.py` (test_is_cohens_kappa_acceptable_default_threshold) [unit]
-- `tests/unit/services/test_database_service_rubric.py` (test_get_judge_type_from_rubric_binary) [unit]
-- `tests/unit/services/test_database_service_rubric.py` (test_get_judge_type_from_rubric_likert) [unit]
-- `tests/unit/services/test_database_service_rubric.py` (test_get_judge_type_from_rubric_mixed_prefers_binary) [unit]
-- `tests/unit/services/test_database_service_rubric.py` (test_get_judge_type_from_rubric_no_rubric_defaults_likert) [unit]
 - `tests/unit/services/test_irr_utils.py` (test_format_irr_result_rounding_and_ready_flag) [unit]
-- `client/tests/e2e/auto-evaluation.spec.ts` (begin annotation dialog shows model selection when auto-eval is available) [e2e-real]
-- `client/tests/e2e/auto-evaluation.spec.ts` (annotation phase can start without auto-evaluation) [e2e-real]
-- `client/tests/e2e/auto-evaluation.spec.ts` (judge tuning page displays evaluation results section) [e2e-real]
-- `client/tests/e2e/auto-evaluation.spec.ts` (model dropdown shows available evaluation models) [e2e-real]
-- `client/tests/e2e/judge-evaluation.spec.ts` (re-evaluation spinner stops after completion) [e2e-real]
-- `client/tests/e2e/judge-evaluation.spec.ts` (pre and post alignment scores visible in results) [e2e-real]
-- `client/src/components/JudgeTypeSelector.test.tsx` (renders all three judge type cards) [unit]
-- `client/src/components/JudgeTypeSelector.test.tsx` (displays descriptions for each judge type) [unit]
-- `client/src/components/JudgeTypeSelector.test.tsx` (shows features for Likert judge) [unit]
-- `client/src/components/JudgeTypeSelector.test.tsx` (shows features for Binary judge) [unit]
-- `client/src/components/JudgeTypeSelector.test.tsx` (shows features for Free-form judge) [unit]
-- `client/src/components/JudgeTypeSelector.test.tsx` (shows use cases for each judge type) [unit]
-- `client/src/components/JudgeTypeSelector.test.tsx` (calls onTypeChange when clicking Likert card) [unit]
-- `client/src/components/JudgeTypeSelector.test.tsx` (calls onTypeChange when clicking Binary card) [unit]
-- `client/src/components/JudgeTypeSelector.test.tsx` (calls onTypeChange when clicking Free-form card) [unit]
-- `client/src/components/JudgeTypeSelector.test.tsx` (highlights selected type with checkmark) [unit]
-- `client/src/components/JudgeTypeSelector.test.tsx` (does not call onTypeChange when disabled) [unit]
-- `client/src/components/JudgeTypeSelector.test.tsx` (applies opacity styling when disabled) [unit]
-- `client/src/components/JudgeTypeSelector.test.tsx` (includes 1-5 scale rating instructions) [unit]
-- `client/src/components/JudgeTypeSelector.test.tsx` (includes rubric placeholder) [unit]
-- `client/src/components/JudgeTypeSelector.test.tsx` (includes input and output placeholders) [unit]
-- `client/src/components/JudgeTypeSelector.test.tsx` (includes 0/1 rating instructions) [unit]
-- `client/src/components/JudgeTypeSelector.test.tsx` (includes criteria placeholder) [unit]
-- `client/src/components/JudgeTypeSelector.test.tsx` (includes example format) [unit]
-- `client/src/components/JudgeTypeSelector.test.tsx` (includes qualitative feedback instructions) [unit]
-- `client/src/components/JudgeTypeSelector.test.tsx` (includes focus placeholder) [unit]
-- `client/src/components/JudgeTypeSelector.test.tsx` (has pass_fail preset) [unit]
-- `client/src/components/JudgeTypeSelector.test.tsx` (has yes_no preset) [unit]
-- `client/src/components/JudgeTypeSelector.test.tsx` (has accept_reject preset) [unit]
-- `client/src/components/JudgeTypeSelector.test.tsx` (has safe_unsafe preset) [unit]
-- `client/src/components/JudgeTypeSelector.test.tsx` (has compliant_violation preset) [unit]
-- `client/src/components/JudgeTypeSelector.test.tsx` (all presets have pass and fail keys) [unit]
 - `client/src/utils/modelMapping.test.ts` (maps known frontend names to backend names and back) [unit]
 - `client/src/utils/modelMapping.test.ts` (passes through unknown names) [unit]
 - `client/src/utils/modelMapping.test.ts` (requiresDatabricks is true for mapped options) [unit]
 - `client/src/utils/modelMapping.test.ts` (getModelOptions disables options when config missing) [unit]
 
+## ROLE_PERMISSIONS_SPEC
+
+**Coverage**: 16/16 requirements (100%)
+
+### Covered Requirements
+
+- [x] Facilitator role grants: can_create_rubric, can_manage_workshop, can_assign_annotations, can_view_all_findings, can_view_all_annotations, can_view_results (unit)
+- [x] Facilitator role denies: can_annotate, can_create_findings (unit)
+- [x] SME role grants: can_annotate, can_create_findings, can_view_discovery (unit)
+- [x] SME role denies: can_create_rubric, can_manage_workshop, can_view_results, can_view_all_annotations (unit)
+- [x] Participant role grants: can_annotate, can_create_findings, can_view_discovery (unit)
+- [x] Participant role denies: can_create_rubric, can_manage_workshop, can_view_results, can_view_all_annotations (unit)
+- [x] Permissions derived from role via UserPermissions.for_role() classmethod (unit)
+- [x] Facilitator role cannot be changed via update endpoint (unit)
+- [x] Facilitator accounts cannot be deleted via delete endpoint (unit)
+- [x] Only facilitators can create invitations (unit)
+- [x] Only facilitators can advance workshop phases (unit)
+- [x] Phase advancement validates prerequisites before transitioning (unit)
+- [x] Phase advancement returns 400 if prerequisites not met (unit)
+- [x] Facilitators authenticate via YAML config (preconfigured credentials) (unit)
+- [x] SMEs and participants authenticate via database credentials (unit)
+- [x] Login response includes is_preconfigured_facilitator flag for facilitator logins (unit)
+
 ## RUBRIC_SPEC
 
-**Coverage**: 10/25 requirements (40%)
+**Coverage**: 22/25 requirements (88%)
 
 ### Uncovered Requirements
 
-- [ ] Facilitator can create a rubric question with title and description
-- [ ] Facilitator can edit an existing rubric question
-- [ ] Facilitator can delete a rubric question
-- [ ] Only one rubric exists per workshop (upsert semantics)
-- [ ] Rubric persists and is retrievable via GET after creation
 - [ ] Rubric required before advancing to annotation phase
-- [ ] No phase restriction on rubric CRUD
-- [ ] Question IDs re-indexed sequentially after deletion
-- [ ] Annotation data preserved when rubric questions are deleted
-- [ ] Judge name auto-derived from first rubric question title
-- [ ] MLflow re-sync triggered on rubric create/update (best-effort)
 - [ ] AI suggestions generated from discovery findings and participant notes
-- [ ] Suggestions validated: title >= 3 chars, description >= 10 chars
-- [ ] Invalid judge type in suggestions defaults to likert
 - [ ] Facilitator can accept, reject, or edit suggestions before adding to rubric
 
 ### Covered Requirements
@@ -524,6 +446,18 @@ These tests are tagged with the spec but don't link to specific requirements:
 - [x] Binary scale shows Pass/Fail buttons (not star ratings) (e2e-real)
 - [x] Binary feedback logged as 0/1 to MLflow (not 3) (e2e-real)
 - [x] Mixed rubrics support different scales per question (e2e-real, unit)
+- [x] Facilitator can create a rubric question with title and description (unit)
+- [x] Facilitator can edit an existing rubric question (unit)
+- [x] Facilitator can delete a rubric question (unit)
+- [x] Only one rubric exists per workshop (upsert semantics) (unit)
+- [x] Rubric persists and is retrievable via GET after creation (e2e-mocked, e2e-real)
+- [x] No phase restriction on rubric CRUD (unit)
+- [x] Question IDs re-indexed sequentially after deletion (unit)
+- [x] Annotation data preserved when rubric questions are deleted (unit)
+- [x] Judge name auto-derived from first rubric question title (unit)
+- [x] MLflow re-sync triggered on rubric create/update (best-effort) (unit)
+- [x] Suggestions validated: title >= 3 chars, description >= 10 chars (unit)
+- [x] Invalid judge type in suggestions defaults to likert (unit)
 
 ### Tests Without Requirement Links
 
@@ -548,9 +482,7 @@ These tests are tagged with the spec but don't link to specific requirements:
 - `tests/unit/services/test_rubric_parsing.py` (test_parse_reconstruct_roundtrip) [unit]
 - `tests/unit/services/test_rubric_parsing.py` (test_binary_judge_type_parsed_correctly) [unit]
 - `tests/unit/services/test_rubric_parsing.py` (test_likert_judge_type_parsed_correctly) [unit]
-- `client/tests/e2e/rubric-creation.spec.ts` (rubric creation: facilitator can advance from discovery and create a rubric question) [e2e-mocked]
 - `client/tests/e2e/rubric-judge-type.spec.ts` (default judge type is likert when not specified) [e2e-real]
-- `client/tests/e2e/rubric-persistence.spec.ts` (mixed rubric with binary and likert questions persists after reload) [e2e-real]
 
 ## TESTING_SPEC
 
