@@ -147,7 +147,7 @@ test.describe('Trace Data Viewer', { tag: ['@spec:UI_COMPONENTS_SPEC']}, () => {
 
     // The workshop should have loaded with trace data accessible
     // Verify the page rendered without errors
-    const errorBanner = page.getByText(/error|failed to load/i);
+    const errorBanner = participantPage.getByText(/error|failed to load/i);
     const hasError = await errorBanner.first().isVisible({ timeout: 1000 });
     expect(hasError).toBe(false);
 

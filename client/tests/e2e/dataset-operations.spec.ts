@@ -72,25 +72,25 @@ test.describe('Dataset Operations', {
     const sme1 = scenario.users.sme[0];
     const sme2 = scenario.users.sme[1];
 
-    // Enable annotation randomization via API
+    // Enable annotation randomization by re-starting annotation phase with randomize=true
     await page.request.post(
-      `${API_URL}/workshops/${workshopId}/annotation-randomize`,
+      `${API_URL}/workshops/${workshopId}/begin-annotation`,
       {
         headers: { 'Content-Type': 'application/json' },
-        data: { randomize: true },
+        data: { randomize: true, trace_limit: -1 },
       }
     );
 
     // Fetch annotation traces for SME 1
     const resp1 = await page.request.get(
-      `${API_URL}/workshops/${workshopId}/annotation-traces?user_id=${sme1.id}`
+      `${API_URL}/workshops/${workshopId}/traces?user_id=${sme1.id}`
     );
     expect(resp1.ok()).toBeTruthy();
     const traces1 = (await resp1.json()) as Array<{ id: string }>;
 
     // Fetch annotation traces for SME 2
     const resp2 = await page.request.get(
-      `${API_URL}/workshops/${workshopId}/annotation-traces?user_id=${sme2.id}`
+      `${API_URL}/workshops/${workshopId}/traces?user_id=${sme2.id}`
     );
     expect(resp2.ok()).toBeTruthy();
     const traces2 = (await resp2.json()) as Array<{ id: string }>;

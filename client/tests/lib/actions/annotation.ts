@@ -16,25 +16,12 @@ export async function submitAnnotation(
 ): Promise<void> {
   const { rating = 4, comment } = config;
 
-  // Find and click the rating button (1-5 scale)
-  // The app typically uses radio buttons or clickable rating elements
-  const ratingButton = page.locator(`[data-rating="${rating}"]`).first();
-  if (await ratingButton.isVisible().catch(() => false)) {
-    await ratingButton.click();
-  } else {
-    // Try radio group
-    const radioGroup = page.getByRole('radiogroup');
-    if (await radioGroup.isVisible().catch(() => false)) {
-      const ratingOption = radioGroup.getByRole('radio').nth(rating - 1);
-      await ratingOption.click();
-    } else {
-      // Try clicking a star rating or similar
-      const starButton = page.locator(`button:has-text("${rating}")`).first();
-      if (await starButton.isVisible().catch(() => false)) {
-        await starButton.click();
-      }
-    }
-  }
+  // AnnotationDemo renders Likert ratings as div[role="button"] elements
+  // containing a child div with the rating number (1-5).
+  // Click the one matching the desired rating value.
+  const ratingButton = page.locator('[role="button"]').filter({ hasText: new RegExp(`^${rating}$`) }).first();
+  await ratingButton.waitFor({ state: 'visible', timeout: 5000 });
+  await ratingButton.click();
 
   // Fill comment if provided (AnnotationDemo uses id="comment")
   if (comment !== undefined && comment !== '') {
@@ -44,11 +31,11 @@ export async function submitAnnotation(
     }
   }
 
-  // Submit the annotation (Next or Complete button)
-  const submitButton = page.getByRole('button', { name: /submit|save|next|complete/i });
-  if (await submitButton.first().isVisible().catch(() => false)) {
-    await submitButton.first().click();
-  }
+  // Submit the annotation via Next or Complete button (use data-testid to avoid
+  // matching sidebar workflow buttons that also contain "complete" text).
+  const submitButton = page.getByTestId('next-trace-button').or(page.getByTestId('complete-annotation-button'));
+  await submitButton.first().waitFor({ state: 'visible', timeout: 5000 });
+  await submitButton.first().click();
 }
 
 /**
@@ -111,10 +98,8 @@ export async function getAnnotations(
  * Navigate to the next trace for annotation (or Complete on last trace)
  */
 export async function goToNextTrace(page: Page): Promise<void> {
-  const nextButton = page.getByRole('button', { name: /next|complete/i });
-  if (await nextButton.first().isVisible().catch(() => false)) {
-    await nextButton.first().click();
-  }
+  const nextButton = page.getByTestId('next-trace-button').or(page.getByTestId('complete-annotation-button'));
+  await nextButton.first().click();
 }
 
 /**
@@ -149,7 +134,7 @@ export async function getCommentValue(page: Page): Promise<string> {
  * Whether the Next (or Complete) button is enabled.
  */
 export async function isNextButtonEnabled(page: Page): Promise<boolean> {
-  const btn = page.getByRole('button', { name: /next|complete/i }).first();
+  const btn = page.getByTestId('next-trace-button').or(page.getByTestId('complete-annotation-button')).first();
   return btn.isEnabled();
 }
 

@@ -52,3 +52,14 @@ export {
   waitForAnnotationInterface,
   completeAllAnnotations,
 } from './annotation';
+
+// Custom LLM Provider actions
+export {
+  navigateToCustomLlmProvider,
+  expandProviderConfig,
+  fillProviderConfig,
+  saveProviderConfig,
+  deleteProviderConfig,
+  configureProvider,
+  updateProviderConfig,
+} from './custom-llm-provider';

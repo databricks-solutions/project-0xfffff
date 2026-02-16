@@ -315,7 +315,7 @@ export function CustomLLMProviderConfig({ workshopId, onConfigChange }: CustomLL
             )}
 
             {status?.is_configured && (
-              <Button variant="destructive" size="icon" onClick={handleDelete} disabled={isDeleting}>
+              <Button variant="destructive" size="icon" aria-label="Delete configuration" onClick={handleDelete} disabled={isDeleting}>
                 {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
               </Button>
             )}
