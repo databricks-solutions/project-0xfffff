@@ -2250,9 +2250,9 @@ Think step by step about how well the output addresses the criteria, then provid
                           };
                           // If evaluations have judge labels, filter by the selected question
                           // Otherwise fall back to first match (legacy data without labels)
-                          let evaluation = hasJudgeLabels && expectedJudgeName
-                            ? evaluations.find((e: JudgeEvaluationWithMlflow) => matchesTrace(e) && e.predicted_feedback === expectedJudgeName)
-                            : evaluations.find((e: JudgeEvaluationWithMlflow) => matchesTrace(e));
+                          const evaluation = hasJudgeLabels && expectedJudgeName
+                            ? evaluations.find((e: any) => matchesTrace(e) && e.predicted_feedback === expectedJudgeName)
+                            : evaluations.find((e: any) => matchesTrace(e));
                           // REMOVED fallback: Don't show other judges' scores when filtering by judge name
                           // Each judge must have its own evaluation results; showing another judge's
                           // score is confusing (e.g., binary scores appearing for Likert questions)

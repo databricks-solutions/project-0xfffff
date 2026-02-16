@@ -66,7 +66,7 @@ function extractLLMContent(output: unknown): { content: string | null; metadata:
       try {
         const parsed = JSON.parse(trimmed);
         if (parsed.rationale && typeof parsed.rationale === 'string') {
-          const resultLabel = parsed.result !== undefined ? `**Rating: ${parsed.result}**\n\n` : '';
+          const resultLabel = parsed.result !== undefined ? `**Rating: ${String(parsed.result)}**\n\n` : '';
           return resultLabel + parsed.rationale;
         }
         if (parsed.content && typeof parsed.content === 'string') {
@@ -121,7 +121,7 @@ function extractLLMContent(output: unknown): { content: string | null; metadata:
           try {
             const parsed = JSON.parse(trimmedContent);
             if (parsed.rationale && typeof parsed.rationale === 'string') {
-              const resultLabel = parsed.result !== undefined ? `**Rating: ${parsed.result}**\n\n` : '';
+              const resultLabel = parsed.result !== undefined ? `**Rating: ${String(parsed.result)}**\n\n` : '';
               content = resultLabel + parsed.rationale;
             } else if (parsed.content && typeof parsed.content === 'string') {
               // Handle nested content field
@@ -142,7 +142,7 @@ function extractLLMContent(output: unknown): { content: string | null; metadata:
         // Handle content that's already parsed as an object (e.g., judge result)
         const msgObj = msgContent as Record<string, unknown>;
         if (msgObj.rationale && typeof msgObj.rationale === 'string') {
-          const resultLabel = msgObj.result !== undefined ? `**Rating: ${msgObj.result}**\n\n` : '';
+          const resultLabel = msgObj.result !== undefined ? `**Rating: ${String(msgObj.result)}**\n\n` : '';
           content = resultLabel + msgObj.rationale;
         } else if (Array.isArray(msgContent)) {
           // Handle content as array of blocks (Anthropic/Databricks style)
@@ -159,7 +159,7 @@ function extractLLMContent(output: unknown): { content: string | null; metadata:
     // Handle judge output format: { choices: [{ result: ..., rationale: "..." }] }
     else if (firstChoice.rationale && typeof firstChoice.rationale === 'string') {
       // This is a judge evaluation output - show rationale as main content
-      const resultLabel = firstChoice.result !== undefined ? `**Rating: ${firstChoice.result}**\n\n` : '';
+      const resultLabel = firstChoice.result !== undefined ? `**Rating: ${String(firstChoice.result)}**\n\n` : '';
       content = resultLabel + firstChoice.rationale;
     }
     // Alternative format with direct content on choice
@@ -285,7 +285,7 @@ function extractLLMContent(output: unknown): { content: string | null; metadata:
 
     // Check for rationale (judge output)
     if (rec.rationale && typeof rec.rationale === 'string') {
-      const resultLabel = rec.result !== undefined ? `**Rating: ${rec.result}**\n\n` : '';
+      const resultLabel = rec.result !== undefined ? `**Rating: ${String(rec.result)}**\n\n` : '';
       return resultLabel + rec.rationale;
     }
 
@@ -297,7 +297,7 @@ function extractLLMContent(output: unknown): { content: string | null; metadata:
           try {
             const parsed = JSON.parse(trimmed);
             if (parsed.rationale && typeof parsed.rationale === 'string') {
-              const resultLabel = parsed.result !== undefined ? `**Rating: ${parsed.result}**\n\n` : '';
+              const resultLabel = parsed.result !== undefined ? `**Rating: ${String(parsed.result)}**\n\n` : '';
               return resultLabel + parsed.rationale;
             }
           } catch {
