@@ -38,7 +38,7 @@ test.describe('Trace Visibility', {
 
     // Verify participant can see discovery traces via API
     const discResp = await page.request.get(
-      `${API_URL}/workshops/${workshopId}/discovery-traces?user_id=${participant.id}`
+      `${API_URL}/workshops/${workshopId}/traces?user_id=${participant.id}`
     );
     expect(discResp.ok()).toBeTruthy();
 
@@ -72,7 +72,7 @@ test.describe('Trace Visibility', {
 
     // Verify round 1 traces are visible
     const r1Resp = await page.request.get(
-      `${API_URL}/workshops/${workshopId}/discovery-traces?user_id=${participant.id}`
+      `${API_URL}/workshops/${workshopId}/traces?user_id=${participant.id}`
     );
     expect(r1Resp.ok()).toBeTruthy();
     const r1Traces = (await r1Resp.json()) as Array<{ id: string }>;
@@ -103,7 +103,7 @@ test.describe('Trace Visibility', {
     // If reset-discovery is available, verify the round change
     if (resetResp.ok()) {
       const r2Resp = await page.request.get(
-        `${API_URL}/workshops/${workshopId}/discovery-traces?user_id=${participant.id}`
+        `${API_URL}/workshops/${workshopId}/traces?user_id=${participant.id}`
       );
       expect(r2Resp.ok()).toBeTruthy();
       const r2Traces = (await r2Resp.json()) as Array<{ id: string }>;
@@ -137,18 +137,18 @@ test.describe('Trace Visibility', {
     const workshopId = scenario.workshop.id;
     const sme = scenario.users.sme[0];
 
-    // Enable randomization
+    // Enable randomization by re-starting annotation phase with randomize=true
     await page.request.post(
-      `${API_URL}/workshops/${workshopId}/annotation-randomize`,
+      `${API_URL}/workshops/${workshopId}/begin-annotation`,
       {
         headers: { 'Content-Type': 'application/json' },
-        data: { randomize: true },
+        data: { randomize: true, trace_limit: -1 },
       }
     );
 
     // Fetch trace order first time
     const resp1 = await page.request.get(
-      `${API_URL}/workshops/${workshopId}/annotation-traces?user_id=${sme.id}`
+      `${API_URL}/workshops/${workshopId}/traces?user_id=${sme.id}`
     );
     expect(resp1.ok()).toBeTruthy();
     const order1 = ((await resp1.json()) as Array<{ id: string }>).map(
@@ -157,7 +157,7 @@ test.describe('Trace Visibility', {
 
     // Simulate page reload by fetching again
     const resp2 = await page.request.get(
-      `${API_URL}/workshops/${workshopId}/annotation-traces?user_id=${sme.id}`
+      `${API_URL}/workshops/${workshopId}/traces?user_id=${sme.id}`
     );
     expect(resp2.ok()).toBeTruthy();
     const order2 = ((await resp2.json()) as Array<{ id: string }>).map(

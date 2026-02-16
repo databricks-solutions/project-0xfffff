@@ -10,6 +10,7 @@ describe('workshop query helpers', () => {
     } as unknown as QueryClient;
 
     invalidateAllWorkshopQueries(queryClient, 'w1');
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect((queryClient.invalidateQueries as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(1);
 
     const arg = (queryClient.invalidateQueries as ReturnType<typeof vi.fn>).mock.calls[0][0];
@@ -28,6 +29,7 @@ describe('workshop query helpers', () => {
     } as unknown as QueryClient;
 
     refetchAllWorkshopQueries(queryClient, 'w1');
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect((queryClient.refetchQueries as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(1);
 
     const arg = (queryClient.refetchQueries as ReturnType<typeof vi.fn>).mock.calls[0][0];

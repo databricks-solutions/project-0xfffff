@@ -69,7 +69,7 @@ const FormattedRubricDescription: React.FC<{ description: string }> = ({ descrip
   if (description.includes('\n')) {
     const lines = description.split('\n').map(line => line.trim()).filter(line => line.length > 0);
     // Check if lines start with bullet markers
-    const bulletPattern = /^[•\-\*]\s*/;
+    const bulletPattern = /^[•\-*]\s*/;
     const hasBullets = lines.some(line => bulletPattern.test(line));
     
     if (hasBullets) {
@@ -222,42 +222,23 @@ export function AnnotationDemo() {
   const { canAnnotate } = useRoleCheck();
   const currentUserId = user?.id || 'demo_user';
 
-
-  // Check if user is logged in
-  if (!user || !user.id) {
-    return (
-      <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
-        <div className="text-center max-w-md">
-          <AlertCircle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
-          <div className="text-lg font-medium text-gray-900 mb-2">
-            Please Log In
-          </div>
-          <div className="text-sm text-gray-500">
-            You must be logged in to annotate traces.
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Fetch data - pass user ID for personalized trace ordering
-  // User is guaranteed to have an ID at this point
-  const { data: traces, isLoading: tracesLoading, error: tracesError } = useTraces(workshopId!, user.id);
-  const { data: rubric, isLoading: rubricLoading } = useRubric(workshopId!);
-  const { data: existingAnnotations } = useUserAnnotations(workshopId!, user);
-  const { data: mlflowConfig } = useMLflowConfig(workshopId!);
-  const submitAnnotation = useSubmitAnnotation(workshopId!);
+  // All hooks must be called unconditionally (React rules of hooks)
+  const { data: traces, isLoading: tracesLoading, error: tracesError } = useTraces(workshopId || '', user?.id);
+  const { data: rubric, isLoading: rubricLoading } = useRubric(workshopId || '');
+  const { data: existingAnnotations } = useUserAnnotations(workshopId || '', user);
+  const { data: mlflowConfig } = useMLflowConfig(workshopId || '');
+  const submitAnnotation = useSubmitAnnotation(workshopId || '');
   const queryClient = useQueryClient();
 
   // Workshop data (for show_participant_notes flag)
-  const { data: workshopData } = useWorkshop(workshopId!);
+  const { data: workshopData } = useWorkshop(workshopId || '');
   const notesEnabled = workshopData?.show_participant_notes ?? false;
 
   // Annotation notes (only fetch when enabled)
   const [noteContent, setNoteContent] = useState('');
-  const { data: annotationNotes } = useParticipantNotes(workshopId!, user?.id, 'annotation');
-  const submitNote = useSubmitParticipantNote(workshopId!);
-  const deleteNote = useDeleteParticipantNote(workshopId!);
+  const { data: annotationNotes } = useParticipantNotes(workshopId || '', user?.id, 'annotation');
+  const submitNote = useSubmitParticipantNote(workshopId || '');
+  const deleteNote = useDeleteParticipantNote(workshopId || '');
 
   // Convert traces to TraceData format
   const traceData = traces?.map(convertTraceToTraceData) || [];
@@ -464,9 +445,8 @@ export function AnnotationDemo() {
           }
           return prev;
         });
-      } else {
-        
       }
+      // else: no existing annotation — form stays in default (cleared) state
     }
   }, [currentTrace?.id, existingAnnotations, currentUserId]);
 
@@ -924,19 +904,12 @@ export function AnnotationDemo() {
     if (hasRatings) {
       // Save with the stored values (before form was cleared)
       saveAnnotation(currentTraceId, true, ratingsToSave, freeformToSave, commentToSave)
-        .then((success) => {
-          if (success) {
-          } else {
-            // Save failed after retries - log but don't show intrusive toast
-            // The retry logic should handle most transient failures
-          }
-        })
         .catch((error) => {
           // This shouldn't happen as saveAnnotation catches errors, but log just in case
           console.error('nextTrace: Unexpected background save error:', error);
         });
-    } else {
     }
+    // else: no ratings to save — skip background save
   };
 
   const prevTrace = () => {
@@ -995,18 +968,12 @@ export function AnnotationDemo() {
     if (hasRatings) {
       // Save with the stored values (before navigation)
       saveAnnotation(currentTraceId, true, ratingsToSave, freeformToSave, commentToSave)
-        .then((success) => {
-          if (success) {
-          } else {
-            // Save failed after retries - log but don't show intrusive toast
-          }
-        })
         .catch((error) => {
           // This shouldn't happen as saveAnnotation catches errors, but log just in case
           console.error('prevTrace: Unexpected background save error:', error);
         });
-    } else {
     }
+    // else: no ratings to save — skip background save
   };
 
   const completedCount = submittedAnnotations.size;
@@ -1030,7 +997,24 @@ export function AnnotationDemo() {
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
-  
+
+  // Check if user is logged in (after all hooks)
+  if (!user || !user.id) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
+        <div className="text-center max-w-md">
+          <AlertCircle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+          <div className="text-lg font-medium text-gray-900 mb-2">
+            Please Log In
+          </div>
+          <div className="text-sm text-gray-500">
+            You must be logged in to annotate traces.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Manual retry all failed saves
   const retryAllFailedSaves = async () => {
     if (failedSaveQueueRef.current.size === 0) return;
@@ -1195,9 +1179,8 @@ export function AnnotationDemo() {
                       const trace_id = currentTrace.mlflow_trace_id;
                       const mlflowUrl = `${host}/ml/experiments/${experiment_id}/traces?selectedEvaluationId=${trace_id}`;
                       window.open(mlflowUrl, '_blank');
-                    } else {
-
                     }
+                    // else: no MLflow config available — button is no-op
                   }}
                   className="flex items-center gap-1 text-[10px] h-6 px-2"
                 >

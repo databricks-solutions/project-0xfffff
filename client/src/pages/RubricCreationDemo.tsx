@@ -211,9 +211,12 @@ export function RubricCreationDemo() {
   // Use all traces for rubric creation page
   const { data: traces, refetch: refetchTraces } = useAllTraces(workshopId || '');
   // Facilitators see all findings to create better rubric, others see their own
+  // Both hooks must be called unconditionally (React rules of hooks)
+  const facilitatorFindings = useFacilitatorFindingsWithUserDetails(workshopId || '');
+  const userFindings = useUserFindings(workshopId || '', user);
   const { data: findings, refetch: refetchFindings, isRefetching: isRefetchingFindings } = isFacilitator
-    ? useFacilitatorFindingsWithUserDetails(workshopId || '')
-    : useUserFindings(workshopId || '', user);
+    ? facilitatorFindings
+    : userFindings;
   const createRubric = useCreateRubric(workshopId || '');
   const updateRubric = useUpdateRubric(workshopId || '');
   // Fetch all participant notes for the scratch pad (facilitator sees all)
@@ -221,43 +224,10 @@ export function RubricCreationDemo() {
   // Workshop data for show_participant_notes toggle
   const { data: workshopData } = useWorkshop(workshopId || '');
   const toggleParticipantNotes = useToggleParticipantNotes(workshopId || '');
-  
-  // SECURITY: Block access if no valid user or workshop
-  if (!user || !user.id) {
-    return (
-      <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
-        <div className="text-center">
-          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <div className="text-lg font-medium text-gray-900 mb-2">
-            Authentication Required
-          </div>
-          <div className="text-sm text-gray-500">
-            You must be logged in to access rubric creation.
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!workshopId) {
-    return (
-      <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
-        <div className="text-center">
-          <AlertCircle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
-          <div className="text-lg font-medium text-gray-900 mb-2">
-            No Workshop Selected
-          </div>
-          <div className="text-sm text-gray-500">
-            Please select a workshop to access rubric creation.
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   // Get discovery responses from real findings data, enriched with trace information
   const discoveryResponses = useDiscoveryResponses(findings, traces);
-  
+
   // Helper to save scratch pad immediately to localStorage
   const saveScratchPadToStorage = useCallback((entries: ScratchPadEntry[]) => {
     if (!workshopId) return;
@@ -272,7 +242,7 @@ export function RubricCreationDemo() {
       localStorage.removeItem(storageKey);
     }
   }, [workshopId]);
-  
+
   // Wrapper that saves immediately when setting scratch pad
   const setScratchPad = useCallback((value: ScratchPadEntry[] | ((prev: ScratchPadEntry[]) => ScratchPadEntry[])) => {
     setScratchPadState(prev => {
@@ -308,7 +278,7 @@ export function RubricCreationDemo() {
       }
     }
   }, [workshopId]);
-  
+
   // Initialize questions and judge type from API data
   useEffect(() => {
     if (rubric && !isEditingExisting) {
@@ -322,6 +292,39 @@ export function RubricCreationDemo() {
       }
     }
   }, [rubric, isEditingExisting]);
+
+  // SECURITY: Block access if no valid user or workshop (after all hooks)
+  if (!user || !user.id) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
+        <div className="text-center">
+          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <div className="text-lg font-medium text-gray-900 mb-2">
+            Authentication Required
+          </div>
+          <div className="text-sm text-gray-500">
+            You must be logged in to access rubric creation.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!workshopId) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
+        <div className="text-center">
+          <AlertCircle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+          <div className="text-lg font-medium text-gray-900 mb-2">
+            No Workshop Selected
+          </div>
+          <div className="text-sm text-gray-500">
+            Please select a workshop to access rubric creation.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Build combined description from structured fields
   const buildDescription = () => {
@@ -553,11 +556,10 @@ export function RubricCreationDemo() {
         };
         await updateRubric.mutateAsync(apiRubric);
       } catch (error) {
-        
+        // Rubric save failed — mutation error is surfaced by react-query
       }
     }
   };
-
 
   if (rubricLoading) {
     return (
