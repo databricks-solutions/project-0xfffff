@@ -1,7 +1,8 @@
 """Integration test fixtures with real database and transaction-rollback isolation.
 
 Provides:
-- Session-scoped engine + schema creation (SQLite in-memory by default)
+- Session-scoped engine + schema creation
+- SQLite in-memory (default) or Postgres via testcontainers (--backend postgres)
 - Per-test transaction rollback so tests don't leak state
 - Real FastAPI app with dependency override pointing at the test DB
 - Async HTTP client for exercising endpoints end-to-end
@@ -20,12 +21,25 @@ from server.database import Base
 
 
 # ---------------------------------------------------------------------------
+# CLI option: --backend sqlite|postgres
+# ---------------------------------------------------------------------------
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--backend",
+        action="store",
+        default="sqlite",
+        choices=["sqlite", "postgres"],
+        help="Database backend for integration tests (default: sqlite)",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Session-scoped engine: created once, tables + indexes applied
 # ---------------------------------------------------------------------------
 
-@pytest.fixture(scope="session")
-def integration_engine():
-    """Create a real SQLite in-memory database engine for the test session."""
+def _create_sqlite_engine():
+    """Create a SQLite in-memory engine."""
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -37,10 +51,31 @@ def integration_engine():
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
 
-    # Create all tables from the ORM models
+    return engine
+
+
+def _create_postgres_engine():
+    """Create a Postgres engine backed by testcontainers."""
+    from testcontainers.postgres import PostgresContainer
+
+    # Store container on the engine so we can stop it later
+    container = PostgresContainer("postgres:16-alpine")
+    container.start()
+
+    engine = create_engine(
+        container.get_connection_url(),
+        pool_size=5,
+        max_overflow=10,
+        pool_pre_ping=True,
+    )
+    engine._test_container = container  # type: ignore[attr-defined]
+    return engine
+
+
+def _apply_schema(engine):
+    """Create all tables and runtime unique indexes."""
     Base.metadata.create_all(bind=engine)
 
-    # Apply runtime unique indexes that the app creates in create_tables()
     with engine.connect() as conn:
         conn.execute(text(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_discovery_findings_unique "
@@ -56,8 +91,27 @@ def integration_engine():
         ))
         conn.commit()
 
+
+@pytest.fixture(scope="session")
+def integration_engine(request):
+    """Create a real database engine for the test session."""
+    backend = request.config.getoption("--backend")
+
+    if backend == "postgres":
+        engine = _create_postgres_engine()
+    else:
+        engine = _create_sqlite_engine()
+
+    _apply_schema(engine)
+
     yield engine
+
     engine.dispose()
+
+    # Stop the container if using Postgres
+    container = getattr(engine, "_test_container", None)
+    if container is not None:
+        container.stop()
 
 
 # ---------------------------------------------------------------------------
