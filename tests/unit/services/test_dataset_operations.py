@@ -35,7 +35,124 @@ def _generate_randomized_order(trace_ids: list[str], user_id: str) -> list[str]:
     return shuffled
 
 
+def _dataset_union(*datasets: list[str]) -> list[str]:
+    """Union of multiple trace datasets: combine all unique traces preserving order."""
+    seen: set[str] = set()
+    result: list[str] = []
+    for dataset in datasets:
+        for trace_id in dataset:
+            if trace_id not in seen:
+                seen.add(trace_id)
+                result.append(trace_id)
+    return result
+
+
+def _dataset_subtract(base: list[str], to_remove: list[str]) -> list[str]:
+    """Subtract traces from a dataset: remove specified traces preserving order."""
+    remove_set = set(to_remove)
+    return [trace_id for trace_id in base if trace_id not in remove_set]
+
+
 TRACE_IDS = [f"trace-{i}" for i in range(10)]
+
+
+@pytest.mark.spec("DATASETS_SPEC")
+@pytest.mark.unit
+class TestDatasetUnion:
+    """Union operation combines traces from multiple datasets."""
+
+    @pytest.mark.req("Union operation combines traces from multiple datasets")
+    def test_union_two_disjoint_datasets(self):
+        dataset_a = ["T1", "T2", "T3"]
+        dataset_b = ["T4", "T5", "T6"]
+        result = _dataset_union(dataset_a, dataset_b)
+        assert result == ["T1", "T2", "T3", "T4", "T5", "T6"]
+
+    @pytest.mark.req("Union operation combines traces from multiple datasets")
+    def test_union_overlapping_datasets_deduplicates(self):
+        dataset_a = ["T1", "T2", "T3"]
+        dataset_b = ["T3", "T4", "T5"]
+        result = _dataset_union(dataset_a, dataset_b)
+        assert result == ["T1", "T2", "T3", "T4", "T5"]
+
+    def test_union_preserves_first_occurrence_order(self):
+        dataset_a = ["T3", "T1"]
+        dataset_b = ["T2", "T1", "T4"]
+        result = _dataset_union(dataset_a, dataset_b)
+        assert result == ["T3", "T1", "T2", "T4"]
+
+    def test_union_three_datasets(self):
+        dataset_a = ["T1", "T2"]
+        dataset_b = ["T2", "T3"]
+        dataset_c = ["T3", "T4", "T5"]
+        result = _dataset_union(dataset_a, dataset_b, dataset_c)
+        assert result == ["T1", "T2", "T3", "T4", "T5"]
+
+    def test_union_with_empty_dataset(self):
+        dataset_a = ["T1", "T2", "T3"]
+        dataset_b: list[str] = []
+        result = _dataset_union(dataset_a, dataset_b)
+        assert result == ["T1", "T2", "T3"]
+
+    def test_union_identical_datasets(self):
+        dataset_a = ["T1", "T2", "T3"]
+        result = _dataset_union(dataset_a, dataset_a)
+        assert result == ["T1", "T2", "T3"]
+
+    def test_union_result_has_no_duplicates(self):
+        dataset_a = ["T1", "T2", "T3"]
+        dataset_b = ["T2", "T3", "T4"]
+        dataset_c = ["T1", "T4", "T5"]
+        result = _dataset_union(dataset_a, dataset_b, dataset_c)
+        assert len(result) == len(set(result))
+        assert set(result) == {"T1", "T2", "T3", "T4", "T5"}
+
+
+@pytest.mark.spec("DATASETS_SPEC")
+@pytest.mark.unit
+class TestDatasetSubtract:
+    """Subtract operation removes specified traces from a dataset."""
+
+    @pytest.mark.req("Subtract operation removes specified traces")
+    def test_subtract_removes_specified_traces(self):
+        all_traces = ["T1", "T2", "T3", "T4", "T5"]
+        problematic = ["T2", "T5"]
+        result = _dataset_subtract(all_traces, problematic)
+        assert result == ["T1", "T3", "T4"]
+
+    @pytest.mark.req("Subtract operation removes specified traces")
+    def test_subtract_preserves_order_of_remaining(self):
+        all_traces = ["T5", "T3", "T1", "T4", "T2"]
+        to_remove = ["T3", "T4"]
+        result = _dataset_subtract(all_traces, to_remove)
+        assert result == ["T5", "T1", "T2"]
+
+    def test_subtract_empty_removal_set(self):
+        all_traces = ["T1", "T2", "T3"]
+        result = _dataset_subtract(all_traces, [])
+        assert result == ["T1", "T2", "T3"]
+
+    def test_subtract_all_traces(self):
+        all_traces = ["T1", "T2", "T3"]
+        result = _dataset_subtract(all_traces, ["T1", "T2", "T3"])
+        assert result == []
+
+    def test_subtract_nonexistent_traces_ignored(self):
+        all_traces = ["T1", "T2", "T3"]
+        result = _dataset_subtract(all_traces, ["T99", "T100"])
+        assert result == ["T1", "T2", "T3"]
+
+    def test_subtract_single_trace(self):
+        all_traces = ["T1", "T2", "T3", "T4", "T5"]
+        result = _dataset_subtract(all_traces, ["T3"])
+        assert result == ["T1", "T2", "T4", "T5"]
+
+    def test_subtract_result_has_correct_length(self):
+        all_traces = ["T1", "T2", "T3", "T4", "T5"]
+        to_remove = ["T2", "T5", "T99"]
+        result = _dataset_subtract(all_traces, to_remove)
+        assert len(result) == 3
+        assert result == ["T1", "T3", "T4"]
 
 
 @pytest.mark.spec("DATASETS_SPEC")
