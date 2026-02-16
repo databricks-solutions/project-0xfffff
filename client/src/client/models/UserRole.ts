@@ -2,4 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type UserRole = 'facilitator' | 'sme' | 'participant';
+export enum UserRole {
+    FACILITATOR = 'facilitator',
+    SME = 'sme',
+    PARTICIPANT = 'participant',
+}

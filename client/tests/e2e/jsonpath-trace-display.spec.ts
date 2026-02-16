@@ -8,6 +8,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { TestScenario } from '../lib/scenario-builder';
+import { WorkshopPhase } from '../lib/types';
 
 const API_URL = 'http://127.0.0.1:8000';
 
@@ -107,7 +108,7 @@ test.describe('JSONPath Trace Display Customization', { tag }, () => {
       .withFacilitator()
       .withParticipants(1)
       .withTrace({ input: traceInput, output: traceOutput })
-      .inPhase('discovery')
+      .inPhase(WorkshopPhase.DISCOVERY)
       .withRealApi()
       .build();
 
@@ -161,7 +162,7 @@ test.describe('JSONPath Trace Display Customization', { tag }, () => {
       .withFacilitator()
       .withParticipants(1)
       .withTrace({ input: traceInput, output: traceOutput })
-      .inPhase('discovery')
+      .inPhase(WorkshopPhase.DISCOVERY)
       .withRealApi()
       .build();
 

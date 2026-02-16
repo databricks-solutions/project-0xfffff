@@ -7,9 +7,14 @@
 
 import { test, expect } from '@playwright/test';
 import { TestScenario } from '../lib';
+import { UserRole, WorkshopPhase } from '../lib/types';
 
-test.describe('TestScenario Infrastructure Examples', () => {
-  test('facilitator login with mocked API', async ({ page }) => {
+test.describe('TestScenario Infrastructure Examples', {
+  tag: ['@spec:ASSISTED_FACILITATION_SPEC'],
+}, () => {
+  test('facilitator login with mocked API', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC'],
+  }, async ({ page }) => {
     // Create a scenario with workshop and facilitator
     const scenario = await TestScenario.create(page)
       .withWorkshop({ name: 'Test Workshop' })
@@ -27,14 +32,16 @@ test.describe('TestScenario Infrastructure Examples', () => {
     await scenario.cleanup();
   });
 
-  test('workshop with multiple participants', async ({ page }) => {
+  test('workshop with multiple participants', {
+    tag: ['@spec:ASSISTED_FACILITATION_SPEC'],
+  }, async ({ page }) => {
     const scenario = await TestScenario.create(page)
       .withWorkshop({ name: 'Multi-User Workshop' })
       .withFacilitator({ email: 'facilitator@test.com' })
       .withParticipants(3)
       .withSMEs(2)
       .withTraces(5)
-      .inPhase('discovery')
+      .inPhase(WorkshopPhase.DISCOVERY)
       .build();
 
     // Verify all users were created
@@ -59,7 +66,7 @@ test.describe('TestScenario Infrastructure Examples', () => {
       .withTraces(3)
       .withDiscoveryFinding({ insight: 'Good response overall' })
       .withDiscoveryComplete()
-      .inPhase('rubric')
+      .inPhase(WorkshopPhase.RUBRIC)
       .build();
 
     // Verify workshop is ready for rubric creation
@@ -79,11 +86,11 @@ test.describe('TestScenario Infrastructure Examples', () => {
     const scenario = await TestScenario.create(page)
       .withWorkshop()
       .withFacilitator({ name: 'Workshop Leader' })
-      .withUser('participant', { email: 'alice@test.com', name: 'Alice' })
-      .withUser('participant', { email: 'bob@test.com', name: 'Bob' })
-      .withUser('sme', { email: 'expert@test.com', name: 'Dr. Expert' })
+      .withUser(UserRole.PARTICIPANT, { email: 'alice@test.com', name: 'Alice' })
+      .withUser(UserRole.PARTICIPANT, { email: 'bob@test.com', name: 'Bob' })
+      .withUser(UserRole.SME, { email: 'expert@test.com', name: 'Dr. Expert' })
       .withTraces(2)
-      .inPhase('discovery')
+      .inPhase(WorkshopPhase.DISCOVERY)
       .build();
 
     // Access users by name
@@ -137,7 +144,7 @@ test.describe('TestScenario Infrastructure Examples', () => {
       .withParticipants(2)
       .withTraces(5)
       .withRubric({ question: 'How helpful is this response?' })
-      .inPhase('annotation')
+      .inPhase(WorkshopPhase.ANNOTATION)
       .build();
 
     // Verify setup
@@ -157,7 +164,7 @@ test.describe('TestScenario Infrastructure Examples', () => {
       .withRubric()
       .withAnnotation({ rating: 5, comment: 'Excellent!' })
       .withAnnotation({ rating: 3, comment: 'Average' })
-      .inPhase('results')
+      .inPhase(WorkshopPhase.RESULTS)
       .build();
 
     expect(scenario.annotations).toHaveLength(2);
@@ -195,7 +202,7 @@ test.describe('Real Workflow Tests with New Infrastructure', () => {
       .withFacilitator()
       .withParticipants(2)
       .withTraces(1)
-      .inPhase('discovery')
+      .inPhase(WorkshopPhase.DISCOVERY)
       .build();
 
     // Verify mock data was created correctly

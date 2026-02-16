@@ -8,10 +8,8 @@
 import type { Page, Browser, BrowserContext } from '@playwright/test';
 import type {
   User,
-  UserRole,
   Workshop,
   WorkshopCreate,
-  WorkshopPhase,
   Trace,
   TraceUpload,
   Rubric,
@@ -33,6 +31,7 @@ import type {
   ScenarioApi,
   UsersByRole,
 } from './types';
+import { UserRole, WorkshopPhase } from './types';
 
 import {
   ApiMocker,
@@ -48,6 +47,7 @@ import {
 
 import {
   DEFAULT_API_URL,
+  DEFAULT_BASE_URL,
   DEFAULT_FACILITATOR,
   SAMPLE_TRACE_INPUTS,
   SAMPLE_TRACE_OUTPUTS,
@@ -259,12 +259,45 @@ export class TestScenario {
     // Get or create page
     let page = this.state.page;
     if (!page && this.state.browser) {
-      const context = await this.state.browser.newContext();
+      // Must pass baseURL so that page.goto('/') works correctly
+      const baseURL = process.env.PLAYWRIGHT_BASE_URL || DEFAULT_BASE_URL;
+      const context = await this.state.browser.newContext({
+        baseURL,
+      });
       page = await context.newPage();
     }
     if (!page) {
       throw new Error('No page or browser provided to TestScenario');
     }
+
+    // Setup browser error capture - collect JS errors and console errors
+    const jsErrors: string[] = [];
+    const consoleErrors: string[] = [];
+
+    page.on('pageerror', (err) => {
+      jsErrors.push(`[PageError] ${err.message}\n${err.stack || ''}`);
+      console.error('[PageError]', err.message);
+    });
+
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') {
+        const text = msg.text();
+        // Filter out non-critical errors:
+        // - favicon.ico 404s are normal
+        // - React DevTools messages are noise
+        // - 404 "resource" errors are often expected for optional API endpoints
+        // - net::ERR errors during navigation are often transient
+        const isNonCritical =
+          text.includes('favicon.ico') ||
+          text.includes('Download the React DevTools') ||
+          text.includes('the server responded with a status of 404') ||
+          text.includes('net::ERR_');
+        if (!isNonCritical) {
+          consoleErrors.push(`[ConsoleError] ${text}`);
+          console.error('[ConsoleError]', text);
+        }
+      }
+    });
 
     // Build mock data
     const store = this.buildMockData();
@@ -287,8 +320,8 @@ export class TestScenario {
       await this.persistMockDataToRealApi(page, store);
     }
 
-    // Build the scenario result
-    const scenario = this.buildScenarioResult(page, store);
+    // Build the scenario result, passing error arrays for cleanup to check
+    const scenario = this.buildScenarioResult(page, store, { jsErrors, consoleErrors });
 
     return scenario;
   }
@@ -315,7 +348,7 @@ export class TestScenario {
       return;
     }
 
-    const facilitator = store.users.find((u) => u.role === 'facilitator');
+    const facilitator = store.users.find((u) => u.role === UserRole.FACILITATOR);
     if (!facilitator) {
       return;
     }
@@ -385,7 +418,7 @@ export class TestScenario {
     store: MockDataStore,
     apiUrl: string
   ): Promise<void> {
-    const facilitator = store.users.find((u) => u.role === 'facilitator');
+    const facilitator = store.users.find((u) => u.role === UserRole.FACILITATOR);
     if (!facilitator) {
       throw new Error('No facilitator found in store');
     }
@@ -406,7 +439,7 @@ export class TestScenario {
     // Update facilitator with real data from login response
     const loginData = await loginResponse.json();
     if (loginData.user?.id) {
-      const index = store.users.findIndex((u) => u.role === 'facilitator');
+      const index = store.users.findIndex((u) => u.role === UserRole.FACILITATOR);
       if (index !== -1) {
         store.users[index] = { ...store.users[index], id: loginData.user.id };
       }
@@ -425,7 +458,7 @@ export class TestScenario {
       throw new Error('No workshop in store');
     }
 
-    const facilitator = store.users.find((u) => u.role === 'facilitator');
+    const facilitator = store.users.find((u) => u.role === UserRole.FACILITATOR);
     if (!facilitator) {
       throw new Error('No facilitator found in store for workshop creation');
     }
@@ -450,7 +483,7 @@ export class TestScenario {
     store.workshop.id = createdWorkshop.id;
 
     // Update facilitator's workshop_id with the real workshop ID
-    const facilitatorIndex = store.users.findIndex((u) => u.role === 'facilitator');
+    const facilitatorIndex = store.users.findIndex((u) => u.role === UserRole.FACILITATOR);
     if (facilitatorIndex !== -1) {
       store.users[facilitatorIndex] = {
         ...store.users[facilitatorIndex],
@@ -469,7 +502,7 @@ export class TestScenario {
   ): Promise<void> {
     for (let i = 0; i < store.users.length; i++) {
       const user = store.users[i];
-      if (user.role === 'facilitator') {
+      if (user.role === UserRole.FACILITATOR) {
         continue;
       }
 
@@ -547,10 +580,10 @@ export class TestScenario {
   private shouldBeginDiscovery(): boolean {
     const phase = this.state.targetPhase;
     return (
-      phase === 'discovery' ||
-      phase === 'rubric' ||
-      phase === 'annotation' ||
-      phase === 'results'
+      phase === WorkshopPhase.DISCOVERY ||
+      phase === WorkshopPhase.RUBRIC ||
+      phase === WorkshopPhase.ANNOTATION ||
+      phase === WorkshopPhase.RESULTS
     );
   }
 
@@ -560,8 +593,8 @@ export class TestScenario {
   private shouldBeginAnnotation(): boolean {
     const phase = this.state.targetPhase;
     return (
-      phase === 'annotation' ||
-      phase === 'results'
+      phase === WorkshopPhase.ANNOTATION ||
+      phase === WorkshopPhase.RESULTS
     );
   }
 
@@ -601,7 +634,7 @@ export class TestScenario {
 
     // Find first available participant or SME for default user assignment
     const defaultUser = store.users.find(
-      (u) => u.role === 'participant' || u.role === 'sme'
+      (u) => u.role === UserRole.PARTICIPANT || u.role === UserRole.SME
     );
 
     for (let i = 0; i < this.state.findingConfigs.length; i++) {
@@ -646,7 +679,7 @@ export class TestScenario {
     apiUrl: string
   ): Promise<void> {
     const participantsAndSmes = store.users.filter(
-      (u) => u.role === 'participant' || u.role === 'sme'
+      (u) => u.role === UserRole.PARTICIPANT || u.role === UserRole.SME
     );
 
     for (const user of participantsAndSmes) {
@@ -672,7 +705,7 @@ export class TestScenario {
       return;
     }
 
-    const facilitator = store.users.find((u) => u.role === 'facilitator');
+    const facilitator = store.users.find((u) => u.role === UserRole.FACILITATOR);
     if (!facilitator) {
       throw new Error('No facilitator found in store for rubric creation');
     }
@@ -713,7 +746,7 @@ export class TestScenario {
     apiUrl: string
   ): Promise<void> {
     const targetPhase = this.state.targetPhase;
-    if (!targetPhase || targetPhase === 'intake' || targetPhase === 'discovery') {
+    if (!targetPhase || targetPhase === WorkshopPhase.INTAKE || targetPhase === WorkshopPhase.DISCOVERY) {
       // No advancement needed - intake is default, discovery was handled by beginDiscovery
       return;
     }
@@ -722,7 +755,7 @@ export class TestScenario {
     // auto-create a minimal finding to satisfy API requirements
     if (store.findings.length === 0 && store.traces.length > 0) {
       const participant = store.users.find(
-        (u) => u.role === 'participant' || u.role === 'sme'
+        (u) => u.role === UserRole.PARTICIPANT || u.role === UserRole.SME
       );
       if (participant) {
         const finding = await actions.submitFindingViaApi(
@@ -740,10 +773,10 @@ export class TestScenario {
     }
 
     // Define phase sequence for advancement
-    const phaseSequence: Array<'rubric' | 'annotation' | 'results'> = [
-      'rubric',
-      'annotation',
-      'results',
+    const phaseSequence: WorkshopPhase[] = [
+      WorkshopPhase.RUBRIC,
+      WorkshopPhase.ANNOTATION,
+      WorkshopPhase.RESULTS,
     ];
 
     // Advance through phases until we reach target
@@ -770,7 +803,7 @@ export class TestScenario {
 
     // Find first available participant or SME for default user assignment
     const defaultUser = store.users.find(
-      (u) => u.role === 'participant' || u.role === 'sme'
+      (u) => u.role === UserRole.PARTICIPANT || u.role === UserRole.SME
     );
 
     for (let i = 0; i < this.state.annotationConfigs.length; i++) {
@@ -845,7 +878,7 @@ export class TestScenario {
 
     // Build facilitator
     if (this.state.facilitatorConfig) {
-      const facilitator = new UserBuilder('facilitator')
+      const facilitator = new UserBuilder(UserRole.FACILITATOR)
         .withEmail(
           this.state.facilitatorConfig.email || DEFAULT_FACILITATOR.email
         )
@@ -861,9 +894,9 @@ export class TestScenario {
 
     // Build participants
     this.state.participantConfigs.forEach((config, index) => {
-      const user = new UserBuilder('participant')
-        .withEmail(config.email || generateTestEmail('participant', `${this.runId}-${index}`))
-        .withName(config.name || generateTestName('participant', index))
+      const user = new UserBuilder(UserRole.PARTICIPANT)
+        .withEmail(config.email || generateTestEmail(UserRole.PARTICIPANT, `${this.runId}-${index}`))
+        .withName(config.name || generateTestName(UserRole.PARTICIPANT, index))
         .withWorkshopId(store.workshop!.id)
         .build();
       store.users.push(user);
@@ -871,9 +904,9 @@ export class TestScenario {
 
     // Build SMEs
     this.state.smeConfigs.forEach((config, index) => {
-      const user = new UserBuilder('sme')
-        .withEmail(config.email || generateTestEmail('sme', `${this.runId}-${index}`))
-        .withName(config.name || generateTestName('sme', index))
+      const user = new UserBuilder(UserRole.SME)
+        .withEmail(config.email || generateTestEmail(UserRole.SME, `${this.runId}-${index}`))
+        .withName(config.name || generateTestName(UserRole.SME, index))
         .withWorkshopId(store.workshop!.id)
         .build();
       store.users.push(user);
@@ -908,17 +941,17 @@ export class TestScenario {
     // Update workshop with trace IDs
     if (store.traces.length > 0 && store.workshop) {
       const traceIds = store.traces.map((t) => t.id);
-      if (shouldDiscoveryBeStarted(this.state.targetPhase || 'intake')) {
+      if (shouldDiscoveryBeStarted(this.state.targetPhase || WorkshopPhase.INTAKE)) {
         store.workshop.active_discovery_trace_ids = traceIds;
       }
-      if (shouldAnnotationBeStarted(this.state.targetPhase || 'intake')) {
+      if (shouldAnnotationBeStarted(this.state.targetPhase || WorkshopPhase.INTAKE)) {
         store.workshop.active_annotation_trace_ids = traceIds;
       }
     }
 
     // Build rubric
     if (this.state.rubricConfig) {
-      const facilitator = store.users.find((u) => u.role === 'facilitator');
+      const facilitator = store.users.find((u) => u.role === UserRole.FACILITATOR);
       const rubricBuilder = new RubricBuilder()
         .withWorkshopId(store.workshop!.id)
         .withCreatedBy(facilitator?.id || '');
@@ -939,7 +972,7 @@ export class TestScenario {
     // Build findings
     this.state.findingConfigs.forEach((config, index) => {
       const participant = store.users.find(
-        (u) => u.role === 'participant' || u.role === 'sme'
+        (u) => u.role === UserRole.PARTICIPANT || u.role === UserRole.SME
       );
       const trace = config.trace || store.traces[config.traceIndex || 0];
 
@@ -956,14 +989,14 @@ export class TestScenario {
     // Mark discovery complete if configured
     if (this.state.discoveryComplete) {
       store.users
-        .filter((u) => u.role === 'participant' || u.role === 'sme')
+        .filter((u) => u.role === UserRole.PARTICIPANT || u.role === UserRole.SME)
         .forEach((u) => store.discoveryComplete.set(u.id, true));
     }
 
     // Build annotations
     this.state.annotationConfigs.forEach((config) => {
       const participant = store.users.find(
-        (u) => u.role === 'participant' || u.role === 'sme'
+        (u) => u.role === UserRole.PARTICIPANT || u.role === UserRole.SME
       );
       const trace = config.trace || store.traces[config.traceIndex || 0];
 
@@ -989,15 +1022,20 @@ export class TestScenario {
   /**
    * Build the scenario result object with actions
    */
-  private buildScenarioResult(page: Page, store: MockDataStore): BuiltScenario {
+  private buildScenarioResult(
+    page: Page,
+    store: MockDataStore,
+    errorCapture: { jsErrors: string[]; consoleErrors: string[] } = { jsErrors: [], consoleErrors: [] }
+  ): BuiltScenario {
     const apiUrl = DEFAULT_API_URL;
     const contexts: BrowserContext[] = [];
+    const { jsErrors, consoleErrors } = errorCapture;
 
     // Organize users by role
     const usersByRole: UsersByRole = {
-      facilitator: store.users.filter((u) => u.role === 'facilitator'),
-      sme: store.users.filter((u) => u.role === 'sme'),
-      participant: store.users.filter((u) => u.role === 'participant'),
+      facilitator: store.users.filter((u) => u.role === UserRole.FACILITATOR),
+      sme: store.users.filter((u) => u.role === UserRole.SME),
+      participant: store.users.filter((u) => u.role === UserRole.PARTICIPANT),
     };
 
     // Build page-scoped actions
@@ -1123,9 +1161,32 @@ export class TestScenario {
         if (!this.state.browser) {
           throw new Error('Browser required for newPageAs - use browser fixture');
         }
-        const context = await this.state.browser.newContext();
+        // Must pass baseURL so that page.goto('/') works correctly
+        const context = await this.state.browser.newContext({
+          baseURL: DEFAULT_BASE_URL,
+        });
         contexts.push(context);
         const newPage = await context.newPage();
+
+        // Setup browser error capture on new page
+        newPage.on('pageerror', (err) => {
+          jsErrors.push(`[PageError] ${err.message}\n${err.stack || ''}`);
+          console.error('[PageError]', err.message);
+        });
+        newPage.on('console', (msg) => {
+          if (msg.type() === 'error') {
+            const text = msg.text();
+            const isNonCritical =
+              text.includes('favicon.ico') ||
+              text.includes('Download the React DevTools') ||
+              text.includes('the server responded with a status of 404') ||
+              text.includes('net::ERR_');
+            if (!isNonCritical) {
+              consoleErrors.push(`[ConsoleError] ${text}`);
+              console.error('[ConsoleError]', text);
+            }
+          }
+        });
 
         // Setup mocking on new page if needed
         if (this.state.mockAll) {
@@ -1153,6 +1214,23 @@ export class TestScenario {
         // Close all created contexts
         for (const context of contexts) {
           await context.close();
+        }
+
+        // Check for browser errors and fail if any were detected
+        const allErrors = [...jsErrors, ...consoleErrors];
+        if (allErrors.length > 0) {
+          console.error('\n' + '='.repeat(60));
+          console.error('BROWSER ERRORS DETECTED DURING TEST');
+          console.error('='.repeat(60));
+          allErrors.forEach((err, i) => {
+            console.error(`\n--- Error ${i + 1} ---`);
+            console.error(err);
+          });
+          console.error('='.repeat(60) + '\n');
+
+          throw new Error(
+            `Test had ${allErrors.length} browser error(s). First error: ${allErrors[0].substring(0, 200)}`
+          );
         }
       },
     };

@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useUser, useRoleCheck } from '@/context/UserContext';
-import { UsersService, WorkshopsService } from '@/client';
+import { UsersService, WorkshopsService, UserRole, type User, type WorkshopParticipant, type Trace } from '@/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -19,32 +19,6 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
-interface User {
-  id: string;
-  email: string;
-  name: string;
-  role: 'facilitator' | 'sme' | 'participant';
-  workshop_id: string;
-  status: 'active' | 'inactive' | 'pending';
-}
-
-interface WorkshopParticipant {
-  user_id: string;
-  workshop_id: string;
-  role: 'facilitator' | 'sme' | 'participant';
-  assigned_traces: string[];
-  annotation_quota?: number;
-  joined_at: string;
-}
-
-interface Trace {
-  id: string;
-  workshop_id: string;
-  input: string;
-  output: string;
-  created_at: string;
-}
-
 export const AnnotationAssignmentManager: React.FC = () => {
   const { workshopId } = useWorkshopContext();
   const { user } = useUser();
@@ -57,21 +31,16 @@ export const AnnotationAssignmentManager: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [assigning, setAssigning] = useState(false);
 
-  useEffect(() => {
-    if (workshopId && canAssignAnnotations) {
-      loadData();
-    }
-  }, [workshopId, canAssignAnnotations]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
+    if (!workshopId) return;
     try {
       setLoading(true);
       setError(null);
 
       const [participantsRes, usersRes, tracesRes] = await Promise.all([
-        UsersService.getWorkshopParticipantsUsersWorkshopsWorkshopIdParticipantsGet(workshopId!),
-        UsersService.listUsersUsersUsersGet(workshopId),
-        WorkshopsService.getTracesWorkshopsWorkshopIdTracesGet(workshopId!, 'all')
+        UsersService.getWorkshopParticipantsUsersWorkshopsWorkshopIdParticipantsGet(workshopId),
+        UsersService.listUsersUsersGet(workshopId),
+        WorkshopsService.getTracesWorkshopsWorkshopIdTracesGet(workshopId, 'all')
       ]);
 
       setParticipants(participantsRes);
@@ -83,7 +52,13 @@ export const AnnotationAssignmentManager: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [workshopId]);
+
+  useEffect(() => {
+    if (workshopId && canAssignAnnotations) {
+      loadData();
+    }
+  }, [workshopId, canAssignAnnotations, loadData]);
 
   const handleAutoAssign = async () => {
     try {
@@ -152,7 +127,7 @@ export const AnnotationAssignmentManager: React.FC = () => {
     );
   }
 
-  const annotators = participants.filter(p => p.role === 'sme' || p.role === 'participant');
+  const annotators = participants.filter((p) => p.role === UserRole.SME || p.role === UserRole.PARTICIPANT);
   const getUserById = (userId: string) => users.find(u => u.id === userId);
   
   const getAssignmentStats = () => {
@@ -263,7 +238,7 @@ export const AnnotationAssignmentManager: React.FC = () => {
                 <CardHeader>
                   <CardTitle className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      {participant.role === 'sme' ? (
+                      {participant.role === UserRole.SME ? (
                         <UserCheck className="h-4 w-4 text-blue-500" />
                       ) : (
                         <Users className="h-4 w-4 text-gray-500" />

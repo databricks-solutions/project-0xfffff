@@ -16,6 +16,7 @@ import type {
   UserPermissions,
   AuthResponse,
 } from '../types';
+import { UserRole, WorkshopPhase } from '../types';
 import {
   buildPermissions,
   buildAuthResponse,
@@ -188,7 +189,7 @@ export class ApiMocker {
         const body = route.request().postDataJSON();
         const user = this.store.users.find((u) => u.email === body?.email);
         if (user) {
-          const isFacilitator = user.role === 'facilitator';
+          const isFacilitator = user.role === UserRole.FACILITATOR;
           await route.fulfill({
             json: buildAuthResponse(user, isFacilitator),
           });
@@ -255,6 +256,14 @@ export class ApiMocker {
     // Workshop routes
     this.routes.push({
       pattern: /\/workshops\/$/,
+      get: async (route) => {
+        // Return array of workshops for workshop list endpoint
+        if (this.store.workshop) {
+          await route.fulfill({ json: [this.store.workshop] });
+        } else {
+          await route.fulfill({ json: [] });
+        }
+      },
       post: async (route) => {
         if (this.store.workshop) {
           await route.fulfill({ status: 201, json: this.store.workshop });
@@ -471,7 +480,7 @@ export class ApiMocker {
       post: async (route) => {
         if (this.store.workshop) {
           this.store.workshop.discovery_started = true;
-          this.store.workshop.current_phase = 'discovery';
+          this.store.workshop.current_phase = WorkshopPhase.DISCOVERY;
         }
         await route.fulfill({ json: { success: true } });
       },
@@ -481,7 +490,7 @@ export class ApiMocker {
       pattern: /\/workshops\/([a-f0-9-]+)\/advance-to-discovery$/i,
       post: async (route) => {
         if (this.store.workshop) {
-          this.store.workshop.current_phase = 'discovery';
+          this.store.workshop.current_phase = WorkshopPhase.DISCOVERY;
         }
         await route.fulfill({ json: { success: true } });
       },
@@ -491,8 +500,8 @@ export class ApiMocker {
       pattern: /\/workshops\/([a-f0-9-]+)\/advance-to-rubric$/i,
       post: async (route) => {
         if (this.store.workshop) {
-          this.store.workshop.current_phase = 'rubric';
-          this.store.workshop.completed_phases = ['intake', 'discovery'];
+          this.store.workshop.current_phase = WorkshopPhase.RUBRIC;
+          this.store.workshop.completed_phases = [WorkshopPhase.INTAKE, WorkshopPhase.DISCOVERY];
         }
         await route.fulfill({ json: { success: true } });
       },
@@ -502,9 +511,13 @@ export class ApiMocker {
       pattern: /\/workshops\/([a-f0-9-]+)\/advance-to-annotation$/i,
       post: async (route) => {
         if (this.store.workshop) {
-          this.store.workshop.current_phase = 'annotation';
+          this.store.workshop.current_phase = WorkshopPhase.ANNOTATION;
           this.store.workshop.annotation_started = true;
-          this.store.workshop.completed_phases = ['intake', 'discovery', 'rubric'];
+          this.store.workshop.completed_phases = [
+            WorkshopPhase.INTAKE,
+            WorkshopPhase.DISCOVERY,
+            WorkshopPhase.RUBRIC,
+          ];
         }
         await route.fulfill({ json: { success: true } });
       },
@@ -514,12 +527,12 @@ export class ApiMocker {
       pattern: /\/workshops\/([a-f0-9-]+)\/advance-to-results$/i,
       post: async (route) => {
         if (this.store.workshop) {
-          this.store.workshop.current_phase = 'results';
+          this.store.workshop.current_phase = WorkshopPhase.RESULTS;
           this.store.workshop.completed_phases = [
-            'intake',
-            'discovery',
-            'rubric',
-            'annotation',
+            WorkshopPhase.INTAKE,
+            WorkshopPhase.DISCOVERY,
+            WorkshopPhase.RUBRIC,
+            WorkshopPhase.ANNOTATION,
           ];
         }
         await route.fulfill({ json: { success: true } });
@@ -551,7 +564,7 @@ export class ApiMocker {
       pattern: /\/workshops\/([a-f0-9-]+)\/discovery-completion-status$/i,
       get: async (route) => {
         const participants = this.store.users.filter(
-          (u) => u.role === 'participant' || u.role === 'sme'
+          (u) => u.role === UserRole.PARTICIPANT || u.role === UserRole.SME
         );
         const completed = participants.filter((p) =>
           this.store.discoveryComplete.get(p.id)
@@ -571,7 +584,7 @@ export class ApiMocker {
       pattern: /\/workshops\/([a-f0-9-]+)\/participants$/i,
       get: async (route) => {
         const participants = this.store.users.filter(
-          (u) => u.role === 'participant' || u.role === 'sme'
+          (u) => u.role === UserRole.PARTICIPANT || u.role === UserRole.SME
         );
         await route.fulfill({ json: participants });
       },
@@ -644,7 +657,12 @@ export class ApiMocker {
       await this.handleRoute(route);
     });
 
-    // Handle /workshops/** routes
+    // Handle /workshops/ base route (for listing workshops)
+    await this.page.route('**/workshops/', async (route) => {
+      await this.handleRoute(route);
+    });
+
+    // Handle /workshops/** routes (for workshop-specific endpoints)
     await this.page.route('**/workshops/**', async (route) => {
       await this.handleRoute(route);
     });

@@ -4,7 +4,7 @@
  * Provides sensible defaults for test scenarios.
  */
 
-import type { WorkshopPhase, UserRole } from '../types';
+import { WorkshopPhase, UserRole } from '../types';
 
 /**
  * Default facilitator credentials (matches config/auth.yaml in dev)
@@ -20,6 +20,27 @@ export const DEFAULT_FACILITATOR = {
  */
 export const DEFAULT_API_URL =
   process.env.E2E_API_URL ?? 'http://127.0.0.1:8000';
+
+/**
+ * Default Databricks configuration for LLM tests
+ * Set these environment variables to enable LLM-based classification in E2E tests:
+ * - E2E_DATABRICKS_HOST: Databricks workspace URL
+ * - E2E_DATABRICKS_TOKEN: Databricks API token
+ * - E2E_LLM_MODEL_NAME: Model endpoint name (default: databricks-meta-llama-3-1-70b-instruct)
+ */
+export const DEFAULT_DATABRICKS_CONFIG = {
+  host: process.env.E2E_DATABRICKS_HOST ?? '',
+  token: process.env.E2E_DATABRICKS_TOKEN ?? '',
+  modelName: process.env.E2E_LLM_MODEL_NAME ?? 'databricks-meta-llama-3-1-70b-instruct',
+  experimentId: process.env.E2E_MLFLOW_EXPERIMENT_ID ?? 'e2e-test-experiment',
+};
+
+/**
+ * Check if LLM configuration is available for E2E tests
+ */
+export function isLLMConfigured(): boolean {
+  return !!(DEFAULT_DATABRICKS_CONFIG.host && DEFAULT_DATABRICKS_CONFIG.token);
+}
 
 /**
  * Default base URL for the app
@@ -91,10 +112,10 @@ export function generateTestEmail(role: UserRole, runId: string): string {
  * Generate a test user name
  */
 export function generateTestName(role: UserRole, index: number): string {
-  const roleNames = {
-    facilitator: 'Facilitator',
-    sme: 'SME Expert',
-    participant: 'Participant',
+  const roleNames: Record<UserRole, string> = {
+    [UserRole.FACILITATOR]: 'Facilitator',
+    [UserRole.SME]: 'SME Expert',
+    [UserRole.PARTICIPANT]: 'Participant',
   };
   return `Test ${roleNames[role]} ${index + 1}`;
 }
@@ -104,13 +125,13 @@ export function generateTestName(role: UserRole, index: number): string {
  */
 export function getPreviousPhases(phase: WorkshopPhase): WorkshopPhase[] {
   const phaseOrder: WorkshopPhase[] = [
-    'intake',
-    'discovery',
-    'rubric',
-    'annotation',
-    'results',
-    'judge_tuning',
-    'unity_volume',
+    WorkshopPhase.INTAKE,
+    WorkshopPhase.DISCOVERY,
+    WorkshopPhase.RUBRIC,
+    WorkshopPhase.ANNOTATION,
+    WorkshopPhase.RESULTS,
+    WorkshopPhase.JUDGE_TUNING,
+    WorkshopPhase.UNITY_VOLUME,
   ];
   const index = phaseOrder.indexOf(phase);
   return phaseOrder.slice(0, index);
@@ -120,12 +141,24 @@ export function getPreviousPhases(phase: WorkshopPhase): WorkshopPhase[] {
  * Check if discovery should be started for a given phase
  */
 export function shouldDiscoveryBeStarted(phase: WorkshopPhase): boolean {
-  return ['discovery', 'rubric', 'annotation', 'results', 'judge_tuning', 'unity_volume'].includes(phase);
+  return [
+    WorkshopPhase.DISCOVERY,
+    WorkshopPhase.RUBRIC,
+    WorkshopPhase.ANNOTATION,
+    WorkshopPhase.RESULTS,
+    WorkshopPhase.JUDGE_TUNING,
+    WorkshopPhase.UNITY_VOLUME,
+  ].includes(phase);
 }
 
 /**
  * Check if annotation should be started for a given phase
  */
 export function shouldAnnotationBeStarted(phase: WorkshopPhase): boolean {
-  return ['annotation', 'results', 'judge_tuning', 'unity_volume'].includes(phase);
+  return [
+    WorkshopPhase.ANNOTATION,
+    WorkshopPhase.RESULTS,
+    WorkshopPhase.JUDGE_TUNING,
+    WorkshopPhase.UNITY_VOLUME,
+  ].includes(phase);
 }

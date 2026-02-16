@@ -26,7 +26,8 @@ const convertApiRubricToQuestions = (rubric: Rubric | null): RubricQuestion[] =>
   return parseRubricQuestions(rubric.question).map((q, index) => ({
     id: `${rubric.id}_${index}`,
     title: q.title,
-    description: q.description
+    description: q.description,
+    judgeType: q.judgeType
   }));
 };
 

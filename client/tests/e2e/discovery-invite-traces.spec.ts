@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { loginAs, loginAsFacilitator } from '../lib/actions/auth';
+import { UserRole } from '../lib/types';
 
 // This repo doesn't include Node typings in the client TS config; keep `process.env` without adding deps.
 declare const process: { env: Record<string, string | undefined> };
@@ -104,17 +105,19 @@ test('discovery blocks until multiple participants complete; facilitator-driven 
       id: '', // ID not needed for login
       email,
       name: email.split('@')[0],
-      role: 'participant',
+      role: UserRole.PARTICIPANT,
       workshop_id: workshopId!,
     });
 
     await expect(p.getByTestId('discovery-phase-title')).toBeVisible();
 
-    await p.locator('#question1').fill('Clear but slightly verbose.');
-    await p
-      .locator('#question2')
-      .fill('If it included account recovery steps for locked-out users, it would be better.');
+    // TraceViewerDemo renders discovery questions with ids like `dq-q_1`
+    const q1 = p.locator('#dq-q_1');
+    await expect(q1).toBeVisible();
+    await q1.fill('Clear but slightly verbose. Consider account recovery steps for locked-out users.');
+    await q1.blur(); // autosave happens onBlur
 
+    // Single-trace discovery: the navigation button shows "Complete"
     await p.getByRole('button', { name: /^Complete$/i }).click();
     await expect(p.getByTestId('complete-discovery-phase-button')).toBeVisible();
     await p.getByTestId('complete-discovery-phase-button').click();
