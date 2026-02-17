@@ -73,8 +73,17 @@ tests/
 │       ├── test_irr.py
 │       ├── test_krippendorff_alpha.py
 │       └── test_token_storage.py
-└── integration/
-    └── ...
+├── integration/
+│   ├── conftest.py                    # Real DB fixtures (SQLite/Postgres)
+│   ├── test_workshop_crud.py
+│   ├── test_trace_ingestion.py
+│   ├── test_phase_transitions.py
+│   ├── test_annotation_submission.py
+│   ├── test_discovery_findings.py
+│   └── test_connection_resilience.py  # Postgres-only: pool reset, retry, OAuth refresh
+└── contract/
+    ├── conftest.py                    # MLflow mock fixtures
+    └── test_mlflow_contracts.py       # Contract shape & call-site tests
 ```
 
 ### Database Isolation
@@ -111,6 +120,207 @@ def client(test_db):
 
 - `htmlcov/` - HTML report (open `index.html` in browser)
 - `coverage.xml` - XML report (for CI integration)
+
+---
+
+## Integration Tests (Python / pytest)
+
+Integration tests exercise the full HTTP request → FastAPI routing → DatabaseService → real database cycle. Unlike unit tests (which mock `DatabaseService`), these catch real query bugs, unique-constraint enforcement, upsert semantics, and phase-transition state persistence.
+
+### Architecture
+
+    HTTP request (httpx AsyncClient)
+         │
+         ▼
+    FastAPI router (real)
+         │
+         ▼
+    DatabaseService (real)
+         │
+         ▼
+    SQLAlchemy ORM → Real database (SQLite or Postgres)
+
+**What's real:** Database, ORM models, DatabaseService, FastAPI routing, Pydantic validation.
+**What's mocked:** MLflow/Databricks external calls only.
+
+### Database Backends
+
+| Mode | Backend | When to use |
+|------|---------|-------------|
+| Default | SQLite in-memory | Local dev, `just test-integration` |
+| `--backend postgres` | Postgres via testcontainers | CI, or when testing Postgres-specific behavior |
+
+Both backends use the same test suite. Backend-specific differences (e.g., locking semantics) are handled transparently by SQLAlchemy.
+
+### Test Isolation
+
+Tests use the **transaction-rollback** pattern:
+
+1. **Session-scoped**: Engine created once, schema applied via `Base.metadata.create_all()` + runtime unique indexes.
+2. **Per-test**: Each test runs inside a transaction that is rolled back after the test completes. No data leaks between tests.
+
+### Commands
+
+    # Run integration tests (SQLite, fast)
+    just test-integration
+
+    # Run integration tests against Postgres (requires Docker)
+    just test-integration --backend postgres
+
+    # Run integration tests for a specific spec
+    just test-integration --spec ANNOTATION_SPEC
+
+### Critical Workflows Tested
+
+1. **Workshop CRUD** — Create workshop via POST, retrieve via GET, list with facilitator filter, 404 for missing workshops.
+2. **Trace ingestion** — Bulk upload traces, retrieve via GET, verify metadata/context fields persist.
+3. **Phase transitions** — intake → discovery (requires traces), discovery → annotation (requires rubric). Validates prerequisite enforcement returns HTTP 400.
+4. **Annotation submission** — Create annotation, verify upsert semantics (same user+trace updates existing record), verify different users create separate records. Unique constraint `(user_id, trace_id)` enforced at DB level.
+5. **Discovery findings** — Submit finding, verify upsert semantics (same user+trace updates), verify user-filtered retrieval.
+6. **Connection resilience** (Postgres-only) — Verify `pool_pre_ping` detects stale connections, `_reset_connection_pool()` disposes engine + refreshes OAuth token, `get_db()` retries on transient connection failures with exponential backoff and gives up after 3 attempts.
+
+### Success Criteria
+
+- [ ] `tests/integration/conftest.py` provides real-DB fixtures with transaction rollback isolation
+- [ ] Integration tests run against SQLite (default) and Postgres (via testcontainers)
+- [ ] `just test-integration` recipe exists and passes
+- [ ] Workshop CRUD tested end-to-end through HTTP → DB → response
+- [ ] Trace ingestion tested: bulk upload, retrieval, metadata persistence
+- [ ] Phase transition prerequisites enforced: no discovery without traces, no annotation without rubric
+- [ ] Annotation upsert semantics verified: same user+trace updates (not duplicates), different users create separate records
+- [ ] Discovery finding upsert semantics verified at DB level
+- [ ] All integration tests tagged with `@pytest.mark.integration` and `@pytest.mark.spec()`
+- [ ] External services (MLflow, Databricks) mocked — only database is real
+- [ ] Connection resilience tested (Postgres-only): pool reset disposes + refreshes OAuth, `get_db()` retries with backoff, stale connections detected via `pool_pre_ping`
+- [ ] Tests are hermetic: no shared state, runnable in any order
+
+---
+
+## Contract Tests (MLflow)
+
+Contract tests verify that our code's assumptions about MLflow's API surface are correct — and that our test mocks faithfully represent real MLflow behavior. They sit between unit tests (where MLflow is mocked) and full integration (where we'd need a live MLflow server).
+
+### Why Contract Tests
+
+The application has a large MLflow integration surface spanning 5 service files. Unit tests mock these calls, but mocks can silently drift from reality. Contract tests define the expected request/response shapes and verify:
+- **Consumer side**: Our code sends correct parameters and handles expected response shapes.
+- **Provider side** (optional, CI-only): Real MLflow returns what we expect.
+
+### Contract Boundaries
+
+The MLflow contract is organized into 5 domains:
+
+#### 1. Trace Operations
+
+| Method | Parameters | Returns |
+|--------|-----------|---------|
+| `mlflow.search_traces` | `experiment_ids: List[str]`, `max_results: int`, `filter_string: str`, `return_type: 'list'\|'pandas'` | List of trace objects or DataFrame |
+| `mlflow.get_trace` | `trace_id: str` (format: `tr-xxxxx`) | Single trace object |
+| `mlflow.set_trace_tag` | `trace_id: str`, `key: str`, `value: str` | None (side effect) |
+
+**Trace object shape:**
+- `trace.info.request_id: str` — Trace ID
+- `trace.info.status: str` — `"OK"`, `"FAILED"`, etc.
+- `trace.info.execution_time_ms: int`
+- `trace.info.timestamp_ms: int`
+- `trace.info.tags: Dict[str, str]`
+- `trace.info.assessments: List[Assessment]`
+- `trace.data.request: str` — JSON string
+- `trace.data.response: str` — JSON string
+- `trace.data.spans: List[Span]` — with `name`, `span_type`, `inputs`, `outputs`
+
+#### 2. Feedback & Assessment
+
+| Method | Parameters | Returns |
+|--------|-----------|---------|
+| `mlflow.log_feedback` | `trace_id: str`, `name: str`, `value: int\|float`, `source: AssessmentSource`, `rationale: str` | None (side effect) |
+
+**AssessmentSource shape:**
+- `source_type: AssessmentSourceType.HUMAN \| AssessmentSourceType.AI_GENERATED`
+- `source_id: str` — user ID (human) or `"llm_judge_{name}"` (AI)
+
+**Constraints:**
+- Max 50 assessments per trace (hard MLflow limit)
+- Duplicate `(name, source_id)` pairs are skipped
+- Binary judges use `float` values `0.0` or `1.0` (not bool)
+- Likert judges use `float` values `1.0`–`5.0`
+
+#### 3. Judge Evaluation
+
+| Method | Parameters | Returns |
+|--------|-----------|---------|
+| `mlflow.genai.judges.make_judge` | `name: str`, `instructions: str`, `feedback_value_type: type`, `model: str` | Judge object |
+| `mlflow.genai.evaluate` | `data: DataFrame` (columns: `inputs`, `outputs`), `scorers: List[Judge]` | Results with `result_df` |
+| `mlflow.metrics.genai.make_genai_metric_from_prompt` | `name: str`, `judge_prompt: str`, `model: str`, `parameters: dict` | Metric object |
+
+**Evaluate result shape:**
+- `results.result_df["{judge_name}/value"]: float` — Numeric rating
+- `results.result_df["{judge_name}/explanation"]: str` — Judge reasoning
+
+**Prompt conventions:**
+- Judge prompts use `{inputs}` and `{outputs}` placeholders (not `{input}`/`{output}`)
+- Model URIs: `"databricks:/model-name"` or `"openai:/model-name"`
+
+#### 4. Alignment (MemAlign)
+
+| Method | Parameters | Returns |
+|--------|-----------|---------|
+| `mlflow.genai.judges.optimizers.MemAlignOptimizer` | `reflection_lm: str`, `retrieval_k: int`, `embedding_model: str` | Optimizer object |
+| `judge.align` | `traces: List[Trace]`, `optimizer: Optimizer` | Aligned judge (enhanced `.instructions`) |
+| `aligned_judge.register` | `experiment_id: str`, `name: str` | None (side effect) |
+| `aligned_judge.update` | `experiment_id: str`, `name: str`, `sampling_config: ScorerSamplingConfig` | None (side effect) |
+| `mlflow.genai.scorers.get_scorer` | `name: str`, `experiment_id: str` | Registered judge or None |
+| `mlflow.genai.scorers.ScorerSamplingConfig` | `sample_rate: float` (0.0–1.0) | Config object |
+
+**Alignment constraints:**
+- Reflection LM needs JSON schema support (OpenAI/Claude preferred)
+- Semantic memory (distilled guidelines) persisted in `.instructions`
+- Episodic memory (examples) NOT persisted by MLflow
+
+#### 5. Experiment & Run Management
+
+| Method | Parameters | Returns |
+|--------|-----------|---------|
+| `mlflow.set_tracking_uri` | `"databricks"` | None |
+| `mlflow.set_experiment` | `experiment_id: str` | None |
+| `mlflow.get_experiment` | `experiment_id: str` | Experiment object (`name`, `experiment_id`, `lifecycle_stage`) |
+| `mlflow.get_experiment_by_name` | `name: str` | Experiment object or None |
+| `mlflow.create_experiment` | `name: str` | Experiment ID string |
+| `mlflow.start_run` / `mlflow.end_run` | `run_name: str` / (none) | Run context / None |
+| `mlflow.log_param` | `key: str`, `value: Any` | None |
+| `mlflow.log_text` | `text: str`, `artifact_file: str` | None |
+
+### Error Handling Contract
+
+The app classifies MLflow errors into retryable vs non-retryable:
+
+**Non-retryable** (immediate failure):
+- `"maximum allowed assessments"` — Hit 50-assessment limit per trace
+- `"not found"` / HTTP 404 — Resource doesn't exist
+- `"unauthorized"` / HTTP 401/403 — Auth failure
+
+**Retryable** (exponential backoff: 1s, 2s, 4s, max 3 retries):
+- Transient network errors
+- Rate limiting
+- Temporary unavailability
+
+### Test Approach
+
+Contract tests verify our mock fidelity and call-site correctness:
+
+1. **Mock shape tests**: Verify that test mocks (used in unit/integration tests) match the documented contract shapes above.
+2. **Call-site tests**: Verify our service code calls MLflow with correct parameter types and handles all documented response shapes.
+3. **Error classification tests**: Verify the retry logic correctly classifies errors as retryable vs non-retryable.
+
+### Success Criteria
+
+- [ ] Contract shapes documented for all 5 MLflow domains (trace ops, feedback, evaluation, alignment, experiment management)
+- [ ] Mock shape tests verify test mocks match real MLflow response structures
+- [ ] Call-site tests verify services pass correct parameter types to MLflow methods
+- [ ] Error classification tested: retryable vs non-retryable errors handled correctly
+- [ ] Feedback value types validated: binary (0.0/1.0 float), likert (1.0-5.0 float)
+- [ ] Assessment limit (50 per trace) handling tested
+- [ ] Contract tests tagged with `@pytest.mark.spec("TESTING_SPEC")`
 
 ---
 
@@ -412,8 +622,12 @@ jobs:
 
 - [ ] Server unit tests pass with >20% coverage
 - [ ] Client unit tests pass with >20% coverage
+- [ ] Integration tests pass against real database (SQLite + Postgres)
+- [ ] Contract tests verify MLflow integration boundaries
 - [ ] E2E tests pass for critical flows
 - [ ] Tests run in CI on every PR
 - [ ] Coverage reports generated and accessible
 - [ ] No flaky tests (consistent pass/fail)
 - [ ] Test isolation (no shared state between tests)
+- [ ] `just test-integration` recipe works
+- [ ] `just test-contract` recipe works

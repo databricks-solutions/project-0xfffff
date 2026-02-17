@@ -273,6 +273,22 @@ test-server *args:
   mkdir -p .test-results
   uv run pytest -q --json-report --json-report-file=.test-results/pytest.json {{args}}
 
+# Run integration tests (real DB, transaction-rollback isolation)
+[group('dev')]
+test-integration *args:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  mkdir -p .test-results
+  uv run pytest tests/integration/ -q --json-report --json-report-file=.test-results/pytest-integration.json {{args}}
+
+# Run MLflow contract tests (mock shape & call-site verification)
+[group('dev')]
+test-contract *args:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  mkdir -p .test-results
+  uv run pytest tests/contract/ -q --json-report --json-report-file=.test-results/pytest-contract.json {{args}}
+
 [group('dev')]
 ui-test: openapi
   npm -C {{client-dir}} run test
