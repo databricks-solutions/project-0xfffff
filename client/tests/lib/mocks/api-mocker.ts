@@ -255,7 +255,7 @@ export class ApiMocker {
 
     // Workshop routes
     this.routes.push({
-      pattern: /\/workshops\/$/,
+      pattern: /\/workshops\/?(?:\?|$)/,
       get: async (route) => {
         // Return array of workshops for workshop list endpoint
         if (this.store.workshop) {
@@ -471,6 +471,23 @@ export class ApiMocker {
         };
         this.store.annotations.push(annotation as Annotation);
         await route.fulfill({ status: 201, json: annotation });
+      },
+    });
+
+    // Discovery questions model selection
+    this.routes.push({
+      pattern: /\/workshops\/([a-f0-9-]+)\/discovery-questions-model$/i,
+      put: async (route) => {
+        const body = route.request().postDataJSON();
+        if (this.store.workshop) {
+          this.store.workshop.discovery_questions_model_name = body?.model_name || 'demo';
+        }
+        await route.fulfill({
+          json: {
+            message: 'Discovery questions model updated',
+            model_name: body?.model_name || 'demo',
+          },
+        });
       },
     });
 

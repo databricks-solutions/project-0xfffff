@@ -252,11 +252,6 @@ class DatabaseService:
     self.db.commit()
     self.db.refresh(db_workshop)
 
-    # Clear cache for this workshop
-    cache_key = self._get_cache_key('workshop', workshop_id)
-    if cache_key in self._cache:
-      del self._cache[cache_key]
-
     return self.get_workshop(workshop_id)
 
   def update_workshop_jsonpath_settings(

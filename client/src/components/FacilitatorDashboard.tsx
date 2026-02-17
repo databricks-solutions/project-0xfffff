@@ -7,8 +7,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useFacilitatorFindings, useFacilitatorFindingsWithUserDetails, useTraces, useAllTraces, useRubric, useFacilitatorAnnotations, useFacilitatorAnnotationsWithUserDetails, useWorkshop, useDiscoveryFeedback } from '@/hooks/useWorkshopApi';
-import { Settings, Users, FileText, CheckCircle, Clock, AlertCircle, ChevronRight, Play, Eye, Plus, RotateCcw, Target, TrendingUp, Activity, MessageSquare, ChevronDown } from 'lucide-react';
+import { useFacilitatorFindings, useFacilitatorFindingsWithUserDetails, useTraces, useAllTraces, useRubric, useFacilitatorAnnotations, useFacilitatorAnnotationsWithUserDetails, useWorkshop, useDiscoveryFeedback, useUpdateDiscoveryModel, useMLflowConfig } from '@/hooks/useWorkshopApi';
+import { Settings, Users, FileText, CheckCircle, Clock, AlertCircle, ChevronRight, Play, Eye, Plus, RotateCcw, Target, TrendingUp, Activity, MessageSquare, ChevronDown, Brain } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { getModelOptions, getBackendModelName, getFrontendModelName } from '@/utils/modelMapping';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -82,6 +84,21 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
   const [isReorderingTraces, setIsReorderingTraces] = React.useState(false);
   const [isResettingDiscovery, setIsResettingDiscovery] = React.useState(false);
   const [isResettingAnnotation, setIsResettingAnnotation] = React.useState(false);
+
+  // Model selection for discovery questions
+  const { data: mlflowConfig } = useMLflowConfig(workshopId!);
+  const updateModelMutation = useUpdateDiscoveryModel(workshopId!);
+
+  const currentModel = React.useMemo(() => {
+    const backendName = workshop?.discovery_questions_model_name || 'demo';
+    if (backendName === 'demo' || backendName === 'custom') return backendName;
+    return getFrontendModelName(backendName);
+  }, [workshop?.discovery_questions_model_name]);
+
+  const handleModelChange = (value: string) => {
+    const backendName = value === 'demo' || value === 'custom' ? value : getBackendModelName(value);
+    updateModelMutation.mutate({ model_name: backendName });
+  };
 
   // Calculate progress metrics
   // For discovery: use active discovery traces count or all traces
@@ -1120,6 +1137,36 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
               {/* Discovery-specific actions */}
               {focusPhase === 'discovery' && (
                 <>
+                  {/* Discovery Question LLM Model Selector */}
+                  <div className="border-l-4 border-indigo-500 rounded-lg p-4 bg-gradient-to-r from-indigo-50 to-white shadow-sm">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
+                        <Brain className="w-4 h-4 text-indigo-600" />
+                      </div>
+                      <div className="text-left">
+                        <div className="font-semibold text-slate-900">Discovery Question LLM</div>
+                        <div className="text-xs text-slate-600">Controls which model generates discovery questions for participants</div>
+                      </div>
+                    </div>
+                    <Select value={currentModel} onValueChange={handleModelChange} data-testid="model-selector">
+                      <SelectTrigger data-testid="model-selector">
+                        <SelectValue placeholder="Select a model" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="demo">Demo (static questions)</SelectItem>
+                        {getModelOptions(!!mlflowConfig).map(option => (
+                          <SelectItem
+                            key={option.value}
+                            value={option.value}
+                            disabled={option.disabled}
+                          >
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
                   {/* Add Additional Traces */}
                   <div className="border-l-4 border-green-500 rounded-lg p-4 bg-gradient-to-r from-green-50 to-white shadow-sm">
                     <div className="flex items-center gap-3 mb-3">

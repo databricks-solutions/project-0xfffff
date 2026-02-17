@@ -38,6 +38,8 @@ vi.mock('@/hooks/useWorkshopApi', () => ({
   useFacilitatorAnnotations: () => ({ data: [] }),
   useFacilitatorAnnotationsWithUserDetails: () => ({ data: [] }),
   useDiscoveryFeedback: () => mockDiscoveryFeedback,
+  useMLflowConfig: () => ({ data: null }),
+  useUpdateDiscoveryModel: () => ({ mutate: vi.fn() }),
 }));
 
 vi.mock('@/context/WorkshopContext', () => ({
