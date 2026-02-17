@@ -3,7 +3,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Loader2, ThumbsUp, ThumbsDown, CheckCircle2, AlertCircle, RotateCcw } from 'lucide-react';
+import { Loader2, ThumbsUp, ThumbsDown, CheckCircle2, AlertCircle, RotateCcw, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   useSubmitDiscoveryFeedback,
@@ -45,6 +45,7 @@ export const DiscoveryFeedbackView: React.FC<Props> = ({
   const [currentAnswer, setCurrentAnswer] = useState('');
   const [qnaPairs, setQnaPairs] = useState<Array<{ question: string; answer: string }>>([]);
   const [retryCount, setRetryCount] = useState(0);
+  const [usingFallback, setUsingFallback] = useState(false);
 
   // Mutations
   const submitFeedback = useSubmitDiscoveryFeedback(workshopId);
@@ -76,6 +77,7 @@ export const DiscoveryFeedbackView: React.FC<Props> = ({
       setCurrentAnswer('');
       setQnaPairs([]);
       setRetryCount(0);
+      setUsingFallback(false);
     }
   }, [traceId, existingFeedback]);
 
@@ -98,6 +100,9 @@ export const DiscoveryFeedbackView: React.FC<Props> = ({
         });
         setCurrentQuestion(result.question);
         setCurrentAnswer('');
+        if (result.is_fallback) {
+          setUsingFallback(true);
+        }
         setState(`answering_q${questionNumber}` as FeedbackState);
       } catch (err) {
         setRetryCount((prev) => prev + 1);
@@ -107,6 +112,7 @@ export const DiscoveryFeedbackView: React.FC<Props> = ({
             `Could you elaborate more on your ${feedbackLabel === 'good' ? 'positive' : 'negative'} assessment?`,
           );
           setCurrentAnswer('');
+          setUsingFallback(true);
           setState(`answering_q${questionNumber}` as FeedbackState);
           toast.error('Question generation failed', {
             description: 'Using a fallback question. You can continue.',
@@ -235,6 +241,16 @@ export const DiscoveryFeedbackView: React.FC<Props> = ({
                 'Submit Feedback'
               )}
             </Button>
+          </div>
+        )}
+
+        {/* Fallback warning */}
+        {usingFallback && (state.startsWith('answering_') || state === 'complete') && (
+          <div className="flex items-start gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-md">
+            <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+            <p className="text-xs text-amber-700">
+              Using default questions — LLM generation unavailable. Check that the Databricks token is configured and the model endpoint is reachable.
+            </p>
           </div>
         )}
 

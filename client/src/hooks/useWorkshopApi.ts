@@ -846,7 +846,7 @@ export function useSubmitDiscoveryFeedback(workshopId: string) {
 
 export function useGenerateFollowUpQuestion(workshopId: string) {
   return useMutation<
-    { question: string; question_number: number },
+    { question: string; question_number: number; is_fallback?: boolean },
     Error,
     { trace_id: string; user_id: string; question_number: number }
   >({

@@ -44,7 +44,7 @@ class FollowUpQuestionService:
         custom_base_url: str | None = None,
         custom_model_name: str | None = None,
         custom_api_key: str | None = None,
-    ) -> str:
+    ) -> tuple[str, bool]:
         """Generate follow-up question using LLM with progressive context.
 
         Args:
@@ -59,7 +59,7 @@ class FollowUpQuestionService:
             custom_api_key: API key for the custom provider.
 
         Returns:
-            The follow-up question text.
+            Tuple of (question_text, is_fallback).
         """
         if question_number < 1 or question_number > 3:
             raise ValueError(f"question_number must be 1-3, got {question_number}")
@@ -71,13 +71,25 @@ class FollowUpQuestionService:
 
         # If no LLM config at all, return fallback immediately
         if not has_databricks and not has_custom:
-            return FALLBACK_QUESTIONS[question_number - 1]
+            missing = []
+            if not workspace_url:
+                missing.append("workspace_url")
+            if not databricks_token:
+                missing.append("databricks_token")
+            if not model_name or model_name == "demo":
+                missing.append(f"model_name (current: {model_name!r})")
+            logger.warning(
+                "Follow-up Q%d: using fallback — no LLM config. Missing: %s",
+                question_number,
+                ", ".join(missing) if missing else "custom provider not configured",
+            )
+            return FALLBACK_QUESTIONS[question_number - 1], True
 
         # Attempt LLM generation with retries
         last_error = None
         for attempt in range(MAX_RETRIES):
             try:
-                return self._call_llm(
+                question = self._call_llm(
                     system_prompt=FOLLOWUP_SYSTEM_PROMPT,
                     user_prompt=user_prompt,
                     workspace_url=workspace_url,
@@ -87,6 +99,7 @@ class FollowUpQuestionService:
                     custom_model_name=custom_model_name,
                     custom_api_key=custom_api_key,
                 )
+                return question, False
             except Exception as e:
                 last_error = e
                 logger.warning(
@@ -100,7 +113,7 @@ class FollowUpQuestionService:
             "Using fallback. Last error: %s",
             MAX_RETRIES, last_error,
         )
-        return FALLBACK_QUESTIONS[question_number - 1]
+        return FALLBACK_QUESTIONS[question_number - 1], True
 
     def _build_user_prompt(self, trace: Any, feedback: Any) -> str:
         """Build the user prompt with progressive context per spec."""

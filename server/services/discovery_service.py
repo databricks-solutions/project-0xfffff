@@ -223,6 +223,10 @@ class DiscoveryService:
 
         model_name = (getattr(workshop, "discovery_questions_model_name", None) or "demo").strip()
         if not model_name or model_name == "demo":
+            logger.info(
+                "Discovery questions: model is %r for workshop %s — returning fixed questions only.",
+                model_name, workshop_id,
+            )
             return {
                 "questions": [fixed_question, *existing_questions],
                 "can_generate_more": True,
@@ -1004,10 +1008,19 @@ class DiscoveryService:
 
                 custom_api_key = ts.get_token(f"custom_llm_{workshop_id}")
 
+        logger.info(
+            "Follow-up question config (workshop=%s): model=%s, workspace_url=%s, has_token=%s, has_custom=%s",
+            workshop_id,
+            model_name,
+            bool(workspace_url),
+            bool(databricks_token),
+            bool(custom_base_url and custom_model_name and custom_api_key),
+        )
+
         from server.services.followup_question_service import FollowUpQuestionService
 
         svc = FollowUpQuestionService()
-        question = svc.generate(
+        question, is_fallback = svc.generate(
             trace=trace,
             feedback=feedback,
             question_number=question_number,
@@ -1019,7 +1032,7 @@ class DiscoveryService:
             custom_api_key=custom_api_key,
         )
 
-        return {"question": question, "question_number": question_number}
+        return {"question": question, "question_number": question_number, "is_fallback": is_fallback}
 
     def submit_followup_answer(
         self,

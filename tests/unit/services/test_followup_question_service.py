@@ -44,14 +44,17 @@ def test_generate_returns_fallback_when_no_llm_config():
     trace = _make_trace()
     feedback = _make_feedback()
 
-    q1 = svc.generate(trace, feedback, 1)
+    q1, is_fb1 = svc.generate(trace, feedback, 1)
     assert q1 == FALLBACK_QUESTIONS[0]
+    assert is_fb1 is True
 
-    q2 = svc.generate(trace, feedback, 2)
+    q2, is_fb2 = svc.generate(trace, feedback, 2)
     assert q2 == FALLBACK_QUESTIONS[1]
+    assert is_fb2 is True
 
-    q3 = svc.generate(trace, feedback, 3)
+    q3, is_fb3 = svc.generate(trace, feedback, 3)
     assert q3 == FALLBACK_QUESTIONS[2]
+    assert is_fb3 is True
 
 
 @pytest.mark.spec("DISCOVERY_SPEC")
@@ -128,14 +131,15 @@ def test_generate_retries_then_falls_back():
     feedback = _make_feedback()
 
     with patch.object(svc, "_call_llm", side_effect=Exception("LLM down")):
-        result = svc.generate(
+        question, is_fallback = svc.generate(
             trace, feedback, 1,
             workspace_url="https://example.com",
             databricks_token="token",
             model_name="test-model",
         )
 
-    assert result == FALLBACK_QUESTIONS[0]
+    assert question == FALLBACK_QUESTIONS[0]
+    assert is_fallback is True
 
 
 @pytest.mark.spec("DISCOVERY_SPEC")
@@ -155,7 +159,7 @@ def test_generate_fallback_after_retries():
         raise RuntimeError("Service unavailable")
 
     with patch.object(svc, "_call_llm", side_effect=failing_llm):
-        result = svc.generate(
+        question, is_fallback = svc.generate(
             trace, feedback, 2,
             workspace_url="https://example.com",
             databricks_token="token",
@@ -163,7 +167,8 @@ def test_generate_fallback_after_retries():
         )
 
     assert call_count == MAX_RETRIES
-    assert result == FALLBACK_QUESTIONS[1]
+    assert question == FALLBACK_QUESTIONS[1]
+    assert is_fallback is True
 
 
 @pytest.mark.spec("DISCOVERY_SPEC")
@@ -185,14 +190,15 @@ def test_generate_succeeds_on_second_retry():
         return "What specifically about the tone bothered you?"
 
     with patch.object(svc, "_call_llm", side_effect=eventually_succeeds):
-        result = svc.generate(
+        question, is_fallback = svc.generate(
             trace, feedback, 1,
             workspace_url="https://example.com",
             databricks_token="token",
             model_name="test-model",
         )
 
-    assert result == "What specifically about the tone bothered you?"
+    assert question == "What specifically about the tone bothered you?"
+    assert is_fallback is False
     assert call_count == 2
 
 
@@ -206,14 +212,15 @@ def test_generate_returns_demo_fallback():
     feedback = _make_feedback()
 
     # model_name="demo" should skip LLM entirely
-    result = svc.generate(
+    question, is_fallback = svc.generate(
         trace, feedback, 3,
         workspace_url="https://example.com",
         databricks_token="token",
         model_name="demo",
     )
 
-    assert result == FALLBACK_QUESTIONS[2]
+    assert question == FALLBACK_QUESTIONS[2]
+    assert is_fallback is True
 
 
 # ============================================================================
@@ -231,14 +238,15 @@ def test_generate_uses_custom_llm_when_custom_params_provided():
     feedback = _make_feedback()
 
     with patch.object(svc, "_call_llm", return_value="What about edge cases?") as mock_call:
-        result = svc.generate(
+        question, is_fallback = svc.generate(
             trace, feedback, 1,
             custom_base_url="https://custom.example.com",
             custom_model_name="custom-model-v1",
             custom_api_key="custom-key-abc",
         )
 
-    assert result == "What about edge cases?"
+    assert question == "What about edge cases?"
+    assert is_fallback is False
     mock_call.assert_called_once()
 
     call_kwargs = mock_call.call_args[1]
@@ -257,14 +265,15 @@ def test_generate_falls_back_when_custom_llm_fails():
     feedback = _make_feedback()
 
     with patch.object(svc, "_call_llm", side_effect=Exception("custom LLM error")):
-        result = svc.generate(
+        question, is_fallback = svc.generate(
             trace, feedback, 2,
             custom_base_url="https://custom.example.com",
             custom_model_name="custom-model-v1",
             custom_api_key="custom-key-abc",
         )
 
-    assert result == FALLBACK_QUESTIONS[1]
+    assert question == FALLBACK_QUESTIONS[1]
+    assert is_fallback is True
 
 
 @pytest.mark.spec("DISCOVERY_SPEC")
@@ -277,11 +286,14 @@ def test_generate_returns_fallback_when_no_config():
     feedback = _make_feedback()
 
     # No workspace_url, no databricks_token, no model_name, no custom params
-    result = svc.generate(trace, feedback, 1)
-    assert result == FALLBACK_QUESTIONS[0]
+    q1, is_fb1 = svc.generate(trace, feedback, 1)
+    assert q1 == FALLBACK_QUESTIONS[0]
+    assert is_fb1 is True
 
-    result = svc.generate(trace, feedback, 2)
-    assert result == FALLBACK_QUESTIONS[1]
+    q2, is_fb2 = svc.generate(trace, feedback, 2)
+    assert q2 == FALLBACK_QUESTIONS[1]
+    assert is_fb2 is True
 
-    result = svc.generate(trace, feedback, 3)
-    assert result == FALLBACK_QUESTIONS[2]
+    q3, is_fb3 = svc.generate(trace, feedback, 3)
+    assert q3 == FALLBACK_QUESTIONS[2]
+    assert is_fb3 is True
