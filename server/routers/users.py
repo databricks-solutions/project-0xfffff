@@ -60,10 +60,15 @@ async def login(login_data: UserLogin, db_service=Depends(get_database_service))
           detail=f'You are not invited to this workshop. Please contact the facilitator to be added.'
         )
 
+  # For participants/SMEs, update their current workshop_id to the selected workshop
+  # This ensures the user object reflects the workshop they're logging into
+  if login_data.workshop_id and user.workshop_id != login_data.workshop_id:
+    db_service.update_user_workshop_id(user.id, login_data.workshop_id)
+
   # Activate user if they were pending
   db_service.activate_user_on_login(user.id)
 
-  # Get updated user data with new status
+  # Get updated user data with new status and workshop_id
   updated_user = db_service.get_user(user.id)
 
   return AuthResponse(user=updated_user, is_preconfigured_facilitator=False, message='Login successful')

@@ -107,10 +107,13 @@ export const ProductionLogin: React.FC = () => {
           localStorage.removeItem('workshop_id');
           window.history.replaceState({}, '', '/');
         }
-        // Set workshop ID if selected (for existing workshops)
-        else if (selectedWorkshopId && !response.user.workshop_id) {
-          // Update the workshop context
+        // Always set workshop ID to the selected workshop BEFORE setting user
+        // This ensures the correct workshop is used even when the user
+        // belongs to multiple workshops. Setting it before setUser prevents
+        // the UserContext sync from overwriting with a stale workshop_id.
+        else if (selectedWorkshopId) {
           setWorkshopId(selectedWorkshopId);
+          localStorage.setItem('workshop_id', selectedWorkshopId);
           window.history.pushState({}, '', `?workshop=${selectedWorkshopId}`);
         }
 

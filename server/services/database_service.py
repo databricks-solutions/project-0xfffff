@@ -219,41 +219,49 @@ class DatabaseService:
 
   def get_workshops_for_user(self, user_id: str) -> List[Workshop]:
     """Get all workshops that a user is part of (either as facilitator or participant).
-    
+
     Args:
         user_id: The user ID to find workshops for
-        
+
     Returns:
         List of Workshop objects the user has access to
     """
-    from server.database import UserDB, WorkshopDB
-    
+    from server.database import UserDB, WorkshopDB, WorkshopParticipantDB
+
     # Get workshops where user is the facilitator
     facilitator_workshops = self.db.query(WorkshopDB).filter(
       WorkshopDB.facilitator_id == user_id
     ).all()
-    
-    # Get workshops where user has been added as a participant
-    participant_workshop_ids = self.db.query(UserDB.workshop_id).filter(
+
+    # Get workshop_id from the user's current workshop_id field
+    user_workshop_ids = self.db.query(UserDB.workshop_id).filter(
       UserDB.id == user_id,
       UserDB.workshop_id.isnot(None)
     ).distinct().all()
-    
+    user_workshop_ids = [w[0] for w in user_workshop_ids if w[0]]
+
+    # Also get all workshops from the workshop_participants table (multi-workshop support)
+    participant_workshop_ids = self.db.query(WorkshopParticipantDB.workshop_id).filter(
+      WorkshopParticipantDB.user_id == user_id
+    ).distinct().all()
     participant_workshop_ids = [w[0] for w in participant_workshop_ids if w[0]]
-    
+
+    # Combine all participant workshop IDs
+    all_participant_ids = list(set(user_workshop_ids + participant_workshop_ids))
+
     participant_workshops = self.db.query(WorkshopDB).filter(
-      WorkshopDB.id.in_(participant_workshop_ids)
-    ).all() if participant_workshop_ids else []
-    
+      WorkshopDB.id.in_(all_participant_ids)
+    ).all() if all_participant_ids else []
+
     # Combine and deduplicate
     all_workshops = {w.id: w for w in facilitator_workshops}
     for w in participant_workshops:
       if w.id not in all_workshops:
         all_workshops[w.id] = w
-    
+
     # Sort by creation date, newest first
     sorted_workshops = sorted(all_workshops.values(), key=lambda w: w.created_at or '', reverse=True)
-    
+
     return [self._workshop_from_db(w) for w in sorted_workshops]
 
   def update_workshop_judge_name(self, workshop_id: str, judge_name: str) -> Optional[Workshop]:
@@ -2580,6 +2588,13 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
     self.db.commit()
     self.db.refresh(db_user)
     return user
+
+  def update_user_workshop_id(self, user_id: str, workshop_id: str) -> None:
+    """Update the user's current workshop_id to the selected workshop."""
+    db_user = self.db.query(UserDB).filter(UserDB.id == user_id).first()
+    if db_user:
+      db_user.workshop_id = workshop_id
+      self.db.commit()
 
   def activate_user_on_login(self, user_id: str) -> None:
     """Activate a user when they log in for the first time."""
