@@ -214,3 +214,74 @@ def test_generate_returns_demo_fallback():
     )
 
     assert result == FALLBACK_QUESTIONS[2]
+
+
+# ============================================================================
+# Custom LLM params
+# ============================================================================
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("AI generates 3 follow-up questions per trace based on feedback")
+@pytest.mark.unit
+def test_generate_uses_custom_llm_when_custom_params_provided():
+    """generate() passes custom_base_url/model_name/api_key through to _call_llm."""
+    svc = FollowUpQuestionService()
+    trace = _make_trace()
+    feedback = _make_feedback()
+
+    with patch.object(svc, "_call_llm", return_value="What about edge cases?") as mock_call:
+        result = svc.generate(
+            trace, feedback, 1,
+            custom_base_url="https://custom.example.com",
+            custom_model_name="custom-model-v1",
+            custom_api_key="custom-key-abc",
+        )
+
+    assert result == "What about edge cases?"
+    mock_call.assert_called_once()
+
+    call_kwargs = mock_call.call_args[1]
+    assert call_kwargs["custom_base_url"] == "https://custom.example.com"
+    assert call_kwargs["custom_model_name"] == "custom-model-v1"
+    assert call_kwargs["custom_api_key"] == "custom-key-abc"
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("Fallback question if LLM unavailable after retries")
+@pytest.mark.unit
+def test_generate_falls_back_when_custom_llm_fails():
+    """generate() returns fallback when custom LLM fails all retries."""
+    svc = FollowUpQuestionService()
+    trace = _make_trace()
+    feedback = _make_feedback()
+
+    with patch.object(svc, "_call_llm", side_effect=Exception("custom LLM error")):
+        result = svc.generate(
+            trace, feedback, 2,
+            custom_base_url="https://custom.example.com",
+            custom_model_name="custom-model-v1",
+            custom_api_key="custom-key-abc",
+        )
+
+    assert result == FALLBACK_QUESTIONS[1]
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("Fallback question if LLM unavailable after retries")
+@pytest.mark.unit
+def test_generate_returns_fallback_when_no_config():
+    """generate() returns fallback immediately when neither Databricks nor custom params given."""
+    svc = FollowUpQuestionService()
+    trace = _make_trace()
+    feedback = _make_feedback()
+
+    # No workspace_url, no databricks_token, no model_name, no custom params
+    result = svc.generate(trace, feedback, 1)
+    assert result == FALLBACK_QUESTIONS[0]
+
+    result = svc.generate(trace, feedback, 2)
+    assert result == FALLBACK_QUESTIONS[1]
+
+    result = svc.generate(trace, feedback, 3)
+    assert result == FALLBACK_QUESTIONS[2]

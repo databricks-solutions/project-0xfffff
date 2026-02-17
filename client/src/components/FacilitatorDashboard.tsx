@@ -7,8 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useFacilitatorFindings, useFacilitatorFindingsWithUserDetails, useTraces, useAllTraces, useRubric, useFacilitatorAnnotations, useFacilitatorAnnotationsWithUserDetails, useWorkshop } from '@/hooks/useWorkshopApi';
-import { Settings, Users, FileText, CheckCircle, Clock, AlertCircle, ChevronRight, Play, Eye, Plus, RotateCcw, Target, TrendingUp, Activity } from 'lucide-react';
+import { useFacilitatorFindings, useFacilitatorFindingsWithUserDetails, useTraces, useAllTraces, useRubric, useFacilitatorAnnotations, useFacilitatorAnnotationsWithUserDetails, useWorkshop, useDiscoveryFeedback } from '@/hooks/useWorkshopApi';
+import { Settings, Users, FileText, CheckCircle, Clock, AlertCircle, ChevronRight, Play, Eye, Plus, RotateCcw, Target, TrendingUp, Activity, MessageSquare, ChevronDown } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -896,7 +896,7 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
           </CardHeader>
           <CardContent>
             <Tabs defaultValue="users" className="space-y-4">
-              <TabsList className="grid w-full grid-cols-2">
+              <TabsList className={`grid w-full ${focusPhase === 'discovery' ? 'grid-cols-3' : 'grid-cols-2'}`}>
                 <TabsTrigger value="users" className="flex items-center gap-2">
                   <Users className="w-4 h-4" />
                   User Participation
@@ -905,6 +905,12 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                   <FileText className="w-4 h-4" />
                   Trace Coverage
                 </TabsTrigger>
+                {focusPhase === 'discovery' && (
+                  <TabsTrigger value="feedback-detail" className="flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4" />
+                    Feedback Detail
+                  </TabsTrigger>
+                )}
               </TabsList>
 
               {/* User Participation Tab */}
@@ -1063,6 +1069,13 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                   </div>
                 )}
               </TabsContent>
+
+              {/* Feedback Detail Tab (discovery only) */}
+              {focusPhase === 'discovery' && (
+                <TabsContent value="feedback-detail">
+                  <FeedbackDetailPanel workshopId={workshopId!} />
+                </TabsContent>
+              )}
             </Tabs>
           </CardContent>
         </Card>
@@ -1349,3 +1362,165 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
     </div>
   );
 };
+
+// --- Feedback Detail Panel (used inside the Tabs) ---
+
+interface FeedbackDetailPanelProps {
+  workshopId: string;
+}
+
+interface TraceGroup {
+  traceId: string;
+  feedbacks: Array<{
+    id: string;
+    user_id: string;
+    feedback_label: 'good' | 'bad';
+    comment: string;
+    followup_qna: Array<{ question: string; answer: string }>;
+  }>;
+}
+
+function FeedbackDetailPanel({ workshopId }: FeedbackDetailPanelProps) {
+  const { data: feedbackList, isLoading } = useDiscoveryFeedback(workshopId);
+  const [expandedTraces, setExpandedTraces] = React.useState<Set<string>>(new Set());
+  const [expandedQna, setExpandedQna] = React.useState<Set<string>>(new Set());
+
+  const toggleTrace = (traceId: string) => {
+    setExpandedTraces(prev => {
+      const next = new Set(prev);
+      if (next.has(traceId)) next.delete(traceId);
+      else next.add(traceId);
+      return next;
+    });
+  };
+
+  const toggleQna = (key: string) => {
+    setExpandedQna(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  // Group feedback by trace_id
+  const traceGroups: TraceGroup[] = React.useMemo(() => {
+    if (!feedbackList?.length) return [];
+    const grouped = new Map<string, TraceGroup['feedbacks']>();
+    for (const fb of feedbackList) {
+      const list = grouped.get(fb.trace_id) || [];
+      list.push({
+        id: fb.id,
+        user_id: fb.user_id,
+        feedback_label: fb.feedback_label,
+        comment: fb.comment,
+        followup_qna: fb.followup_qna || [],
+      });
+      grouped.set(fb.trace_id, list);
+    }
+    return Array.from(grouped.entries()).map(([traceId, feedbacks]) => ({ traceId, feedbacks }));
+  }, [feedbackList]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <div className="w-5 h-5 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin" />
+        <span className="ml-2 text-sm text-slate-500">Loading feedback...</span>
+      </div>
+    );
+  }
+
+  if (!traceGroups.length) {
+    return (
+      <div className="text-center py-8 text-slate-500 bg-slate-50 rounded-lg border-2 border-dashed border-slate-200" data-testid="feedback-empty-state">
+        <MessageSquare className="w-12 h-12 mx-auto mb-4 opacity-40 text-slate-400" />
+        <p className="text-sm font-medium text-slate-700">No feedback submitted yet</p>
+        <p className="text-xs text-slate-500 mt-1">Participant feedback will appear here as they review traces</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3" data-testid="feedback-detail-panel">
+      <div className="flex items-center gap-2 mb-4">
+        <MessageSquare className="h-4 w-4 text-orange-600" />
+        <h3 className="text-sm font-semibold">Feedback by Trace</h3>
+        <Badge variant="secondary" className="bg-orange-100 text-orange-700 border-orange-200">
+          {traceGroups.length} trace{traceGroups.length !== 1 ? 's' : ''}
+        </Badge>
+      </div>
+
+      {traceGroups.map(({ traceId, feedbacks }) => {
+        const isExpanded = expandedTraces.has(traceId);
+        return (
+          <div key={traceId} className="border border-slate-200 rounded-lg bg-white" data-testid="feedback-trace-group">
+            <button
+              onClick={() => toggleTrace(traceId)}
+              className="w-full flex items-center justify-between p-3 hover:bg-slate-50 transition-colors rounded-lg"
+            >
+              <div className="flex items-center gap-2 text-left">
+                <span className="text-sm font-semibold text-slate-900">
+                  Trace: {traceId.slice(0, 20)}...
+                </span>
+                <Badge variant="secondary" className="text-xs">
+                  {feedbacks.length} response{feedbacks.length !== 1 ? 's' : ''}
+                </Badge>
+              </div>
+              <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isExpanded && (
+              <div className="border-t border-slate-100 px-3 pb-3 space-y-3">
+                {feedbacks.map((fb) => {
+                  const qnaKey = `${traceId}-${fb.id}`;
+                  const qnaExpanded = expandedQna.has(qnaKey);
+                  return (
+                    <div key={fb.id} className="p-3 bg-slate-50 rounded-md" data-testid="feedback-participant-row">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-sm font-medium text-slate-800">{fb.user_id}</span>
+                        <Badge
+                          className={fb.feedback_label === 'good'
+                            ? 'bg-green-100 text-green-700 border-green-200'
+                            : 'bg-red-100 text-red-700 border-red-200'
+                          }
+                          data-testid="feedback-label-badge"
+                        >
+                          {fb.feedback_label.toUpperCase()}
+                        </Badge>
+                      </div>
+                      {fb.comment && (
+                        <p className="text-sm text-slate-600 mt-1" data-testid="feedback-comment">{fb.comment}</p>
+                      )}
+
+                      {fb.followup_qna.length > 0 && (
+                        <div className="mt-2">
+                          <button
+                            onClick={() => toggleQna(qnaKey)}
+                            className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                          >
+                            <ChevronDown className={`w-3 h-3 transition-transform ${qnaExpanded ? 'rotate-180' : ''}`} />
+                            {fb.followup_qna.length} follow-up Q&A
+                          </button>
+                          {qnaExpanded && (
+                            <div className="mt-2 space-y-2 pl-3 border-l-2 border-blue-200" data-testid="feedback-qna-list">
+                              {fb.followup_qna.map((qna, i) => (
+                                <div key={i} className="text-xs">
+                                  <p className="font-medium text-slate-700">Q{i + 1}: {qna.question}</p>
+                                  <p className="text-slate-600 mt-0.5">A{i + 1}: {qna.answer}</p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}

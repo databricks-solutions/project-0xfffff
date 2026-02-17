@@ -5,12 +5,14 @@ import { Badge } from '@/components/ui/badge';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useQueryClient } from '@tanstack/react-query';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useWorkflowContext } from '@/context/WorkflowContext';
 import { WorkshopsService } from '@/client';
-import { useAllTraces } from '@/hooks/useWorkshopApi';
-import { Play, Users, Search, Lightbulb, Database, Settings, Shuffle } from 'lucide-react';
+import { useAllTraces, useWorkshop, useMLflowConfig, useUpdateDiscoveryModel } from '@/hooks/useWorkshopApi';
+import { getModelOptions, getBackendModelName, getFrontendModelName } from '@/utils/modelMapping';
+import { Play, Users, Search, Lightbulb, Database, Settings, Shuffle, Brain } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 
@@ -25,10 +27,37 @@ export const DiscoveryStartPage: React.FC<DiscoveryStartPageProps> = ({ onStartD
   const [traceLimit, setTraceLimit] = React.useState<string>('10');
   const [customLimit, setCustomLimit] = React.useState<string>('10');
   const [randomizeTraces, setRandomizeTraces] = React.useState<boolean>(false);
-  
+
   // Get total number of traces
   const { data: traces } = useAllTraces(workshopId!);
   const totalTraces = traces?.length || 0;
+
+  // Model selection
+  const { data: workshop } = useWorkshop(workshopId!);
+  const { data: mlflowConfig } = useMLflowConfig(workshopId!);
+  const updateModelMutation = useUpdateDiscoveryModel(workshopId!);
+  const [customProviderStatus, setCustomProviderStatus] = React.useState<{ is_configured: boolean; is_enabled: boolean; provider_name?: string | null } | null>(null);
+
+  // Derive current model from workshop
+  const currentModel = React.useMemo(() => {
+    const backendName = workshop?.discovery_questions_model_name || 'demo';
+    if (backendName === 'demo' || backendName === 'custom') return backendName;
+    return getFrontendModelName(backendName);
+  }, [workshop?.discovery_questions_model_name]);
+
+  // Fetch custom LLM provider status
+  React.useEffect(() => {
+    if (!workshopId) return;
+    fetch(`/workshops/${workshopId}/custom-llm-provider`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => setCustomProviderStatus(data))
+      .catch(() => setCustomProviderStatus(null));
+  }, [workshopId]);
+
+  const handleModelChange = (value: string) => {
+    const backendName = value === 'demo' || value === 'custom' ? value : getBackendModelName(value);
+    updateModelMutation.mutate({ model_name: backendName });
+  };
 
   const startDiscoveryPhase = async () => {
     try {
@@ -208,11 +237,43 @@ export const DiscoveryStartPage: React.FC<DiscoveryStartPageProps> = ({ onStartD
             />
           </div>
 
+          {/* Model Selection */}
+          <div className="pt-2 border-t border-gray-100 space-y-2">
+            <Label className="text-sm text-gray-600 flex items-center gap-2">
+              <Brain className="w-3.5 h-3.5 text-gray-400" />
+              Follow-up question model
+            </Label>
+            <Select value={currentModel} onValueChange={handleModelChange}>
+              <SelectTrigger data-testid="model-selector">
+                <SelectValue placeholder="Select a model" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="demo">Demo (static questions)</SelectItem>
+                {getModelOptions(!!mlflowConfig).map(option => (
+                  <SelectItem
+                    key={option.value}
+                    value={option.value}
+                    disabled={option.disabled}
+                  >
+                    {option.label}
+                  </SelectItem>
+                ))}
+                {customProviderStatus?.is_configured && customProviderStatus?.is_enabled && (
+                  <SelectItem value="custom">
+                    Custom: {customProviderStatus.provider_name || 'Custom Provider'}
+                  </SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* Summary */}
           <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-50 rounded-md px-3 py-2">
             <span className="font-medium text-gray-700">Summary:</span>
             {traceLimit === 'custom' ? `${customLimit} traces` : `${traceLimit} traces`}
             {randomizeTraces && ' · randomized per user'}
+            {' · '}
+            {currentModel === 'demo' ? 'demo model' : currentModel === 'custom' ? `custom: ${customProviderStatus?.provider_name || 'Custom'}` : currentModel}
             {parseInt(traceLimit === 'custom' ? customLimit : traceLimit) < totalTraces && (
               <span className="ml-auto text-gray-400">
                 ({totalTraces - parseInt(traceLimit === 'custom' ? customLimit : traceLimit)} unused)

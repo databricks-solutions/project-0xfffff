@@ -873,6 +873,32 @@ export function useGenerateFollowUpQuestion(workshopId: string) {
   });
 }
 
+export function useUpdateDiscoveryModel(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    unknown,
+    Error,
+    { model_name: string }
+  >({
+    mutationFn: async (data) => {
+      const response = await fetch(`/workshops/${workshopId}/discovery-questions-model`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ detail: 'Failed to update model' }));
+        throw new Error(err.detail || 'Failed to update model');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.workshop(workshopId) });
+    },
+  });
+}
+
 export function useSubmitFollowUpAnswer(workshopId: string) {
   const queryClient = useQueryClient();
 

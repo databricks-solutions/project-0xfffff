@@ -990,6 +990,20 @@ class DiscoveryService:
                 workshop_id
             )
 
+        # Check for custom LLM provider configuration
+        custom_base_url = None
+        custom_model_name = None
+        custom_api_key = None
+
+        if model_name == "custom":
+            custom_config = self.db_service.get_custom_llm_provider_config(workshop_id)
+            if custom_config and custom_config.is_enabled:
+                custom_base_url = custom_config.base_url
+                custom_model_name = custom_config.model_name
+                from server.services.token_storage_service import token_storage as ts
+
+                custom_api_key = ts.get_token(f"custom_llm_{workshop_id}")
+
         from server.services.followup_question_service import FollowUpQuestionService
 
         svc = FollowUpQuestionService()
@@ -1000,6 +1014,9 @@ class DiscoveryService:
             workspace_url=workspace_url,
             databricks_token=databricks_token,
             model_name=model_name,
+            custom_base_url=custom_base_url,
+            custom_model_name=custom_model_name,
+            custom_api_key=custom_api_key,
         )
 
         return {"question": question, "question_number": question_number}

@@ -41,6 +41,9 @@ class FollowUpQuestionService:
         workspace_url: str | None = None,
         databricks_token: str | None = None,
         model_name: str | None = None,
+        custom_base_url: str | None = None,
+        custom_model_name: str | None = None,
+        custom_api_key: str | None = None,
     ) -> str:
         """Generate follow-up question using LLM with progressive context.
 
@@ -51,6 +54,9 @@ class FollowUpQuestionService:
             workspace_url: Databricks workspace URL for LLM call.
             databricks_token: Auth token.
             model_name: Endpoint name.
+            custom_base_url: Base URL for a custom OpenAI-compatible provider.
+            custom_model_name: Model name for the custom provider.
+            custom_api_key: API key for the custom provider.
 
         Returns:
             The follow-up question text.
@@ -60,8 +66,11 @@ class FollowUpQuestionService:
 
         user_prompt = self._build_user_prompt(trace, feedback)
 
-        # If no LLM config, return fallback immediately
-        if not workspace_url or not databricks_token or not model_name or model_name == "demo":
+        has_databricks = workspace_url and databricks_token and model_name and model_name != "demo"
+        has_custom = custom_base_url and custom_model_name and custom_api_key
+
+        # If no LLM config at all, return fallback immediately
+        if not has_databricks and not has_custom:
             return FALLBACK_QUESTIONS[question_number - 1]
 
         # Attempt LLM generation with retries
@@ -74,6 +83,9 @@ class FollowUpQuestionService:
                     workspace_url=workspace_url,
                     databricks_token=databricks_token,
                     model_name=model_name,
+                    custom_base_url=custom_base_url,
+                    custom_model_name=custom_model_name,
+                    custom_api_key=custom_api_key,
                 )
             except Exception as e:
                 last_error = e
@@ -132,12 +144,16 @@ class FollowUpQuestionService:
         self,
         system_prompt: str,
         user_prompt: str,
-        workspace_url: str,
-        databricks_token: str,
-        model_name: str,
+        workspace_url: str | None = None,
+        databricks_token: str | None = None,
+        model_name: str | None = None,
+        custom_base_url: str | None = None,
+        custom_model_name: str | None = None,
+        custom_api_key: str | None = None,
     ) -> str:
         """Call the LLM via DSPy infrastructure."""
         from server.services.discovery_dspy import (
+            build_custom_llm,
             build_databricks_lm,
             get_followup_question_signature,
             get_predictor,
@@ -145,12 +161,22 @@ class FollowUpQuestionService:
         )
 
         GenerateFollowUpQuestion = get_followup_question_signature()
-        lm = build_databricks_lm(
-            endpoint_name=model_name,
-            workspace_url=workspace_url,
-            token=databricks_token,
-            temperature=0.3,
-        )
+
+        if custom_base_url and custom_model_name and custom_api_key:
+            lm = build_custom_llm(
+                base_url=custom_base_url,
+                model_name=custom_model_name,
+                api_key=custom_api_key,
+                temperature=0.3,
+            )
+        else:
+            lm = build_databricks_lm(
+                endpoint_name=model_name or "",
+                workspace_url=workspace_url or "",
+                token=databricks_token or "",
+                temperature=0.3,
+            )
+
         predictor = get_predictor(GenerateFollowUpQuestion, lm, temperature=0.3, max_tokens=200)
 
         result = run_predict(

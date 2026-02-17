@@ -231,6 +231,27 @@ def build_databricks_lm(endpoint_name: str, workspace_url: str, token: str, *, t
         return dspy.LM(model=model)
 
 
+def build_custom_llm(base_url: str, model_name: str, api_key: str, *, temperature: float = 0.2):
+    """Create a DSPy LM pointed at a custom OpenAI-compatible endpoint.
+
+    Works with any provider that exposes /v1/chat/completions (e.g. vLLM,
+    Ollama, Together AI, etc.).
+    """
+    dspy = _import_dspy()
+
+    # DSPy uses LiteLLM under the hood — prefix with openai/ to force the
+    # OpenAI-compatible path.
+    if not model_name.startswith("openai/"):
+        model = f"openai/{model_name}"
+    else:
+        model = model_name
+
+    try:
+        return dspy.LM(model=model, api_key=api_key, api_base=base_url, temperature=temperature)
+    except TypeError:
+        return dspy.LM(model=model)
+
+
 @contextmanager
 def _dspy_with_lm(lm: Any):
     """Run DSPy with a per-request LM using DSPy's own context mechanism.
