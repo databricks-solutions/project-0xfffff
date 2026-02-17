@@ -63,6 +63,11 @@ jobs:
         env:
           CI: true
 
+      - name: Run integration tests (Postgres)
+        run: just test-integration --backend postgres
+        env:
+          CI: true
+
       - name: Run E2E tests
         run: |
           export ENVIRONMENT=development
