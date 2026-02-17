@@ -785,3 +785,117 @@ export function usePreviewJsonPath(workshopId: string) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Discovery Feedback hooks (v2 Structured Feedback)
+// ---------------------------------------------------------------------------
+
+export interface DiscoveryFeedbackData {
+  id: string;
+  workshop_id: string;
+  trace_id: string;
+  user_id: string;
+  feedback_label: 'good' | 'bad';
+  comment: string;
+  followup_qna: Array<{ question: string; answer: string }>;
+  created_at: string;
+  updated_at: string;
+}
+
+export function useDiscoveryFeedback(workshopId: string, userId?: string) {
+  return useQuery<DiscoveryFeedbackData[]>({
+    queryKey: ['discovery-feedback', workshopId, userId],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (userId) params.append('user_id', userId);
+      const qs = params.toString();
+      const url = `/workshops/${workshopId}/discovery-feedback${qs ? `?${qs}` : ''}`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Failed to fetch discovery feedback');
+      return response.json();
+    },
+    enabled: !!workshopId,
+    staleTime: 10_000,
+  });
+}
+
+export function useSubmitDiscoveryFeedback(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    DiscoveryFeedbackData,
+    Error,
+    { trace_id: string; user_id: string; feedback_label: 'good' | 'bad'; comment: string }
+  >({
+    mutationFn: async (data) => {
+      const response = await fetch(`/workshops/${workshopId}/discovery-feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ detail: 'Failed to submit feedback' }));
+        throw new Error(err.detail || 'Failed to submit feedback');
+      }
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['discovery-feedback', workshopId, variables.user_id] });
+    },
+  });
+}
+
+export function useGenerateFollowUpQuestion(workshopId: string) {
+  return useMutation<
+    { question: string; question_number: number },
+    Error,
+    { trace_id: string; user_id: string; question_number: number }
+  >({
+    mutationFn: async ({ trace_id, user_id, question_number }) => {
+      const response = await fetch(
+        `/workshops/${workshopId}/generate-followup-question?question_number=${question_number}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ trace_id, user_id }),
+        },
+      );
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ detail: 'Failed to generate question' }));
+        throw new Error(err.detail || 'Failed to generate question');
+      }
+      return response.json();
+    },
+    retry: (failureCount, error) => {
+      // Retry up to 3 times for server errors
+      return failureCount < 3;
+    },
+    retryDelay: (attemptIndex) => Math.min(1000 * Math.pow(2, attemptIndex), 8000),
+  });
+}
+
+export function useSubmitFollowUpAnswer(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    { feedback_id: string; qna_count: number; complete: boolean },
+    Error,
+    { trace_id: string; user_id: string; question: string; answer: string }
+  >({
+    mutationFn: async (data) => {
+      const response = await fetch(`/workshops/${workshopId}/submit-followup-answer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ detail: 'Failed to submit answer' }));
+        throw new Error(err.detail || 'Failed to submit answer');
+      }
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['discovery-feedback', workshopId, variables.user_id] });
+    },
+  });
+}
+

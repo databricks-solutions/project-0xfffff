@@ -14,6 +14,7 @@ from server.database import (
   ClassifiedFindingDB,
   DatabricksTokenDB,
   DisagreementDB,
+  DiscoveryFeedbackDB,
   DiscoveryFindingDB,
   DiscoveryQuestionDB,
   DiscoverySummaryDB,
@@ -34,6 +35,8 @@ from server.database import (
 from server.models import (
   Annotation,
   AnnotationCreate,
+  DiscoveryFeedback,
+  DiscoveryFeedbackCreate,
   DiscoveryFinding,
   DiscoveryFindingCreate,
   FacilitatorConfig,
@@ -3023,6 +3026,195 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
   def get_traces_by_workshop(self, workshop_id: str) -> List[Trace]:
     """Get all traces for a workshop (alias for get_traces)."""
     return self.get_traces(workshop_id)
+
+  # -----------------------------------------------------------------
+  # Discovery Feedback (v2 structured feedback)
+  # -----------------------------------------------------------------
+
+  def add_discovery_feedback(self, workshop_id: str, data: DiscoveryFeedbackCreate) -> DiscoveryFeedback:
+    """Upsert discovery feedback by (workshop_id, trace_id, user_id).
+
+    If a record already exists for this (workshop, trace, user) combo,
+    update it. Otherwise create a new one. This ensures DI-1.
+    """
+    existing = (
+      self.db.query(DiscoveryFeedbackDB)
+      .filter(
+        and_(
+          DiscoveryFeedbackDB.workshop_id == workshop_id,
+          DiscoveryFeedbackDB.trace_id == data.trace_id,
+          DiscoveryFeedbackDB.user_id == data.user_id,
+        )
+      )
+      .first()
+    )
+
+    if existing:
+      existing.feedback_label = data.feedback_label.value
+      existing.comment = data.comment
+      existing.updated_at = datetime.utcnow()
+      self.db.commit()
+      self.db.refresh(existing)
+      row = existing
+    else:
+      row = DiscoveryFeedbackDB(
+        id=str(uuid.uuid4()),
+        workshop_id=workshop_id,
+        trace_id=data.trace_id,
+        user_id=data.user_id,
+        feedback_label=data.feedback_label.value,
+        comment=data.comment,
+        followup_qna=[],
+      )
+      self.db.add(row)
+      self.db.commit()
+      self.db.refresh(row)
+
+    return DiscoveryFeedback(
+      id=row.id,
+      workshop_id=row.workshop_id,
+      trace_id=row.trace_id,
+      user_id=row.user_id,
+      feedback_label=row.feedback_label,
+      comment=row.comment,
+      followup_qna=row.followup_qna or [],
+      created_at=row.created_at,
+      updated_at=row.updated_at,
+    )
+
+  def append_followup_qna(
+    self,
+    workshop_id: str,
+    trace_id: str,
+    user_id: str,
+    qna: Dict[str, str],
+  ) -> DiscoveryFeedback:
+    """Append a Q&A pair to an existing feedback record (DI-2)."""
+    row = (
+      self.db.query(DiscoveryFeedbackDB)
+      .filter(
+        and_(
+          DiscoveryFeedbackDB.workshop_id == workshop_id,
+          DiscoveryFeedbackDB.trace_id == trace_id,
+          DiscoveryFeedbackDB.user_id == user_id,
+        )
+      )
+      .first()
+    )
+    if not row:
+      raise ValueError(f"No feedback found for workshop={workshop_id}, trace={trace_id}, user={user_id}")
+
+    current_qna = list(row.followup_qna or [])
+    current_qna.append(qna)
+    row.followup_qna = current_qna
+    row.updated_at = datetime.utcnow()
+    self.db.commit()
+    self.db.refresh(row)
+
+    return DiscoveryFeedback(
+      id=row.id,
+      workshop_id=row.workshop_id,
+      trace_id=row.trace_id,
+      user_id=row.user_id,
+      feedback_label=row.feedback_label,
+      comment=row.comment,
+      followup_qna=row.followup_qna or [],
+      created_at=row.created_at,
+      updated_at=row.updated_at,
+    )
+
+  def get_discovery_feedback(
+    self,
+    workshop_id: str,
+    user_id: Optional[str] = None,
+    trace_id: Optional[str] = None,
+  ) -> List[DiscoveryFeedback]:
+    """Query discovery feedback with optional user_id and trace_id filters."""
+    query = self.db.query(DiscoveryFeedbackDB).filter(
+      DiscoveryFeedbackDB.workshop_id == workshop_id
+    )
+    if user_id:
+      query = query.filter(DiscoveryFeedbackDB.user_id == user_id)
+    if trace_id:
+      query = query.filter(DiscoveryFeedbackDB.trace_id == trace_id)
+
+    rows = query.order_by(DiscoveryFeedbackDB.created_at).all()
+    return [
+      DiscoveryFeedback(
+        id=r.id,
+        workshop_id=r.workshop_id,
+        trace_id=r.trace_id,
+        user_id=r.user_id,
+        feedback_label=r.feedback_label,
+        comment=r.comment,
+        followup_qna=r.followup_qna or [],
+        created_at=r.created_at,
+        updated_at=r.updated_at,
+      )
+      for r in rows
+    ]
+
+  def get_discovery_feedback_completion_status(self, workshop_id: str) -> Dict[str, Any]:
+    """Get feedback-based discovery completion status.
+
+    A participant is considered "complete" for a trace when they have
+    submitted feedback AND answered all 3 follow-up questions.
+    """
+    workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if not workshop:
+      return {"total_participants": 0, "completed_participants": 0, "completion_percentage": 0, "all_completed": False}
+
+    active_trace_ids = workshop.active_discovery_trace_ids or []
+    total_traces = len(active_trace_ids)
+    if total_traces == 0:
+      return {"total_participants": 0, "completed_participants": 0, "completion_percentage": 0, "all_completed": False}
+
+    # Get all non-facilitator participants
+    participants = (
+      self.db.query(WorkshopParticipantDB)
+      .filter(
+        and_(
+          WorkshopParticipantDB.workshop_id == workshop_id,
+          WorkshopParticipantDB.role.in_(["sme", "participant"]),
+        )
+      )
+      .all()
+    )
+    total_participants = len(participants)
+    if total_participants == 0:
+      return {"total_participants": 0, "completed_participants": 0, "completion_percentage": 0, "all_completed": False}
+
+    # Get all feedback for this workshop
+    all_feedback = (
+      self.db.query(DiscoveryFeedbackDB)
+      .filter(DiscoveryFeedbackDB.workshop_id == workshop_id)
+      .all()
+    )
+
+    completed_participants = 0
+    participant_status = {}
+    for p in participants:
+      user_feedback = [f for f in all_feedback if f.user_id == p.user_id and f.trace_id in active_trace_ids]
+      completed_traces = sum(
+        1 for f in user_feedback if len(f.followup_qna or []) >= 3
+      )
+      is_complete = completed_traces >= total_traces
+      if is_complete:
+        completed_participants += 1
+      participant_status[p.user_id] = {
+        "user_id": p.user_id,
+        "completed_traces": completed_traces,
+        "total_traces": total_traces,
+        "completed": is_complete,
+      }
+
+    return {
+      "total_participants": total_participants,
+      "completed_participants": completed_participants,
+      "completion_percentage": (completed_participants / total_participants * 100) if total_participants > 0 else 0,
+      "all_completed": completed_participants == total_participants and total_participants > 0,
+      "participant_status": participant_status,
+    }
 
   # Testing/debugging operations
   def clear_findings(self, workshop_id: str) -> None:

@@ -8,6 +8,7 @@
 export type SimpleEvaluationRequest = {
     judge_prompt: string;
     endpoint_name: string;
+    judge_name?: (string | null);
     prompt_id?: (string | null);
     judge_type?: (string | null);
 };

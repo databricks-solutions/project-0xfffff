@@ -650,6 +650,42 @@ class CustomLLMProviderTestResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class FeedbackLabel(str, Enum):
+  GOOD = "good"
+  BAD = "bad"
+
+
+class DiscoveryFeedbackCreate(BaseModel):
+  trace_id: str
+  user_id: str
+  feedback_label: FeedbackLabel
+  comment: str
+
+
+class DiscoveryFeedback(BaseModel):
+  id: str
+  workshop_id: str
+  trace_id: str
+  user_id: str
+  feedback_label: FeedbackLabel
+  comment: str
+  followup_qna: List[Dict[str, str]] = Field(default_factory=list)
+  created_at: datetime = Field(default_factory=datetime.now)
+  updated_at: datetime = Field(default_factory=datetime.now)
+
+
+class GenerateFollowUpRequest(BaseModel):
+  trace_id: str
+  user_id: str
+
+
+class SubmitFollowUpAnswerRequest(BaseModel):
+  trace_id: str
+  user_id: str
+  question: str
+  answer: str
+
+
 class ClassifiedFinding(BaseModel):
   """A finding with LLM-assigned category."""
 

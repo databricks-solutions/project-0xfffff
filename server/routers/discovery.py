@@ -12,7 +12,14 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from server.database import get_db
-from server.models import DiscoveryFinding, DiscoveryFindingCreate
+from server.models import (
+    DiscoveryFeedback,
+    DiscoveryFeedbackCreate,
+    DiscoveryFinding,
+    DiscoveryFindingCreate,
+    GenerateFollowUpRequest,
+    SubmitFollowUpAnswerRequest,
+)
 from server.services.discovery_service import DiscoveryService
 
 router = APIRouter()
@@ -198,12 +205,6 @@ async def clear_findings(workshop_id: str, db: Session = Depends(get_db)):
     return {"message": "Findings cleared successfully"}
 
 
-@router.post("/{workshop_id}/begin-discovery")
-async def begin_discovery_phase(workshop_id: str, trace_limit: Optional[int] = None, db: Session = Depends(get_db)):
-    svc = DiscoveryService(db)
-    return svc.begin_discovery_phase(workshop_id=workshop_id, trace_limit=trace_limit)
-
-
 @router.post("/{workshop_id}/reset-discovery")
 async def reset_discovery(workshop_id: str, db: Session = Depends(get_db)):
     svc = DiscoveryService(db)
@@ -239,6 +240,67 @@ async def get_discovery_completion_status(workshop_id: str, db: Session = Depend
 async def is_user_discovery_complete(workshop_id: str, user_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
     svc = DiscoveryService(db)
     return svc.is_user_discovery_complete(workshop_id, user_id)
+
+
+# ---------------------------------------------------------------------------
+# Discovery Feedback (v2 Structured Feedback) Endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{workshop_id}/discovery-feedback", response_model=DiscoveryFeedback)
+async def submit_discovery_feedback(
+    workshop_id: str,
+    data: DiscoveryFeedbackCreate,
+    db: Session = Depends(get_db),
+) -> DiscoveryFeedback:
+    """Submit initial feedback (label + comment) for a trace. Upsert behavior."""
+    svc = DiscoveryService(db)
+    return svc.submit_discovery_feedback(workshop_id, data)
+
+
+@router.post("/{workshop_id}/generate-followup-question")
+async def generate_followup_question(
+    workshop_id: str,
+    request: GenerateFollowUpRequest,
+    question_number: int = 1,
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Generate the next follow-up question for a trace's feedback."""
+    svc = DiscoveryService(db)
+    return svc.generate_followup_question(
+        workshop_id=workshop_id,
+        trace_id=request.trace_id,
+        user_id=request.user_id,
+        question_number=question_number,
+    )
+
+
+@router.post("/{workshop_id}/submit-followup-answer")
+async def submit_followup_answer(
+    workshop_id: str,
+    request: SubmitFollowUpAnswerRequest,
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Append a Q&A pair to the feedback record."""
+    svc = DiscoveryService(db)
+    return svc.submit_followup_answer(
+        workshop_id=workshop_id,
+        trace_id=request.trace_id,
+        user_id=request.user_id,
+        question=request.question,
+        answer=request.answer,
+    )
+
+
+@router.get("/{workshop_id}/discovery-feedback", response_model=List[DiscoveryFeedback])
+async def get_discovery_feedback(
+    workshop_id: str,
+    user_id: Optional[str] = None,
+    db: Session = Depends(get_db),
+) -> List[DiscoveryFeedback]:
+    """Get all discovery feedback, optionally filtered by user_id."""
+    svc = DiscoveryService(db)
+    return svc.get_discovery_feedback(workshop_id, user_id)
 
 
 # ---------------------------------------------------------------------------

@@ -509,6 +509,42 @@ def get_classification_signature():
     return _CLASSIFICATION_SIG
 
 
+class FollowUpQuestionOutput(BaseModel):
+    """Output model for a follow-up question."""
+
+    question: str = Field(description="The follow-up question to ask the reviewer")
+
+
+def _define_followup_question_signature():
+    """Define the follow-up question DSPy signature."""
+    dspy = _import_dspy()
+
+    class GenerateFollowUpQuestion(dspy.Signature):
+        """Generate a follow-up question for a reviewer based on their feedback.
+
+        The question should probe deeper into the reviewer's assessment,
+        building on any prior Q&A context provided.
+        """
+
+        system_prompt: str = dspy.InputField(desc="System prompt for the UX researcher persona")
+        user_prompt: str = dspy.InputField(desc="User prompt with trace + feedback context")
+
+        question: str = dspy.OutputField(desc="The follow-up question for the reviewer")
+
+    return GenerateFollowUpQuestion
+
+
+_FOLLOWUP_SIG: type | None = None
+
+
+def get_followup_question_signature():
+    """Get the follow-up question generation DSPy signature."""
+    global _FOLLOWUP_SIG
+    if _FOLLOWUP_SIG is None:
+        _FOLLOWUP_SIG = _define_followup_question_signature()
+    return _FOLLOWUP_SIG
+
+
 class DetectedDisagreement(BaseModel):
     """A detected disagreement between participants on a trace."""
 

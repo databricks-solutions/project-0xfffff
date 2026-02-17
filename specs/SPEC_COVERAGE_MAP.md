@@ -1,6 +1,6 @@
 # Spec Test Coverage Map
 
-**Generated**: 2026-02-13 16:11:49
+**Generated**: 2026-02-17 06:17:43
 
 This report shows test coverage for each specification's success criteria.
 
@@ -8,36 +8,48 @@ This report shows test coverage for each specification's success criteria.
 
 | Type | Count | Description |
 |------|-------|-------------|
-| Unit | 527 | pytest unit tests, Vitest tests |
+| Unit | 539 | pytest unit tests, Vitest tests |
 | Integration | 0 | pytest with real DB/API |
 | E2E (Mocked) | 13 | Playwright with mocked API |
-| E2E (Real) | 37 | Playwright with real API |
+| E2E (Real) | 35 | Playwright with real API |
 
 ## Coverage Summary
 
 | Spec | Reqs | Covered | Cover% | Unit | Int | E2E-M | E2E-R |
 |------|------|---------|--------|------|-----|-------|-------|
-| [ANNOTATION_SPEC](#annotation-spec) | 21 | 21 | 100% | 60 | 0 | 0 | 12 |
+| [ANNOTATION_SPEC](#annotation-spec) | 21 | 13 | 61% | 47 | 0 | 0 | 10 |
 | [AUTHENTICATION_SPEC](#authentication-spec) | 7 | 7 | 100% | 12 | 0 | 3 | 0 |
 | [BUILD_AND_DEPLOY_SPEC](#build-and-deploy-spec) | 15 | 12 | 80% | 56 | 0 | 0 | 0 |
 | [CUSTOM_LLM_PROVIDER_SPEC](#custom-llm-provider-spec) | 15 | 0 | 0% | 13 | 0 | 7 | 0 |
 | [DATASETS_SPEC](#datasets-spec) | 9 | 9 | 100% | 33 | 0 | 0 | 2 |
 | [DESIGN_SYSTEM_SPEC](#design-system-spec) | 7 | 0 | 0% | 40 | 0 | 0 | 0 |
+| [DISCOVERY_SPEC](#discovery-spec) | 47 | 12 | 25% | 24 | 0 | 0 | 0 |
 | [DISCOVERY_TRACE_ASSIGNMENT_SPEC](#discovery-trace-assignment-spec) | 13 | 13 | 100% | 21 | 0 | 2 | 3 |
-| [JUDGE_EVALUATION_SPEC](#judge-evaluation-spec) | 25 | 25 | 100% | 82 | 0 | 0 | 6 |
+| [JUDGE_EVALUATION_SPEC](#judge-evaluation-spec) | 25 | 25 | 100% | 83 | 0 | 0 | 6 |
 | [ROLE_PERMISSIONS_SPEC](#role-permissions-spec) | 16 | 16 | 100% | 24 | 0 | 0 | 0 |
 | [RUBRIC_SPEC](#rubric-spec) | 25 | 22 | 88% | 74 | 0 | 1 | 6 |
 | [TESTING_SPEC](#testing-spec) | 7 | 0 | 0% | 12 | 0 | 0 | 0 |
 | [TRACE_DISPLAY_SPEC](#trace-display-spec) | 0 | 0 | 100% | 43 | 0 | 0 | 6 |
 | [UI_COMPONENTS_SPEC](#ui-components-spec) | 16 | 0 | 0% | 57 | 0 | 0 | 2 |
 
-**Total**: 125/176 requirements covered (71%)
+**Total**: 129/223 requirements covered (57%)
 
 ---
 
 ## ANNOTATION_SPEC
 
-**Coverage**: 21/21 requirements (100%)
+**Coverage**: 13/21 requirements (61%)
+
+### Uncovered Requirements
+
+- [ ] No toast when navigating without changes
+- [ ] Comments display with proper line breaks
+- [ ] Bulk resync re-exports all annotations when rubric titles change
+- [ ] Failed saves are queued and retried automatically with exponential backoff
+- [ ] Navigation is optimistic (UI advances immediately, save completes in background)
+- [ ] Navigation debounced at 300ms to prevent duplicate saves
+- [ ] Freeform question responses are optional (not required for navigation)
+- [ ] Freeform responses are encoded in the comment field as JSON
 
 ### Covered Requirements
 
@@ -45,9 +57,7 @@ This report shows test coverage for each specification's success criteria.
 - [x] Changes automatically save on navigation (Next/Previous) (e2e-real, unit)
 - [x] Toast shows "Annotation saved!" for new submissions (e2e-real)
 - [x] Toast shows "Annotation updated!" only when changes detected (e2e-real)
-- [x] No toast when navigating without changes (unit)
 - [x] Multi-line comments preserved throughout the stack (e2e-real)
-- [x] Comments display with proper line breaks (unit)
 - [x] Next button enabled for annotated traces (allows re-navigation) (e2e-real)
 - [x] Annotation count reflects unique submissions (not re-submissions) (e2e-real, unit)
 - [x] Annotations sync to MLflow as feedback on save (one entry per rubric question) (unit)
@@ -55,12 +65,6 @@ This report shows test coverage for each specification's success criteria.
 - [x] Feedback source is HUMAN with annotator's user_id (unit)
 - [x] Annotation comment maps to MLflow feedback rationale (unit)
 - [x] Duplicate feedback entries are detected and skipped (unit)
-- [x] Bulk resync re-exports all annotations when rubric titles change (unit)
-- [x] Failed saves are queued and retried automatically with exponential backoff (unit)
-- [x] Navigation is optimistic (UI advances immediately, save completes in background) (unit)
-- [x] Navigation debounced at 300ms to prevent duplicate saves (unit)
-- [x] Freeform question responses are optional (not required for navigation) (unit)
-- [x] Freeform responses are encoded in the comment field as JSON (unit)
 - [x] Legacy single-rating format loads correctly alongside multi-rating format (unit)
 
 ### Tests Without Requirement Links
@@ -103,8 +107,6 @@ These tests are tagged with the spec but don't link to specific requirements:
 - `tests/unit/services/test_database_service_participant_notes.py` (test_get_participant_notes_empty_result) [unit]
 - `tests/unit/services/test_database_service_participant_notes.py` (test_delete_participant_note_success) [unit]
 - `tests/unit/services/test_database_service_participant_notes.py` (test_delete_participant_note_not_found) [unit]
-- `client/tests/e2e/annotation-last-trace.spec.ts` (10 users annotating same trace simultaneously should all succeed) [e2e-real]
-- `client/tests/e2e/annotation-last-trace.spec.ts` (10 users annotating 10 traces simultaneously (100 concurrent writes)) [e2e-real]
 
 ## AUTHENTICATION_SPEC
 
@@ -327,6 +329,63 @@ These tests are tagged with the spec but don't link to specific requirements:
 - `client/src/test/design-system.test.ts` (dark mode --primary differs from light mode --primary) [unit]
 - `client/src/test/design-system.test.ts` (component .tsx files avoid hardcoded hex colors) [unit]
 
+## DISCOVERY_SPEC
+
+**Coverage**: 12/47 requirements (25%)
+
+### Uncovered Requirements
+
+- [ ] Previous Q&A visible while answering new questions
+- [ ] Loading spinner during LLM generation (1-3s)
+- [ ] Facilitator can trigger analysis at any time (even partial feedback)
+- [ ] Facilitator selects analysis template (Evaluation Criteria or Themes & Patterns) before running
+- [ ] System aggregates feedback by trace
+- [ ] Disagreements detected at 3 priority levels (deterministic, no LLM)
+- [ ] LLM distills evaluation criteria with evidence from trace IDs
+- [ ] LLM analyzes disagreements with follow-up questions and suggestions
+- [ ] Analysis record stores which template was used
+- [ ] Each analysis run creates a new record (history preserved)
+- [ ] Re-runnable — new analysis as more feedback comes in, prior analyses retained
+- [ ] Warning if < 2 participants (not an error)
+- [ ] Data freshness banner (participant count, last run timestamp)
+- [ ] Results organized by priority (HIGH → MEDIUM → LOWER)
+- [ ] Facilitator can promote distilled criteria to draft rubric
+- [ ] Facilitator can promote disagreement insights to draft rubric
+- [ ] Facilitator can promote raw participant feedback to draft rubric
+- [ ] Facilitator can manually add draft rubric items
+- [ ] Draft rubric items editable and removable
+- [ ] "Suggest Groups" returns LLM proposal without persisting
+- [ ] Facilitator can review, adjust, and apply group proposal
+- [ ] Manual grouping: create groups, name them, move items between groups
+- [ ] Each group maps to one rubric question (group name = question title)
+- [ ] Draft rubric items available during Rubric Creation phase
+- [ ] Source traceability maintained (which traces support each item)
+- [ ] Multiple analysis records per workshop allowed (history preserved)
+- [ ] Draft rubric items track promotion source and promoter
+- [ ] LLM failures show error toast with retry
+- [ ] Analysis shows warning (not error) if < 2 participants
+- [ ] Progressive disclosure (one question at a time)
+- [ ] Submit buttons disabled until required fields filled
+- [ ] Clear progress indication (X of Y traces completed)
+- [ ] Smooth transitions between feedback states
+- [ ] Disagreements color-coded by priority (red/yellow/blue)
+- [ ] Criteria show evidence (supporting trace IDs)
+
+### Covered Requirements
+
+- [x] Facilitator can start Discovery phase with configurable trace limit (unit)
+- [x] Participants view traces and provide GOOD/BAD + comment (unit)
+- [x] AI generates 3 follow-up questions per trace based on feedback (unit)
+- [x] Questions build progressively on prior answers (unit)
+- [x] All 3 questions required before moving to next trace (unit)
+- [x] Error handling with retry for LLM failures (unit)
+- [x] Feedback saved incrementally (no data loss on failure) (unit)
+- [x] Completion status shows % of participants finished (unit)
+- [x] One feedback record per (workshop, trace, user) — upsert behavior (unit)
+- [x] Q&A pairs appended in order to JSON array (unit)
+- [x] Fallback question if LLM unavailable after retries (unit)
+- [x] Form validation prevents empty submissions (unit)
+
 ## DISCOVERY_TRACE_ASSIGNMENT_SPEC
 
 **Coverage**: 13/13 requirements (100%)
@@ -393,6 +452,7 @@ These tests are tagged with the spec but don't link to specific requirements:
 These tests are tagged with the spec but don't link to specific requirements:
 
 - `tests/unit/routers/test_workshops_begin_annotation.py` (test_begin_annotation_requires_rubric) [unit]
+- `tests/unit/services/test_alignment_service.py` (test_likert_agreement_metric_from_store_is_one_when_equal) [unit]
 - `tests/unit/services/test_cohens_kappa.py` (test_interpret_cohens_kappa_bucket_edges) [unit]
 - `tests/unit/services/test_cohens_kappa.py` (test_is_cohens_kappa_acceptable_default_threshold) [unit]
 - `tests/unit/services/test_irr_utils.py` (test_format_irr_result_rounding_and_ready_flag) [unit]

@@ -2,13 +2,17 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { DiscoveryFeedback } from '../models/DiscoveryFeedback';
+import type { DiscoveryFeedbackCreate } from '../models/DiscoveryFeedbackCreate';
 import type { DiscoveryFinding } from '../models/DiscoveryFinding';
 import type { DiscoveryFindingCreate } from '../models/DiscoveryFindingCreate';
 import type { DiscoveryQuestionsModelConfig } from '../models/DiscoveryQuestionsModelConfig';
 import type { DiscoveryQuestionsResponse } from '../models/DiscoveryQuestionsResponse';
 import type { DiscoverySummariesResponse } from '../models/DiscoverySummariesResponse';
+import type { GenerateFollowUpRequest } from '../models/GenerateFollowUpRequest';
 import type { PromoteFindingRequest } from '../models/PromoteFindingRequest';
 import type { SubmitFindingV2Request } from '../models/SubmitFindingV2Request';
+import type { SubmitFollowUpAnswerRequest } from '../models/SubmitFollowUpAnswerRequest';
 import type { UpdateThresholdsRequest } from '../models/UpdateThresholdsRequest';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
@@ -103,31 +107,6 @@ export class DiscoveryService {
             },
             query: {
                 'user_id': userId,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Begin Discovery Phase
-     * @param workshopId
-     * @param traceLimit
-     * @returns any Successful Response
-     * @throws ApiError
-     */
-    public static beginDiscoveryPhaseWorkshopsWorkshopIdBeginDiscoveryPost(
-        workshopId: string,
-        traceLimit?: (number | null),
-    ): CancelablePromise<any> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/workshops/{workshop_id}/begin-discovery',
-            path: {
-                'workshop_id': workshopId,
-            },
-            query: {
-                'trace_limit': traceLimit,
             },
             errors: {
                 422: `Validation Error`,
@@ -355,6 +334,112 @@ export class DiscoveryService {
             path: {
                 'workshop_id': workshopId,
             },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Submit Discovery Feedback
+     * Submit initial feedback (label + comment) for a trace. Upsert behavior.
+     * @param workshopId
+     * @param requestBody
+     * @returns DiscoveryFeedback Successful Response
+     * @throws ApiError
+     */
+    public static submitDiscoveryFeedbackWorkshopsWorkshopIdDiscoveryFeedbackPost(
+        workshopId: string,
+        requestBody: DiscoveryFeedbackCreate,
+    ): CancelablePromise<DiscoveryFeedback> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/discovery-feedback',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Discovery Feedback
+     * Get all discovery feedback, optionally filtered by user_id.
+     * @param workshopId
+     * @param userId
+     * @returns DiscoveryFeedback Successful Response
+     * @throws ApiError
+     */
+    public static getDiscoveryFeedbackWorkshopsWorkshopIdDiscoveryFeedbackGet(
+        workshopId: string,
+        userId?: (string | null),
+    ): CancelablePromise<Array<DiscoveryFeedback>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/discovery-feedback',
+            path: {
+                'workshop_id': workshopId,
+            },
+            query: {
+                'user_id': userId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Generate Followup Question
+     * Generate the next follow-up question for a trace's feedback.
+     * @param workshopId
+     * @param requestBody
+     * @param questionNumber
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static generateFollowupQuestionWorkshopsWorkshopIdGenerateFollowupQuestionPost(
+        workshopId: string,
+        requestBody: GenerateFollowUpRequest,
+        questionNumber: number = 1,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/generate-followup-question',
+            path: {
+                'workshop_id': workshopId,
+            },
+            query: {
+                'question_number': questionNumber,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Submit Followup Answer
+     * Append a Q&A pair to the feedback record.
+     * @param workshopId
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static submitFollowupAnswerWorkshopsWorkshopIdSubmitFollowupAnswerPost(
+        workshopId: string,
+        requestBody: SubmitFollowUpAnswerRequest,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/submit-followup-answer',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },

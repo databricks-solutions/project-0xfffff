@@ -22,6 +22,9 @@ export type Workshop = {
     discovery_questions_model_name?: string;
     input_jsonpath?: (string | null);
     output_jsonpath?: (string | null);
+    auto_evaluation_job_id?: (string | null);
+    auto_evaluation_prompt?: (string | null);
+    auto_evaluation_model?: (string | null);
     show_participant_notes?: boolean;
     created_at?: string;
 };

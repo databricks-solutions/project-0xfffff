@@ -20,7 +20,6 @@ from server.services.database_service import DatabaseService
 
 
 @pytest.fixture
-@pytest.mark.spec("ASSISTED_FACILITATION_SPEC")
 def test_db():
     """Create an in-memory SQLite database for testing."""
     engine = create_engine("sqlite:///:memory:")

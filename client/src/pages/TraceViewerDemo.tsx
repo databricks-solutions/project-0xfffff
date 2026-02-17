@@ -17,7 +17,8 @@ import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useWorkflowContext } from '@/context/WorkflowContext';
 import { toast } from 'sonner';
 import { useUser, useRoleCheck } from '@/context/UserContext';
-import { useTraces, useUserFindings, useSubmitFinding, useParticipantNotes, useSubmitParticipantNote, useDeleteParticipantNote, useWorkshop, refetchAllWorkshopQueries } from '@/hooks/useWorkshopApi';
+import { useTraces, useUserFindings, useSubmitFinding, useParticipantNotes, useSubmitParticipantNote, useDeleteParticipantNote, useWorkshop, refetchAllWorkshopQueries, useDiscoveryFeedback } from '@/hooks/useWorkshopApi';
+import { DiscoveryFeedbackView } from '@/components/DiscoveryFeedbackView';
 import { useQueryClient } from '@tanstack/react-query';
 import { WorkshopsService } from '@/client';
 import type { Trace } from '@/client';
@@ -832,52 +833,19 @@ export function TraceViewerDemo() {
 
           {/* Right Column: Questions + Navigation + Notes - independently scrollable */}
           <div className="overflow-y-auto space-y-4 pr-1 scrollbar-thin">
-        {/* Discovery Questions */}
-        <Card className="border-l-4 border-blue-500">
-          <CardContent className="p-4 space-y-4">
-            <div>
-              <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2 mb-1">
-                <Lightbulb className="w-4 h-4 text-blue-600" />
-                Discovery Questions
-              </h3>
-              {!canCreateFindings && (
-                <p className="text-xs text-red-600 flex items-center gap-1.5 mt-2">
-                  <AlertCircle className="h-3.5 w-3.5" />
-                  You don't have permission to submit findings. You can view traces but cannot contribute insights.
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="question1" className="text-xs font-medium text-gray-600">
-                What makes this response effective or ineffective?
-              </Label>
-              <Textarea
-                id="question1"
-                placeholder={canCreateFindings ? "Share your thoughts on what makes this response work well or poorly..." : "You don't have permission to submit findings"}
-                value={question1Response}
-                onChange={(e) => setQuestion1Response(e.target.value)}
-                className="min-h-[100px]"
-                disabled={!canCreateFindings || isSaving}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="question2" className="text-xs font-medium text-gray-600">
-                If this response was good, what would have made it bad? If bad, what would have made it good?
-              </Label>
-              <Textarea
-                id="question2"
-                placeholder={canCreateFindings ? "Consider alternative scenarios - what changes would flip the quality of this response?" : "You don't have permission to submit findings"}
-                value={question2Response}
-                onChange={(e) => setQuestion2Response(e.target.value)}
-                className="min-h-[100px]"
-                disabled={!canCreateFindings || isSaving}
-              />
-            </div>
-
-          </CardContent>
-        </Card>
+        {/* Discovery Feedback (v2 Structured Feedback) */}
+        {currentTrace && user && (
+          <DiscoveryFeedbackView
+            workshopId={workshopId!}
+            traceId={currentTrace.id}
+            userId={user.id}
+            onComplete={() => {
+              if (currentTraceIndex < traceData.length - 1) {
+                nextTrace();
+              }
+            }}
+          />
+        )}
 
         {/* Navigation */}
         <div className="flex items-center justify-between">

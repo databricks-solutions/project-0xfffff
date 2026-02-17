@@ -10,18 +10,24 @@ import type { Body_call_chat_completion_databricks_chat_post } from '../models/B
 import type { Body_call_serving_endpoint_databricks_call_post } from '../models/Body_call_serving_endpoint_databricks_call_post';
 import type { Body_upload_csv_and_log_to_mlflow_workshops__workshop_id__csv_upload_to_mlflow_post } from '../models/Body_upload_csv_and_log_to_mlflow_workshops__workshop_id__csv_upload_to_mlflow_post';
 import type { Body_upload_csv_traces_workshops__workshop_id__csv_upload_post } from '../models/Body_upload_csv_traces_workshops__workshop_id__csv_upload_post';
+import type { CustomLLMProviderConfigCreate } from '../models/CustomLLMProviderConfigCreate';
+import type { CustomLLMProviderStatus } from '../models/CustomLLMProviderStatus';
+import type { CustomLLMProviderTestResult } from '../models/CustomLLMProviderTestResult';
 import type { DatabricksConfig } from '../models/DatabricksConfig';
 import type { DatabricksConnectionTest } from '../models/DatabricksConnectionTest';
 import type { DatabricksEndpointInfo } from '../models/DatabricksEndpointInfo';
 import type { DatabricksResponse } from '../models/DatabricksResponse';
 import type { DBSQLExportRequest } from '../models/DBSQLExportRequest';
 import type { DBSQLExportResponse } from '../models/DBSQLExportResponse';
+import type { DiscoveryFeedback } from '../models/DiscoveryFeedback';
+import type { DiscoveryFeedbackCreate } from '../models/DiscoveryFeedbackCreate';
 import type { DiscoveryFinding } from '../models/DiscoveryFinding';
 import type { DiscoveryFindingCreate } from '../models/DiscoveryFindingCreate';
 import type { DiscoveryQuestionsModelConfig } from '../models/DiscoveryQuestionsModelConfig';
 import type { DiscoveryQuestionsResponse } from '../models/DiscoveryQuestionsResponse';
 import type { DiscoverySummariesResponse } from '../models/DiscoverySummariesResponse';
 import type { FacilitatorConfigCreate } from '../models/FacilitatorConfigCreate';
+import type { GenerateFollowUpRequest } from '../models/GenerateFollowUpRequest';
 import type { IRRResult } from '../models/IRRResult';
 import type { JsonPathPreviewRequest } from '../models/JsonPathPreviewRequest';
 import type { JsonPathSettingsUpdate } from '../models/JsonPathSettingsUpdate';
@@ -37,11 +43,16 @@ import type { MLflowIntakeConfig } from '../models/MLflowIntakeConfig';
 import type { MLflowIntakeConfigCreate } from '../models/MLflowIntakeConfigCreate';
 import type { MLflowIntakeStatus } from '../models/MLflowIntakeStatus';
 import type { MLflowTraceInfo } from '../models/MLflowTraceInfo';
+import type { ParticipantNote } from '../models/ParticipantNote';
+import type { ParticipantNoteCreate } from '../models/ParticipantNoteCreate';
 import type { PromoteFindingRequest } from '../models/PromoteFindingRequest';
 import type { Rubric } from '../models/Rubric';
 import type { RubricCreate } from '../models/RubricCreate';
+import type { RubricGenerationRequest } from '../models/RubricGenerationRequest';
+import type { RubricSuggestion } from '../models/RubricSuggestion';
 import type { SimpleEvaluationRequest } from '../models/SimpleEvaluationRequest';
 import type { SubmitFindingV2Request } from '../models/SubmitFindingV2Request';
+import type { SubmitFollowUpAnswerRequest } from '../models/SubmitFollowUpAnswerRequest';
 import type { Trace } from '../models/Trace';
 import type { TraceUpload } from '../models/TraceUpload';
 import type { UpdateThresholdsRequest } from '../models/UpdateThresholdsRequest';
@@ -466,8 +477,111 @@ export class ApiService {
         });
     }
     /**
+     * Toggle Participant Notes
+     * Toggle the show_participant_notes flag on a workshop.
+     *
+     * When enabled, participants see a notepad in the discovery view.
+     * @param workshopId
+     * @returns Workshop Successful Response
+     * @throws ApiError
+     */
+    public static toggleParticipantNotesWorkshopsWorkshopIdToggleParticipantNotesPut(
+        workshopId: string,
+    ): CancelablePromise<Workshop> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/workshops/{workshop_id}/toggle-participant-notes',
+            path: {
+                'workshop_id': workshopId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Create Participant Note
+     * Create or update a participant note.
+     * @param workshopId
+     * @param requestBody
+     * @returns ParticipantNote Successful Response
+     * @throws ApiError
+     */
+    public static createParticipantNoteWorkshopsWorkshopIdParticipantNotesPost(
+        workshopId: string,
+        requestBody: ParticipantNoteCreate,
+    ): CancelablePromise<ParticipantNote> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/participant-notes',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Participant Notes
+     * Get participant notes for a workshop, optionally filtered by user and/or phase.
+     * @param workshopId
+     * @param userId
+     * @param phase
+     * @returns ParticipantNote Successful Response
+     * @throws ApiError
+     */
+    public static getParticipantNotesWorkshopsWorkshopIdParticipantNotesGet(
+        workshopId: string,
+        userId?: (string | null),
+        phase?: (string | null),
+    ): CancelablePromise<Array<ParticipantNote>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/participant-notes',
+            path: {
+                'workshop_id': workshopId,
+            },
+            query: {
+                'user_id': userId,
+                'phase': phase,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Delete Participant Note
+     * Delete a participant note.
+     * @param workshopId
+     * @param noteId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static deleteParticipantNoteWorkshopsWorkshopIdParticipantNotesNoteIdDelete(
+        workshopId: string,
+        noteId: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/workshops/{workshop_id}/participant-notes/{note_id}',
+            path: {
+                'workshop_id': workshopId,
+                'note_id': noteId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * Create Rubric
      * Create or update rubric for a workshop.
+     *
+     * After creating/updating, triggers an MLflow re-sync in the background.
      * @param workshopId
      * @param requestBody
      * @returns Rubric Successful Response
@@ -493,6 +607,8 @@ export class ApiService {
     /**
      * Update Rubric
      * Update rubric for a workshop.
+     *
+     * After updating, triggers an MLflow re-sync in the background.
      * @param workshopId
      * @param requestBody
      * @returns Rubric Successful Response
@@ -560,6 +676,8 @@ export class ApiService {
     /**
      * Update Rubric Question
      * Update a specific question in the rubric.
+     *
+     * When the title changes, this triggers an MLflow re-sync to update judge names.
      * @param workshopId
      * @param questionId
      * @param requestBody
@@ -588,6 +706,8 @@ export class ApiService {
     /**
      * Delete Rubric Question
      * Delete a specific question from the rubric.
+     *
+     * After deletion, triggers an MLflow re-sync to update remaining judge names.
      * @param workshopId
      * @param questionId
      * @returns any Successful Response
@@ -710,6 +830,9 @@ export class ApiService {
     /**
      * Get Irr
      * Calculate Inter-Rater Reliability for a workshop.
+     *
+     * Only considers ratings for questions that currently exist in the rubric.
+     * Old ratings for deleted questions are ignored (but preserved in DB).
      * @param workshopId
      * @returns IRRResult Successful Response
      * @throws ApiError
@@ -730,14 +853,23 @@ export class ApiService {
     }
     /**
      * Begin Discovery Phase
+     * Begin the discovery phase and distribute traces to participants.
+     *
+     * Args:
+     * workshop_id: The workshop ID
+     * trace_limit: Optional limit on number of traces to use (default: all)
+     * randomize: Whether to randomize trace order per user (default: False - same order for all)
+     * db: Database session
      * @param workshopId
      * @param traceLimit
+     * @param randomize
      * @returns any Successful Response
      * @throws ApiError
      */
     public static beginDiscoveryPhaseWorkshopsWorkshopIdBeginDiscoveryPost(
         workshopId: string,
         traceLimit?: (number | null),
+        randomize: boolean = false,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -747,6 +879,7 @@ export class ApiService {
             },
             query: {
                 'trace_limit': traceLimit,
+                'randomize': randomize,
             },
             errors: {
                 422: `Validation Error`,
@@ -756,6 +889,9 @@ export class ApiService {
     /**
      * Add Traces
      * Add additional traces to the current active phase (discovery or annotation).
+     *
+     * When adding traces to annotation phase, automatically triggers LLM evaluation
+     * for the newly added traces in the background.
      * @param workshopId
      * @param requestBody
      * @returns any Successful Response
@@ -858,9 +994,13 @@ export class ApiService {
      * request: JSON body with optional fields:
      * - trace_limit: Number of traces to use (default: 10, -1 for all)
      * - randomize: Whether to randomize trace order per user (default: False)
+     * - evaluation_model_name: Model to use for auto-evaluation (null to disable)
      *
      * When randomize=False (default): All SMEs see traces in the same chronological order.
      * When randomize=True: All SMEs see the same set of traces but in different random orders.
+     *
+     * This also triggers automatic LLM evaluation in the background using a judge prompt
+     * derived from the rubric. Results are available immediately in the Results UI.
      * @param workshopId
      * @param requestBody
      * @returns any Successful Response
@@ -1097,6 +1237,48 @@ export class ApiService {
             path: {
                 'workshop_id': workshopId,
             },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Generate Rubric Suggestions
+     * Generate rubric suggestions using AI analysis of discovery feedback.
+     *
+     * This endpoint uses a Databricks model serving endpoint to analyze
+     * discovery findings and participant notes, then generates suggested
+     * rubric criteria for the facilitator to review.
+     *
+     * Args:
+     * workshop_id: Workshop ID to generate suggestions for
+     * request: Generation parameters (endpoint_name, temperature, include_notes)
+     * db: Database session
+     *
+     * Returns:
+     * List of rubric suggestions with title, description, judge type, etc.
+     *
+     * Raises:
+     * HTTPException 404: Workshop not found
+     * HTTPException 400: No discovery feedback available
+     * HTTPException 500: Generation or parsing failed
+     * @param workshopId
+     * @param requestBody
+     * @returns RubricSuggestion Successful Response
+     * @throws ApiError
+     */
+    public static generateRubricSuggestionsWorkshopsWorkshopIdGenerateRubricSuggestionsPost(
+        workshopId: string,
+        requestBody: RubricGenerationRequest,
+    ): CancelablePromise<Array<RubricSuggestion>> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/generate-rubric-suggestions',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },
@@ -2054,6 +2236,182 @@ export class ApiService {
         });
     }
     /**
+     * Get Auto Evaluation Status
+     * Get the status of the auto-evaluation job that runs when annotation begins.
+     *
+     * Returns:
+     * - status: pending, running, completed, failed, or not_started
+     * - job_id: the job ID if auto-evaluation was started
+     * - derived_prompt: the judge prompt derived from the rubric
+     * - logs: job logs (if available)
+     * - result: evaluation result (if completed)
+     * @param workshopId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getAutoEvaluationStatusWorkshopsWorkshopIdAutoEvaluationStatusGet(
+        workshopId: string,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/auto-evaluation-status',
+            path: {
+                'workshop_id': workshopId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Refresh Judge Prompt
+     * Regenerate the judge prompt from the rubric without running evaluation.
+     *
+     * Use this to update the stored prompt after rubric changes.
+     * The prompt is regenerated for a single criterion (not all combined).
+     *
+     * Args:
+     * request: Optional JSON body with:
+     * - question_index: Which rubric question to generate prompt for (default: 0)
+     * @param workshopId
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static refreshJudgePromptWorkshopsWorkshopIdRefreshJudgePromptPost(
+        workshopId: string,
+        requestBody?: Record<string, any>,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/refresh-judge-prompt',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Debug Evaluations
+     * Debug endpoint to check evaluation storage.
+     *
+     * Shows raw data about prompts and evaluations in the database.
+     * @param workshopId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static debugEvaluationsWorkshopsWorkshopIdDebugEvaluationsGet(
+        workshopId: string,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/debug-evaluations',
+            path: {
+                'workshop_id': workshopId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Restart Auto Evaluation
+     * Restart auto-evaluation by first tagging traces and then running evaluation.
+     *
+     * Use this when auto-evaluation failed because traces weren't tagged.
+     * This endpoint will:
+     * 1. Tag all active annotation traces with 'eval' label
+     * 2. Start auto-evaluation jobs for EACH rubric question (multiple judges)
+     *
+     * Args:
+     * request: Optional JSON body with:
+     * - evaluation_model_name: Model to use (if not provided, uses stored model)
+     * @param workshopId
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static restartAutoEvaluationWorkshopsWorkshopIdRestartAutoEvaluationPost(
+        workshopId: string,
+        requestBody?: Record<string, any>,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/restart-auto-evaluation',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Auto Evaluation Results
+     * Get the auto-evaluation LLM judge scores for traces.
+     *
+     * Returns the evaluation results from the auto-evaluation job that ran
+     * when annotation began. This includes LLM judge scores for each trace.
+     * @param workshopId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getAutoEvaluationResultsWorkshopsWorkshopIdAutoEvaluationResultsGet(
+        workshopId: string,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/auto-evaluation-results',
+            path: {
+                'workshop_id': workshopId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Re Evaluate
+     * Manually trigger re-evaluation with the derived or custom prompt.
+     *
+     * This is the "Re-evaluate" button functionality for when the user wants
+     * to run evaluation again (e.g., after modifying the prompt).
+     *
+     * Args:
+     * request: Optional JSON body with:
+     * - judge_prompt: Custom judge prompt (if not provided, uses derived prompt)
+     * - judge_name: Name of the judge to use (if not provided, uses workshop judge_name)
+     * - judge_type: Type of judge ('likert', 'binary', 'freeform') - defaults to 'likert'
+     * - evaluation_model_name: Model to use (default: uses stored model)
+     * @param workshopId
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static reEvaluateWorkshopsWorkshopIdReEvaluatePost(
+        workshopId: string,
+        requestBody?: Record<string, any>,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/re-evaluate',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * Get Alignment Status
      * Get the current alignment status for a workshop.
      *
@@ -2071,6 +2429,105 @@ export class ApiService {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/workshops/{workshop_id}/alignment-status',
+            path: {
+                'workshop_id': workshopId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Custom Llm Provider Status
+     * Get the status of custom LLM provider configuration for a workshop.
+     *
+     * Returns configuration status including whether it's configured, enabled,
+     * and whether an API key is available (without exposing the actual key).
+     * @param workshopId
+     * @returns CustomLLMProviderStatus Successful Response
+     * @throws ApiError
+     */
+    public static getCustomLlmProviderStatusWorkshopsWorkshopIdCustomLlmProviderGet(
+        workshopId: string,
+    ): CancelablePromise<CustomLLMProviderStatus> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/custom-llm-provider',
+            path: {
+                'workshop_id': workshopId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Create Custom Llm Provider
+     * Create or update custom LLM provider configuration for a workshop.
+     *
+     * The API key is stored in-memory only and will expire after 24 hours.
+     * Configuration details (provider name, base URL, model name) are persisted.
+     * @param workshopId
+     * @param requestBody
+     * @returns CustomLLMProviderStatus Successful Response
+     * @throws ApiError
+     */
+    public static createCustomLlmProviderWorkshopsWorkshopIdCustomLlmProviderPost(
+        workshopId: string,
+        requestBody: CustomLLMProviderConfigCreate,
+    ): CancelablePromise<CustomLLMProviderStatus> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/custom-llm-provider',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Delete Custom Llm Provider
+     * Delete custom LLM provider configuration for a workshop.
+     *
+     * Removes both the persisted configuration and the in-memory API key.
+     * @param workshopId
+     * @returns void
+     * @throws ApiError
+     */
+    public static deleteCustomLlmProviderWorkshopsWorkshopIdCustomLlmProviderDelete(
+        workshopId: string,
+    ): CancelablePromise<void> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/workshops/{workshop_id}/custom-llm-provider',
+            path: {
+                'workshop_id': workshopId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Test Custom Llm Provider
+     * Test connection to the configured custom LLM provider.
+     *
+     * Makes a minimal API call to verify the endpoint is reachable and
+     * the API key is valid. Returns response time on success.
+     * @param workshopId
+     * @returns CustomLLMProviderTestResult Successful Response
+     * @throws ApiError
+     */
+    public static testCustomLlmProviderWorkshopsWorkshopIdCustomLlmProviderTestPost(
+        workshopId: string,
+    ): CancelablePromise<CustomLLMProviderTestResult> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/custom-llm-provider/test',
             path: {
                 'workshop_id': workshopId,
             },
@@ -2174,6 +2631,112 @@ export class ApiService {
             path: {
                 'workshop_id': workshopId,
             },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Submit Discovery Feedback
+     * Submit initial feedback (label + comment) for a trace. Upsert behavior.
+     * @param workshopId
+     * @param requestBody
+     * @returns DiscoveryFeedback Successful Response
+     * @throws ApiError
+     */
+    public static submitDiscoveryFeedbackWorkshopsWorkshopIdDiscoveryFeedbackPost(
+        workshopId: string,
+        requestBody: DiscoveryFeedbackCreate,
+    ): CancelablePromise<DiscoveryFeedback> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/discovery-feedback',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Discovery Feedback
+     * Get all discovery feedback, optionally filtered by user_id.
+     * @param workshopId
+     * @param userId
+     * @returns DiscoveryFeedback Successful Response
+     * @throws ApiError
+     */
+    public static getDiscoveryFeedbackWorkshopsWorkshopIdDiscoveryFeedbackGet(
+        workshopId: string,
+        userId?: (string | null),
+    ): CancelablePromise<Array<DiscoveryFeedback>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/discovery-feedback',
+            path: {
+                'workshop_id': workshopId,
+            },
+            query: {
+                'user_id': userId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Generate Followup Question
+     * Generate the next follow-up question for a trace's feedback.
+     * @param workshopId
+     * @param requestBody
+     * @param questionNumber
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static generateFollowupQuestionWorkshopsWorkshopIdGenerateFollowupQuestionPost(
+        workshopId: string,
+        requestBody: GenerateFollowUpRequest,
+        questionNumber: number = 1,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/generate-followup-question',
+            path: {
+                'workshop_id': workshopId,
+            },
+            query: {
+                'question_number': questionNumber,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Submit Followup Answer
+     * Append a Q&A pair to the feedback record.
+     * @param workshopId
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static submitFollowupAnswerWorkshopsWorkshopIdSubmitFollowupAnswerPost(
+        workshopId: string,
+        requestBody: SubmitFollowUpAnswerRequest,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/submit-followup-answer',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },

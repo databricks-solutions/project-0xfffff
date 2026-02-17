@@ -13,7 +13,13 @@ from typing import Any
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from server.models import DiscoveryFinding, DiscoveryFindingCreate, WorkshopPhase
+from server.models import (
+    DiscoveryFeedback,
+    DiscoveryFeedbackCreate,
+    DiscoveryFinding,
+    DiscoveryFindingCreate,
+    WorkshopPhase,
+)
 from server.services.database_service import DatabaseService
 from server.services.discovery_dspy import QUESTION_CATEGORIES
 
@@ -752,12 +758,23 @@ class DiscoveryService:
     # ---------------------------------------------------------------------
     # Phase transitions / discovery orchestration
     # ---------------------------------------------------------------------
-    def begin_discovery_phase(self, workshop_id: str, trace_limit: int | None = None) -> dict[str, Any]:
+    def begin_discovery_phase(
+        self, workshop_id: str, trace_limit: int | None = None, randomize: bool = False
+    ) -> dict[str, Any]:
         self._get_workshop_or_404(workshop_id)
 
         # Update workshop phase to discovery and mark discovery as started
         self.db_service.update_workshop_phase(workshop_id, WorkshopPhase.DISCOVERY)
         self.db_service.update_phase_started(workshop_id, discovery_started=True)
+
+        # Persist randomize setting
+        if randomize:
+            from server.database import WorkshopDB
+
+            workshop_db = self.db.query(WorkshopDB).filter_by(id=workshop_id).first()
+            if workshop_db:
+                workshop_db.discovery_randomize_traces = True
+                self.db.commit()
 
         traces = self.db_service.get_traces(workshop_id)
         total_traces = len(traces)
@@ -911,6 +928,112 @@ class DiscoveryService:
             "user_email": user.email,
             "discovery_complete": is_complete,
         }
+
+    # -----------------------------------------------------------------
+    # Discovery Feedback (v2 Structured Feedback)
+    # -----------------------------------------------------------------
+
+    def submit_discovery_feedback(
+        self, workshop_id: str, data: DiscoveryFeedbackCreate
+    ) -> DiscoveryFeedback:
+        """Submit or update initial feedback (label + comment) for a trace."""
+        self._get_workshop_or_404(workshop_id)
+
+        if not data.comment or not data.comment.strip():
+            raise HTTPException(status_code=422, detail="Comment is required")
+
+        return self.db_service.add_discovery_feedback(workshop_id, data)
+
+    def generate_followup_question(
+        self,
+        workshop_id: str,
+        trace_id: str,
+        user_id: str,
+        question_number: int,
+    ) -> dict[str, Any]:
+        """Generate a follow-up question for the given feedback."""
+        workshop = self._get_workshop_or_404(workshop_id)
+
+        if question_number < 1 or question_number > 3:
+            raise HTTPException(status_code=400, detail="question_number must be 1, 2, or 3")
+
+        trace = self.db_service.get_trace(trace_id)
+        if not trace or trace.workshop_id != workshop_id:
+            raise HTTPException(status_code=404, detail="Trace not found")
+
+        feedback_list = self.db_service.get_discovery_feedback(
+            workshop_id, user_id=user_id, trace_id=trace_id
+        )
+        if not feedback_list:
+            raise HTTPException(status_code=404, detail="No feedback found for this trace/user")
+        feedback = feedback_list[0]
+
+        # Validate that the user hasn't already answered this many questions
+        existing_qna_count = len(feedback.followup_qna or [])
+        if question_number != existing_qna_count + 1:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Expected question_number={existing_qna_count + 1}, got {question_number}",
+            )
+
+        # Get LLM configuration
+        workspace_url = None
+        databricks_token = None
+        model_name = (getattr(workshop, "discovery_questions_model_name", None) or "demo").strip()
+
+        mlflow_config = self.db_service.get_mlflow_config(workshop_id)
+        if mlflow_config:
+            workspace_url = mlflow_config.databricks_host
+            from server.services.token_storage_service import token_storage
+
+            databricks_token = token_storage.get_token(workshop_id) or self.db_service.get_databricks_token(
+                workshop_id
+            )
+
+        from server.services.followup_question_service import FollowUpQuestionService
+
+        svc = FollowUpQuestionService()
+        question = svc.generate(
+            trace=trace,
+            feedback=feedback,
+            question_number=question_number,
+            workspace_url=workspace_url,
+            databricks_token=databricks_token,
+            model_name=model_name,
+        )
+
+        return {"question": question, "question_number": question_number}
+
+    def submit_followup_answer(
+        self,
+        workshop_id: str,
+        trace_id: str,
+        user_id: str,
+        question: str,
+        answer: str,
+    ) -> dict[str, Any]:
+        """Append a Q&A pair to the feedback record."""
+        self._get_workshop_or_404(workshop_id)
+
+        if not answer or not answer.strip():
+            raise HTTPException(status_code=422, detail="Answer is required")
+
+        feedback = self.db_service.append_followup_qna(
+            workshop_id, trace_id, user_id,
+            {"question": question, "answer": answer},
+        )
+        return {
+            "feedback_id": feedback.id,
+            "qna_count": len(feedback.followup_qna),
+            "complete": len(feedback.followup_qna) >= 3,
+        }
+
+    def get_discovery_feedback(
+        self, workshop_id: str, user_id: str | None = None
+    ) -> list[DiscoveryFeedback]:
+        """Get all discovery feedback, optionally filtered by user."""
+        self._get_workshop_or_404(workshop_id)
+        return self.db_service.get_discovery_feedback(workshop_id, user_id=user_id)
 
     # --------- Assisted Facilitation v2 Methods ---------
 

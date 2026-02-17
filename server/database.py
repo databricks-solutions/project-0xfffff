@@ -193,6 +193,7 @@ class WorkshopDB(Base):
     disagreements = relationship("DisagreementDB", back_populates="workshop", cascade="all, delete-orphan")
     trace_discovery_questions = relationship("TraceDiscoveryQuestionDB", back_populates="workshop", cascade="all, delete-orphan")
     trace_discovery_thresholds = relationship("TraceDiscoveryThresholdDB", back_populates="workshop", cascade="all, delete-orphan")
+    discovery_feedback = relationship("DiscoveryFeedbackDB", back_populates="workshop", cascade="all, delete-orphan")
     draft_rubric_items = relationship("DraftRubricItemDB", back_populates="workshop", cascade="all, delete-orphan")
 
 
@@ -554,6 +555,26 @@ class TraceDiscoveryThresholdDB(Base):
     # Relationships
     workshop = relationship("WorkshopDB", back_populates="trace_discovery_thresholds")
     trace = relationship("TraceDB", back_populates="trace_discovery_thresholds")
+
+
+class DiscoveryFeedbackDB(Base):
+    """Structured feedback per (workshop, trace, user) for v2 discovery."""
+
+    __tablename__ = "discovery_feedback"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    trace_id = Column(String, ForeignKey("traces.id"), nullable=False)
+    user_id = Column(String, nullable=False)
+    feedback_label = Column(String, nullable=False)  # 'good' | 'bad'
+    comment = Column(Text, nullable=False)
+    followup_qna = Column(JSON, default=list)  # [{"question": "...", "answer": "..."}, ...]
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    # Relationships
+    workshop = relationship("WorkshopDB", back_populates="discovery_feedback")
+    trace = relationship("TraceDB")
 
 
 class DraftRubricItemDB(Base):
