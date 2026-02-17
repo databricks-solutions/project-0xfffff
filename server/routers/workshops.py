@@ -1377,12 +1377,15 @@ async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Sessi
 
     # === TAG TRACES FOR EVALUATION ===
     # Tag traces in MLflow (non-critical - don't let this crash the endpoint)
+    tag_result = None
     if auto_evaluate_enabled:
+        logger.info("Auto-eval tagging: %d traces to tag for workshop %s", len(trace_ids_to_use), workshop_id)
         try:
             tag_result = db_service.tag_traces_for_evaluation(workshop_id, trace_ids_to_use, tag_type='eval')
-            logger.info("Tagged traces for auto-evaluation: %s", tag_result)
+            logger.info("Auto-eval tagging result: tagged=%d, failed=%s",
+                        tag_result.get('tagged', 0), tag_result.get('failed', []))
         except Exception as tag_err:
-            logger.warning(f"Failed to tag traces for evaluation (non-critical): {tag_err}")
+            logger.warning("Auto-eval tagging FAILED for workshop %s: %s", workshop_id, tag_err, exc_info=True)
 
     # === AUTO-EVALUATION: Derive judge prompt and start background evaluation ===
     auto_eval_job_id = None
@@ -1445,6 +1448,8 @@ async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Sessi
                             alignment_service = AlignmentService(thread_db_service)
 
                             job.add_log("Initializing auto-evaluation service...")
+                            job.add_log(f"Initial tagging result: {tag_result}")
+                            job.add_log(f"Trace IDs to evaluate: {trace_ids_to_use}")
 
                             # Wait for MLflow tag indexing (eventual consistency)
                             # Tags were just set via mlflow.set_trace_tag but search_traces
@@ -1459,26 +1464,39 @@ async def begin_annotation_phase(workshop_id: str, request: dict = {}, db: Sessi
                                     _os.environ['DATABRICKS_TOKEN'] = mlflow_config.databricks_token
                                 _mlflow.set_tracking_uri('databricks')
 
-                                job.add_log("Waiting for MLflow tag indexing...")
+                                filter_str = f"tags.label = 'eval' AND tags.workshop_id = '{workshop_id}'"
+                                job.add_log(f"Polling MLflow for tagged traces: {filter_str}")
+                                job.add_log(f"Experiment ID: {mlflow_config.experiment_id}")
                                 tag_verified = False
                                 for wait_attempt in range(5):  # Up to 10 seconds (5 x 2s)
                                     _time.sleep(2)
                                     try:
                                         test_df = _mlflow.search_traces(
                                             experiment_ids=[mlflow_config.experiment_id],
-                                            filter_string=f"tags.label = 'eval' AND tags.workshop_id = '{workshop_id}'",
+                                            filter_string=filter_str,
                                             return_type="pandas",
                                         )
-                                        if test_df is not None and not test_df.empty:
-                                            job.add_log(f"MLflow tags verified after {(wait_attempt + 1) * 2}s ({len(test_df)} traces found)")
+                                        found_count = len(test_df) if test_df is not None and not test_df.empty else 0
+                                        job.add_log(f"Tag poll attempt {wait_attempt + 1}/5: found {found_count} traces")
+                                        if found_count > 0:
+                                            job.add_log(f"MLflow tags verified after {(wait_attempt + 1) * 2}s ({found_count} traces)")
                                             tag_verified = True
                                             break
                                     except Exception as search_err:
+                                        job.add_log(f"Tag poll attempt {wait_attempt + 1}/5 error: {search_err}")
                                         logger.debug("Tag verification attempt %d failed: %s", wait_attempt + 1, search_err)
                                 if not tag_verified:
-                                    job.add_log("WARNING: MLflow tags not yet indexed after 10s, proceeding anyway")
+                                    job.add_log("WARNING: MLflow tags not found after 10s, re-tagging traces...")
+                                    try:
+                                        retag_result = thread_db_service.tag_traces_for_evaluation(
+                                            workshop_id, trace_ids_to_use, tag_type='eval'
+                                        )
+                                        job.add_log(f"Re-tagged {retag_result.get('tagged', 0)} traces (failed: {retag_result.get('failed', [])})")
+                                        _time.sleep(2)
+                                    except Exception as retag_err:
+                                        job.add_log(f"WARNING: Re-tagging failed: {retag_err}")
                             except Exception as tag_wait_err:
-                                job.add_log(f"WARNING: Could not verify MLflow tags: {tag_wait_err}")
+                                job.add_log(f"WARNING: Tag verification setup failed: {tag_wait_err}")
 
                             # Get rubric questions again in thread context
                             questions_to_eval = thread_db_service.get_rubric_questions_for_evaluation(workshop_id)
@@ -4832,6 +4850,17 @@ async def re_evaluate(
         raise HTTPException(status_code=400, detail="Databricks token not found")
     
     mlflow_config.databricks_token = databricks_token
+
+    # Re-tag traces with 'eval' label before evaluation.
+    # Annotation sync may have overwritten tags.label to 'align', so we must
+    # re-apply 'eval' to ensure _search_tagged_traces finds them.
+    trace_ids = workshop.active_annotation_trace_ids or []
+    if not trace_ids:
+        all_traces = db_service.get_traces(workshop_id)
+        trace_ids = [t.id for t in all_traces if t.mlflow_trace_id]
+    if trace_ids:
+        tag_result = db_service.tag_traces_for_evaluation(workshop_id, trace_ids, tag_type='eval')
+        logger.info("Re-evaluate: tagged %d traces with 'eval': %s", tag_result.get('tagged', 0), tag_result)
 
     # Get judge_name from request, or fall back to workshop judge_name
     judge_name = request.get("judge_name") or workshop.judge_name or "workshop_judge"
