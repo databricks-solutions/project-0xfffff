@@ -843,6 +843,7 @@ export function TraceViewerDemo() {
             traceId={currentTrace.id}
             userId={user.id}
             existingFeedback={discoveryFeedbackList?.find(f => f.trace_id === currentTrace.id) ?? null}
+            isFacilitator={isFacilitator}
             onComplete={() => {
               if (currentTraceIndex < traceData.length - 1) {
                 nextTrace();

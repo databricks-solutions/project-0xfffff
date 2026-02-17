@@ -742,6 +742,7 @@ Discovery uses the same model selection as judge evaluation: **Databricks founda
 ### Error Handling
 - [ ] LLM failures show error toast with retry
 - [ ] Fallback question if LLM unavailable after retries
+- [ ] Fallback warning banner shown only to facilitators, never to participants/SMEs
 - [ ] Analysis shows warning (not error) if < 2 participants
 - [ ] Form validation prevents empty submissions
 

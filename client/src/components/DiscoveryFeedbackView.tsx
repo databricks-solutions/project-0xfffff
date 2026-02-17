@@ -28,6 +28,7 @@ interface Props {
   userId: string;
   existingFeedback?: DiscoveryFeedbackData | null;
   onComplete?: () => void;
+  isFacilitator?: boolean;
 }
 
 export const DiscoveryFeedbackView: React.FC<Props> = ({
@@ -36,6 +37,7 @@ export const DiscoveryFeedbackView: React.FC<Props> = ({
   userId,
   existingFeedback,
   onComplete,
+  isFacilitator = false,
 }) => {
   // State machine
   const [state, setState] = useState<FeedbackState>('feedback');
@@ -244,8 +246,8 @@ export const DiscoveryFeedbackView: React.FC<Props> = ({
           </div>
         )}
 
-        {/* Fallback warning */}
-        {usingFallback && (state.startsWith('answering_') || state === 'complete') && (
+        {/* Fallback warning — facilitator-only */}
+        {isFacilitator && usingFallback && (state.startsWith('answering_') || state === 'complete') && (
           <div className="flex items-start gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-md">
             <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
             <p className="text-xs text-amber-700">
