@@ -65,6 +65,9 @@ export function TraceViewerDemo() {
   const { data: workshopData } = useWorkshop(workshopId!);
   const notesEnabled = workshopData?.show_participant_notes ?? false;
 
+  // Discovery feedback (v2 Structured Feedback) - fetch existing for this user
+  const { data: discoveryFeedbackList } = useDiscoveryFeedback(workshopId!, user?.id);
+
   // Participant notepad (only fetch when enabled)
   const [noteContent, setNoteContent] = useState('');
   const { data: participantNotes } = useParticipantNotes(workshopId!, user?.id, 'discovery');
@@ -839,6 +842,7 @@ export function TraceViewerDemo() {
             workshopId={workshopId!}
             traceId={currentTrace.id}
             userId={user.id}
+            existingFeedback={discoveryFeedbackList?.find(f => f.trace_id === currentTrace.id) ?? null}
             onComplete={() => {
               if (currentTraceIndex < traceData.length - 1) {
                 nextTrace();
