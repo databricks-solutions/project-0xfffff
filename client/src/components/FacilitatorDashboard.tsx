@@ -7,7 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useFacilitatorFindings, useFacilitatorFindingsWithUserDetails, useTraces, useAllTraces, useRubric, useFacilitatorAnnotations, useFacilitatorAnnotationsWithUserDetails, useWorkshop, useDiscoveryFeedback, useUpdateDiscoveryModel, useMLflowConfig } from '@/hooks/useWorkshopApi';
+import { useFacilitatorFindings, useFacilitatorFindingsWithUserDetails, useTraces, useAllTraces, useRubric, useFacilitatorAnnotations, useFacilitatorAnnotationsWithUserDetails, useWorkshop, useDiscoveryFeedback, useFacilitatorDiscoveryFeedback, useUpdateDiscoveryModel, useMLflowConfig } from '@/hooks/useWorkshopApi';
+import type { DiscoveryFeedbackWithUser } from '@/hooks/useWorkshopApi';
 import { Settings, Users, FileText, CheckCircle, Clock, AlertCircle, ChevronRight, Play, Eye, Plus, RotateCcw, Target, TrendingUp, Activity, MessageSquare, ChevronDown, Brain } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { getModelOptions, getBackendModelName, getFrontendModelName } from '@/utils/modelMapping';
@@ -76,6 +77,8 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
   const { data: rubric } = useRubric(workshopId!);
   const { data: annotations } = useFacilitatorAnnotations(workshopId!);
   const { data: annotationsWithUserDetails } = useFacilitatorAnnotationsWithUserDetails(workshopId!);
+  // v2 discovery feedback with user details (for discovery metrics)
+  const { data: allDiscoveryFeedback } = useFacilitatorDiscoveryFeedback(workshopId!);
 
   // Additional traces functionality - separate state for each phase
   const [discoveryTracesCount, setDiscoveryTracesCount] = React.useState<string>('');
@@ -112,12 +115,18 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
     : (traces?.length || 0);
 
   const totalTraces = traces?.length || 0; // Keep for general use
-  const tracesWithFindings = allFindings ? new Set(allFindings.map(f => f.trace_id)) : new Set();
-  const completedDiscoveryTraces = Math.min(tracesWithFindings.size, discoveryTraceCount);
+
+  // Discovery progress: use v2 feedback (traces with at least one feedback entry)
+  const tracesWithFeedback = allDiscoveryFeedback
+    ? new Set(allDiscoveryFeedback.map(f => f.trace_id))
+    : new Set();
+  const completedDiscoveryTraces = Math.min(tracesWithFeedback.size, discoveryTraceCount);
   const discoveryProgress = discoveryTraceCount > 0 ? (completedDiscoveryTraces / discoveryTraceCount) * 100 : 0;
 
-  // Get user participation stats with user names
-  const activeUsers = allFindings ? new Set(allFindings.map(f => f.user_id)) : new Set();
+  // Active users: use v2 feedback for discovery, v1 findings as fallback
+  const activeUsers = allDiscoveryFeedback
+    ? new Set(allDiscoveryFeedback.map(f => f.user_id))
+    : (allFindings ? new Set(allFindings.map(f => f.user_id)) : new Set());
 
   // For annotation phase, use annotation-based active users
   const activeAnnotators = annotations ? new Set(annotations.map(a => a.user_id)) : new Set();
@@ -139,13 +148,14 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
         ).map(([userId, data]) => ({ userId, userName: data.userName, count: data.count }))
         : [];
     } else {
-      // Use discovery findings with user details (default)
-      return allFindingsWithUserDetails ?
+      // Use v2 discovery feedback with user details
+      const feedbackSource = allDiscoveryFeedback || [];
+      return feedbackSource.length > 0 ?
         Object.entries(
-          allFindingsWithUserDetails.reduce((acc, finding) => {
-            const userId = finding.user_id;
+          feedbackSource.reduce((acc, fb) => {
+            const userId = fb.user_id;
             if (!acc[userId]) {
-              acc[userId] = { count: 0, userName: finding.user_name || userId };
+              acc[userId] = { count: 0, userName: (fb as DiscoveryFeedbackWithUser).user_name || userId };
             }
             acc[userId].count += 1;
             return acc;
@@ -153,12 +163,11 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
         ).map(([userId, data]) => ({ userId, userName: data.userName, count: data.count }))
         : [];
     }
-  }, [focusPhase, allFindingsWithUserDetails, annotationsWithUserDetails]);
+  }, [focusPhase, allDiscoveryFeedback, annotationsWithUserDetails]);
 
   // Calculate trace coverage details
   const traceCoverageDetails = React.useMemo(() => {
-    if (!traces || !allFindings) return [];
-
+    if (!traces) return [];
 
     // Filter traces based on focusPhase
     let relevantTraces = traces;
@@ -196,17 +205,17 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
           isFullyReviewed: activeAnnotators.size > 0 && reviewerIds.size >= minReviewers
         };
       } else {
-        // Default to discovery findings
-        const findingsForTrace = allFindings.filter(f => f.trace_id === trace.id);
-        const reviewerIds = new Set(findingsForTrace.map(f => f.user_id));
+        // Use v2 discovery feedback for coverage
+        const feedbackForTrace = (allDiscoveryFeedback || []).filter(f => f.trace_id === trace.id);
+        const reviewerIds = new Set(feedbackForTrace.map(f => f.user_id));
 
         return {
           traceId: trace.mlflow_trace_id || trace.id,
           input: trace.input,
-          reviewCount: findingsForTrace.length,
+          reviewCount: feedbackForTrace.length,
           uniqueReviewers: reviewerIds.size,
           reviewers: Array.from(reviewerIds),
-          isFullyReviewed: activeUsers.size > 0 && reviewerIds.size >= Math.min(3, activeUsers.size) // Consider "full" only if there are active users and sufficient reviews
+          isFullyReviewed: activeUsers.size > 0 && reviewerIds.size >= Math.min(3, activeUsers.size)
         };
       }
     })
@@ -218,7 +227,7 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
       // Then sort by review count (most reviews first)
       return b.reviewCount - a.reviewCount;
     });
-  }, [traces, allFindings, annotations, activeUsers.size, activeAnnotators.size, focusPhase, workshop?.active_discovery_trace_ids, workshop?.active_annotation_trace_ids]);
+  }, [traces, allDiscoveryFeedback, annotations, activeUsers.size, activeAnnotators.size, focusPhase, workshop?.active_discovery_trace_ids, workshop?.active_annotation_trace_ids]);
 
   // Annotation progress
   const tracesWithAnnotations = annotations ? new Set(annotations.map(a => a.trace_id)) : new Set();
@@ -237,24 +246,24 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
     return rubric?.judge_type || 'likert';
   }, [rubric]);
 
-  // Discovery metrics for focused view
+  // Discovery metrics for focused view (uses v2 feedback)
   const discoveryMetrics = React.useMemo(() => {
-    if (!allFindings) return { totalFindings: 0, smeFindings: 0, participantFindings: 0, avgFindingsPerTrace: 0 };
+    const feedbackList = allDiscoveryFeedback || [];
+    if (feedbackList.length === 0) return { totalFeedback: 0, smeFeedback: 0, participantFeedback: 0, avgFeedbackPerTrace: 0 };
 
-    const findingsToUse = (allFindingsWithUserDetails || allFindings) as FindingWithUser[];
-    const smeFindings = findingsToUse.filter((f: FindingWithUser) => f.user_role === 'sme');
-    const participantFindings = findingsToUse.filter((f: FindingWithUser) => f.user_role !== 'sme');
-    const avgFindingsPerTrace = tracesWithFindings.size > 0
-      ? Math.round((allFindings.length / tracesWithFindings.size) * 10) / 10
+    const smeFeedback = feedbackList.filter((f: DiscoveryFeedbackWithUser) => f.user_role === 'sme');
+    const participantFeedback = feedbackList.filter((f: DiscoveryFeedbackWithUser) => f.user_role !== 'sme');
+    const avgFeedbackPerTrace = tracesWithFeedback.size > 0
+      ? Math.round((feedbackList.length / tracesWithFeedback.size) * 10) / 10
       : 0;
 
     return {
-      totalFindings: allFindings.length,
-      smeFindings: smeFindings.length,
-      participantFindings: participantFindings.length,
-      avgFindingsPerTrace,
+      totalFeedback: feedbackList.length,
+      smeFeedback: smeFeedback.length,
+      participantFeedback: participantFeedback.length,
+      avgFeedbackPerTrace,
     };
-  }, [allFindings, allFindingsWithUserDetails, tracesWithFindings.size]);
+  }, [allDiscoveryFeedback, tracesWithFeedback.size]);
 
   // Annotation metrics for focused view
   const annotationMetrics = React.useMemo(() => {
@@ -635,20 +644,20 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                       // Detailed discovery metrics when focused
                       <div className="space-y-2 text-xs">
                         <div className="flex justify-between text-gray-600">
-                          <span>Total Findings:</span>
-                          <span className="font-semibold text-green-600">{discoveryMetrics.totalFindings}</span>
+                          <span>Total Feedback:</span>
+                          <span className="font-semibold text-green-600">{discoveryMetrics.totalFeedback}</span>
                         </div>
                         <div className="flex justify-between text-gray-600">
-                          <span>Avg. Findings per Trace:</span>
-                          <span className="font-semibold text-green-600">{discoveryMetrics.avgFindingsPerTrace}</span>
+                          <span>Avg. Feedback per Trace:</span>
+                          <span className="font-semibold text-green-600">{discoveryMetrics.avgFeedbackPerTrace}</span>
                         </div>
                         <div className="flex justify-between text-gray-600">
-                          <span>SME Findings:</span>
-                          <span className="font-semibold text-green-600">{discoveryMetrics.smeFindings}</span>
+                          <span>SME Feedback:</span>
+                          <span className="font-semibold text-green-600">{discoveryMetrics.smeFeedback}</span>
                         </div>
                         <div className="flex justify-between text-gray-600">
-                          <span>Participant Findings:</span>
-                          <span className="font-semibold text-green-600">{discoveryMetrics.participantFindings}</span>
+                          <span>Participant Feedback:</span>
+                          <span className="font-semibold text-green-600">{discoveryMetrics.participantFeedback}</span>
                         </div>
                         <div className="pt-2 mt-2 border-t border-green-200">
                           <div className="flex justify-between text-gray-600">
@@ -956,7 +965,7 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                               <div className="text-xs text-slate-600 flex items-center gap-2">
                                 <span className="flex items-center gap-1">
                                   <FileText className="w-3 h-3" />
-                                  {count} finding{count !== 1 ? 's' : ''}
+                                  {count} {focusPhase === 'annotation' ? 'annotation' : 'feedback'}{count !== 1 ? 's' : ''}
                                 </span>
                                 <span className="text-slate-400">•</span>
                                 <span className="flex items-center gap-1">
@@ -982,7 +991,7 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                   <div className="text-center py-8 text-slate-500 bg-slate-50 rounded-lg border-2 border-dashed border-slate-200">
                     <Users className="w-12 h-12 mx-auto mb-4 opacity-40 text-slate-400" />
                     <p className="text-sm font-medium text-slate-700">No user participation data yet</p>
-                    <p className="text-xs text-slate-500 mt-1">Users will appear here once they start contributing findings</p>
+                    <p className="text-xs text-slate-500 mt-1">Users will appear here once they start providing feedback</p>
                   </div>
                 )}
               </TabsContent>

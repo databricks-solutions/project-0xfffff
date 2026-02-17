@@ -303,6 +303,17 @@ async def get_discovery_feedback(
     return svc.get_discovery_feedback(workshop_id, user_id)
 
 
+@router.get("/{workshop_id}/discovery-feedback-with-users", response_model=List[Dict[str, Any]])
+async def get_discovery_feedback_with_user_details(
+    workshop_id: str,
+    user_id: Optional[str] = None,
+    db: Session = Depends(get_db),
+) -> List[Dict[str, Any]]:
+    """Get all discovery feedback with user details (name, role) for facilitator view."""
+    svc = DiscoveryService(db)
+    return svc.get_discovery_feedback_with_user_details(workshop_id, user_id)
+
+
 # ---------------------------------------------------------------------------
 # Assisted Facilitation v2 Endpoints
 # ---------------------------------------------------------------------------

@@ -2,13 +2,25 @@
 
 Covers upsert behavior, Q&A append ordering, completion stats,
 and incremental save guarantees per DISCOVERY_SPEC Step 1.
+
+Uses real in-memory SQLite (same pattern as test_update_discovery_model.py)
+instead of mock chains, so we exercise actual SQL queries.
 """
 
-from datetime import datetime
-from unittest.mock import MagicMock, patch, PropertyMock
+import time
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
+from server.database import (
+    Base,
+    DiscoveryFeedbackDB,
+    TraceDB,
+    UserDB,
+    WorkshopDB,
+    WorkshopParticipantDB,
+)
 from server.models import (
     DiscoveryFeedback,
     DiscoveryFeedbackCreate,
@@ -17,40 +29,62 @@ from server.models import (
 from server.services.database_service import DatabaseService
 
 
-def _make_feedback_db(
-    fb_id="fb-1",
-    workshop_id="ws-1",
-    trace_id="t-1",
-    user_id="u-1",
-    label="good",
-    comment="Looks great",
-    qna=None,
-):
-    mock = MagicMock()
-    mock.id = fb_id
-    mock.workshop_id = workshop_id
-    mock.trace_id = trace_id
-    mock.user_id = user_id
-    mock.feedback_label = label
-    mock.comment = comment
-    mock.followup_qna = qna if qna is not None else []
-    mock.created_at = datetime.utcnow()
-    mock.updated_at = datetime.utcnow()
-    return mock
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
 
 
-def _make_participant_db(user_id="u-1", role="sme"):
-    mock = MagicMock()
-    mock.user_id = user_id
-    mock.role = role
-    return mock
+@pytest.fixture
+def test_db():
+    """Create an in-memory SQLite database for testing."""
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    yield session
+    session.close()
 
 
-def _make_workshop_db(workshop_id="ws-1", active_traces=None):
-    mock = MagicMock()
-    mock.id = workshop_id
-    mock.active_discovery_trace_ids = active_traces or ["t-1", "t-2"]
-    return mock
+@pytest.fixture
+def db_service(test_db):
+    return DatabaseService(test_db)
+
+
+@pytest.fixture
+def workshop(test_db):
+    ws = WorkshopDB(
+        id="ws-1",
+        name="Test Workshop",
+        facilitator_id="f-1",
+        active_discovery_trace_ids=["t-1", "t-2"],
+    )
+    test_db.add(ws)
+    test_db.commit()
+    return ws
+
+
+@pytest.fixture
+def traces(test_db, workshop):
+    t1 = TraceDB(id="t-1", workshop_id="ws-1", input="Hello", output="Hi")
+    t2 = TraceDB(id="t-2", workshop_id="ws-1", input="Bye", output="Later")
+    test_db.add_all([t1, t2])
+    test_db.commit()
+    return [t1, t2]
+
+
+@pytest.fixture
+def users_and_participants(test_db, workshop):
+    """Create UserDB + WorkshopParticipantDB records for completion tests."""
+    u1 = UserDB(id="u-1", email="u1@test.com", name="User One", role="participant")
+    u2 = UserDB(id="u-2", email="u2@test.com", name="User Two", role="participant")
+    test_db.add_all([u1, u2])
+    test_db.flush()
+
+    p1 = WorkshopParticipantDB(id="wp-1", user_id="u-1", workshop_id="ws-1", role="sme")
+    p2 = WorkshopParticipantDB(id="wp-2", user_id="u-2", workshop_id="ws-1", role="participant")
+    test_db.add_all([p1, p2])
+    test_db.commit()
+    return [u1, u2]
 
 
 # ============================================================================
@@ -61,69 +95,57 @@ def _make_workshop_db(workshop_id="ws-1", active_traces=None):
 @pytest.mark.spec("DISCOVERY_SPEC")
 @pytest.mark.req("One feedback record per (workshop, trace, user) — upsert behavior")
 @pytest.mark.unit
-def test_add_discovery_feedback_creates_new():
+def test_add_discovery_feedback_creates_new(db_service, workshop, traces):
     """Create new feedback when none exists for the (workshop, trace, user) triple."""
-    mock_db = MagicMock()
-    service = DatabaseService(mock_db)
-
-    # No existing row
-    mock_db.query.return_value.filter.return_value.first.return_value = None
-
-    # After commit + refresh, simulate the row
-    new_row = _make_feedback_db()
-
-    def fake_refresh(obj):
-        obj.id = new_row.id
-        obj.workshop_id = new_row.workshop_id
-        obj.trace_id = new_row.trace_id
-        obj.user_id = new_row.user_id
-        obj.feedback_label = new_row.feedback_label
-        obj.comment = new_row.comment
-        obj.followup_qna = new_row.followup_qna
-        obj.created_at = new_row.created_at
-        obj.updated_at = new_row.updated_at
-
-    mock_db.refresh.side_effect = fake_refresh
-
     data = DiscoveryFeedbackCreate(
         trace_id="t-1",
         user_id="u-1",
         feedback_label=FeedbackLabel.GOOD,
         comment="Looks great",
     )
-    result = service.add_discovery_feedback("ws-1", data)
+    result = db_service.add_discovery_feedback("ws-1", data)
 
     assert isinstance(result, DiscoveryFeedback)
     assert result.feedback_label == "good"
     assert result.comment == "Looks great"
-    mock_db.add.assert_called_once()
-    mock_db.commit.assert_called_once()
+    assert result.workshop_id == "ws-1"
+    assert result.trace_id == "t-1"
+    assert result.user_id == "u-1"
+    assert result.followup_qna == []
+
+    # Verify persisted in DB
+    row = db_service.db.query(DiscoveryFeedbackDB).filter_by(id=result.id).first()
+    assert row is not None
+    assert row.feedback_label == "good"
 
 
 @pytest.mark.spec("DISCOVERY_SPEC")
 @pytest.mark.req("One feedback record per (workshop, trace, user) — upsert behavior")
 @pytest.mark.unit
-def test_add_discovery_feedback_upsert_updates_existing():
+def test_add_discovery_feedback_upsert_updates_existing(db_service, workshop, traces):
     """Upsert updates existing feedback record instead of creating duplicate."""
-    mock_db = MagicMock()
-    service = DatabaseService(mock_db)
-
-    existing = _make_feedback_db(label="good", comment="Old comment")
-    mock_db.query.return_value.filter.return_value.first.return_value = existing
-
-    data = DiscoveryFeedbackCreate(
-        trace_id="t-1",
-        user_id="u-1",
-        feedback_label=FeedbackLabel.BAD,
-        comment="Actually bad",
+    data1 = DiscoveryFeedbackCreate(
+        trace_id="t-1", user_id="u-1",
+        feedback_label=FeedbackLabel.GOOD, comment="Old comment",
     )
-    result = service.add_discovery_feedback("ws-1", data)
+    first = db_service.add_discovery_feedback("ws-1", data1)
 
-    assert existing.feedback_label == "bad"
-    assert existing.comment == "Actually bad"
-    # Should not call db.add for existing row
-    mock_db.add.assert_not_called()
-    mock_db.commit.assert_called_once()
+    data2 = DiscoveryFeedbackCreate(
+        trace_id="t-1", user_id="u-1",
+        feedback_label=FeedbackLabel.BAD, comment="Actually bad",
+    )
+    second = db_service.add_discovery_feedback("ws-1", data2)
+
+    # Same record ID
+    assert second.id == first.id
+    assert second.feedback_label == "bad"
+    assert second.comment == "Actually bad"
+
+    # Only one row in DB
+    count = db_service.db.query(DiscoveryFeedbackDB).filter_by(
+        workshop_id="ws-1", trace_id="t-1", user_id="u-1"
+    ).count()
+    assert count == 1
 
 
 # ============================================================================
@@ -134,35 +156,38 @@ def test_add_discovery_feedback_upsert_updates_existing():
 @pytest.mark.spec("DISCOVERY_SPEC")
 @pytest.mark.req("Q&A pairs appended in order to JSON array")
 @pytest.mark.unit
-def test_append_followup_qna_preserves_order():
+def test_append_followup_qna_preserves_order(db_service, workshop, traces):
     """Q&A pairs are appended in order to the JSON array."""
-    mock_db = MagicMock()
-    service = DatabaseService(mock_db)
-
-    existing = _make_feedback_db(qna=[{"question": "Q1", "answer": "A1"}])
-    mock_db.query.return_value.filter.return_value.first.return_value = existing
-
-    result = service.append_followup_qna(
-        "ws-1", "t-1", "u-1", {"question": "Q2", "answer": "A2"}
+    # Create initial feedback
+    data = DiscoveryFeedbackCreate(
+        trace_id="t-1", user_id="u-1",
+        feedback_label=FeedbackLabel.GOOD, comment="Nice",
     )
+    db_service.add_discovery_feedback("ws-1", data)
 
-    assert len(existing.followup_qna) == 2
-    assert existing.followup_qna[0]["question"] == "Q1"
-    assert existing.followup_qna[1]["question"] == "Q2"
+    # Append Q1
+    db_service.append_followup_qna("ws-1", "t-1", "u-1", {"question": "Q1?", "answer": "A1"})
+    # Append Q2
+    result = db_service.append_followup_qna("ws-1", "t-1", "u-1", {"question": "Q2?", "answer": "A2"})
+
+    assert len(result.followup_qna) == 2
+    assert result.followup_qna[0]["question"] == "Q1?"
+    assert result.followup_qna[1]["question"] == "Q2?"
+
+    # Verify persisted
+    row = db_service.db.query(DiscoveryFeedbackDB).filter_by(id=result.id).first()
+    assert len(row.followup_qna) == 2
+    assert row.followup_qna[0]["answer"] == "A1"
+    assert row.followup_qna[1]["answer"] == "A2"
 
 
 @pytest.mark.spec("DISCOVERY_SPEC")
 @pytest.mark.req("Feedback saved incrementally (no data loss on failure)")
 @pytest.mark.unit
-def test_append_followup_qna_raises_if_no_feedback():
+def test_append_followup_qna_raises_if_no_feedback(db_service, workshop, traces):
     """Raises ValueError when no feedback record exists to append to."""
-    mock_db = MagicMock()
-    service = DatabaseService(mock_db)
-
-    mock_db.query.return_value.filter.return_value.first.return_value = None
-
     with pytest.raises(ValueError, match="No feedback found"):
-        service.append_followup_qna(
+        db_service.append_followup_qna(
             "ws-1", "t-1", "u-1", {"question": "Q1", "answer": "A1"}
         )
 
@@ -175,17 +200,93 @@ def test_append_followup_qna_raises_if_no_feedback():
 @pytest.mark.spec("DISCOVERY_SPEC")
 @pytest.mark.req("Participants view traces and provide GOOD/BAD + comment")
 @pytest.mark.unit
-def test_get_discovery_feedback_filters_by_user():
-    """Get feedback filtered by user returns correct results."""
-    mock_db = MagicMock()
-    service = DatabaseService(mock_db)
+def test_get_discovery_feedback_filters_by_user(db_service, workshop, traces):
+    """Get feedback filtered by user returns only matching rows."""
+    db_service.add_discovery_feedback("ws-1", DiscoveryFeedbackCreate(
+        trace_id="t-1", user_id="u-1",
+        feedback_label=FeedbackLabel.GOOD, comment="User 1 says good",
+    ))
+    db_service.add_discovery_feedback("ws-1", DiscoveryFeedbackCreate(
+        trace_id="t-1", user_id="u-2",
+        feedback_label=FeedbackLabel.BAD, comment="User 2 says bad",
+    ))
 
-    rows = [_make_feedback_db(fb_id="fb-1"), _make_feedback_db(fb_id="fb-2")]
-    mock_db.query.return_value.filter.return_value.filter.return_value.order_by.return_value.all.return_value = rows
+    result = db_service.get_discovery_feedback("ws-1", user_id="u-1")
+    assert len(result) == 1
+    assert result[0].user_id == "u-1"
+    assert result[0].comment == "User 1 says good"
 
-    result = service.get_discovery_feedback("ws-1", user_id="u-1")
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("Participants view traces and provide GOOD/BAD + comment")
+@pytest.mark.unit
+def test_get_discovery_feedback_filters_by_trace(db_service, workshop, traces):
+    """Get feedback filtered by trace_id returns only matching rows."""
+    db_service.add_discovery_feedback("ws-1", DiscoveryFeedbackCreate(
+        trace_id="t-1", user_id="u-1",
+        feedback_label=FeedbackLabel.GOOD, comment="Trace 1 feedback",
+    ))
+    db_service.add_discovery_feedback("ws-1", DiscoveryFeedbackCreate(
+        trace_id="t-2", user_id="u-1",
+        feedback_label=FeedbackLabel.BAD, comment="Trace 2 feedback",
+    ))
+
+    result = db_service.get_discovery_feedback("ws-1", trace_id="t-1")
+    assert len(result) == 1
+    assert result[0].trace_id == "t-1"
+    assert result[0].comment == "Trace 1 feedback"
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("Participants view traces and provide GOOD/BAD + comment")
+@pytest.mark.unit
+def test_get_discovery_feedback_returns_ordered_by_created_at(db_service, workshop, traces):
+    """Feedback results are ordered by created_at ascending."""
+    db_service.add_discovery_feedback("ws-1", DiscoveryFeedbackCreate(
+        trace_id="t-1", user_id="u-1",
+        feedback_label=FeedbackLabel.GOOD, comment="First",
+    ))
+    # Small delay so created_at differs
+    time.sleep(0.01)
+    db_service.add_discovery_feedback("ws-1", DiscoveryFeedbackCreate(
+        trace_id="t-2", user_id="u-1",
+        feedback_label=FeedbackLabel.BAD, comment="Second",
+    ))
+
+    result = db_service.get_discovery_feedback("ws-1")
     assert len(result) == 2
-    assert all(isinstance(r, DiscoveryFeedback) for r in result)
+    assert result[0].comment == "First"
+    assert result[1].comment == "Second"
+
+
+# ============================================================================
+# Upsert + Q&A interaction
+# ============================================================================
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("One feedback record per (workshop, trace, user) — upsert behavior")
+@pytest.mark.unit
+def test_upsert_preserves_existing_qna(db_service, workshop, traces):
+    """Upserting label/comment does not wipe existing followup_qna."""
+    # Create feedback + append Q1
+    db_service.add_discovery_feedback("ws-1", DiscoveryFeedbackCreate(
+        trace_id="t-1", user_id="u-1",
+        feedback_label=FeedbackLabel.GOOD, comment="Good stuff",
+    ))
+    db_service.append_followup_qna("ws-1", "t-1", "u-1", {"question": "Q1?", "answer": "A1"})
+
+    # Upsert to change label
+    result = db_service.add_discovery_feedback("ws-1", DiscoveryFeedbackCreate(
+        trace_id="t-1", user_id="u-1",
+        feedback_label=FeedbackLabel.BAD, comment="Changed my mind",
+    ))
+
+    assert result.feedback_label == "bad"
+    assert result.comment == "Changed my mind"
+    # Q&A should still be there
+    assert len(result.followup_qna) == 1
+    assert result.followup_qna[0]["question"] == "Q1?"
 
 
 # ============================================================================
@@ -196,27 +297,32 @@ def test_get_discovery_feedback_filters_by_user():
 @pytest.mark.spec("DISCOVERY_SPEC")
 @pytest.mark.req("Completion status shows % of participants finished")
 @pytest.mark.unit
-def test_completion_status_percentage():
-    """Completion status calculates correct percentage."""
-    mock_db = MagicMock()
-    service = DatabaseService(mock_db)
+def test_completion_status_percentage(db_service, workshop, traces, users_and_participants):
+    """Completion status calculates correct percentage with real data."""
+    # u-1: complete (feedback + 3 Q&A on both traces)
+    for tid in ["t-1", "t-2"]:
+        db_service.add_discovery_feedback("ws-1", DiscoveryFeedbackCreate(
+            trace_id=tid, user_id="u-1",
+            feedback_label=FeedbackLabel.GOOD, comment=f"Good on {tid}",
+        ))
+        for i in range(3):
+            db_service.append_followup_qna(
+                "ws-1", tid, "u-1",
+                {"question": f"Q{i+1}?", "answer": f"A{i+1}"},
+            )
 
-    workshop = _make_workshop_db(active_traces=["t-1", "t-2"])
-    mock_db.query.return_value.filter.return_value.first.return_value = workshop
+    # u-2: only completed trace t-1 (3 Q&A), not t-2
+    db_service.add_discovery_feedback("ws-1", DiscoveryFeedbackCreate(
+        trace_id="t-1", user_id="u-2",
+        feedback_label=FeedbackLabel.BAD, comment="Bad on t-1",
+    ))
+    for i in range(3):
+        db_service.append_followup_qna(
+            "ws-1", "t-1", "u-2",
+            {"question": f"Q{i+1}?", "answer": f"A{i+1}"},
+        )
 
-    participants = [_make_participant_db("u-1"), _make_participant_db("u-2")]
-    mock_db.query.return_value.filter.return_value.all.side_effect = [
-        participants,
-        [
-            # u-1 completed both traces (3 qna each)
-            _make_feedback_db(fb_id="fb-1", user_id="u-1", trace_id="t-1", qna=[{"q": "Q1", "a": "A1"}, {"q": "Q2", "a": "A2"}, {"q": "Q3", "a": "A3"}]),
-            _make_feedback_db(fb_id="fb-2", user_id="u-1", trace_id="t-2", qna=[{"q": "Q1", "a": "A1"}, {"q": "Q2", "a": "A2"}, {"q": "Q3", "a": "A3"}]),
-            # u-2 completed 1 trace
-            _make_feedback_db(fb_id="fb-3", user_id="u-2", trace_id="t-1", qna=[{"q": "Q1", "a": "A1"}, {"q": "Q2", "a": "A2"}, {"q": "Q3", "a": "A3"}]),
-        ],
-    ]
-
-    result = service.get_discovery_feedback_completion_status("ws-1")
+    result = db_service.get_discovery_feedback_completion_status("ws-1")
 
     assert result["total_participants"] == 2
     assert result["completed_participants"] == 1
@@ -227,15 +333,33 @@ def test_completion_status_percentage():
 @pytest.mark.spec("DISCOVERY_SPEC")
 @pytest.mark.req("Completion status shows % of participants finished")
 @pytest.mark.unit
-def test_completion_status_empty_workshop():
-    """Completion status handles empty workshop gracefully."""
-    mock_db = MagicMock()
-    service = DatabaseService(mock_db)
-
-    mock_db.query.return_value.filter.return_value.first.return_value = None
-
-    result = service.get_discovery_feedback_completion_status("ws-1")
+def test_completion_status_empty_workshop(db_service):
+    """Completion status handles nonexistent workshop gracefully."""
+    result = db_service.get_discovery_feedback_completion_status("nonexistent-ws")
     assert result["total_participants"] == 0
+    assert result["completion_percentage"] == 0
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("Completion status shows % of participants finished")
+@pytest.mark.unit
+def test_completion_status_partial_qna_not_complete(db_service, workshop, traces, users_and_participants):
+    """User with only 2/3 Q&As on a trace is not counted as complete."""
+    # u-1: feedback + only 2 Q&A on t-1, nothing on t-2
+    db_service.add_discovery_feedback("ws-1", DiscoveryFeedbackCreate(
+        trace_id="t-1", user_id="u-1",
+        feedback_label=FeedbackLabel.GOOD, comment="Partial",
+    ))
+    for i in range(2):
+        db_service.append_followup_qna(
+            "ws-1", "t-1", "u-1",
+            {"question": f"Q{i+1}?", "answer": f"A{i+1}"},
+        )
+
+    result = db_service.get_discovery_feedback_completion_status("ws-1")
+
+    assert result["total_participants"] == 2
+    assert result["completed_participants"] == 0
     assert result["completion_percentage"] == 0
 
 
@@ -247,34 +371,33 @@ def test_completion_status_empty_workshop():
 @pytest.mark.spec("DISCOVERY_SPEC")
 @pytest.mark.req("Feedback saved incrementally (no data loss on failure)")
 @pytest.mark.unit
-def test_feedback_saved_incrementally():
+def test_feedback_saved_incrementally(db_service, workshop, traces):
     """Feedback is saved on initial submit, then each Q&A is appended independently."""
-    mock_db = MagicMock()
-    service = DatabaseService(mock_db)
-
     # Step 1: Initial feedback saved
-    mock_db.query.return_value.filter.return_value.first.return_value = None
-    new_row = _make_feedback_db()
-
-    def fake_refresh(obj):
-        for attr in ["id", "workshop_id", "trace_id", "user_id", "feedback_label", "comment", "followup_qna", "created_at", "updated_at"]:
-            setattr(obj, attr, getattr(new_row, attr))
-
-    mock_db.refresh.side_effect = fake_refresh
-
     data = DiscoveryFeedbackCreate(
         trace_id="t-1", user_id="u-1",
         feedback_label=FeedbackLabel.BAD, comment="Needs work",
     )
-    result = service.add_discovery_feedback("ws-1", data)
-    assert mock_db.commit.call_count == 1
+    result = db_service.add_discovery_feedback("ws-1", data)
+
+    # Verify in DB immediately
+    row = db_service.db.query(DiscoveryFeedbackDB).filter_by(id=result.id).first()
+    assert row is not None
+    assert row.comment == "Needs work"
+    assert len(row.followup_qna or []) == 0
 
     # Step 2: Q1 appended
-    existing = _make_feedback_db(qna=[])
-    mock_db.query.return_value.filter.return_value.first.return_value = existing
-    mock_db.commit.reset_mock()
-    mock_db.refresh.side_effect = None  # Clear the fake_refresh from step 1
+    db_service.append_followup_qna("ws-1", "t-1", "u-1", {"question": "Q1", "answer": "A1"})
 
-    service.append_followup_qna("ws-1", "t-1", "u-1", {"question": "Q1", "answer": "A1"})
-    assert mock_db.commit.call_count == 1
-    assert len(existing.followup_qna) == 1
+    # Verify Q1 persisted
+    row = db_service.db.query(DiscoveryFeedbackDB).filter_by(id=result.id).first()
+    assert len(row.followup_qna) == 1
+
+    # Step 3: Q2 appended
+    db_service.append_followup_qna("ws-1", "t-1", "u-1", {"question": "Q2", "answer": "A2"})
+
+    # Verify Q2 persisted alongside Q1
+    row = db_service.db.query(DiscoveryFeedbackDB).filter_by(id=result.id).first()
+    assert len(row.followup_qna) == 2
+    assert row.followup_qna[0]["question"] == "Q1"
+    assert row.followup_qna[1]["question"] == "Q2"

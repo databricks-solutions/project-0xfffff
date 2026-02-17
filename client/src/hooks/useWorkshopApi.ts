@@ -4,7 +4,7 @@
 
 import { useQuery, useMutation, useQueryClient, QueryClient } from '@tanstack/react-query';
 import type { Query } from '@tanstack/react-query';
-import { WorkshopsService, ApiError } from '@/client';
+import { WorkshopsService, ApiError, DiscoveryService } from '@/client';
 import { useRoleCheck } from '@/context/UserContext';
 import type { User } from '@/context/UserContext';
 import type {
@@ -815,6 +815,29 @@ export function useDiscoveryFeedback(workshopId: string, userId?: string) {
     },
     enabled: !!workshopId,
     staleTime: 10_000,
+  });
+}
+
+/** Extended feedback with user details for facilitator dashboard */
+export interface DiscoveryFeedbackWithUser extends DiscoveryFeedbackData {
+  user_name?: string;
+  user_email?: string;
+  user_role?: string;
+}
+
+/** Fetch all discovery feedback with user details (facilitator-only) */
+export function useFacilitatorDiscoveryFeedback(workshopId: string) {
+  const { isFacilitator } = useRoleCheck();
+
+  return useQuery<DiscoveryFeedbackWithUser[]>({
+    queryKey: ['discovery-feedback-with-users', workshopId],
+    queryFn: () =>
+      DiscoveryService.getDiscoveryFeedbackWithUserDetailsWorkshopsWorkshopIdDiscoveryFeedbackWithUsersGet(
+        workshopId,
+      ) as Promise<DiscoveryFeedbackWithUser[]>,
+    enabled: !!workshopId && isFacilitator,
+    staleTime: 10_000,
+    refetchInterval: 30_000,
   });
 }
 

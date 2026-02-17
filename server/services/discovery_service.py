@@ -1065,6 +1065,13 @@ class DiscoveryService:
         self._get_workshop_or_404(workshop_id)
         return self.db_service.get_discovery_feedback(workshop_id, user_id=user_id)
 
+    def get_discovery_feedback_with_user_details(
+        self, workshop_id: str, user_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Get all discovery feedback with user name/role for facilitator view."""
+        self._get_workshop_or_404(workshop_id)
+        return self.db_service.get_discovery_feedback_with_user_details(workshop_id, user_id)
+
     # --------- Assisted Facilitation v2 Methods ---------
 
     async def submit_finding_v2(

@@ -26,14 +26,21 @@ class MLflowIntakeService:
       if not config.databricks_host.startswith('https://'):
         raise ValueError('Databricks host must start with https://')
 
-      # Set tracking URI to Databricks
-      mlflow.set_tracking_uri('databricks')
-
-      # Set authentication
       import os
 
+      # Set authentication credentials BEFORE setting tracking URI.
+      # databricks-sdk reads env vars when initializing its Config object,
+      # so they must be present before MLflow creates the Databricks tracking store.
       os.environ['DATABRICKS_HOST'] = config.databricks_host.rstrip('/')
       os.environ['DATABRICKS_TOKEN'] = config.databricks_token
+      # Clear profile-related env vars that override token auth —
+      # DATABRICKS_CONFIG_PROFILE forces MLflow to use a named profile from
+      # ~/.databrickscfg and skip EnvironmentVariableConfigProvider entirely.
+      os.environ.pop('DATABRICKS_CONFIG_PROFILE', None)
+      os.environ.pop('DATABRICKS_AUTH_TYPE', None)
+
+      # Set tracking URI to Databricks (may initialize the tracking store)
+      mlflow.set_tracking_uri('databricks')
 
     except Exception as e:
       raise ValueError(f'Failed to configure MLflow: {str(e)}')

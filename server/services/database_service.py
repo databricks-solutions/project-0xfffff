@@ -3149,6 +3149,48 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       for r in rows
     ]
 
+  def get_discovery_feedback_with_user_details(
+    self, workshop_id: str, user_id: Optional[str] = None
+  ) -> List[Dict[str, Any]]:
+    """Get discovery feedback joined with user name/role for facilitator view."""
+    query = (
+      self.db.query(DiscoveryFeedbackDB, UserDB)
+      .join(UserDB, DiscoveryFeedbackDB.user_id == UserDB.id)
+      .filter(DiscoveryFeedbackDB.workshop_id == workshop_id)
+    )
+    if user_id:
+      query = query.filter(DiscoveryFeedbackDB.user_id == user_id)
+
+    rows = query.order_by(DiscoveryFeedbackDB.created_at).all()
+
+    # Look up roles from participants table
+    participant_roles: Dict[str, str] = {}
+    participants = (
+      self.db.query(WorkshopParticipantDB)
+      .filter(WorkshopParticipantDB.workshop_id == workshop_id)
+      .all()
+    )
+    for p in participants:
+      participant_roles[p.user_id] = p.role
+
+    return [
+      {
+        "id": fb.id,
+        "workshop_id": fb.workshop_id,
+        "trace_id": fb.trace_id,
+        "user_id": fb.user_id,
+        "user_name": usr.name,
+        "user_email": usr.email,
+        "user_role": participant_roles.get(fb.user_id, "participant"),
+        "feedback_label": fb.feedback_label,
+        "comment": fb.comment,
+        "followup_qna": fb.followup_qna or [],
+        "created_at": fb.created_at.isoformat() if fb.created_at else None,
+        "updated_at": fb.updated_at.isoformat() if fb.updated_at else None,
+      }
+      for fb, usr in rows
+    ]
+
   def get_discovery_feedback_completion_status(self, workshop_id: str) -> Dict[str, Any]:
     """Get feedback-based discovery completion status.
 

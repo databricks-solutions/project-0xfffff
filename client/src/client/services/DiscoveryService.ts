@@ -446,6 +446,32 @@ export class DiscoveryService {
         });
     }
     /**
+     * Get Discovery Feedback With User Details
+     * Get all discovery feedback with user details (name, role) for facilitator view.
+     * @param workshopId
+     * @param userId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getDiscoveryFeedbackWithUserDetailsWorkshopsWorkshopIdDiscoveryFeedbackWithUsersGet(
+        workshopId: string,
+        userId?: (string | null),
+    ): CancelablePromise<Array<Record<string, any>>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/discovery-feedback-with-users',
+            path: {
+                'workshop_id': workshopId,
+            },
+            query: {
+                'user_id': userId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * Submit Finding V2
      * Submit finding with real-time classification (v2 assisted facilitation).
      * @param workshopId

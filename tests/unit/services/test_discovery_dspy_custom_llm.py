@@ -17,6 +17,7 @@ from server.services.discovery_dspy import build_custom_llm
 
 
 @pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("Facilitator can select LLM model for follow-up question generation in Discovery dashboard")
 @pytest.mark.unit
 def test_build_custom_llm_creates_lm_with_openai_prefix():
     """build_custom_llm prepends 'openai/' and passes api_key, api_base, temperature."""
@@ -46,6 +47,7 @@ def test_build_custom_llm_creates_lm_with_openai_prefix():
 
 
 @pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("Facilitator can select LLM model for follow-up question generation in Discovery dashboard")
 @pytest.mark.unit
 def test_build_custom_llm_skips_prefix_if_already_openai():
     """build_custom_llm does not double-prefix when model_name starts with 'openai/'."""
@@ -68,6 +70,7 @@ def test_build_custom_llm_skips_prefix_if_already_openai():
 
 
 @pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("Facilitator can select LLM model for follow-up question generation in Discovery dashboard")
 @pytest.mark.unit
 def test_build_custom_llm_custom_temperature():
     """Custom temperature=0.5 flows through to dspy.LM."""
@@ -90,6 +93,7 @@ def test_build_custom_llm_custom_temperature():
 
 
 @pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("Facilitator can select LLM model for follow-up question generation in Discovery dashboard")
 @pytest.mark.unit
 def test_build_custom_llm_typeerror_fallback():
     """When dspy.LM raises TypeError, falls back to dspy.LM(model=model)."""
