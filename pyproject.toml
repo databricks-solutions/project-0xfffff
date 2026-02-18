@@ -137,19 +137,37 @@ exclude = [
 
 [tool.ruff.lint]
 select = [
-    "E",   # pycodestyle errors
-    "W",   # pycodestyle warnings
-    "F",   # pyflakes
-    "I",   # isort
-    "B",   # flake8-bugbear
-    "C4",  # flake8-comprehensions
-    "UP",  # pyupgrade
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade
+    "SIM",  # flake8-simplify
+    "RET",  # flake8-return
+    "RUF",  # ruff-specific rules
+    "PERF", # perflint
 ]
 ignore = [
-    "E501",  # line too long (handled by black)
-    "B008",  # do not perform function calls in argument defaults
-    "C901",  # too complex
+    "E501",   # line too long (handled by black/formatter)
+    "B008",   # do not perform function calls in argument defaults
+    "C901",   # too complex
+    "RET504", # unnecessary assignment before return — often aids readability
+    "SIM108", # ternary instead of if/else — often less readable
+    "RUF001", # ambiguous unicode in strings — intentional special characters
+    "RUF002", # ambiguous unicode in docstrings — intentional special characters
+    "RUF013", # implicit-optional — valid but would change many signatures
+    "E402",   # module-import-not-at-top — conditional imports are intentional
+    "SIM102", # collapsible-if — nested ifs often aid readability
+    "SIM105", # suppressible-exception — contextlib.suppress not always clearer
+    "PERF401",# manual-list-comprehension — explicit loops can be clearer
+    "PERF403",# manual-dict-comprehension — explicit loops can be clearer
+    "RUF012", # mutable-class-default — ClassVar annotation not always needed
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"server/services/*" = ["C401"]  # generator-to-set: explicit in service layer
 
 [tool.ruff.lint.isort]
 known-first-party = ["server"]
