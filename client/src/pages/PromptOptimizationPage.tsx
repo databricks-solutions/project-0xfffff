@@ -64,7 +64,7 @@ export function PromptOptimizationPage() {
   const [ucCatalog, setUcCatalog] = useState('');
   const [ucSchema, setUcSchema] = useState('');
   const [optimizerModel, setOptimizerModel] = useState('Claude Opus 4.5');
-  const [numIterations, setNumIterations] = useState(3);
+  const [numIterations, setNumIterations] = useState(2);
   const [numCandidates, setNumCandidates] = useState(3);
   const [maxTraces, setMaxTraces] = useState(20);
   const [targetEndpoint, setTargetEndpoint] = useState('');
@@ -721,7 +721,7 @@ export function PromptOptimizationPage() {
           onClick={handleStartOptimization}
           disabled={isRunning || isStarting || !(promptInputMode === 'text' ? promptText.trim() : promptUri.trim()) || !targetEndpoint.trim()}
           size="lg"
-          className="shadow-md px-8 bg-teal-600 hover:bg-teal-700 text-white"
+          className="shadow-md px-8"
         >
           {isRunning ? (
             <>
@@ -975,179 +975,184 @@ export function PromptOptimizationPage() {
       )}
 
       {/* History */}
-      <Card>
-        <CardHeader>
-          <button
-            onClick={() => setShowHistory(!showHistory)}
-            className="flex items-center justify-between w-full text-left"
-          >
-            <CardTitle className="text-lg flex items-center gap-2">
-              <History className="h-5 w-5 text-gray-500" />
-              Optimization History ({history.length})
-            </CardTitle>
-            {showHistory ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          </button>
-        </CardHeader>
+      <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+        <button
+          onClick={() => setShowHistory(!showHistory)}
+          className="flex items-center justify-between w-full px-4 py-3 text-left hover:bg-gray-50/50 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <History className="h-4 w-4 text-gray-400" />
+            <span className="text-[13px] font-semibold text-gray-800">Optimization History</span>
+            <span className="text-[11px] text-gray-400 font-medium">({history.length})</span>
+          </div>
+          {showHistory ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
+        </button>
         {showHistory && (
-          <CardContent>
+          <div className="border-t">
             {history.length === 0 ? (
-              <p className="text-sm text-gray-500 text-center py-4">No optimization runs yet</p>
+              <p className="text-sm text-gray-400 text-center py-8">No optimization runs yet</p>
             ) : (
-              <div className="space-y-3">
-                {history.map(run => (
-                  <div
-                    key={run.id}
-                    className={`border rounded-lg p-3 cursor-pointer transition-colors ${
-                      selectedRun?.id === run.id ? 'border-teal-300 bg-teal-50/30' : 'hover:bg-gray-50'
-                    }`}
-                    onClick={() => setSelectedRun(selectedRun?.id === run.id ? null : run)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Badge
-                          variant={
-                            run.status === 'completed' ? 'default' :
-                            run.status === 'failed' ? 'destructive' :
-                            'secondary'
-                          }
-                          className="text-xs"
-                        >
-                          {run.status}
-                        </Badge>
-                        <span className="text-sm font-mono text-gray-600">{run.prompt_uri}</span>
-                      </div>
-                      <span className="text-xs text-gray-400">
-                        {run.created_at ? new Date(run.created_at).toLocaleString() : ''}
-                      </span>
-                    </div>
-                    {run.optimizer_model && (
-                      <div className="text-xs text-gray-400 mt-1">
-                        Model: {run.optimizer_model} | Iterations: {run.num_iterations} | Candidates: {run.num_candidates}
-                        {run.target_endpoint && <> | Endpoint: <span className="font-mono">{run.target_endpoint}</span></>}
-                      </div>
-                    )}
-
-                    {/* Expanded view */}
-                    {selectedRun?.id === run.id && (
-                      <div className="mt-3 border-t pt-3 space-y-3">
-                        {/* Score improvement */}
-                        {run.metrics?.initial_score != null && run.metrics?.final_score != null && (
-                          <div className="flex items-center gap-2 bg-green-50 rounded p-2 border border-green-200">
-                            <TrendingUp className="h-4 w-4 text-green-600 shrink-0" />
-                            <span className="text-xs text-gray-600">Score</span>
-                            <span className="text-sm font-semibold text-gray-500">{run.metrics.initial_score.toFixed(3)}</span>
-                            <ArrowRight className="h-3 w-3 text-green-600" />
-                            <span className="text-sm font-bold text-green-700">{run.metrics.final_score.toFixed(3)}</span>
-                            {run.metrics.final_score > run.metrics.initial_score && (
-                              <Badge className="bg-green-100 text-green-700 border-green-300 text-[10px]">
-                                +{((run.metrics.final_score - run.metrics.initial_score) * 100).toFixed(1)}%
-                              </Badge>
+              <div className="divide-y">
+                {history.map(run => {
+                  const isSelected = selectedRun?.id === run.id;
+                  const statusColor = run.status === 'completed'
+                    ? 'text-green-600 bg-green-50 border-green-200'
+                    : run.status === 'failed'
+                    ? 'text-red-500 bg-red-50 border-red-200'
+                    : 'text-teal-600 bg-teal-50 border-teal-200';
+                  return (
+                    <div
+                      key={run.id}
+                      className={`cursor-pointer transition-colors ${isSelected ? 'bg-gray-50/80' : 'hover:bg-gray-50/40'}`}
+                      onClick={() => setSelectedRun(isSelected ? null : run)}
+                    >
+                      <div className="px-4 py-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <Badge variant="outline" className={`text-[10px] font-medium px-1.5 py-0 ${statusColor}`}>
+                              {run.status}
+                            </Badge>
+                            <span className="text-sm font-medium text-gray-700">{run.prompt_uri}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] text-gray-400">
+                              {run.created_at ? new Date(run.created_at).toLocaleString() : ''}
+                            </span>
+                            {isSelected ? <ChevronUp className="h-3.5 w-3.5 text-gray-400" /> : <ChevronDown className="h-3.5 w-3.5 text-gray-300" />}
+                          </div>
+                        </div>
+                        {run.optimizer_model && (
+                          <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-gray-400">
+                            <span>{run.optimizer_model}</span>
+                            <span className="text-gray-300">&middot;</span>
+                            <span>{run.num_iterations} iter</span>
+                            <span className="text-gray-300">&middot;</span>
+                            <span>{run.num_candidates} candidates</span>
+                            {run.target_endpoint && (
+                              <>
+                                <span className="text-gray-300">&middot;</span>
+                                <span className="font-mono">{run.target_endpoint}</span>
+                              </>
                             )}
                           </div>
                         )}
+                      </div>
 
-                        {/* Metrics row */}
-                        {run.metrics && (
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                            <div className="bg-gray-50 rounded p-2">
-                              <div className="text-[10px] text-gray-500 uppercase">Training Data</div>
-                              <div className="text-sm font-semibold">{run.metrics.train_data_size} traces</div>
+                      {/* Expanded view */}
+                      {isSelected && (
+                        <div className="px-4 pb-4 space-y-3">
+                          {/* Score improvement */}
+                          {run.metrics?.initial_score != null && run.metrics?.final_score != null && (
+                            <div className="flex items-center gap-2 bg-green-50 rounded-lg p-2.5 border border-green-200">
+                              <TrendingUp className="h-4 w-4 text-green-600 shrink-0" />
+                              <span className="text-xs text-gray-500">Score</span>
+                              <span className="text-sm font-semibold text-gray-400">{run.metrics.initial_score.toFixed(3)}</span>
+                              <ArrowRight className="h-3 w-3 text-green-500" />
+                              <span className="text-sm font-bold text-green-700">{run.metrics.final_score.toFixed(3)}</span>
+                              {run.metrics.final_score > run.metrics.initial_score && (
+                                <Badge className="bg-green-100 text-green-700 border-green-300 text-[10px] ml-auto">
+                                  +{((run.metrics.final_score - run.metrics.initial_score) * 100).toFixed(1)}%
+                                </Badge>
+                              )}
                             </div>
-                            <div className="bg-gray-50 rounded p-2">
-                              <div className="text-[10px] text-gray-500 uppercase">Iterations</div>
-                              <div className="text-sm font-semibold">{run.metrics.num_iterations}</div>
-                            </div>
-                            <div className="bg-gray-50 rounded p-2">
-                              <div className="text-[10px] text-gray-500 uppercase">Original Length</div>
-                              <div className="text-sm font-semibold">{run.metrics.original_length} chars</div>
-                            </div>
-                            <div className="bg-gray-50 rounded p-2">
-                              <div className="text-[10px] text-gray-500 uppercase">Optimized Length</div>
-                              <div className="text-sm font-semibold">{run.metrics.optimized_length} chars</div>
-                            </div>
-                          </div>
-                        )}
+                          )}
 
-                        {/* Optimized URI */}
-                        {run.optimized_uri && (
-                          <div className="flex items-center gap-2 text-xs">
-                            <Link className="h-3 w-3 text-green-600" />
-                            <span className="font-mono text-green-700">{run.optimized_uri}</span>
-                            {run.optimized_version && (
-                              <Badge variant="outline" className="text-[10px] text-green-600 border-green-300">
-                                v{run.optimized_version} | alias: champion
-                              </Badge>
-                            )}
-                          </div>
-                        )}
+                          {/* Metrics row */}
+                          {run.metrics && (
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                              {[
+                                { label: 'Training Data', value: `${run.metrics.train_data_size} traces` },
+                                { label: 'Iterations', value: run.metrics.num_iterations },
+                                { label: 'Original', value: `${run.metrics.original_length} chars` },
+                                { label: 'Optimized', value: `${run.metrics.optimized_length} chars` },
+                              ].map(({ label, value }) => (
+                                <div key={label} className="bg-gray-50 rounded-lg p-2">
+                                  <div className="text-[10px] text-gray-400 font-medium">{label}</div>
+                                  <div className="text-sm font-semibold text-gray-700">{value}</div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
 
-                        {/* Optimized prompt (primary, open by default) */}
-                        {run.optimized_prompt && (
-                          <details open onClick={(e) => e.stopPropagation()}>
-                            <summary className="cursor-pointer text-sm font-medium text-green-700 hover:text-green-900">
-                              Optimized Prompt
-                            </summary>
-                            <div className="mt-1 relative">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="absolute top-1 right-1 h-6 w-6 p-0 text-gray-400 hover:text-gray-700 z-10"
-                                onClick={(e) => { e.stopPropagation(); copyToClipboard(run.optimized_prompt!); }}
-                              >
-                                <Copy className="h-3 w-3" />
-                              </Button>
-                              <pre className="text-xs bg-green-50 p-3 rounded border border-green-200 max-h-60 overflow-y-auto whitespace-pre-wrap font-mono text-gray-700">
+                          {/* Optimized URI */}
+                          {run.optimized_uri && (
+                            <div className="flex items-center gap-2 text-xs">
+                              <Link className="h-3 w-3 text-green-600" />
+                              <span className="font-mono text-green-700">{run.optimized_uri}</span>
+                              {run.optimized_version && (
+                                <Badge variant="outline" className="text-[10px] text-green-600 border-green-300">
+                                  v{run.optimized_version} | champion
+                                </Badge>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Optimized prompt */}
+                          {run.optimized_prompt && (
+                            <details open onClick={(e) => e.stopPropagation()}>
+                              <summary className="cursor-pointer text-[12px] font-medium text-green-700 hover:text-green-900">
+                                Optimized Prompt
+                              </summary>
+                              <div className="mt-1.5 relative">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="absolute top-1.5 right-1.5 h-6 w-6 p-0 text-gray-400 hover:text-gray-700 z-10"
+                                  onClick={(e) => { e.stopPropagation(); copyToClipboard(run.optimized_prompt!); }}
+                                >
+                                  <Copy className="h-3 w-3" />
+                                </Button>
+                                <pre className="text-xs bg-green-50 p-3 rounded-lg border border-green-200 max-h-60 overflow-y-auto whitespace-pre-wrap font-mono text-gray-700">
 {run.optimized_prompt}
-                              </pre>
-                            </div>
-                          </details>
-                        )}
+                                </pre>
+                              </div>
+                            </details>
+                          )}
 
-                        {/* Original prompt (collapsed by default) */}
-                        {run.original_prompt && (
-                          <details onClick={(e) => e.stopPropagation()}>
-                            <summary className="cursor-pointer text-sm text-gray-500 hover:text-gray-700">
-                              Original Prompt
-                            </summary>
-                            <div className="mt-1 relative">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="absolute top-1 right-1 h-6 w-6 p-0 text-gray-400 hover:text-gray-700 z-10"
-                                onClick={(e) => { e.stopPropagation(); copyToClipboard(run.original_prompt!); }}
-                              >
-                                <Copy className="h-3 w-3" />
-                              </Button>
-                              <pre className="text-xs bg-gray-50 p-3 rounded border max-h-40 overflow-y-auto whitespace-pre-wrap font-mono text-gray-500">
+                          {/* Original prompt */}
+                          {run.original_prompt && (
+                            <details onClick={(e) => e.stopPropagation()}>
+                              <summary className="cursor-pointer text-[12px] text-gray-500 hover:text-gray-700">
+                                Original Prompt
+                              </summary>
+                              <div className="mt-1.5 relative">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="absolute top-1.5 right-1.5 h-6 w-6 p-0 text-gray-400 hover:text-gray-700 z-10"
+                                  onClick={(e) => { e.stopPropagation(); copyToClipboard(run.original_prompt!); }}
+                                >
+                                  <Copy className="h-3 w-3" />
+                                </Button>
+                                <pre className="text-xs bg-gray-50 p-3 rounded-lg border max-h-40 overflow-y-auto whitespace-pre-wrap font-mono text-gray-500">
 {run.original_prompt}
-                              </pre>
+                                </pre>
+                              </div>
+                            </details>
+                          )}
+
+                          {!run.optimized_prompt && run.status === 'completed' && (
+                            <p className="text-xs text-amber-600">Optimized prompt not saved for this run.</p>
+                          )}
+                          {!run.optimized_prompt && run.status === 'running' && (
+                            <p className="text-xs text-gray-500">Optimization still in progress...</p>
+                          )}
+
+                          {run.error && (
+                            <div className="bg-red-50 border border-red-200 rounded-lg p-2.5 text-xs text-red-700">
+                              {run.error}
                             </div>
-                          </details>
-                        )}
-
-                        {/* No prompt available message */}
-                        {!run.optimized_prompt && run.status === 'completed' && (
-                          <p className="text-xs text-amber-600">Optimized prompt not saved for this run.</p>
-                        )}
-                        {!run.optimized_prompt && run.status === 'running' && (
-                          <p className="text-xs text-gray-500">Optimization still in progress...</p>
-                        )}
-
-                        {/* Error details */}
-                        {run.error && (
-                          <div className="bg-red-50 border border-red-200 rounded p-2 text-xs text-red-700">
-                            {run.error}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
-          </CardContent>
+          </div>
         )}
-      </Card>
+      </div>
     </div>
   );
 }

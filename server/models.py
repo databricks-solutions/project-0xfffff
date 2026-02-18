@@ -653,7 +653,7 @@ class PromptOptimizationRequest(BaseModel):
   uc_catalog: Optional[str] = Field(default=None, description='Unity Catalog catalog name for prompt registration (e.g. main)')
   uc_schema: Optional[str] = Field(default=None, description='Unity Catalog schema name for prompt registration (e.g. my_schema)')
   optimizer_model_name: str = Field(default='databricks-claude-sonnet-4-5', description='Model for GEPA optimizer')
-  num_iterations: int = Field(default=3, ge=1, le=10, description='Number of GEPA optimization iterations')
+  num_iterations: int = Field(default=2, ge=1, le=10, description='Number of GEPA optimization iterations')
   num_candidates: int = Field(default=5, ge=2, le=20, description='Number of candidate prompts per iteration')
   judge_name: Optional[str] = Field(default=None, description='Aligned judge name to use as scorer (defaults to workshop judge)')
   judge_names: Optional[List[str]] = Field(default=None, description='List of judge names to use as scorers (overrides judge_name and rubric-derived names)')
