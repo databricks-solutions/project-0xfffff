@@ -22,6 +22,7 @@ class WorkshopPhase(str, Enum):
   ANNOTATION = 'annotation'
   RESULTS = 'results'
   JUDGE_TUNING = 'judge_tuning'
+  PROMPT_OPTIMIZATION = 'prompt_optimization'
   UNITY_VOLUME = 'unity_volume'
 
 
@@ -640,3 +641,32 @@ class CustomLLMProviderTestResult(BaseModel):
   message: str
   response_time_ms: Optional[int] = None
   error_code: Optional[str] = None
+
+
+# Prompt Optimization Models (GEPA)
+class PromptOptimizationRequest(BaseModel):
+  """Request model for starting a GEPA prompt optimization job."""
+
+  prompt_text: Optional[str] = Field(default=None, description='Agent system prompt text to optimize (enter directly)')
+  prompt_uri: Optional[str] = Field(default=None, description='MLflow prompt URI to load (e.g. prompts:/catalog.schema.prompt_name/1)')
+  prompt_name: Optional[str] = Field(default=None, description='Name for registering the prompt in MLflow (auto-generated if not provided)')
+  uc_catalog: Optional[str] = Field(default=None, description='Unity Catalog catalog name for prompt registration (e.g. main)')
+  uc_schema: Optional[str] = Field(default=None, description='Unity Catalog schema name for prompt registration (e.g. my_schema)')
+  optimizer_model_name: str = Field(default='databricks-claude-sonnet-4-5', description='Model for GEPA optimizer')
+  num_iterations: int = Field(default=2, ge=1, le=10, description='Number of GEPA optimization iterations')
+  num_candidates: int = Field(default=5, ge=2, le=20, description='Number of candidate prompts per iteration')
+  judge_name: Optional[str] = Field(default=None, description='Aligned judge name to use as scorer (defaults to workshop judge)')
+  judge_names: Optional[List[str]] = Field(default=None, description='List of judge names to use as scorers (overrides judge_name and rubric-derived names)')
+  target_endpoint: str = Field(description='Target serving endpoint name or URL for predict_fn')
+  max_traces: int = Field(default=20, ge=1, le=100, description='Maximum number of traces to use for training data')
+
+
+class PromptOptimizationResult(BaseModel):
+  """Result of a prompt optimization run."""
+
+  original_prompt: str
+  optimized_prompt: str
+  prompt_uri: str
+  optimized_version: Optional[int] = None
+  improvement_summary: Optional[str] = None
+  metrics: Optional[Dict[str, Any]] = None

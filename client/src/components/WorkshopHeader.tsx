@@ -41,6 +41,7 @@ export const WorkshopHeader: React.FC<WorkshopHeaderProps> = ({
       case 'annotation': return 'bg-orange-100 text-orange-700 border-orange-200';
       case 'results': return 'bg-red-100 text-red-700 border-red-200';
       case 'judge_tuning': return 'bg-indigo-100 text-indigo-700 border-indigo-200';
+      case 'prompt_optimization': return 'bg-violet-100 text-violet-700 border-violet-200';
       case 'unity_volume': return 'bg-teal-100 text-teal-700 border-teal-200';
       default: return 'bg-muted text-muted-foreground border-border';
     }
@@ -54,6 +55,7 @@ export const WorkshopHeader: React.FC<WorkshopHeaderProps> = ({
       case 'annotation': return 'Annotation';
       case 'results': return 'Results';
       case 'judge_tuning': return 'Judge Tuning';
+      case 'prompt_optimization': return 'Prompt Optimization';
       case 'unity_volume': return 'Data Management';
       default: return phase;
     }

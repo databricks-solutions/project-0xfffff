@@ -433,6 +433,33 @@ class CustomLLMProviderConfigDB(Base):
     workshop = relationship("WorkshopDB", back_populates="custom_llm_provider")
 
 
+class PromptOptimizationRunDB(Base):
+    """Database model for GEPA prompt optimization runs."""
+
+    __tablename__ = "prompt_optimization_runs"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    job_id = Column(String, nullable=False)
+    prompt_uri = Column(String, nullable=False)
+    original_prompt = Column(Text, nullable=True)
+    optimized_prompt = Column(Text, nullable=True)
+    optimized_version = Column(Integer, nullable=True)
+    optimized_uri = Column(String, nullable=True)
+    optimizer_model = Column(String, nullable=True)
+    num_iterations = Column(Integer, nullable=True)
+    num_candidates = Column(Integer, nullable=True)
+    target_endpoint = Column(String, nullable=True)
+    metrics = Column(Text, nullable=True)  # JSON string
+    status = Column(String, default="pending")  # pending, running, completed, failed
+    error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    # Relationships
+    workshop = relationship("WorkshopDB")
+
+
 # Common PostgreSQL serverless connection error markers
 _PG_CONNECTION_ERRORS = (
     "connection is closed",
