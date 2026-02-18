@@ -30,7 +30,7 @@ import { PhaseControlButton } from './PhaseControlButton';
 import { JsonPathSettings } from './JsonPathSettings';
 import { toast } from 'sonner';
 import { parseRubricQuestions } from '@/utils/rubricUtils';
-import type { DiscoveryFinding, Annotation } from '@/client';
+import type { DiscoveryFinding, Annotation, Trace } from '@/client';
 
 /** Finding extended with user details from the /findings-with-users endpoint */
 interface FindingWithUser extends DiscoveryFinding {
@@ -137,7 +137,7 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
       // Use annotations with user details
       return annotationsWithUserDetails ?
         Object.entries(
-          annotationsWithUserDetails.reduce((acc, annotation) => {
+          (annotationsWithUserDetails as AnnotationWithUser[]).reduce((acc: Record<string, { count: number; userName: string }>, annotation: AnnotationWithUser) => {
             const userId = annotation.user_id;
             if (!acc[userId]) {
               acc[userId] = { count: 0, userName: annotation.user_name || userId };
@@ -145,7 +145,7 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
             acc[userId].count += 1;
             return acc;
           }, {} as Record<string, { count: number; userName: string }>)
-        ).map(([userId, data]) => ({ userId, userName: data.userName, count: data.count }))
+        ).map(([userId, data]: [string, { count: number; userName: string }]) => ({ userId, userName: data.userName, count: data.count }))
         : [];
     } else {
       // Use v2 discovery feedback with user details
@@ -169,10 +169,11 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
   const traceCoverageDetails = React.useMemo(() => {
     if (!traces) return [];
 
+    const typedTraces = traces as Trace[];
     // Filter traces based on focusPhase
-    let relevantTraces = traces;
+    let relevantTraces = typedTraces;
     if (focusPhase === 'discovery' && workshop?.active_discovery_trace_ids?.length) {
-      relevantTraces = traces.filter(trace => workshop.active_discovery_trace_ids.includes(trace.id));
+      relevantTraces = typedTraces.filter((trace: Trace) => workshop.active_discovery_trace_ids!.includes(trace.id));
     } else if (focusPhase === 'annotation') {
       // For annotation phase: show all traces that have annotations OR are in active_annotation_trace_ids
       if (annotations && annotations.length > 0) {
@@ -180,14 +181,14 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
         const activeTraceIds = new Set(workshop?.active_annotation_trace_ids || []);
         const allRelevantIds = new Set([...annotatedTraceIds, ...activeTraceIds]);
 
-        relevantTraces = traces.filter(trace => allRelevantIds.has(trace.id));
+        relevantTraces = typedTraces.filter((trace: Trace) => allRelevantIds.has(trace.id));
       } else if (workshop?.active_annotation_trace_ids?.length) {
         // Fallback: use active_annotation_trace_ids if no annotations yet
-        relevantTraces = traces.filter(trace => workshop.active_annotation_trace_ids.includes(trace.id));
+        relevantTraces = typedTraces.filter((trace: Trace) => workshop.active_annotation_trace_ids!.includes(trace.id));
       }
     }
 
-    return relevantTraces.map(trace => {
+    return relevantTraces.map((trace: Trace) => {
       // Use different data source based on focus phase
       if (focusPhase === 'annotation' && annotations) {
         const annotationsForTrace = annotations.filter(a => a.trace_id === trace.id);
@@ -220,7 +221,7 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
       }
     })
     // Sort: completed first, then in progress, then pending (by review count)
-    .sort((a, b) => {
+    .sort((a: TraceCoverageDetail, b: TraceCoverageDetail) => {
       // Completed traces first
       if (a.isFullyReviewed && !b.isFullyReviewed) return -1;
       if (!a.isFullyReviewed && b.isFullyReviewed) return 1;
@@ -296,7 +297,7 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
     };
 
     // Calculate average rating (only for valid ratings)
-    const validRatings = annotationsToUse.map(getRating).filter(r => r !== null) as number[];
+    const validRatings = annotationsToUse.map(getRating).filter((r: any) => r !== null) as number[];
     const avgRating = validRatings.length > 0 ?
       validRatings.reduce((sum, r) => sum + r, 0) / validRatings.length : 0;
 
@@ -1007,7 +1008,7 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                 </div>
                 {traceCoverageDetails.length > 0 ? (
                   <div className="space-y-3" data-testid="trace-coverage">
-                    {traceCoverageDetails.map((trace) => (
+                    {traceCoverageDetails.map((trace: any) => (
                       <div key={trace.traceId} className="border border-slate-200 rounded-lg p-4 bg-gradient-to-r from-slate-50 to-white hover:shadow-sm transition-shadow" data-testid="trace-item">
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex-1">
@@ -1042,7 +1043,7 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                             </p>
                             {trace.reviewers.length > 0 && (
                               <div className="flex flex-wrap gap-1.5">
-                                {trace.reviewers.map(reviewer => {
+                                {trace.reviewers.map((reviewer: string) => {
                                   // Find the user name from the findings with user details
                                   const userFinding = allFindingsWithUserDetails?.find(f => f.user_id === reviewer);
                                   const reviewerName = userFinding?.user_name || reviewer;

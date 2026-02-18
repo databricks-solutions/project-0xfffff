@@ -41,7 +41,7 @@ describe('@spec:DISCOVERY_SPEC LLM failures show error toast with retry', () => 
           feedback_label: 'good',
           comment: 'Nice',
           followup_qna: [],
-        }}
+        } as any}
       />,
     );
 
@@ -65,7 +65,7 @@ describe('@spec:DISCOVERY_SPEC LLM failures show error toast with retry', () => 
           feedback_label: 'good',
           comment: 'Nice',
           followup_qna: [],
-        }}
+        } as any}
       />,
     );
 
@@ -92,7 +92,7 @@ describe('@spec:DISCOVERY_SPEC LLM failures show error toast with retry', () => 
           feedback_label: 'bad',
           comment: 'Bad response',
           followup_qna: [],
-        }}
+        } as any}
       />,
     );
 

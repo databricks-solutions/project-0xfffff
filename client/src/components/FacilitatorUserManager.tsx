@@ -380,7 +380,7 @@ export const FacilitatorUserManager: React.FC = () => {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        {new Date(u.created_at).toLocaleDateString()}
+                        {new Date(u.created_at ?? '').toLocaleDateString()}
                       </TableCell>
                     </TableRow>
                   ))}

@@ -135,6 +135,7 @@ from server.models import (
     AnnotationCreate,
     DiscoveryFinding,
     DiscoveryFindingCreate,
+    DiscoveryFindingWithUser,
     IRRResult,
     JudgeEvaluation,
     JudgeEvaluationDirectRequest,
@@ -513,10 +514,10 @@ async def get_findings(
     return db_service.get_findings(workshop_id, user_id)
 
 
-@router.get("/{workshop_id}/findings-with-users")
+@router.get("/{workshop_id}/findings-with-users", response_model=List[DiscoveryFindingWithUser])
 async def get_findings_with_user_details(
     workshop_id: str, user_id: Optional[str] = None, db: Session = Depends(get_db)
-) -> List[Dict[str, Any]]:
+) -> List[DiscoveryFindingWithUser]:
     """Get discovery findings with user details for facilitator view."""
     db_service = DatabaseService(db)
     workshop = db_service.get_workshop(workshop_id)

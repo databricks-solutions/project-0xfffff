@@ -212,6 +212,18 @@ class DiscoveryFinding(BaseModel):
   created_at: datetime = Field(default_factory=datetime.now)
 
 
+class DiscoveryFindingWithUser(BaseModel):
+  """Finding enriched with user display info (for facilitator views)."""
+  id: str
+  workshop_id: str
+  trace_id: str
+  user_id: str
+  user_name: str
+  user_email: str
+  insight: str
+  created_at: datetime
+
+
 class RubricCreate(BaseModel):
   question: str
   created_by: str

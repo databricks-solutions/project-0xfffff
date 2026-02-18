@@ -135,7 +135,7 @@ export const AnnotationAssignmentManager: React.FC = () => {
     const assignedTraces = new Set();
     
     annotators.forEach(participant => {
-      participant.assigned_traces.forEach(traceId => {
+      (participant.assigned_traces ?? []).forEach(traceId => {
         assignedTraces.add(traceId);
       });
     });
@@ -249,7 +249,7 @@ export const AnnotationAssignmentManager: React.FC = () => {
                       </Badge>
                     </div>
                     <Badge variant="secondary">
-                      {participant.assigned_traces.length} traces assigned
+                      {(participant.assigned_traces ?? []).length} traces assigned
                     </Badge>
                   </CardTitle>
                 </CardHeader>
@@ -258,21 +258,21 @@ export const AnnotationAssignmentManager: React.FC = () => {
                     Email: {userInfo?.email || 'Unknown'}
                   </div>
                   <div className="text-sm text-gray-600 mb-4">
-                    Joined: {new Date(participant.joined_at).toLocaleDateString()}
+                    Joined: {new Date(participant.joined_at ?? '').toLocaleDateString()}
                   </div>
                   
-                  {participant.assigned_traces.length > 0 && (
+                  {(participant.assigned_traces ?? []).length > 0 && (
                     <div>
                       <div className="text-sm font-medium mb-2">Assigned Traces:</div>
                       <div className="flex flex-wrap gap-1">
-                        {participant.assigned_traces.slice(0, 10).map(traceId => (
+                        {(participant.assigned_traces ?? []).slice(0, 10).map(traceId => (
                           <Badge key={traceId} variant="outline" className="text-xs">
                             {traceId.slice(0, 8)}...
                           </Badge>
                         ))}
-                        {participant.assigned_traces.length > 10 && (
+                        {(participant.assigned_traces ?? []).length > 10 && (
                           <Badge variant="outline" className="text-xs">
-                            +{participant.assigned_traces.length - 10} more
+                            +{(participant.assigned_traces ?? []).length - 10} more
                           </Badge>
                         )}
                       </div>
@@ -293,7 +293,7 @@ export const AnnotationAssignmentManager: React.FC = () => {
               <div className="space-y-2">
                 {traces.slice(0, 20).map(trace => {
                   const assignedTo = annotators.filter(p => 
-                    p.assigned_traces.includes(trace.id)
+                    (p.assigned_traces ?? []).includes(trace.id)
                   );
                   
                   return (

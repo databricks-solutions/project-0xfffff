@@ -48,7 +48,8 @@ import { RubricSuggestionPanel, type RubricSuggestion } from '@/components/Rubri
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useQueryClient } from '@tanstack/react-query';
 import { WorkshopsService } from '@/client';
-import type { Rubric, RubricCreate, JudgeType, DiscoveryFinding, Trace } from '@/client';
+import { JudgeType } from '@/client';
+import type { Rubric, RubricCreate, DiscoveryFinding, DiscoveryFindingWithUser, Trace } from '@/client';
 import { toast } from 'sonner';
 import { parseRubricQuestions, formatRubricQuestions, QUESTION_DELIMITER, type RubricQuestion } from '@/utils/rubricUtils';
 
@@ -91,8 +92,8 @@ const useDiscoveryResponses = (findings: DiscoveryFinding[] | undefined, traces:
       trace: trace ? {
         input: trace.input,
         output: trace.output,
-        context: trace.context,
-        mlflow_trace_id: trace.mlflow_trace_id
+        context: trace.context ?? undefined,
+        mlflow_trace_id: trace.mlflow_trace_id ?? undefined
       } : null,
       responses: traceFindings.map((finding, index) => {
         // Parse the formatted insight string back into separate questions
@@ -100,7 +101,7 @@ const useDiscoveryResponses = (findings: DiscoveryFinding[] | undefined, traces:
         const parts = insight.split('\n\nImprovement Analysis: ');
         
         let question1 = insight;
-        let question2 = null;
+        let question2 = '';
         
         if (parts.length === 2) {
           // Remove "Quality Assessment: " prefix if present
@@ -109,7 +110,7 @@ const useDiscoveryResponses = (findings: DiscoveryFinding[] | undefined, traces:
         }
         
         return {
-          participant: finding.user_name || finding.user_id,
+          participant: 'user_name' in finding ? (finding as DiscoveryFindingWithUser).user_name : finding.user_id,
           question1,
           question2
         };
@@ -185,7 +186,7 @@ export function RubricCreationDemo() {
   const [newQuestion, setNewQuestion] = useState<Omit<RubricQuestion, 'id'>>({
     title: '',
     description: '',
-    judgeType: 'likert'
+    judgeType: JudgeType.LIKERT
   });
   // Structured description fields for the dialog
   const [newDefinition, setNewDefinition] = useState('');
@@ -203,7 +204,7 @@ export function RubricCreationDemo() {
   const [isSavingQuestion, setIsSavingQuestion] = useState(false);
   
   // Judge type selection
-  const [judgeType, setJudgeType] = useState<JudgeType>('likert');
+  const [judgeType, setJudgeType] = useState<JudgeType>(JudgeType.LIKERT);
   const [binaryLabels, setBinaryLabels] = useState<Record<string, string>>({ pass: 'Pass', fail: 'Fail' });
   
   // Fetch data (only if workshopId exists)
@@ -337,7 +338,7 @@ export function RubricCreationDemo() {
   };
 
   const resetDialogFields = () => {
-    setNewQuestion({ title: '', description: '', judgeType: 'likert' });
+    setNewQuestion({ title: '', description: '', judgeType: JudgeType.LIKERT });
     setNewDefinition('');
     setNewPositiveDirection('');
     setNewNegativeDirection('');
@@ -1113,21 +1114,21 @@ export function RubricCreationDemo() {
                       <Badge 
                         variant={newQuestion.judgeType === 'likert' ? 'default' : 'outline'}
                         className={`cursor-pointer px-4 py-1.5 ${newQuestion.judgeType !== 'likert' ? 'bg-white hover:bg-gray-50' : ''}`}
-                        onClick={() => setNewQuestion({ ...newQuestion, judgeType: 'likert' })}
+                        onClick={() => setNewQuestion({ ...newQuestion, judgeType: JudgeType.LIKERT })}
                       >
                         Likert Scale
                       </Badge>
-                      <Badge 
+                      <Badge
                         variant={newQuestion.judgeType === 'binary' ? 'default' : 'outline'}
                         className={`cursor-pointer px-4 py-1.5 ${newQuestion.judgeType !== 'binary' ? 'bg-white hover:bg-gray-50' : ''}`}
-                        onClick={() => setNewQuestion({ ...newQuestion, judgeType: 'binary' })}
+                        onClick={() => setNewQuestion({ ...newQuestion, judgeType: JudgeType.BINARY })}
                       >
                         Binary
                       </Badge>
-                      <Badge 
+                      <Badge
                         variant={newQuestion.judgeType === 'freeform' ? 'default' : 'outline'}
                         className={`cursor-pointer px-4 py-1.5 ${newQuestion.judgeType !== 'freeform' ? 'bg-white hover:bg-gray-50' : ''}`}
-                        onClick={() => setNewQuestion({ ...newQuestion, judgeType: 'freeform' })}
+                        onClick={() => setNewQuestion({ ...newQuestion, judgeType: JudgeType.FREEFORM })}
                       >
                         Free-form
                       </Badge>

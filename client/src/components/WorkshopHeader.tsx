@@ -99,7 +99,7 @@ export const WorkshopHeader: React.FC<WorkshopHeaderProps> = ({
           {variant === 'detailed' && (
             <div className="flex items-center gap-4 text-xs text-muted-foreground mt-2">
               <span>ID: {workshop.id.slice(0, 8)}...</span>
-              <span>Created: {new Date(workshop.created_at).toLocaleDateString()}</span>
+              <span>Created: {new Date(workshop.created_at ?? '').toLocaleDateString()}</span>
               {showParticipantCount && (
                 <span>Participants: {participantCount}</span>
               )}

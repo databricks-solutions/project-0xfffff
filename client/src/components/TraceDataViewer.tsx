@@ -399,7 +399,7 @@ export function TraceDataViewer({
   const tableHeaders = useMemo(() => {
     if (!hasResultData || parsedOutput.result.length === 0) return [];
     
-    const firstItem = parsedOutput.result[0];
+    const firstItem = parsedOutput.result[0] as Record<string, unknown>;
     return Object.keys(firstItem);
   }, [parsedOutput, hasResultData]);
 
@@ -438,9 +438,9 @@ export function TraceDataViewer({
     const headers = tableHeaders;
     const csvContent = [
       headers.join(','),
-      ...parsedOutput.result.map(row => 
+      ...parsedOutput.result.map((row: unknown) =>
         headers.map(header => {
-          const value = row[header];
+          const value = (row as Record<string, unknown>)[header];
           // Escape commas and quotes in CSV
           if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
             return `"${value.replace(/"/g, '""')}"`;
@@ -647,11 +647,11 @@ export function TraceDataViewer({
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {parsedOutput.result.map((row, index) => (
+                        {parsedOutput.result.map((row: unknown, index: number) => (
                           <TableRow key={index}>
                             {tableHeaders.map((header) => (
                               <TableCell key={header} className="font-mono text-sm">
-                                {row[header]}
+                                {(row as Record<string, unknown>)[header] as React.ReactNode}
                               </TableCell>
                             ))}
                           </TableRow>

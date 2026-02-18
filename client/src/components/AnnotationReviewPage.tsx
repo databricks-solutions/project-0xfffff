@@ -56,7 +56,7 @@ export function AnnotationReviewPage({ onBack }: AnnotationReviewPageProps) {
   const [currentTraceIndex, setCurrentTraceIndex] = useState(0);
 
   // Fetch data - pass user ID for personalized trace ordering (must be before early returns)
-  const { data: traces, isLoading: tracesLoading } = useTraces(workshopId!, user?.id);
+  const { data: traces, isLoading: tracesLoading } = useTraces(workshopId!, user?.id ?? '');
   const { data: rubric, isLoading: rubricLoading } = useRubric(workshopId!);
   const { data: userAnnotations } = useUserAnnotations(workshopId!, user);
 
@@ -77,7 +77,7 @@ export function AnnotationReviewPage({ onBack }: AnnotationReviewPageProps) {
   }
   
   // Filter to only show traces that have annotations
-  const annotatedTraces = traces?.filter(trace => 
+  const annotatedTraces = traces?.filter((trace: Trace) =>
     userAnnotations?.some(ann => ann.trace_id === trace.id)
   ) || [];
   

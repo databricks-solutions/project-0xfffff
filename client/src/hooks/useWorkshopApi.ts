@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient, QueryClient } from '@tanstack/re
 import type { Query } from '@tanstack/react-query';
 import { WorkshopsService, ApiError, DiscoveryService } from '@/client';
 import { useRoleCheck } from '@/context/UserContext';
-import type { User } from '@/context/UserContext';
+import type { User } from '@/client';
 import type {
   Workshop,
   WorkshopCreate,
@@ -219,7 +219,7 @@ export function useInvalidateTraces() {
 export function useFindings(workshopId: string, userId?: string) {
   return useQuery({
     queryKey: QUERY_KEYS.findings(workshopId, userId),
-    queryFn: () => WorkshopsService.getFindingsWorkshopsWorkshopIdFindingsGet(workshopId, userId),
+    queryFn: () => DiscoveryService.getFindingsWorkshopsWorkshopIdFindingsGet(workshopId, userId),
     enabled: !!workshopId,
   });
 }
@@ -228,8 +228,8 @@ export function useFindings(workshopId: string, userId?: string) {
 export function useUserFindings(workshopId: string, user: Pick<User, 'id'> | null) {
   return useQuery({
     queryKey: QUERY_KEYS.findings(workshopId, user?.id),
-    queryFn: () => WorkshopsService.getFindingsWorkshopsWorkshopIdFindingsGet(
-      workshopId, 
+    queryFn: () => DiscoveryService.getFindingsWorkshopsWorkshopIdFindingsGet(
+      workshopId,
       user?.id  // EVERYONE (including facilitators) gets only their own findings for personal progress
     ),
     enabled: !!workshopId && !!user?.id, // REQUIRE user to be logged in
@@ -245,8 +245,8 @@ export function useFacilitatorFindings(workshopId: string) {
   
   return useQuery({
     queryKey: QUERY_KEYS.findings(workshopId, 'all_findings'),
-    queryFn: () => WorkshopsService.getFindingsWorkshopsWorkshopIdFindingsGet(
-      workshopId, 
+    queryFn: () => DiscoveryService.getFindingsWorkshopsWorkshopIdFindingsGet(
+      workshopId,
       undefined  // No user filter - gets ALL findings
     ),
     enabled: !!workshopId && isFacilitator, // Only for facilitators
@@ -259,8 +259,8 @@ export function useFacilitatorFindingsWithUserDetails(workshopId: string) {
   
   return useQuery({
     queryKey: [...QUERY_KEYS.findings(workshopId, 'all_findings'), 'with_user_details'],
-    queryFn: () => WorkshopsService.getFindingsWithUserDetailsWorkshopsWorkshopIdFindingsWithUsersGet(
-      workshopId, 
+    queryFn: () => DiscoveryService.getFindingsWithUserDetailsWorkshopsWorkshopIdFindingsWithUsersGet(
+      workshopId,
       undefined  // No user filter - gets ALL findings with user details
     ),
     enabled: !!workshopId && isFacilitator, // Only for facilitators
@@ -270,9 +270,9 @@ export function useFacilitatorFindingsWithUserDetails(workshopId: string) {
 export function useSubmitFinding(workshopId: string) {
   const queryClient = useQueryClient();
   
-  return useMutation({
+  return useMutation<DiscoveryFinding, Error, DiscoveryFindingCreate, { previousFindings: DiscoveryFinding[] | undefined }>({
     mutationFn: (finding: DiscoveryFindingCreate) =>
-      WorkshopsService.submitFindingWorkshopsWorkshopIdFindingsPost(workshopId, finding),
+      DiscoveryService.submitFindingWorkshopsWorkshopIdFindingsPost(workshopId, finding),
     // Retry on server errors (503 Service Unavailable due to database contention, or 500)
     retry: (failureCount, error: Error) => {
       const status = error instanceof ApiError ? error.status : undefined;
@@ -291,7 +291,7 @@ export function useSubmitFinding(workshopId: string) {
       await queryClient.cancelQueries({ queryKey: ['findings', workshopId, newFinding.user_id] });
       
       // Snapshot the previous value
-      const previousFindings = queryClient.getQueryData(['findings', workshopId, newFinding.user_id]);
+      const previousFindings = queryClient.getQueryData<DiscoveryFinding[]>(['findings', workshopId, newFinding.user_id]);
       
       // Optimistically update the cache - handle both new and update cases
       queryClient.setQueryData<DiscoveryFinding[]>(['findings', workshopId, newFinding.user_id], (old) => {
@@ -834,7 +834,7 @@ export function useFacilitatorDiscoveryFeedback(workshopId: string) {
     queryFn: () =>
       DiscoveryService.getDiscoveryFeedbackWithUserDetailsWorkshopsWorkshopIdDiscoveryFeedbackWithUsersGet(
         workshopId,
-      ) as Promise<DiscoveryFeedbackWithUser[]>,
+      ) as unknown as Promise<DiscoveryFeedbackWithUser[]>,
     enabled: !!workshopId && isFacilitator,
     staleTime: 10_000,
     refetchInterval: 30_000,

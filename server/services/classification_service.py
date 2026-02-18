@@ -11,7 +11,7 @@ from typing import List
 
 from sqlalchemy.orm import Session
 
-from server.models import ClassifiedFinding, Disagreement, ClassifiedFindingCreate
+from server.models import ClassifiedFinding, Disagreement
 from server.services.database_service import DatabaseService
 from server.services.discovery_dspy import build_databricks_lm, get_predictor, run_predict
 

@@ -33,6 +33,7 @@ export type { DiscoveryFeedback } from './models/DiscoveryFeedback';
 export type { DiscoveryFeedbackCreate } from './models/DiscoveryFeedbackCreate';
 export type { DiscoveryFinding } from './models/DiscoveryFinding';
 export type { DiscoveryFindingCreate } from './models/DiscoveryFindingCreate';
+export type { DiscoveryFindingWithUser } from './models/DiscoveryFindingWithUser';
 export type { DiscoveryQuestion } from './models/DiscoveryQuestion';
 export type { DiscoveryQuestionsModelConfig } from './models/DiscoveryQuestionsModelConfig';
 export type { DiscoveryQuestionsResponse } from './models/DiscoveryQuestionsResponse';

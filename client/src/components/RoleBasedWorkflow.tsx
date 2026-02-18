@@ -49,7 +49,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
     try {
       setIsStartingPhase(true);
       setPhaseError(null);
-      await DiscoveryService.beginDiscoveryPhaseWorkshopsWorkshopIdBeginDiscoveryPost(
+      await DiscoveryService.advanceToDiscoveryWorkshopsWorkshopIdAdvanceToDiscoveryPost(
         workshopId!
       );
       // Invalidate workshop query to trigger re-fetch of current phase

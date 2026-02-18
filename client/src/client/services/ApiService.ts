@@ -23,6 +23,7 @@ import type { DiscoveryFeedback } from '../models/DiscoveryFeedback';
 import type { DiscoveryFeedbackCreate } from '../models/DiscoveryFeedbackCreate';
 import type { DiscoveryFinding } from '../models/DiscoveryFinding';
 import type { DiscoveryFindingCreate } from '../models/DiscoveryFindingCreate';
+import type { DiscoveryFindingWithUser } from '../models/DiscoveryFindingWithUser';
 import type { DiscoveryQuestionsModelConfig } from '../models/DiscoveryQuestionsModelConfig';
 import type { DiscoveryQuestionsResponse } from '../models/DiscoveryQuestionsResponse';
 import type { DiscoverySummariesResponse } from '../models/DiscoverySummariesResponse';
@@ -455,13 +456,13 @@ export class ApiService {
      * Get Findings With User Details
      * @param workshopId
      * @param userId
-     * @returns any Successful Response
+     * @returns DiscoveryFindingWithUser Successful Response
      * @throws ApiError
      */
     public static getFindingsWithUserDetailsWorkshopsWorkshopIdFindingsWithUsersGet(
         workshopId: string,
         userId?: (string | null),
-    ): CancelablePromise<Array<Record<string, any>>> {
+    ): CancelablePromise<Array<DiscoveryFindingWithUser>> {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/workshops/{workshop_id}/findings-with-users',

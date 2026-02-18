@@ -52,7 +52,7 @@ describe('@spec:DISCOVERY_SPEC Progressive disclosure', () => {
           feedback_label: 'good',
           comment: 'Nice',
           followup_qna: [],
-        }}
+        } as any}
       />,
     );
 
@@ -80,7 +80,7 @@ describe('@spec:DISCOVERY_SPEC Progressive disclosure', () => {
           feedback_label: 'bad',
           comment: 'Not good',
           followup_qna: [],
-        }}
+        } as any}
       />,
     );
 
@@ -105,7 +105,7 @@ describe('@spec:DISCOVERY_SPEC Progressive disclosure', () => {
             { question: 'Q2?', answer: 'A2' },
             { question: 'Q3?', answer: 'A3' },
           ],
-        }}
+        } as any}
       />,
     );
 

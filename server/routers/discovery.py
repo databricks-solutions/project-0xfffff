@@ -17,6 +17,7 @@ from server.models import (
     DiscoveryFeedbackCreate,
     DiscoveryFinding,
     DiscoveryFindingCreate,
+    DiscoveryFindingWithUser,
     GenerateFollowUpRequest,
     SubmitFollowUpAnswerRequest,
 )
@@ -189,10 +190,10 @@ async def get_findings(
     return svc.get_findings(workshop_id, user_id)
 
 
-@router.get("/{workshop_id}/findings-with-users", response_model=List[Dict[str, Any]])
+@router.get("/{workshop_id}/findings-with-users", response_model=List[DiscoveryFindingWithUser])
 async def get_findings_with_user_details(
     workshop_id: str, user_id: Optional[str] = None, db: Session = Depends(get_db)
-) -> List[Dict[str, Any]]:
+) -> List[DiscoveryFindingWithUser]:
     svc = DiscoveryService(db)
     return svc.get_findings_with_user_details(workshop_id, user_id)
 

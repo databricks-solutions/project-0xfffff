@@ -41,7 +41,7 @@ describe('@spec:DISCOVERY_SPEC Loading spinner during generation', () => {
           feedback_label: 'good',
           comment: 'Nice response',
           followup_qna: [],
-        }}
+        } as any}
       />,
     );
 
@@ -58,7 +58,7 @@ describe('@spec:DISCOVERY_SPEC Loading spinner during generation', () => {
           feedback_label: 'bad',
           comment: 'Bad response',
           followup_qna: [],
-        }}
+        } as any}
       />,
     );
 
@@ -76,7 +76,7 @@ describe('@spec:DISCOVERY_SPEC Loading spinner during generation', () => {
           feedback_label: 'good',
           comment: 'Good',
           followup_qna: [],
-        }}
+        } as any}
       />,
     );
 

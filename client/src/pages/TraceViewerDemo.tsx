@@ -55,7 +55,7 @@ export function TraceViewerDemo() {
   // Fetch data - pass user ID for personalized trace ordering
   const { data: traces, isLoading: tracesLoading, error: tracesError } = useTraces(
     workshopId!,
-    user?.id  // May be undefined - hook handles this gracefully
+    user?.id ?? ''  // May be empty - hook handles this gracefully
   );
   const { data: existingFindings } = useUserFindings(workshopId!, user); // Secure user-isolated findings
   const submitFinding = useSubmitFinding(workshopId!);
@@ -75,7 +75,7 @@ export function TraceViewerDemo() {
   const deleteNote = useDeleteParticipantNote(workshopId!);
 
   // Convert traces to TraceData format - memoize to prevent infinite loops
-  const traceData = useMemo(() => {
+  const traceData: TraceData[] = useMemo(() => {
     return traces?.map(convertTraceToTraceData) || [];
   }, [traces]);
   const currentTrace = traceData[currentTraceIndex];
@@ -102,7 +102,7 @@ export function TraceViewerDemo() {
   // Initialize saved state from all existing findings (runs once)
   useEffect(() => {
     if (existingFindings && existingFindings.length > 0) {
-      existingFindings.forEach(finding => {
+      existingFindings.forEach((finding: { trace_id: string; insight?: string }) => {
         const insight = finding.insight || '';
         const parts = insight.split('\n\nImprovement Analysis: ');
         if (parts.length === 2) {
@@ -121,7 +121,7 @@ export function TraceViewerDemo() {
   useEffect(() => {
     if (currentTrace?.id && currentTrace.id !== previousTraceId.current) {
       // Check if this trace has an existing finding
-      const existingFinding = existingFindings?.find(finding => finding.trace_id === currentTrace.id);
+      const existingFinding = existingFindings?.find((finding: { trace_id: string }) => finding.trace_id === currentTrace.id);
       
       if (existingFinding) {
         // Parse and populate the existing finding text
@@ -192,10 +192,10 @@ export function TraceViewerDemo() {
   // Update submitted findings when existing findings change (separate effect to avoid infinite loop)
   useEffect(() => {
     if (existingFindings && traceData.length > 0) {
-      const validTraceIds = new Set(traceData.map(t => t.id));
-      const completedTraceIds = new Set(existingFindings
-        .filter(f => validTraceIds.has(f.trace_id))  // Only count findings for current traces
-        .map(f => f.trace_id)
+      const validTraceIds = new Set(traceData.map((t: TraceData) => t.id));
+      const completedTraceIds = new Set<string>(existingFindings
+        .filter((f: { trace_id: string }) => validTraceIds.has(f.trace_id))  // Only count findings for current traces
+        .map((f: { trace_id: string }) => f.trace_id)
       );
       
       // Only update if the set actually changed
@@ -868,7 +868,7 @@ export function TraceViewerDemo() {
                       <div className="flex items-center gap-2 mt-1">
                         {note.trace_id && (
                           <span className="text-xs text-purple-600">
-                            On trace {traceData.findIndex(t => t.id === note.trace_id) + 1 || '?'}
+                            On trace {traceData.findIndex((t: TraceData) => t.id === note.trace_id) + 1 || '?'}
                           </span>
                         )}
                         <span className="text-xs text-gray-400">

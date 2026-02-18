@@ -30,7 +30,7 @@ export const UserLogin: React.FC = () => {
     try {
       const newUser = await UsersService.createUserUsersPost({
         ...formData,
-        workshop_id: workshopId
+        workshop_id: workshopId ?? ''
       });
 
       await setUser(newUser);
@@ -150,7 +150,7 @@ export const UserLogin: React.FC = () => {
 
             <div className="space-y-2">
               <Label htmlFor="role">Role</Label>
-              <Select value={formData.role} onValueChange={(value: string) => setFormData({ ...formData, role: value as 'facilitator' | 'sme' | 'participant' })}>
+              <Select value={formData.role} onValueChange={(value: string) => setFormData({ ...formData, role: value as UserRole })}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select your role" />
                 </SelectTrigger>

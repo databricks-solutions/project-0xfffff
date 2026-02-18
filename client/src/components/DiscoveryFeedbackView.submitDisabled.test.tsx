@@ -83,7 +83,7 @@ describe('@spec:DISCOVERY_SPEC Submit buttons disabled until fields filled', () 
           feedback_label: 'good',
           comment: 'Great',
           followup_qna: [],
-        }}
+        } as any}
       />,
     );
 
@@ -107,7 +107,7 @@ describe('@spec:DISCOVERY_SPEC Submit buttons disabled until fields filled', () 
           feedback_label: 'good',
           comment: 'Great',
           followup_qna: [],
-        }}
+        } as any}
       />,
     );
 

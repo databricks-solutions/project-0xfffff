@@ -45,7 +45,7 @@ describe('@spec:DISCOVERY_SPEC Previous Q&A visible while answering', () => {
             { question: 'First question?', answer: 'First answer' },
             { question: 'Second question?', answer: 'Second answer' },
           ],
-        }}
+        } as any}
       />,
     );
 
@@ -75,7 +75,7 @@ describe('@spec:DISCOVERY_SPEC Previous Q&A visible while answering', () => {
             { question: 'Q1?', answer: 'A1' },
             { question: 'Q2?', answer: 'A2' },
           ],
-        }}
+        } as any}
       />,
     );
 
@@ -99,7 +99,7 @@ describe('@spec:DISCOVERY_SPEC Previous Q&A visible while answering', () => {
           feedback_label: 'good',
           comment: 'Nice',
           followup_qna: [{ question: 'First Q?', answer: 'First A' }],
-        }}
+        } as any}
       />,
     );
 
