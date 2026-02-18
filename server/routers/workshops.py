@@ -5863,7 +5863,7 @@ async def get_prompt_optimization_history(
             "metrics": _json.loads(run.metrics) if run.metrics else None,
             "status": run.status,
             "error": run.error,
-            "created_at": run.created_at.isoformat() if run.created_at else None,
+            "created_at": (run.created_at.isoformat() + "Z") if run.created_at else None,
         }
         for run in runs
     ]
