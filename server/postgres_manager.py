@@ -48,8 +48,7 @@ def _validate_table_name(table_name: str) -> None:
     """Raise ValueError if *table_name* is not in the whitelist."""
     if table_name not in ALLOWED_TABLES:
         raise ValueError(
-            f"Table '{table_name}' is not a recognised app table. "
-            f"Allowed tables: {sorted(ALLOWED_TABLES)}"
+            f"Table '{table_name}' is not a recognised app table. Allowed tables: {sorted(ALLOWED_TABLES)}"
         )
 
 
@@ -341,10 +340,7 @@ class PostgresManager:
         from psycopg.rows import dict_row
         from psycopg_pool import ConnectionPool
 
-        needs_new_pool = (
-            self._pool is None
-            or self._token_manager.needs_refresh
-        )
+        needs_new_pool = self._pool is None or self._token_manager.needs_refresh
 
         if needs_new_pool:
             # Close old pool if present
@@ -378,19 +374,12 @@ class PostgresManager:
         pool = self._ensure_pool()
         with pool.connection() as conn:
             # Create schema with ownership for Lakebase service principal
-            conn.execute(
-                f'CREATE SCHEMA IF NOT EXISTS "{self._schema_name}" '
-                f'AUTHORIZATION "{pg_user}"'
-            )
+            conn.execute(f'CREATE SCHEMA IF NOT EXISTS "{self._schema_name}" AUTHORIZATION "{pg_user}"')
             # Grant privileges on the schema to PGUSER
             if pg_user:
-                conn.execute(
-                    f'GRANT ALL PRIVILEGES ON SCHEMA "{self._schema_name}" TO "{pg_user}"'
-                )
+                conn.execute(f'GRANT ALL PRIVILEGES ON SCHEMA "{self._schema_name}" TO "{pg_user}"')
             # Ensure search_path is set for this connection
-            conn.execute(
-                f'SET search_path TO "{self._schema_name}", public'
-            )
+            conn.execute(f'SET search_path TO "{self._schema_name}", public')
             conn.commit()
             logger.info(f"Schema '{self._schema_name}' ensured")
 
@@ -398,16 +387,12 @@ class PostgresManager:
             for ddl in _TABLE_DDL:
                 conn.execute(ddl)
             conn.commit()
-            logger.info(
-                f"All {len(_TABLE_DDL)} predefined tables created/verified"
-            )
+            logger.info(f"All {len(_TABLE_DDL)} predefined tables created/verified")
 
             # Grant privileges on all tables and sequences to PGUSER
             if pg_user:
                 try:
-                    conn.execute(
-                        f'GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA "{self._schema_name}" TO "{pg_user}"'
-                    )
+                    conn.execute(f'GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA "{self._schema_name}" TO "{pg_user}"')
                     conn.execute(
                         f'GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA "{self._schema_name}" TO "{pg_user}"'
                     )
@@ -436,11 +421,7 @@ class PostgresManager:
         columns = list(data.keys())
         placeholders = [f"%({c})s" for c in columns]
 
-        sql = (
-            f"INSERT INTO {table_name} ({', '.join(columns)}) "
-            f"VALUES ({', '.join(placeholders)}) "
-            f"RETURNING *"
-        )
+        sql = f"INSERT INTO {table_name} ({', '.join(columns)}) VALUES ({', '.join(placeholders)}) RETURNING *"
 
         pool = self._ensure_pool()
         with pool.connection() as conn:
@@ -452,9 +433,7 @@ class PostgresManager:
         logger.debug(f"Inserted 1 row into {table_name}")
         return row
 
-    def write_many(
-        self, table_name: str, rows: list[dict[str, Any]]
-    ) -> int:
+    def write_many(self, table_name: str, rows: list[dict[str, Any]]) -> int:
         """Batch-insert multiple rows.
 
         All rows must have the same set of keys.
@@ -473,10 +452,7 @@ class PostgresManager:
         columns = list(rows[0].keys())
         placeholders = [f"%({c})s" for c in columns]
 
-        sql = (
-            f"INSERT INTO {table_name} ({', '.join(columns)}) "
-            f"VALUES ({', '.join(placeholders)})"
-        )
+        sql = f"INSERT INTO {table_name} ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
 
         pool = self._ensure_pool()
         with pool.connection() as conn:
@@ -514,9 +490,7 @@ class PostgresManager:
         columns = list(data.keys())
         placeholders = [f"%({c})s" for c in columns]
         update_cols = [c for c in columns if c not in conflict_columns]
-        update_clause = ", ".join(
-            f"{c} = EXCLUDED.{c}" for c in update_cols
-        )
+        update_clause = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
 
         sql = (
             f"INSERT INTO {table_name} ({', '.join(columns)}) "
@@ -581,10 +555,9 @@ class PostgresManager:
             sql += f" LIMIT {int(limit)}"
 
         pool = self._ensure_pool()
-        with pool.connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(sql, params)
-                rows = cur.fetchall()
+        with pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
 
         logger.debug(f"Read {len(rows)} rows from {table_name}")
         return rows
@@ -592,9 +565,7 @@ class PostgresManager:
     # ------------------------------------------------------------------
     # Generic execute
     # ------------------------------------------------------------------
-    def execute(
-        self, sql: str, params: dict[str, Any] | tuple | None = None
-    ) -> list[dict[str, Any]]:
+    def execute(self, sql: str, params: dict[str, Any] | tuple | None = None) -> list[dict[str, Any]]:
         """Execute arbitrary SQL and return rows (if any).
 
         Use for queries that don't fit the ``read``/``write`` helpers.

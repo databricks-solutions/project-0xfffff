@@ -91,6 +91,7 @@ class OAuthTokenManager:
         """Lazily initialize WorkspaceClient."""
         if self._workspace_client is None:
             from databricks.sdk import WorkspaceClient
+
             self._workspace_client = WorkspaceClient()
         return self._workspace_client
 
@@ -191,7 +192,7 @@ def get_database_url() -> str:
     return url
 
 
-def create_engine_for_backend(backend: DatabaseBackend) -> "Engine":
+def create_engine_for_backend(backend: DatabaseBackend) -> Engine:
     """Create SQLAlchemy engine for the specified backend.
 
     Args:
