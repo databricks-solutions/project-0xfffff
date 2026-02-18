@@ -1085,7 +1085,7 @@ class DiscoveryService:
         3. Runs disagreement detection
         4. Returns classified finding
         """
-        workshop = self._get_workshop_or_404(workshop_id)
+        self._get_workshop_or_404(workshop_id)
         trace = self.db_service.get_trace(trace_id)
         if not trace or trace.workshop_id != workshop_id:
             raise HTTPException(status_code=404, detail="Trace not found")
@@ -1410,7 +1410,7 @@ class DiscoveryService:
         - Questions
         - Thresholds
         """
-        workshop = self._get_workshop_or_404(workshop_id)
+        self._get_workshop_or_404(workshop_id)
         trace = self.db_service.get_trace(trace_id)
         if not trace or trace.workshop_id != workshop_id:
             raise HTTPException(status_code=404, detail="Trace not found")
@@ -1476,7 +1476,7 @@ class DiscoveryService:
         - "good_coverage": 30-80% traces have findings
         - "complete": 80%+ traces have findings
         """
-        workshop = self._get_workshop_or_404(workshop_id)
+        self._get_workshop_or_404(workshop_id)
         traces = self.db_service.get_traces(workshop_id)
         findings = self.db_service.get_findings(workshop_id)
 
@@ -1502,7 +1502,7 @@ class DiscoveryService:
 
         This allows facilitators to move findings toward rubric item candidates.
         """
-        workshop = self._get_workshop_or_404(workshop_id)
+        self._get_workshop_or_404(workshop_id)
 
         # Placeholder implementation - full DB operations in Phase 3
         return {
@@ -1519,7 +1519,7 @@ class DiscoveryService:
 
         Thresholds define how many findings per category are needed for trace.
         """
-        workshop = self._get_workshop_or_404(workshop_id)
+        self._get_workshop_or_404(workshop_id)
         trace = self.db_service.get_trace(trace_id)
         if not trace or trace.workshop_id != workshop_id:
             raise HTTPException(status_code=404, detail="Trace not found")
