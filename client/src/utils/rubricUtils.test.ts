@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { formatRubricQuestions, parseRubricQuestions, QUESTION_DELIMITER, type RubricQuestion } from './rubricUtils';
+import { JudgeType } from '@/client';
 
 // @spec RUBRIC_SPEC
 describe('@spec:RUBRIC_SPEC rubricUtils', () => {
@@ -140,7 +141,7 @@ describe('@spec:RUBRIC_SPEC rubricUtils', () => {
 
     it('formats single question with judge type', () => {
       const questions: RubricQuestion[] = [
-        { id: 'q_1', title: 'Quality', description: 'Rate quality', judgeType: 'likert' }
+        { id: 'q_1', title: 'Quality', description: 'Rate quality', judgeType: JudgeType.LIKERT }
       ];
       const formatted = formatRubricQuestions(questions);
 
@@ -150,8 +151,8 @@ describe('@spec:RUBRIC_SPEC rubricUtils', () => {
 
     it('formats multiple questions with delimiters', () => {
       const questions: RubricQuestion[] = [
-        { id: 'q_1', title: 'A', description: 'B', judgeType: 'likert' },
-        { id: 'q_2', title: 'C', description: 'D', judgeType: 'binary' },
+        { id: 'q_1', title: 'A', description: 'B', judgeType: JudgeType.LIKERT },
+        { id: 'q_2', title: 'C', description: 'D', judgeType: JudgeType.BINARY },
       ];
       const formatted = formatRubricQuestions(questions);
 
@@ -164,9 +165,9 @@ describe('@spec:RUBRIC_SPEC rubricUtils', () => {
   describe('Round-trip consistency', () => {
     it('round-trips format -> parse with judge types preserved', () => {
       const questions: RubricQuestion[] = [
-        { id: 'q_1', title: 'Accuracy', description: 'Check accuracy', judgeType: 'likert' },
-        { id: 'q_2', title: 'Safety', description: 'Check safety', judgeType: 'binary' },
-        { id: 'q_3', title: 'Feedback', description: 'Provide feedback', judgeType: 'freeform' },
+        { id: 'q_1', title: 'Accuracy', description: 'Check accuracy', judgeType: JudgeType.LIKERT },
+        { id: 'q_2', title: 'Safety', description: 'Check safety', judgeType: JudgeType.BINARY },
+        { id: 'q_3', title: 'Feedback', description: 'Provide feedback', judgeType: JudgeType.FREEFORM },
       ];
 
       const formatted = formatRubricQuestions(questions);
@@ -194,7 +195,7 @@ describe('@spec:RUBRIC_SPEC rubricUtils', () => {
           id: 'q_1',
           title: 'Completeness',
           description: 'Check if response is complete.\n\nConsider:\n- All parts\n- No gaps',
-          judgeType: 'likert'
+          judgeType: JudgeType.LIKERT
         },
       ];
 
@@ -208,7 +209,7 @@ describe('@spec:RUBRIC_SPEC rubricUtils', () => {
 
     it('round-trips empty descriptions', () => {
       const questions: RubricQuestion[] = [
-        { id: 'q_1', title: 'Simple Check', description: '', judgeType: 'binary' },
+        { id: 'q_1', title: 'Simple Check', description: '', judgeType: JudgeType.BINARY },
       ];
 
       const formatted = formatRubricQuestions(questions);

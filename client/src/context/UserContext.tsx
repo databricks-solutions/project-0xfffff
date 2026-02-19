@@ -1,30 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { UsersService } from '@/client';
-
-export interface User {
-  id: string;
-  email: string;
-  name: string;
-  role: 'facilitator' | 'sme' | 'participant';
-  workshop_id: string;
-  status: 'active' | 'inactive' | 'pending';
-  created_at: string;
-  last_active?: string;
-}
-
-export interface UserPermissions {
-  can_view_discovery: boolean;
-  can_create_findings: boolean;
-  can_view_all_findings: boolean;
-  can_create_rubric: boolean;
-  can_view_rubric: boolean;
-  can_annotate: boolean;
-  can_view_all_annotations: boolean;
-  can_view_results: boolean;
-  can_manage_workshop: boolean;
-  can_assign_annotations: boolean;
-}
+import { UsersService, type User, type UserPermissions, UserRole } from '@/client';
 
 interface UserContextType {
   user: User | null;
@@ -164,7 +140,7 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
   const updateLastActive = async () => {
     if (user) {
       try {
-        await UsersService.updateLastActiveUsersUsersUserIdLastActivePut(user.id);
+        await UsersService.updateLastActiveUsersUserIdLastActivePut(user.id);
       } catch (error) {
         // Silent fail for last active updates
       }
@@ -259,9 +235,9 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
 export const useRoleCheck = () => {
   const { user, permissions } = useUser();
   
-  const isFacilitator = user?.role === 'facilitator';
-  const isSME = user?.role === 'sme';
-  const isParticipant = user?.role === 'participant';
+  const isFacilitator = user?.role === UserRole.FACILITATOR;
+  const isSME = user?.role === UserRole.SME;
+  const isParticipant = user?.role === UserRole.PARTICIPANT;
   
   const canViewDiscovery = permissions?.can_view_discovery ?? false;
   const canCreateFindings = permissions?.can_create_findings ?? false;

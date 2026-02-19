@@ -428,15 +428,12 @@ describe('useCounter', () => {
 export default defineConfig({
   testDir: './tests/e2e',
   use: {
-    baseURL: 'http://localhost:8000',
-  },
-  webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:8000',
-    reuseExistingServer: !process.env.CI,
+    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:3000',
   },
 });
 ```
+
+> **Port selection**: `just e2e` auto-detects available ports (starting from 8000/3000) and passes them via `E2E_API_URL` and `PLAYWRIGHT_BASE_URL`. The Vite dev server reads `E2E_API_URL` for its proxy target so the UI always proxies to the correct API port.
 
 ### Commands
 

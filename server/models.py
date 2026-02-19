@@ -1,7 +1,7 @@
 """Data models for the workshop application."""
 
 from datetime import datetime
-from enum import StrEnum
+from enum import Enum, StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -157,6 +157,7 @@ class Workshop(BaseModel):
     discovery_randomize_traces: bool = False  # Whether to randomize trace order in discovery
     annotation_randomize_traces: bool = False  # Whether to randomize trace order in annotation
     judge_name: str = "workshop_judge"  # Name used for MLflow feedback entries
+    discovery_questions_model_name: str = "demo"  # LLM model/endpoint for discovery question generation
     input_jsonpath: str | None = None  # JSONPath query for extracting trace input display
     output_jsonpath: str | None = None  # JSONPath query for extracting trace output display
     auto_evaluation_job_id: str | None = None  # Job ID for auto-evaluation on annotation start
@@ -197,6 +198,7 @@ class DiscoveryFindingCreate(BaseModel):
     trace_id: str
     user_id: str
     insight: str
+    category: str | None = None  # Classification category (themes, edge_cases, etc.)
 
 
 class DiscoveryFinding(BaseModel):
@@ -205,7 +207,21 @@ class DiscoveryFinding(BaseModel):
     trace_id: str
     user_id: str
     insight: str
+    category: str | None = None  # Classification category (themes, edge_cases, etc.)
     created_at: datetime = Field(default_factory=datetime.now)
+
+
+class DiscoveryFindingWithUser(BaseModel):
+    """Finding enriched with user display info (for facilitator views)."""
+
+    id: str
+    workshop_id: str
+    trace_id: str
+    user_id: str
+    user_name: str
+    user_email: str
+    insight: str
+    created_at: datetime
 
 
 class RubricCreate(BaseModel):
@@ -653,3 +669,172 @@ class CustomLLMProviderTestResult(BaseModel):
     message: str
     response_time_ms: int | None = None
     error_code: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Assisted Facilitation v2 Models
+# ---------------------------------------------------------------------------
+
+
+class FeedbackLabel(str, Enum):
+    GOOD = "good"
+    BAD = "bad"
+
+
+class DiscoveryFeedbackCreate(BaseModel):
+    trace_id: str
+    user_id: str
+    feedback_label: FeedbackLabel
+    comment: str
+
+
+class DiscoveryFeedback(BaseModel):
+    id: str
+    workshop_id: str
+    trace_id: str
+    user_id: str
+    feedback_label: FeedbackLabel
+    comment: str
+    followup_qna: list[dict[str, str]] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+
+class GenerateFollowUpRequest(BaseModel):
+    trace_id: str
+    user_id: str
+
+
+class SubmitFollowUpAnswerRequest(BaseModel):
+    trace_id: str
+    user_id: str
+    question: str
+    answer: str
+
+
+class ClassifiedFinding(BaseModel):
+    """A finding with LLM-assigned category."""
+
+    id: str
+    workshop_id: str
+    trace_id: str
+    user_id: str
+    text: str
+    category: str  # themes|edge_cases|boundary_conditions|failure_modes|missing_info
+    question_id: str
+    promoted: bool = False
+    created_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class ClassifiedFindingCreate(BaseModel):
+    """Create a classified finding."""
+
+    trace_id: str
+    user_id: str
+    text: str
+    category: str
+    question_id: str
+
+
+class Disagreement(BaseModel):
+    """Auto-detected disagreement between participants."""
+
+    id: str
+    workshop_id: str
+    trace_id: str
+    user_ids: list[str]
+    finding_ids: list[str]
+    summary: str
+    created_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class TraceDiscoveryQuestion(BaseModel):
+    """Trace-level discovery question (broadcast to all participants)."""
+
+    id: str
+    workshop_id: str
+    trace_id: str
+    prompt: str
+    placeholder: str | None = None
+    target_category: str | None = None
+    is_fixed: bool = False
+    created_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class TraceDiscoveryQuestionCreate(BaseModel):
+    """Create a trace discovery question."""
+
+    trace_id: str
+    prompt: str
+    placeholder: str | None = None
+    target_category: str | None = None
+    is_fixed: bool = False
+
+
+class TraceDiscoveryThreshold(BaseModel):
+    """Per-trace thresholds for category coverage."""
+
+    id: str
+    workshop_id: str
+    trace_id: str
+    thresholds: dict[str, int]  # {category: count}
+    created_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class TraceDiscoveryThresholdCreate(BaseModel):
+    """Create trace discovery thresholds."""
+
+    trace_id: str
+    thresholds: dict[str, int]
+
+
+class DraftRubricItem(BaseModel):
+    """Promoted finding in draft rubric staging area."""
+
+    id: str
+    workshop_id: str
+    source_finding_id: str
+    source_trace_id: str
+    text: str
+    promoted_by: str
+    promoted_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class DraftRubricItemCreate(BaseModel):
+    """Create a draft rubric item."""
+
+    source_finding_id: str
+    source_trace_id: str
+    text: str
+
+
+class TraceDiscoveryState(BaseModel):
+    """Structured discovery state for a trace (facilitator view)."""
+
+    trace_id: str
+    categories: dict[str, list[ClassifiedFinding]] = {}
+    disagreements: list[Disagreement] = []
+    questions: list[TraceDiscoveryQuestion] = []
+    thresholds: dict[str, int] = {}
+
+
+class FuzzyProgress(BaseModel):
+    """Fuzzy progress indicator for participants."""
+
+    status: str  # "exploring" | "good_coverage" | "complete"
+    percentage: float  # 0-100

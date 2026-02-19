@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useUser } from '@/context/UserContext';
 import { useWorkshopContext } from '@/context/WorkshopContext';
-import { UsersService } from '@/client';
+import { UsersService, UserRole } from '@/client';
 import { useCreateWorkshop } from '@/hooks/useWorkshopApi';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,7 +17,7 @@ export const UserLogin: React.FC = () => {
   const [formData, setFormData] = useState({
     email: '',
     name: '',
-    role: 'participant' as 'facilitator' | 'sme' | 'participant'
+    role: UserRole.PARTICIPANT
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,9 +28,9 @@ export const UserLogin: React.FC = () => {
     setError(null);
 
     try {
-      const newUser = await UsersService.createUserUsersUsersPost({
+      const newUser = await UsersService.createUserUsersPost({
         ...formData,
-        workshop_id: workshopId
+        workshop_id: workshopId ?? ''
       });
 
       await setUser(newUser);
@@ -42,7 +42,7 @@ export const UserLogin: React.FC = () => {
     }
   };
 
-  const handleQuickLogin = async (role: 'facilitator' | 'sme' | 'participant') => {
+  const handleQuickLogin = async (role: UserRole) => {
     setIsLoading(true);
     setError(null);
 
@@ -53,7 +53,7 @@ export const UserLogin: React.FC = () => {
       let currentWorkshopId = workshopId;
       
       // If no workshop exists and user is facilitator, create one
-      if (!currentWorkshopId && role === 'facilitator') {
+      if (!currentWorkshopId && role === UserRole.FACILITATOR) {
         
         try {
           const newWorkshop = await createWorkshop.mutateAsync({
@@ -82,7 +82,7 @@ export const UserLogin: React.FC = () => {
       }
       
       // First, try to find existing user with this email and workshop
-      const existingUsers = await UsersService.listUsersUsersUsersGet(currentWorkshopId);
+      const existingUsers = await UsersService.listUsersUsersGet(currentWorkshopId);
       const existingUser = existingUsers.find(u => u.email === demoEmail);
       
       if (existingUser) {
@@ -92,7 +92,7 @@ export const UserLogin: React.FC = () => {
       } else {
         // Create new user if doesn't exist
         
-        const newUser = await UsersService.createUserUsersUsersPost({
+        const newUser = await UsersService.createUserUsersPost({
           email: demoEmail,
           name: `Demo ${role.charAt(0).toUpperCase() + role.slice(1)}`,
           role,
@@ -150,14 +150,14 @@ export const UserLogin: React.FC = () => {
 
             <div className="space-y-2">
               <Label htmlFor="role">Role</Label>
-              <Select value={formData.role} onValueChange={(value: string) => setFormData({ ...formData, role: value as 'facilitator' | 'sme' | 'participant' })}>
+              <Select value={formData.role} onValueChange={(value: string) => setFormData({ ...formData, role: value as UserRole })}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select your role" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="facilitator">Facilitator</SelectItem>
-                  <SelectItem value="sme">Subject Matter Expert</SelectItem>
-                  <SelectItem value="participant">Participant</SelectItem>
+                  <SelectItem value={UserRole.FACILITATOR}>Facilitator</SelectItem>
+                  <SelectItem value={UserRole.SME}>Subject Matter Expert</SelectItem>
+                  <SelectItem value={UserRole.PARTICIPANT}>Participant</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -179,21 +179,21 @@ export const UserLogin: React.FC = () => {
           <div className="grid grid-cols-1 gap-2">
             <Button
               variant="outline"
-              onClick={() => handleQuickLogin('facilitator')}
+              onClick={() => handleQuickLogin(UserRole.FACILITATOR)}
               disabled={isLoading}
             >
               Demo Facilitator
             </Button>
             <Button
               variant="outline"
-              onClick={() => handleQuickLogin('sme')}
+              onClick={() => handleQuickLogin(UserRole.SME)}
               disabled={isLoading}
             >
               Demo SME
             </Button>
             <Button
               variant="outline"
-              onClick={() => handleQuickLogin('participant')}
+              onClick={() => handleQuickLogin(UserRole.PARTICIPANT)}
               disabled={isLoading}
             >
               Demo Participant

@@ -2,8 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { JudgeType } from './JudgePrompt';
-
+import type { JudgeType } from './JudgeType';
 export type Rubric = {
     id: string;
     workshop_id: string;

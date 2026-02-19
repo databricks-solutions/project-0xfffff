@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useUser } from '@/context/UserContext';
 import { useWorkshopContext } from '@/context/WorkshopContext';
-import { UsersService } from '@/client';
+import { UsersService, UserRole, type User } from '@/client';
 import { useWorkshop } from '@/hooks/useWorkshopApi';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,15 +13,6 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertCircle, RefreshCw, UserPlus, Users, Info } from 'lucide-react';
 import { toast } from 'sonner';
-
-interface User {
-  id: string;
-  email: string;
-  name: string;
-  role: 'facilitator' | 'sme' | 'participant';
-  status: string;
-  created_at: string;
-}
 
 export const FacilitatorUserManager: React.FC = () => {
   const { user } = useUser();
@@ -37,19 +28,12 @@ export const FacilitatorUserManager: React.FC = () => {
   const [newUser, setNewUser] = useState({
     email: '',
     name: '',
-    role: 'participant' as 'sme' | 'participant'
+    role: UserRole.PARTICIPANT
   });
 
-  useEffect(() => {
-    if (workshopId) {
-      loadUsers();
-    }
-  }, [workshopId]);
-
-
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async () => {
     if (!workshopId) return;
-    
+
     setIsLoadingUsers(true);
     setError(null);
     try {
@@ -62,7 +46,13 @@ export const FacilitatorUserManager: React.FC = () => {
     } finally {
       setIsLoadingUsers(false);
     }
-  };
+  }, [workshopId]);
+
+  useEffect(() => {
+    if (workshopId) {
+      loadUsers();
+    }
+  }, [workshopId, loadUsers]);
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,7 +74,7 @@ export const FacilitatorUserManager: React.FC = () => {
       );
 
       setSuccess(`User ${newUser.email} added successfully.`);
-      setNewUser({ email: '', name: '', role: 'participant' });
+      setNewUser({ email: '', name: '', role: UserRole.PARTICIPANT });
       loadUsers(); // Refresh the user list
     } catch (error: unknown) {
       const detail = error instanceof Error ? error.message : 'Failed to add user';
@@ -96,20 +86,20 @@ export const FacilitatorUserManager: React.FC = () => {
 
   const [updatingRoleUserId, setUpdatingRoleUserId] = useState<string | null>(null);
 
-  const getRoleBadgeColor = (role: string) => {
+  const getRoleBadgeColor = (role: UserRole) => {
     switch (role) {
-      case 'facilitator':
+      case UserRole.FACILITATOR:
         return 'bg-blue-100 text-blue-800';
-      case 'sme':
+      case UserRole.SME:
         return 'bg-green-100 text-green-800';
-      case 'participant':
+      case UserRole.PARTICIPANT:
         return 'bg-gray-100 text-gray-800';
       default:
         return 'bg-gray-100 text-gray-800';
     }
   };
 
-  const handleRoleChange = async (userId: string, newRole: 'sme' | 'participant') => {
+  const handleRoleChange = async (userId: string, newRole: UserRole.SME | UserRole.PARTICIPANT) => {
     if (!workshopId) return;
     
     setUpdatingRoleUserId(userId);
@@ -134,7 +124,7 @@ export const FacilitatorUserManager: React.FC = () => {
     }
   };
 
-  if (!user || user.role !== 'facilitator') {
+  if (!user || user.role !== UserRole.FACILITATOR) {
     return (
       <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
         <div className="text-center max-w-md">
@@ -211,14 +201,14 @@ export const FacilitatorUserManager: React.FC = () => {
                   <Label htmlFor="role" className="text-xs font-medium text-gray-600">Role</Label>
                   <Select
                     value={newUser.role}
-                    onValueChange={(value: 'sme' | 'participant') => setNewUser({ ...newUser, role: value })}
+                    onValueChange={(value) => setNewUser({ ...newUser, role: value as UserRole.SME | UserRole.PARTICIPANT })}
                   >
                     <SelectTrigger className="h-9">
                       <SelectValue placeholder="Select role" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="sme">Subject Matter Expert (SME)</SelectItem>
-                      <SelectItem value="participant">Participant</SelectItem>
+                      <SelectItem value={UserRole.SME}>Subject Matter Expert (SME)</SelectItem>
+                      <SelectItem value={UserRole.PARTICIPANT}>Participant</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -335,7 +325,7 @@ export const FacilitatorUserManager: React.FC = () => {
                       <TableCell className="font-medium">{u.name}</TableCell>
                       <TableCell>{u.email}</TableCell>
                       <TableCell>
-                        {u.role === 'facilitator' ? (
+                        {u.role === UserRole.FACILITATOR ? (
                           <Badge className="bg-blue-50 text-blue-700 border border-blue-200">
                             Facilitator
                           </Badge>
@@ -343,12 +333,12 @@ export const FacilitatorUserManager: React.FC = () => {
                           <div className="flex items-center gap-2">
                             <Select
                               value={u.role}
-                              onValueChange={(value: 'sme' | 'participant') => handleRoleChange(u.id, value)}
+                              onValueChange={(value) => handleRoleChange(u.id, value as UserRole.SME | UserRole.PARTICIPANT)}
                               disabled={updatingRoleUserId === u.id}
                             >
                               <SelectTrigger 
                                 className={`w-[130px] h-8 font-medium ${
-                                  u.role === 'sme' 
+                                  u.role === UserRole.SME 
                                     ? 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100' 
                                     : 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100'
                                 }`}
@@ -356,13 +346,13 @@ export const FacilitatorUserManager: React.FC = () => {
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="sme">
+                                <SelectItem value={UserRole.SME}>
                                   <span className="flex items-center gap-2">
                                     <span className="w-2 h-2 rounded-full bg-violet-500"></span>
                                     SME
                                   </span>
                                 </SelectItem>
-                                <SelectItem value="participant">
+                                <SelectItem value={UserRole.PARTICIPANT}>
                                   <span className="flex items-center gap-2">
                                     <span className="w-2 h-2 rounded-full bg-violet-500"></span>
                                     Participant
@@ -390,7 +380,7 @@ export const FacilitatorUserManager: React.FC = () => {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        {new Date(u.created_at).toLocaleDateString()}
+                        {new Date(u.created_at ?? '').toLocaleDateString()}
                       </TableCell>
                     </TableRow>
                   ))}

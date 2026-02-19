@@ -695,6 +695,7 @@ Discovery uses the same model selection as judge evaluation: **Databricks founda
 ### Step 1: Feedback Collection (#81)
 - [ ] Facilitator can start Discovery phase with configurable trace limit
 - [ ] Participants view traces and provide GOOD/BAD + comment
+- [ ] Facilitator can select LLM model for follow-up question generation in Discovery dashboard
 - [ ] AI generates 3 follow-up questions per trace based on feedback
 - [ ] Questions build progressively on prior answers
 - [ ] All 3 questions required before moving to next trace
@@ -703,6 +704,7 @@ Discovery uses the same model selection as judge evaluation: **Databricks founda
 - [ ] Error handling with retry for LLM failures
 - [ ] Feedback saved incrementally (no data loss on failure)
 - [ ] Completion status shows % of participants finished
+- [ ] Facilitator can view participant feedback details (label, comment, follow-up Q&A)
 
 ### Step 2: Findings Synthesis (#82)
 - [ ] Facilitator can trigger analysis at any time (even partial feedback)
@@ -740,6 +742,7 @@ Discovery uses the same model selection as judge evaluation: **Databricks founda
 ### Error Handling
 - [ ] LLM failures show error toast with retry
 - [ ] Fallback question if LLM unavailable after retries
+- [ ] Fallback warning banner shown only to facilitators, never to participants/SMEs
 - [ ] Analysis shows warning (not error) if < 2 participants
 - [ ] Form validation prevents empty submissions
 

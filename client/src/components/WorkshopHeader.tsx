@@ -1,6 +1,8 @@
 import React from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { useQuery } from '@tanstack/react-query';
+import { WorkshopsService } from '@/client';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useWorkflowContext } from '@/context/WorkflowContext';
 import { useWorkshop } from '@/hooks/useWorkshopApi';
@@ -21,6 +23,20 @@ export const WorkshopHeader: React.FC<WorkshopHeaderProps> = ({
   const { workshopId } = useWorkshopContext();
   const { currentPhase } = useWorkflowContext();
   const { data: workshop } = useWorkshop(workshopId!);
+  const { data: participants = [] } = useQuery({
+    queryKey: ['workshop-participants', workshopId],
+    queryFn: async () => {
+      if (!workshopId) return [];
+      return WorkshopsService.getWorkshopParticipantsWorkshopsWorkshopIdParticipantsGet(workshopId);
+    },
+    enabled: !!workshopId,
+  });
+
+  const participantCount = Array.isArray(participants)
+    ? participants.length
+    : Array.isArray((participants as any)?.users)
+      ? (participants as any).users.length
+      : 0;
 
   if (!workshop) {
     return (
@@ -83,9 +99,9 @@ export const WorkshopHeader: React.FC<WorkshopHeaderProps> = ({
           {variant === 'detailed' && (
             <div className="flex items-center gap-4 text-xs text-muted-foreground mt-2">
               <span>ID: {workshop.id.slice(0, 8)}...</span>
-              <span>Created: {new Date(workshop.created_at).toLocaleDateString()}</span>
+              <span>Created: {new Date(workshop.created_at ?? '').toLocaleDateString()}</span>
               {showParticipantCount && (
-                <span>Participants: {workshop.users?.length || 0}</span>
+                <span>Participants: {participantCount}</span>
               )}
             </div>
           )}
@@ -95,7 +111,7 @@ export const WorkshopHeader: React.FC<WorkshopHeaderProps> = ({
           <div className="text-right">
             <div className="text-xs text-muted-foreground">Participants</div>
             <div className="text-2xl font-bold text-foreground">
-              {workshop.users?.length || 0}
+              {participantCount}
             </div>
           </div>
         )}

@@ -3,6 +3,8 @@
  * This ensures consistent handling of newlines in question descriptions.
  */
 
+import { JudgeType } from '@/client';
+
 // Delimiter used to separate questions in the rubric format
 // This special delimiter allows newlines within question descriptions
 export const QUESTION_DELIMITER = '|||QUESTION_SEPARATOR|||';
@@ -10,7 +12,7 @@ export const QUESTION_DELIMITER = '|||QUESTION_SEPARATOR|||';
 // Delimiter to separate judge type from content within a question
 const JUDGE_TYPE_DELIMITER = '|||JUDGE_TYPE|||';
 
-export type QuestionJudgeType = 'likert' | 'binary' | 'freeform';
+export type QuestionJudgeType = JudgeType;
 
 export interface RubricQuestion {
   id: string;
@@ -36,13 +38,13 @@ export const parseRubricQuestions = (questionText: string): RubricQuestion[] => 
       
       // Check if question has judge type embedded
       let content = trimmedText;
-      let judgeType: QuestionJudgeType = 'likert'; // default
+      let judgeType: QuestionJudgeType = JudgeType.LIKERT; // default
       
       if (trimmedText.includes(JUDGE_TYPE_DELIMITER)) {
         const [contentPart, typePart] = trimmedText.split(JUDGE_TYPE_DELIMITER);
         content = contentPart.trim();
-        const parsedType = typePart?.trim() as QuestionJudgeType;
-        if (parsedType === 'likert' || parsedType === 'binary' || parsedType === 'freeform') {
+        const parsedType = typePart?.trim() as JudgeType;
+        if (parsedType === JudgeType.LIKERT || parsedType === JudgeType.BINARY || parsedType === JudgeType.FREEFORM) {
           judgeType = parsedType;
         }
       }

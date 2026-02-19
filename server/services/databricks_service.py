@@ -112,6 +112,7 @@ class DatabricksService:
         temperature: float = 0.5,
         max_tokens: int | None = None,
         model_parameters: dict[str, Any] | None = None,
+        response_format: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Call a Databricks serving endpoint using chat completion format.
 
@@ -121,41 +122,25 @@ class DatabricksService:
             temperature: Temperature for generation (0.0 to 1.0)
             max_tokens: Maximum number of tokens to generate
             model_parameters: Additional model parameters
+            response_format: Optional structured output spec (e.g., {"type":"json_schema", ...})
 
         Returns:
             Dictionary containing the response from the model
         """
-        try:
-            # Prepare messages in OpenAI format
-            messages = [
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": prompt},
-            ]
 
-            # Prepare the request parameters
-            request_params = {"messages": messages, "model": endpoint_name, "temperature": temperature}
-
-            # Add optional parameters
-            if max_tokens:
-                request_params["max_tokens"] = max_tokens
-
-            if model_parameters:
-                request_params.update(model_parameters)
-
-            logger.info(f"Calling Databricks serving endpoint: {endpoint_name}")
-            logger.debug(f"Request parameters: {request_params}")
-
-            # Make the API call using OpenAI client
+        def _do_call(request_params: dict[str, Any]) -> dict[str, Any]:
             response = self.client.chat.completions.create(**request_params)
-
-            # Convert response to dictionary format
-            result = {
+            try:
+                message_dump = response.choices[0].message.model_dump()
+            except Exception:
+                message_dump = {
+                    "content": response.choices[0].message.content,
+                    "role": response.choices[0].message.role,
+                }
+            return {
                 "choices": [
                     {
-                        "message": {
-                            "content": response.choices[0].message.content,
-                            "role": response.choices[0].message.role,
-                        },
+                        "message": message_dump,
                         "index": response.choices[0].index,
                         "finish_reason": response.choices[0].finish_reason,
                     }
@@ -167,6 +152,37 @@ class DatabricksService:
                     "total_tokens": response.usage.total_tokens,
                 },
             }
+
+        try:
+            messages = [
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt},
+            ]
+            request_params = {"messages": messages, "model": endpoint_name, "temperature": temperature}
+
+            if max_tokens:
+                request_params["max_tokens"] = max_tokens
+            if model_parameters:
+                request_params.update(model_parameters)
+            if response_format:
+                request_params["response_format"] = response_format
+
+            logger.info(f"Calling Databricks serving endpoint: {endpoint_name}")
+            logger.debug(f"Request parameters: {request_params}")
+
+            try:
+                result = _do_call(request_params)
+            except Exception as e:
+                if response_format:
+                    logger.warning(
+                        "Structured outputs request failed for endpoint=%s; retrying without response_format. Error: %s",
+                        endpoint_name,
+                        e,
+                    )
+                    request_params.pop("response_format", None)
+                    result = _do_call(request_params)
+                else:
+                    raise
 
             logger.info(f"Successfully called serving endpoint: {endpoint_name}")
             logger.debug(f"Response: {result}")
@@ -303,13 +319,18 @@ class DatabricksService:
             response = self.client.chat.completions.create(**request_params)
 
             # Convert response to dictionary format
+            try:
+                message_dump = response.choices[0].message.model_dump()
+            except Exception:
+                message_dump = {
+                    "content": response.choices[0].message.content,
+                    "role": response.choices[0].message.role,
+                }
+
             result = {
                 "choices": [
                     {
-                        "message": {
-                            "content": response.choices[0].message.content,
-                            "role": response.choices[0].message.role,
-                        },
+                        "message": message_dump,
                         "index": response.choices[0].index,
                         "finish_reason": response.choices[0].finish_reason,
                     }

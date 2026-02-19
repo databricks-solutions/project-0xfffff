@@ -15,11 +15,16 @@ export {
 export {
   goToPhase,
   goToTab,
+  goToFacilitatorDashboard,
+  goToTraceCoverage,
+  expandTraceRow,
   advanceToPhase,
   startWorkshop,
   beginDiscovery,
   beginAnnotation,
   reloadWorkshop,
+  configureDiscoveryLLM,
+  configureMLflow,
 } from './workshop';
 
 // Discovery actions
@@ -31,7 +36,19 @@ export {
   isDiscoveryComplete,
   getDiscoveryCompletionStatus,
   waitForDiscoveryPhase,
+  // Facilitator panel actions
+  DISCOVERY_CATEGORIES,
+  waitForTraceDiscoveryPanel,
+  getCategoryCount,
+  getCategoryFindings,
+  promoteFindingInUI,
+  isFindingPromoted,
+  updateCategoryThreshold,
+  clickGenerateQuestion,
+  getDisagreementsCount,
+  getDisagreementSummary,
 } from './discovery';
+export type { DiscoveryCategory } from './discovery';
 
 // Rubric actions
 export {

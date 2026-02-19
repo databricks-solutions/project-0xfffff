@@ -42,6 +42,8 @@ interface UploadResult {
   message?: string;
   volume_path?: string;
   file_name?: string;
+  file_path?: string;
+  file_size?: number;
 }
 
 interface ExportFormState {
@@ -76,7 +78,7 @@ interface ExportStatus {
 
 export function DBSQLExportPage() {
   const { workshopId } = useWorkshopContext();
-  const { data: workshop } = useWorkshop(workshopId);
+  const { data: workshop } = useWorkshop(workshopId ?? '');
   const queryClient = useQueryClient();
   
   // Load state from localStorage on component mount
@@ -121,14 +123,14 @@ export function DBSQLExportPage() {
   const [scrollPosition, setScrollPosition] = useState(0);
 
   // Use React Query to cache export results
-  const { data: exportResult } = useQuery({
+  const { data: exportResult } = useQuery<ExportResult | null>({
     queryKey: ['dbsql-export-result', workshopId],
     queryFn: async () => {
       // This will be populated when export is successful
       return null;
     },
     staleTime: Infinity, // Never consider stale
-    cacheTime: Infinity, // Never expire from cache
+    gcTime: Infinity, // Never expire from cache
   });
 
   // Use React Query to cache export status

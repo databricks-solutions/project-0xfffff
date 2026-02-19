@@ -6,8 +6,9 @@
  * Result of testing custom LLM provider connection.
  */
 export type CustomLLMProviderTestResult = {
-  success: boolean;
-  message: string;
-  response_time_ms?: number | null;
-  error_code?: string | null;
+    success: boolean;
+    message: string;
+    response_time_ms?: (number | null);
+    error_code?: (string | null);
 };
+

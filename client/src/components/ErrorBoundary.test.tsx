@@ -1,3 +1,4 @@
+import React from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -8,7 +9,7 @@ beforeEach(() => {
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 
-function ThrowingComponent({ message }: { message?: string }) {
+function ThrowingComponent({ message }: { message?: string }): React.ReactNode {
   throw new Error(message ?? 'test render error');
 }
 

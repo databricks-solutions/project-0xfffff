@@ -6,7 +6,7 @@ import { useWorkshopContext } from '@/context/WorkshopContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { WorkshopsService } from '@/client';
+import { DiscoveryService } from '@/client';
 import { AlertCircle, CheckCircle, Clock, Users, UserCheck, Settings, Play, Brain, Eye, ChevronRight } from 'lucide-react';
 import { useRubric } from '@/hooks/useWorkshopApi';
 
@@ -49,7 +49,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
     try {
       setIsStartingPhase(true);
       setPhaseError(null);
-      await WorkshopsService.beginDiscoveryPhaseWorkshopsWorkshopIdBeginDiscoveryPost(
+      await DiscoveryService.advanceToDiscoveryWorkshopsWorkshopIdAdvanceToDiscoveryPost(
         workshopId!
       );
       // Invalidate workshop query to trigger re-fetch of current phase
@@ -118,7 +118,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
       </Card>
     );
   }
-  
+
   const currentUser = user;
 
   const getRoleIcon = () => {
@@ -543,9 +543,13 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
             return false;
           })();
 
+          // Generate testid from step title (e.g., "Discovery Phase" -> "workflow-step-discovery")
+          const stepTestId = `workflow-step-${step.title.toLowerCase().replace(/\s+phase/i, '').replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}`;
+
           return (
             <button
               key={index}
+              data-testid={stepTestId}
               onClick={() => {
                 if (!isStartingPhase && step.accessible) {
                   step.action();

@@ -49,6 +49,7 @@ Use these exact spec names (case-sensitive):
 | Spec Name | Domain |
 |-----------|--------|
 | `ANNOTATION_SPEC` | Annotation system |
+| `ASSISTED_FACILITATION_SPEC` | Assisted facilitation & discovery |
 | `AUTHENTICATION_SPEC` | Auth & sessions |
 | `BUILD_AND_DEPLOY_SPEC` | Build & deployment |
 | `DATASETS_SPEC` | Trace datasets |
