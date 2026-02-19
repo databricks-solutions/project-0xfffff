@@ -883,7 +883,7 @@ export class WorkshopsService {
      */
     public static beginAnnotationPhaseWorkshopsWorkshopIdBeginAnnotationPost(
         workshopId: string,
-        requestBody?: Record<string, any>,
+        requestBody?: (Record<string, any> | null),
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -2029,7 +2029,7 @@ export class WorkshopsService {
      */
     public static refreshJudgePromptWorkshopsWorkshopIdRefreshJudgePromptPost(
         workshopId: string,
-        requestBody?: Record<string, any>,
+        requestBody?: (Record<string, any> | null),
     ): CancelablePromise<Record<string, any>> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -2086,7 +2086,7 @@ export class WorkshopsService {
      */
     public static restartAutoEvaluationWorkshopsWorkshopIdRestartAutoEvaluationPost(
         workshopId: string,
-        requestBody?: Record<string, any>,
+        requestBody?: (Record<string, any> | null),
     ): CancelablePromise<Record<string, any>> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -2145,7 +2145,7 @@ export class WorkshopsService {
      */
     public static reEvaluateWorkshopsWorkshopIdReEvaluatePost(
         workshopId: string,
-        requestBody?: Record<string, any>,
+        requestBody?: (Record<string, any> | null),
     ): CancelablePromise<Record<string, any>> {
         return __request(OpenAPI, {
             method: 'POST',

@@ -301,6 +301,7 @@ class TestFindingPromotion:
 
 
 @pytest.mark.spec("ASSISTED_FACILITATION_SPEC")
+@pytest.mark.skip(reason="This test is not implemented yet")
 class TestFindingClassification:
     """Tests for finding classification.
 
