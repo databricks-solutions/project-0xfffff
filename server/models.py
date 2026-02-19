@@ -653,3 +653,66 @@ class CustomLLMProviderTestResult(BaseModel):
     message: str
     response_time_ms: int | None = None
     error_code: str | None = None
+
+
+# Discovery Feedback & Analysis Models (Step 2)
+
+
+class FeedbackLabel(StrEnum):
+    GOOD = "good"
+    BAD = "bad"
+
+
+class AnalysisTemplate(StrEnum):
+    EVALUATION_CRITERIA = "evaluation_criteria"
+    THEMES_PATTERNS = "themes_patterns"
+
+
+class Finding(BaseModel):
+    """A single finding from the analysis (criterion or theme)."""
+
+    text: str
+    evidence_trace_ids: list[str] = Field(default_factory=list)
+    priority: str = "medium"  # 'high' | 'medium' | 'low'
+
+
+class DisagreementAnalysis(BaseModel):
+    """Analysis of a disagreement between reviewers on a trace."""
+
+    trace_id: str
+    summary: str
+    underlying_theme: str
+    followup_questions: list[str] = Field(default_factory=list)
+    facilitator_suggestions: list[str] = Field(default_factory=list)
+
+
+class DistillationOutput(BaseModel):
+    """Structured output from the LLM distillation step."""
+
+    findings: list[Finding] = Field(default_factory=list)
+    high_priority_disagreements: list[DisagreementAnalysis] = Field(default_factory=list)
+    medium_priority_disagreements: list[DisagreementAnalysis] = Field(default_factory=list)
+    lower_priority_disagreements: list[DisagreementAnalysis] = Field(default_factory=list)
+    summary: str = ""
+
+
+class DiscoveryAnalysisResponse(BaseModel):
+    """Full analysis record returned from the API."""
+
+    id: str
+    workshop_id: str
+    template_used: str
+    analysis_data: str
+    findings: list[dict[str, Any]]
+    disagreements: dict[str, list[dict[str, Any]]]
+    participant_count: int
+    model_used: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class AnalyzeDiscoveryRequest(BaseModel):
+    """Request model for triggering discovery analysis."""
+
+    template: AnalysisTemplate = Field(default=AnalysisTemplate.EVALUATION_CRITERIA)
+    model: str = Field(default="databricks-claude-sonnet-4-5", description="Model endpoint name")

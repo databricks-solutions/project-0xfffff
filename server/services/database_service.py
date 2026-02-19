@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 from server.database import (
     AnnotationDB,
     DatabricksTokenDB,
+    DiscoveryAnalysisDB,
+    DiscoveryFeedbackDB,
     DiscoveryFindingDB,
     FacilitatorConfigDB,
     JudgeEvaluationDB,
@@ -3767,3 +3769,95 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
             self.db.refresh(config)
 
         return config
+
+    # =========================================================================
+    # Discovery Feedback & Analysis operations (Step 2)
+    # =========================================================================
+
+    def get_discovery_feedback(
+        self,
+        workshop_id: str,
+        user_id: str | None = None,
+        trace_id: str | None = None,
+    ) -> list[DiscoveryFeedbackDB]:
+        """Get discovery feedback with optional filters.
+
+        Args:
+            workshop_id: Workshop ID (required)
+            user_id: Optional filter by user
+            trace_id: Optional filter by trace
+
+        Returns:
+            List of DiscoveryFeedbackDB records
+        """
+        query = self.db.query(DiscoveryFeedbackDB).filter(
+            DiscoveryFeedbackDB.workshop_id == workshop_id
+        )
+        if user_id:
+            query = query.filter(DiscoveryFeedbackDB.user_id == user_id)
+        if trace_id:
+            query = query.filter(DiscoveryFeedbackDB.trace_id == trace_id)
+        return query.order_by(DiscoveryFeedbackDB.created_at).all()
+
+    def save_discovery_analysis(
+        self,
+        workshop_id: str,
+        template_used: str,
+        analysis_data: str,
+        findings: list[dict],
+        disagreements: dict[str, list[dict]],
+        participant_count: int,
+        model_used: str,
+    ) -> DiscoveryAnalysisDB:
+        """Save a new discovery analysis record.
+
+        Each analysis run creates a new record (history preserved).
+
+        Returns:
+            The created DiscoveryAnalysisDB record
+        """
+        analysis = DiscoveryAnalysisDB(
+            id=str(uuid.uuid4()),
+            workshop_id=workshop_id,
+            template_used=template_used,
+            analysis_data=analysis_data,
+            findings=findings,
+            disagreements=disagreements,
+            participant_count=participant_count,
+            model_used=model_used,
+        )
+        self.db.add(analysis)
+        self.db.commit()
+        self.db.refresh(analysis)
+        return analysis
+
+    def get_discovery_analyses(
+        self,
+        workshop_id: str,
+        template: str | None = None,
+    ) -> list[DiscoveryAnalysisDB]:
+        """List analyses for a workshop, newest first.
+
+        Args:
+            workshop_id: Workshop ID
+            template: Optional filter by template_used
+
+        Returns:
+            List of DiscoveryAnalysisDB records ordered by created_at desc
+        """
+        query = self.db.query(DiscoveryAnalysisDB).filter(
+            DiscoveryAnalysisDB.workshop_id == workshop_id
+        )
+        if template:
+            query = query.filter(DiscoveryAnalysisDB.template_used == template)
+        return query.order_by(DiscoveryAnalysisDB.created_at.desc()).all()
+
+    def get_discovery_analysis(self, analysis_id: str) -> DiscoveryAnalysisDB | None:
+        """Get a single discovery analysis by ID.
+
+        Returns:
+            DiscoveryAnalysisDB or None
+        """
+        return self.db.query(DiscoveryAnalysisDB).filter(
+            DiscoveryAnalysisDB.id == analysis_id
+        ).first()

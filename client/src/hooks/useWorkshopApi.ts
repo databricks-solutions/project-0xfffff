@@ -33,6 +33,7 @@ const QUERY_KEYS = {
   annotations: (workshopId: string, userId?: string) => ['annotations', workshopId, userId],
   irr: (workshopId: string) => ['irr', workshopId],
   mlflowConfig: (workshopId: string) => ['mlflowConfig', workshopId],
+  discoveryAnalyses: (workshopId: string) => ['discovery-analyses', workshopId],
 };
 
 // Helper function to invalidate all workshop-related queries
@@ -781,6 +782,81 @@ export function usePreviewJsonPath(workshopId: string) {
         throw new Error(error.detail || 'Failed to preview JSONPath');
       }
       return response.json();
+    },
+  });
+}
+
+// Discovery Analysis hooks (Step 2)
+
+export interface DiscoveryAnalysis {
+  id: string;
+  workshop_id: string;
+  template_used: string;
+  analysis_data: string;
+  findings: Array<{ text: string; evidence_trace_ids: string[]; priority: string }>;
+  disagreements: {
+    high: Array<{
+      trace_id: string;
+      summary: string;
+      underlying_theme: string;
+      followup_questions: string[];
+      facilitator_suggestions: string[];
+    }>;
+    medium: Array<{
+      trace_id: string;
+      summary: string;
+      underlying_theme: string;
+      followup_questions: string[];
+      facilitator_suggestions: string[];
+    }>;
+    lower: Array<{
+      trace_id: string;
+      summary: string;
+      underlying_theme: string;
+      followup_questions: string[];
+      facilitator_suggestions: string[];
+    }>;
+  };
+  participant_count: number;
+  model_used: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export function useDiscoveryAnalyses(workshopId: string, template?: string) {
+  return useQuery<DiscoveryAnalysis[]>({
+    queryKey: [...QUERY_KEYS.discoveryAnalyses(workshopId), template],
+    queryFn: async () => {
+      const params = template ? `?template=${encodeURIComponent(template)}` : '';
+      const response = await fetch(`/workshops/${workshopId}/discovery-analysis${params}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch discovery analyses');
+      }
+      return response.json();
+    },
+    enabled: !!workshopId,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useRunDiscoveryAnalysis(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation<DiscoveryAnalysis, Error, { template: string; model: string }>({
+    mutationFn: async ({ template, model }) => {
+      const response = await fetch(`/workshops/${workshopId}/analyze-discovery`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ template, model }),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Analysis failed' }));
+        throw new Error(error.detail || 'Analysis failed');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.discoveryAnalyses(workshopId) });
     },
   });
 }

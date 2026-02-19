@@ -134,6 +134,7 @@ from sqlalchemy.exc import OperationalError
 
 from server.database import WorkshopDB, get_db
 from server.models import (
+    AnalyzeDiscoveryRequest,
     Annotation,
     AnnotationCreate,
     DiscoveryFinding,
@@ -3163,6 +3164,114 @@ async def is_user_discovery_complete(workshop_id: str, user_id: str, db: Session
         "user_name": user.name,
         "user_email": user.email,
         "discovery_complete": is_complete,
+    }
+
+
+# =========================================================================
+# Discovery Analysis endpoints (Step 2)
+# =========================================================================
+
+
+@router.post("/{workshop_id}/analyze-discovery")
+async def analyze_discovery(
+    workshop_id: str,
+    request: AnalyzeDiscoveryRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Trigger AI analysis of discovery feedback.
+
+    Aggregates feedback by trace, detects disagreements deterministically,
+    and calls an LLM to distill findings.
+    """
+    from server.services.databricks_service import DatabricksService
+    from server.services.discovery_analysis_service import DiscoveryAnalysisService
+
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    try:
+        databricks_service = DatabricksService(
+            workshop_id=workshop_id,
+            db_service=db_service,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Databricks configuration required: {e!s}",
+        ) from e
+
+    analysis_service = DiscoveryAnalysisService(db_service, databricks_service)
+
+    try:
+        result = analysis_service.run_analysis(
+            workshop_id=workshop_id,
+            template=request.template,
+            model=request.model,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.error(f"Discovery analysis failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {e!s}") from e
+
+    return result
+
+
+@router.get("/{workshop_id}/discovery-analysis")
+async def list_discovery_analyses(
+    workshop_id: str,
+    template: str | None = None,
+    db: Session = Depends(get_db),
+) -> list[dict[str, Any]]:
+    """List discovery analyses for a workshop (newest first)."""
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    records = db_service.get_discovery_analyses(workshop_id, template=template)
+    return [
+        {
+            "id": r.id,
+            "workshop_id": r.workshop_id,
+            "template_used": r.template_used,
+            "analysis_data": r.analysis_data,
+            "findings": r.findings,
+            "disagreements": r.disagreements,
+            "participant_count": r.participant_count,
+            "model_used": r.model_used,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+        }
+        for r in records
+    ]
+
+
+@router.get("/{workshop_id}/discovery-analysis/{analysis_id}")
+async def get_discovery_analysis(
+    workshop_id: str,
+    analysis_id: str,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Get a single discovery analysis by ID."""
+    db_service = DatabaseService(db)
+    record = db_service.get_discovery_analysis(analysis_id)
+    if not record or record.workshop_id != workshop_id:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+
+    return {
+        "id": record.id,
+        "workshop_id": record.workshop_id,
+        "template_used": record.template_used,
+        "analysis_data": record.analysis_data,
+        "findings": record.findings,
+        "disagreements": record.disagreements,
+        "participant_count": record.participant_count,
+        "model_used": record.model_used,
+        "created_at": record.created_at.isoformat() if record.created_at else None,
+        "updated_at": record.updated_at.isoformat() if record.updated_at else None,
     }
 
 

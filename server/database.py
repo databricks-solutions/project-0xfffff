@@ -186,6 +186,8 @@ class WorkshopDB(Base):
         "CustomLLMProviderConfigDB", back_populates="workshop", uselist=False, cascade="all, delete-orphan"
     )
     participant_notes = relationship("ParticipantNoteDB", back_populates="workshop", cascade="all, delete-orphan")
+    discovery_feedback = relationship("DiscoveryFeedbackDB", back_populates="workshop", cascade="all, delete-orphan")
+    discovery_analyses = relationship("DiscoveryAnalysisDB", back_populates="workshop", cascade="all, delete-orphan")
 
 
 class TraceDB(Base):
@@ -244,6 +246,46 @@ class UserDiscoveryCompletionDB(Base):
     # Relationships
     workshop = relationship("WorkshopDB", back_populates="user_discovery_completions")
     user = relationship("UserDB")
+
+
+class DiscoveryFeedbackDB(Base):
+    """Database model for structured discovery feedback (good/bad + comments)."""
+
+    __tablename__ = "discovery_feedback"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    trace_id = Column(String, ForeignKey("traces.id"), nullable=False)
+    user_id = Column(String, nullable=False)
+    feedback_label = Column(String, nullable=False)  # 'good' | 'bad'
+    comment = Column(Text, nullable=False)
+    followup_qna = Column(JSON, default=list)  # [{"question": "...", "answer": "..."}, ...]
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    # Relationships
+    workshop = relationship("WorkshopDB", back_populates="discovery_feedback")
+    trace = relationship("TraceDB")
+
+
+class DiscoveryAnalysisDB(Base):
+    """Database model for AI-powered discovery analysis results."""
+
+    __tablename__ = "discovery_analysis"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    template_used = Column(String, nullable=False)  # 'evaluation_criteria' | 'themes_patterns'
+    analysis_data = Column(Text, nullable=False)  # Full markdown analysis from LLM
+    findings = Column(JSON, nullable=False)  # [{text, evidence_trace_ids, priority}]
+    disagreements = Column(JSON, nullable=False)  # {high: [...], medium: [...], lower: [...]}
+    participant_count = Column(Integer, nullable=False)
+    model_used = Column(String, nullable=False)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    # Relationships
+    workshop = relationship("WorkshopDB", back_populates="discovery_analyses")
 
 
 class RubricDB(Base):

@@ -18,6 +18,7 @@ import { useUser, useRoleCheck } from '@/context/UserContext';
 import { useFacilitatorFindings, useTraces, useAllTraces } from '@/hooks/useWorkshopApi';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { DiscoveryAnalysisTab } from '@/components/DiscoveryAnalysisTab';
 
 interface FindingsReviewPageProps {
   onBack?: () => void;
@@ -425,6 +426,7 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
             <TabsTrigger value="by-finding">All Findings</TabsTrigger>
             <TabsTrigger value="by-trace">By Trace</TabsTrigger>
             <TabsTrigger value="by-user">By User</TabsTrigger>
+            <TabsTrigger value="analysis">Analysis</TabsTrigger>
           </TabsList>
 
           {/* All Findings View */}
@@ -600,6 +602,11 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Analysis View */}
+          <TabsContent value="analysis">
+            <DiscoveryAnalysisTab workshopId={workshopId!} />
           </TabsContent>
         </Tabs>
       </div>
