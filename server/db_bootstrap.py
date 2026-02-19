@@ -103,6 +103,7 @@ def _list_postgres_tables(database_url: str) -> list[str]:
     except Exception as e:
         print(f"⚠️ Could not list PostgreSQL tables: {e}")
         import traceback
+
         traceback.print_exc()
         return []
 
@@ -231,16 +232,12 @@ def _widen_alembic_version_column(database_url: str) -> None:
             # Try to widen in the app schema
             conn.execute(
                 text(
-                    f'ALTER TABLE IF EXISTS "{schema_name}".alembic_version '
-                    f"ALTER COLUMN version_num TYPE VARCHAR(128)"
+                    f'ALTER TABLE IF EXISTS "{schema_name}".alembic_version ALTER COLUMN version_num TYPE VARCHAR(128)'
                 )
             )
             # Also try public schema in case alembic_version landed there
             conn.execute(
-                text(
-                    "ALTER TABLE IF EXISTS public.alembic_version "
-                    "ALTER COLUMN version_num TYPE VARCHAR(128)"
-                )
+                text("ALTER TABLE IF EXISTS public.alembic_version ALTER COLUMN version_num TYPE VARCHAR(128)")
             )
             conn.commit()
             print("✅ Widened alembic_version.version_num to VARCHAR(128)")
@@ -331,10 +328,7 @@ def _bootstrap_if_missing_postgres(plan: BootstrapPlan) -> None:
         if "already exists" in error_str or "duplicatetable" in error_str or "stringdataright" in error_str:
             # Tables already exist (listing failed earlier) — stamp to head
             # since Base.metadata.create_all creates the full latest schema.
-            print(
-                "⚠️  Tables already exist (listing may have failed earlier). "
-                "Stamping Alembic to head..."
-            )
+            print("⚠️  Tables already exist (listing may have failed earlier). Stamping Alembic to head...")
             try:
                 _run_alembic_stamp_baseline(plan.database_url, revision="head")
                 print("✅ Recovery successful — stamped to head")
@@ -395,10 +389,7 @@ def _bootstrap_full_postgres(plan: BootstrapPlan) -> None:
         except Exception as e:
             error_str = str(e).lower()
             if "already exists" in error_str or "duplicatetable" in error_str or "stringdataright" in error_str:
-                print(
-                    "⚠️  Tables already exist (listing may have failed). "
-                    "Stamping to head..."
-                )
+                print("⚠️  Tables already exist (listing may have failed). Stamping to head...")
                 _run_alembic_stamp_baseline(plan.database_url, revision="head")
                 print("✅ Recovery successful — stamped to head!")
             else:
@@ -507,7 +498,9 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="Time to wait for inter-process lock (defaults to DB_BOOTSTRAP_LOCK_TIMEOUT_S or 300).",
     )
 
-    p_if_missing = sub.add_parser("bootstrap-if-missing", help="Create DB via migrations only when DB is missing/empty.")
+    p_if_missing = sub.add_parser(
+        "bootstrap-if-missing", help="Create DB via migrations only when DB is missing/empty."
+    )
     p_if_missing.add_argument(
         "--database-url", default=None, help="Override DATABASE_URL (otherwise uses env/default)."
     )

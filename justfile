@@ -310,6 +310,11 @@ ui-lint: openapi
 lint-vulture:
   uv run vulture {{server-dir}}/ vulture_whitelist.py --min-confidence 80
 
+# Run full ruff lint (uses pyproject.toml config)
+[group('dev')]
+lint-ruff *args:
+  uv run ruff check {{server-dir}}/ {{args}}
+
 # Detect dead Python code with ruff F4xx rules
 [group('dev')]
 lint-ruff-deadcode:

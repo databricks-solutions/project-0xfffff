@@ -61,14 +61,17 @@ engine = create_engine_for_backend(DATABASE_BACKEND)
 # This listener fires after successful commits and notifies the rescue module
 # Only applies to SQLite backend
 if DATABASE_BACKEND == DatabaseBackend.SQLITE:
+
     @event.listens_for(engine, "commit")
     def on_commit(conn):
         """Record write operations for SQLite rescue backup triggering."""
         try:
             from server.sqlite_rescue import record_write_operation
+
             record_write_operation()
         except ImportError:
             pass  # sqlite_rescue not available
+
 
 # Create session factory with better session management
 SessionLocal = sessionmaker(
@@ -630,6 +633,7 @@ def _reset_connection_pool() -> None:
     if DATABASE_BACKEND == DatabaseBackend.POSTGRESQL:
         try:
             from .db_config import get_token_manager
+
             get_token_manager().force_refresh()
             logger.info("Connection pool reset and OAuth token marked for refresh")
         except Exception as e:
@@ -662,6 +666,7 @@ def get_db():
             # Quick connectivity check on PostgreSQL to surface stale connections early
             if DATABASE_BACKEND == DatabaseBackend.POSTGRESQL:
                 from sqlalchemy import text
+
                 db.execute(text("SELECT 1"))
             break  # Connection succeeded
         except Exception as e:
@@ -674,9 +679,11 @@ def get_db():
             if _is_connection_error(e) and attempt < max_attempts - 1:
                 backoff = 0.5 * (attempt + 1)  # 0.5s, 1.0s
                 logger.warning(
-                    "Database connection failed (attempt %d/%d), "
-                    "resetting pool and retrying in %.1fs: %s",
-                    attempt + 1, max_attempts, backoff, e,
+                    "Database connection failed (attempt %d/%d), resetting pool and retrying in %.1fs: %s",
+                    attempt + 1,
+                    max_attempts,
+                    backoff,
+                    e,
                 )
                 _reset_connection_pool()
                 _time.sleep(backoff)
@@ -703,7 +710,7 @@ def create_tables():
     from .db_config import get_schema_name
 
     try:
-        print('🔧 Creating database tables...')
+        print("🔧 Creating database tables...")
 
         # For PostgreSQL/Lakebase, create schema first if needed
         if DATABASE_BACKEND == DatabaseBackend.POSTGRESQL:
@@ -711,16 +718,17 @@ def create_tables():
             pg_user = os.getenv("PGUSER", "")
             if schema_name:
                 from sqlalchemy import text
+
                 with engine.connect() as conn:
                     conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}"'))
                     if pg_user:
                         conn.execute(text(f'GRANT ALL PRIVILEGES ON SCHEMA "{schema_name}" TO "{pg_user}"'))
                     conn.commit()
-                    print(f'✅ Created/verified schema: {schema_name}')
+                    print(f"✅ Created/verified schema: {schema_name}")
 
         # Use checkfirst=True to avoid errors if tables already exist
         Base.metadata.create_all(bind=engine, checkfirst=True)
-        print('✅ Database tables created successfully')
+        print("✅ Database tables created successfully")
 
         # Grant privileges on all tables to PGUSER (PostgreSQL only)
         if DATABASE_BACKEND == DatabaseBackend.POSTGRESQL:
@@ -729,33 +737,39 @@ def create_tables():
             if schema_name and pg_user:
                 try:
                     from sqlalchemy import text
+
                     with engine.connect() as conn:
-                        conn.execute(text(f'GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA "{schema_name}" TO "{pg_user}"'))
-                        conn.execute(text(f'GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA "{schema_name}" TO "{pg_user}"'))
+                        conn.execute(
+                            text(f'GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA "{schema_name}" TO "{pg_user}"')
+                        )
+                        conn.execute(
+                            text(f'GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA "{schema_name}" TO "{pg_user}"')
+                        )
                         conn.commit()
-                        print(f'✅ Privileges granted to {pg_user} on schema {schema_name}')
+                        print(f"✅ Privileges granted to {pg_user} on schema {schema_name}")
                 except Exception as grant_err:
-                    print(f'ℹ️ Privilege grant skipped: {grant_err}')
+                    print(f"ℹ️ Privilege grant skipped: {grant_err}")
     except Exception as e:
         # Handle case where tables already exist (common in production)
         error_msg = str(e).lower()
-        if 'already exists' in error_msg or 'table' in error_msg and 'exists' in error_msg:
-            print('ℹ️ Some tables already exist, continuing with schema updates...')
+        if "already exists" in error_msg or ("table" in error_msg and "exists" in error_msg):
+            print("ℹ️ Some tables already exist, continuing with schema updates...")
         else:
-            print(f'❌ Error creating database tables: {e}')
+            print(f"❌ Error creating database tables: {e}")
             raise e
 
     # Enable WAL mode for better SQLite concurrency (only for SQLite)
     if DATABASE_BACKEND == DatabaseBackend.SQLITE:
         try:
             from sqlalchemy import text
+
             with engine.connect() as conn:
-                conn.execute(text('PRAGMA journal_mode=WAL'))
-                conn.execute(text('PRAGMA busy_timeout=60000'))  # 60 second busy timeout
+                conn.execute(text("PRAGMA journal_mode=WAL"))
+                conn.execute(text("PRAGMA busy_timeout=60000"))  # 60 second busy timeout
                 conn.commit()
-                print('✅ SQLite WAL mode enabled for better concurrency')
+                print("✅ SQLite WAL mode enabled for better concurrency")
         except Exception as e:
-            print(f'ℹ️ Could not enable WAL mode (non-critical): {e}')
+            print(f"ℹ️ Could not enable WAL mode (non-critical): {e}")
 
     # Update schema for existing databases
     _apply_schema_updates()
@@ -776,92 +790,115 @@ def _apply_schema_updates():
             try:
                 # Add new columns to judge_prompts table if they don't exist
                 if is_postgres:
-                    conn.execute(text("ALTER TABLE judge_prompts ADD COLUMN IF NOT EXISTS model_name VARCHAR DEFAULT 'demo'"))
-                    conn.execute(text('ALTER TABLE judge_prompts ADD COLUMN IF NOT EXISTS model_parameters JSON'))
+                    conn.execute(
+                        text("ALTER TABLE judge_prompts ADD COLUMN IF NOT EXISTS model_name VARCHAR DEFAULT 'demo'")
+                    )
+                    conn.execute(text("ALTER TABLE judge_prompts ADD COLUMN IF NOT EXISTS model_parameters JSON"))
                 else:
                     conn.execute(text("ALTER TABLE judge_prompts ADD COLUMN model_name VARCHAR DEFAULT 'demo'"))
-                    conn.execute(text('ALTER TABLE judge_prompts ADD COLUMN model_parameters JSON'))
+                    conn.execute(text("ALTER TABLE judge_prompts ADD COLUMN model_parameters JSON"))
                 conn.commit()
-                print('✅ Database schema updated for judge_prompts')
+                print("✅ Database schema updated for judge_prompts")
             except Exception as e:
                 # Columns already exist or table doesn't exist yet
-                print(f'ℹ️ judge_prompts schema update skipped (columns may already exist): {e}')
+                print(f"ℹ️ judge_prompts schema update skipped (columns may already exist): {e}")
 
             try:
                 # Add ratings column to annotations table for multiple question support
                 if is_postgres:
-                    conn.execute(text('ALTER TABLE annotations ADD COLUMN IF NOT EXISTS ratings JSON'))
+                    conn.execute(text("ALTER TABLE annotations ADD COLUMN IF NOT EXISTS ratings JSON"))
                 else:
-                    conn.execute(text('ALTER TABLE annotations ADD COLUMN ratings JSON'))
+                    conn.execute(text("ALTER TABLE annotations ADD COLUMN ratings JSON"))
                 conn.commit()
-                print('✅ Database schema updated for annotations (added ratings column)')
+                print("✅ Database schema updated for annotations (added ratings column)")
             except Exception as e:
-                print(f'ℹ️ annotations schema update skipped (ratings column may already exist): {e}')
+                print(f"ℹ️ annotations schema update skipped (ratings column may already exist): {e}")
 
             try:
                 # Add include_in_alignment column to traces table for alignment filtering
                 if is_postgres:
-                    conn.execute(text('ALTER TABLE traces ADD COLUMN IF NOT EXISTS include_in_alignment BOOLEAN DEFAULT TRUE'))
+                    conn.execute(
+                        text("ALTER TABLE traces ADD COLUMN IF NOT EXISTS include_in_alignment BOOLEAN DEFAULT TRUE")
+                    )
                 else:
-                    conn.execute(text('ALTER TABLE traces ADD COLUMN include_in_alignment BOOLEAN DEFAULT 1'))
+                    conn.execute(text("ALTER TABLE traces ADD COLUMN include_in_alignment BOOLEAN DEFAULT 1"))
                 conn.commit()
-                print('✅ Database schema updated for traces (added include_in_alignment column)')
+                print("✅ Database schema updated for traces (added include_in_alignment column)")
             except Exception as e:
-                print(f'ℹ️ traces schema update skipped (include_in_alignment column may already exist): {e}')
+                print(f"ℹ️ traces schema update skipped (include_in_alignment column may already exist): {e}")
 
             try:
                 # Add sme_feedback column to traces table for concatenated SME feedback
                 if is_postgres:
-                    conn.execute(text('ALTER TABLE traces ADD COLUMN IF NOT EXISTS sme_feedback TEXT'))
+                    conn.execute(text("ALTER TABLE traces ADD COLUMN IF NOT EXISTS sme_feedback TEXT"))
                 else:
-                    conn.execute(text('ALTER TABLE traces ADD COLUMN sme_feedback TEXT'))
+                    conn.execute(text("ALTER TABLE traces ADD COLUMN sme_feedback TEXT"))
                 conn.commit()
-                print('✅ Database schema updated for traces (added sme_feedback column)')
+                print("✅ Database schema updated for traces (added sme_feedback column)")
             except Exception as e:
-                print(f'ℹ️ traces schema update skipped (sme_feedback column may already exist): {e}')
+                print(f"ℹ️ traces schema update skipped (sme_feedback column may already exist): {e}")
 
             try:
                 # Add unique constraint to discovery_findings to prevent duplicate entries
                 if is_postgres:
-                    conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS idx_discovery_findings_unique ON discovery_findings (workshop_id, trace_id, user_id)'))
+                    conn.execute(
+                        text(
+                            "CREATE UNIQUE INDEX IF NOT EXISTS idx_discovery_findings_unique ON discovery_findings (workshop_id, trace_id, user_id)"
+                        )
+                    )
                 else:
-                    conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS idx_discovery_findings_unique ON discovery_findings (workshop_id, trace_id, user_id)'))
+                    conn.execute(
+                        text(
+                            "CREATE UNIQUE INDEX IF NOT EXISTS idx_discovery_findings_unique ON discovery_findings (workshop_id, trace_id, user_id)"
+                        )
+                    )
                 conn.commit()
-                print('✅ Database schema updated: added unique constraint to discovery_findings')
+                print("✅ Database schema updated: added unique constraint to discovery_findings")
             except Exception as e:
-                print(f'ℹ️ discovery_findings unique constraint skipped (may already exist): {e}')
+                print(f"ℹ️ discovery_findings unique constraint skipped (may already exist): {e}")
 
             try:
                 # Add unique constraint to annotations to prevent duplicate entries (user_id + trace_id)
-                conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS idx_annotations_unique ON annotations (user_id, trace_id)'))
+                conn.execute(
+                    text("CREATE UNIQUE INDEX IF NOT EXISTS idx_annotations_unique ON annotations (user_id, trace_id)")
+                )
                 conn.commit()
-                print('✅ Database schema updated: added unique constraint to annotations')
+                print("✅ Database schema updated: added unique constraint to annotations")
             except Exception as e:
-                print(f'ℹ️ annotations unique constraint skipped (may already exist): {e}')
+                print(f"ℹ️ annotations unique constraint skipped (may already exist): {e}")
 
             try:
                 # Add unique constraint to judge_evaluations to prevent duplicate entries (prompt_id + trace_id)
-                conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS idx_judge_evaluations_unique ON judge_evaluations (prompt_id, trace_id)'))
+                conn.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS idx_judge_evaluations_unique ON judge_evaluations (prompt_id, trace_id)"
+                    )
+                )
                 conn.commit()
-                print('✅ Database schema updated: added unique constraint to judge_evaluations')
+                print("✅ Database schema updated: added unique constraint to judge_evaluations")
             except Exception as e:
-                print(f'ℹ️ judge_evaluations unique constraint skipped (may already exist): {e}')
+                print(f"ℹ️ judge_evaluations unique constraint skipped (may already exist): {e}")
 
             try:
                 # Add show_participant_notes column to workshops table
                 if is_postgres:
-                    conn.execute(text('ALTER TABLE workshops ADD COLUMN IF NOT EXISTS show_participant_notes BOOLEAN DEFAULT FALSE'))
+                    conn.execute(
+                        text(
+                            "ALTER TABLE workshops ADD COLUMN IF NOT EXISTS show_participant_notes BOOLEAN DEFAULT FALSE"
+                        )
+                    )
                 else:
-                    conn.execute(text('ALTER TABLE workshops ADD COLUMN show_participant_notes BOOLEAN DEFAULT 0'))
+                    conn.execute(text("ALTER TABLE workshops ADD COLUMN show_participant_notes BOOLEAN DEFAULT 0"))
                 conn.commit()
-                print('✅ Database schema updated for workshops (added show_participant_notes column)')
+                print("✅ Database schema updated for workshops (added show_participant_notes column)")
             except Exception as e:
-                print(f'ℹ️ workshops show_participant_notes column skipped (may already exist): {e}')
+                print(f"ℹ️ workshops show_participant_notes column skipped (may already exist): {e}")
 
             try:
                 # Create participant_notes table if it doesn't exist
                 if is_postgres:
-                    conn.execute(text('''
+                    conn.execute(
+                        text("""
                         CREATE TABLE IF NOT EXISTS participant_notes (
                             id VARCHAR PRIMARY KEY,
                             workshop_id VARCHAR NOT NULL REFERENCES workshops(id) ON DELETE CASCADE,
@@ -872,9 +909,11 @@ def _apply_schema_updates():
                             created_at TIMESTAMP DEFAULT NOW(),
                             updated_at TIMESTAMP DEFAULT NOW()
                         )
-                    '''))
+                    """)
+                    )
                 else:
-                    conn.execute(text('''
+                    conn.execute(
+                        text("""
                         CREATE TABLE IF NOT EXISTS participant_notes (
                             id VARCHAR PRIMARY KEY,
                             workshop_id VARCHAR NOT NULL REFERENCES workshops(id) ON DELETE CASCADE,
@@ -885,27 +924,38 @@ def _apply_schema_updates():
                             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                         )
-                    '''))
-                conn.execute(text('CREATE INDEX IF NOT EXISTS ix_participant_notes_workshop_user ON participant_notes (workshop_id, user_id)'))
+                    """)
+                    )
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_participant_notes_workshop_user ON participant_notes (workshop_id, user_id)"
+                    )
+                )
                 conn.commit()
-                print('✅ Database schema updated: created participant_notes table')
+                print("✅ Database schema updated: created participant_notes table")
             except Exception as e:
-                print(f'ℹ️ participant_notes table creation skipped (may already exist): {e}')
+                print(f"ℹ️ participant_notes table creation skipped (may already exist): {e}")
 
             try:
                 # Add phase column to participant_notes table
                 if is_postgres:
-                    conn.execute(text("ALTER TABLE participant_notes ADD COLUMN IF NOT EXISTS phase VARCHAR DEFAULT 'discovery' NOT NULL"))
+                    conn.execute(
+                        text(
+                            "ALTER TABLE participant_notes ADD COLUMN IF NOT EXISTS phase VARCHAR DEFAULT 'discovery' NOT NULL"
+                        )
+                    )
                 else:
-                    conn.execute(text("ALTER TABLE participant_notes ADD COLUMN phase VARCHAR DEFAULT 'discovery' NOT NULL"))
+                    conn.execute(
+                        text("ALTER TABLE participant_notes ADD COLUMN phase VARCHAR DEFAULT 'discovery' NOT NULL")
+                    )
                 conn.commit()
-                print('✅ Database schema updated for participant_notes (added phase column)')
+                print("✅ Database schema updated for participant_notes (added phase column)")
             except Exception as e:
-                print(f'ℹ️ participant_notes phase column skipped (may already exist): {e}')
+                print(f"ℹ️ participant_notes phase column skipped (may already exist): {e}")
 
     except Exception as e:
         # Schema updates are optional, don't fail if they error
-        print(f'ℹ️ Schema update error (non-critical): {e}')
+        print(f"ℹ️ Schema update error (non-critical): {e}")
 
 
 def drop_tables():

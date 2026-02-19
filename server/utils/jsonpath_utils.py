@@ -1,13 +1,12 @@
 """JSONPath utility functions for extracting values from trace data."""
 
 import json
-from typing import Optional, Tuple
 
 from jsonpath_ng import parse
 from jsonpath_ng.exceptions import JsonPathParserError
 
 
-def apply_jsonpath(data_str: str, jsonpath_expr: Optional[str]) -> Tuple[Optional[str], bool]:
+def apply_jsonpath(data_str: str, jsonpath_expr: str | None) -> tuple[str | None, bool]:
     """
     Apply JSONPath expression to a JSON string.
 
@@ -77,7 +76,7 @@ def apply_jsonpath(data_str: str, jsonpath_expr: Optional[str]) -> Tuple[Optiona
     return result, True
 
 
-def validate_jsonpath(jsonpath_expr: str) -> Tuple[bool, Optional[str]]:
+def validate_jsonpath(jsonpath_expr: str) -> tuple[bool, str | None]:
     """
     Validate a JSONPath expression.
 
@@ -96,6 +95,6 @@ def validate_jsonpath(jsonpath_expr: str) -> Tuple[bool, Optional[str]]:
         parse(jsonpath_expr.strip())
         return True, None
     except JsonPathParserError as e:
-        return False, f"Invalid JSONPath syntax: {str(e)}"
+        return False, f"Invalid JSONPath syntax: {e!s}"
     except Exception as e:
-        return False, f"JSONPath parsing error: {str(e)}"
+        return False, f"JSONPath parsing error: {e!s}"

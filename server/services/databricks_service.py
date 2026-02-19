@@ -6,7 +6,7 @@ This service handles calls to Databricks model serving endpoints using the OpenA
 import hashlib
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import requests
 from fastapi import HTTPException
@@ -29,9 +29,9 @@ class DatabricksService:
 
     def __init__(
         self,
-        workspace_url: Optional[str] = None,
-        token: Optional[str] = None,
-        workshop_id: Optional[str] = None,
+        workspace_url: str | None = None,
+        token: str | None = None,
+        workshop_id: str | None = None,
         db_service=None,
         init_sdk: bool = True,
     ):
@@ -103,17 +103,17 @@ class DatabricksService:
                 )
         except Exception as e:
             logger.error(f"Failed to initialize OpenAI client: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to initialize OpenAI client: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to initialize OpenAI client: {e!s}") from e
 
     def call_serving_endpoint(
         self,
         endpoint_name: str,
         prompt: str,
         temperature: float = 0.5,
-        max_tokens: Optional[int] = None,
-        model_parameters: Optional[Dict[str, Any]] = None,
-        response_format: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        max_tokens: int | None = None,
+        model_parameters: dict[str, Any] | None = None,
+        response_format: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Call a Databricks serving endpoint using chat completion format.
 
         Args:
@@ -128,13 +128,8 @@ class DatabricksService:
             Dictionary containing the response from the model
         """
 
-        def _do_call(request_params: Dict[str, Any]) -> Dict[str, Any]:
-            # Make the API call using OpenAI client
+        def _do_call(request_params: dict[str, Any]) -> dict[str, Any]:
             response = self.client.chat.completions.create(**request_params)
-
-            # Convert response to dictionary format
-            # Include the full message payload (content/refusal/tool_calls/etc.) so callers
-            # can robustly parse structured outputs across models/endpoints.
             try:
                 message_dump = response.choices[0].message.model_dump()
             except Exception:
@@ -142,8 +137,7 @@ class DatabricksService:
                     "content": response.choices[0].message.content,
                     "role": response.choices[0].message.role,
                 }
-
-            result = {
+            return {
                 "choices": [
                     {
                         "message": message_dump,
@@ -158,26 +152,18 @@ class DatabricksService:
                     "total_tokens": response.usage.total_tokens,
                 },
             }
-            return result
 
         try:
-            # Prepare messages in OpenAI format
             messages = [
                 {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": prompt},
             ]
-
-            # Prepare the request parameters
             request_params = {"messages": messages, "model": endpoint_name, "temperature": temperature}
 
-            # Add optional parameters
             if max_tokens:
                 request_params["max_tokens"] = max_tokens
-
             if model_parameters:
                 request_params.update(model_parameters)
-
-            # Structured outputs (Databricks Foundation Model APIs / OpenAI-compatible)
             if response_format:
                 request_params["response_format"] = response_format
 
@@ -187,7 +173,6 @@ class DatabricksService:
             try:
                 result = _do_call(request_params)
             except Exception as e:
-                # Backwards-compatible fallback for endpoints/models that don't support structured outputs.
                 if response_format:
                     logger.warning(
                         "Structured outputs request failed for endpoint=%s; retrying without response_format. Error: %s",
@@ -208,9 +193,9 @@ class DatabricksService:
             logger.error(f"Error calling serving endpoint {endpoint_name}: {e}")
             logger.error(f"Error type: {type(e)}")
             logger.error("Full traceback:", exc_info=True)
-            raise HTTPException(status_code=500, detail=f"Error calling serving endpoint: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error calling serving endpoint: {e!s}") from e
 
-    def list_serving_endpoints(self) -> List[Dict[str, Any]]:
+    def list_serving_endpoints(self) -> list[dict[str, Any]]:
         """List all available serving endpoints.
         Note: This method returns a placeholder since OpenAI client doesn't provide endpoint listing.
         You may need to implement this using direct HTTP calls to Databricks API.
@@ -237,9 +222,9 @@ class DatabricksService:
 
         except Exception as e:
             logger.error(f"Error listing endpoints: {e}")
-            raise HTTPException(status_code=500, detail=f"Error listing endpoints: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error listing endpoints: {e!s}") from e
 
-    def get_endpoint_info(self, endpoint_name: str) -> Dict[str, Any]:
+    def get_endpoint_info(self, endpoint_name: str) -> dict[str, Any]:
         """Get information about a specific serving endpoint.
         Note: This method returns placeholder info since OpenAI client doesn't provide endpoint details.
         You may need to implement this using direct HTTP calls to Databricks API.
@@ -269,9 +254,9 @@ class DatabricksService:
 
         except Exception as e:
             logger.error(f"Error getting endpoint info for {endpoint_name}: {e}")
-            raise HTTPException(status_code=500, detail=f"Error getting endpoint info: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error getting endpoint info: {e!s}") from e
 
-    def test_connection(self) -> Dict[str, Any]:
+    def test_connection(self) -> dict[str, Any]:
         """Test the connection to Databricks workspace.
 
         Returns:
@@ -279,12 +264,6 @@ class DatabricksService:
         """
         try:
             logger.info("Testing Databricks connection")
-
-            # TODO: this is a noop, actually handle connection testing?
-            # test_response = self.client.chat.completions.create(
-            #   messages=[{'role': 'user', 'content': 'Hello'}],
-            #   max_tokens=5,
-            # )
 
             return {
                 "status": "connected",
@@ -305,11 +284,11 @@ class DatabricksService:
     def call_chat_completion(
         self,
         endpoint_name: str,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         temperature: float = 0.5,
-        max_tokens: Optional[int] = None,
-        model_parameters: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        max_tokens: int | None = None,
+        model_parameters: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Call a Databricks serving endpoint using chat completion format with OpenAI client.
 
         Args:
@@ -373,15 +352,15 @@ class DatabricksService:
             logger.error(f"Error calling serving endpoint {endpoint_name}: {e}")
             logger.error(f"Error type: {type(e)}")
             logger.error("Full traceback:", exc_info=True)
-            raise HTTPException(status_code=500, detail=f"Error calling serving endpoint: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error calling serving endpoint: {e!s}") from e
 
     def call_serving_endpoint_direct(
         self,
         endpoint_name: str,
         prompt: str,
         temperature: float = 0.5,
-        max_tokens: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        max_tokens: int | None = None,
+    ) -> dict[str, Any]:
         """Call a Databricks serving endpoint directly via HTTP API.
         This bypasses the Databricks SDK to avoid authentication issues.
 
@@ -445,19 +424,19 @@ class DatabricksService:
 
         except requests.exceptions.RequestException as e:
             logger.error(f"HTTP request error calling endpoint {endpoint_name}: {e}")
-            raise HTTPException(status_code=500, detail=f"HTTP request error: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"HTTP request error: {e!s}") from e
         except Exception as e:
             logger.error(f"Unexpected error calling serving endpoint {endpoint_name}: {e}")
             logger.error(f"Error type: {type(e)}")
             logger.error("Full traceback:", exc_info=True)
-            raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Unexpected error: {e!s}") from e
 
 
 # Factory function to create Databricks service instance
 def create_databricks_service(
-    workspace_url: Optional[str] = None,
-    token: Optional[str] = None,
-    workshop_id: Optional[str] = None,
+    workspace_url: str | None = None,
+    token: str | None = None,
+    workshop_id: str | None = None,
     db_service=None,
 ) -> DatabricksService:
     """Create a Databricks service instance.

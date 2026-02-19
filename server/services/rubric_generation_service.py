@@ -7,11 +7,11 @@ rubric suggestions that facilitators can review and accept.
 
 import json
 import logging
-from typing import List, Dict, Any
+from typing import Any
 
+from server.models import RubricSuggestion
 from server.services.database_service import DatabaseService
 from server.services.databricks_service import DatabricksService
-from server.models import RubricSuggestion
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +62,8 @@ class RubricGenerationService:
         workshop_id: str,
         endpoint_name: str = "databricks-claude-sonnet-4-5",
         temperature: float = 0.3,
-        include_notes: bool = True
-    ) -> List[RubricSuggestion]:
+        include_notes: bool = True,
+    ) -> list[RubricSuggestion]:
         """
         Generate rubric suggestions from discovery feedback.
 
@@ -102,14 +102,14 @@ class RubricGenerationService:
                 endpoint_name=endpoint_name,
                 messages=[
                     {"role": "system", "content": RUBRIC_GENERATION_SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt}
+                    {"role": "user", "content": prompt},
                 ],
                 temperature=temperature,
-                max_tokens=2000
+                max_tokens=2000,
             )
         except Exception as e:
             logger.error(f"Failed to call Databricks endpoint: {e}")
-            raise Exception(f"Failed to generate suggestions: {str(e)}")
+            raise Exception(f"Failed to generate suggestions: {e!s}") from e
 
         # 4. Parse and validate response
         suggestions = self._parse_suggestions(response)
@@ -119,10 +119,7 @@ class RubricGenerationService:
         return validated_suggestions
 
     def _build_generation_prompt(
-        self,
-        findings: List[Dict[str, Any]],
-        notes: List[Dict[str, Any]],
-        workshop_id: str
+        self, findings: list[dict[str, Any]], notes: list[dict[str, Any]], workshop_id: str
     ) -> str:
         """
         Build the user prompt for rubric generation.
@@ -139,8 +136,8 @@ class RubricGenerationService:
         formatted_notes = self._format_notes(notes)
 
         # Get context information
-        trace_count = len(set(f.get('trace_id') for f in findings if f.get('trace_id')))
-        participant_count = len(set(f.get('user_id') for f in findings if f.get('user_id')))
+        trace_count = len(set(f.get("trace_id") for f in findings if f.get("trace_id")))
+        participant_count = len(set(f.get("user_id") for f in findings if f.get("user_id")))
 
         # Get workshop use case description
         use_case_section = ""
@@ -174,7 +171,7 @@ Task: Generate 3-5 evaluation criteria as a JSON array. Focus on the use case co
 
         return prompt
 
-    def _format_findings(self, findings: List[Dict[str, Any]]) -> str:
+    def _format_findings(self, findings: list[dict[str, Any]]) -> str:
         """
         Format findings grouped by trace for the prompt.
 
@@ -191,16 +188,20 @@ Task: Generate 3-5 evaluation criteria as a JSON array. Focus on the use case co
         by_trace = {}
         for finding in findings:
             # Handle both dict and object access
-            trace_id = finding.get('trace_id', 'unknown') if isinstance(finding, dict) else getattr(finding, 'trace_id', 'unknown')
+            trace_id = (
+                finding.get("trace_id", "unknown")
+                if isinstance(finding, dict)
+                else getattr(finding, "trace_id", "unknown")
+            )
             if trace_id not in by_trace:
                 by_trace[trace_id] = []
-            insight = finding.get('insight', '') if isinstance(finding, dict) else getattr(finding, 'insight', '')
+            insight = finding.get("insight", "") if isinstance(finding, dict) else getattr(finding, "insight", "")
             if insight:
                 by_trace[trace_id].append(insight)
 
         # Format with trace grouping (limit to avoid token overflow)
         formatted = []
-        for i, (trace_id, insights) in enumerate(list(by_trace.items())[:15], 1):  # Max 15 traces
+        for i, (_trace_id, insights) in enumerate(list(by_trace.items())[:15], 1):  # Max 15 traces
             if insights:
                 formatted.append(f"### Trace {i}")
                 for insight in insights[:5]:  # Max 5 insights per trace
@@ -209,7 +210,7 @@ Task: Generate 3-5 evaluation criteria as a JSON array. Focus on the use case co
 
         return "\n".join(formatted) if formatted else "(No findings available)"
 
-    def _format_notes(self, notes: List[Dict[str, Any]]) -> str:
+    def _format_notes(self, notes: list[dict[str, Any]]) -> str:
         """
         Format participant notes for the prompt.
 
@@ -227,18 +228,18 @@ Task: Generate 3-5 evaluation criteria as a JSON array. Focus on the use case co
         for note in notes[:15]:  # Max 15 notes
             # Handle both dict and object access
             if isinstance(note, dict):
-                user_name = note.get('user_name', note.get('user_id', 'Unknown'))
-                content = note.get('content', '')
+                user_name = note.get("user_name", note.get("user_id", "Unknown"))
+                content = note.get("content", "")
             else:
-                user_name = getattr(note, 'user_name', None) or getattr(note, 'user_id', 'Unknown')
-                content = getattr(note, 'content', '')
+                user_name = getattr(note, "user_name", None) or getattr(note, "user_id", "Unknown")
+                content = getattr(note, "content", "")
 
             if content:
                 formatted.append(f"[{user_name}]: {content}")
 
         return "\n".join(formatted) if formatted else "(No participant notes available)"
 
-    def _parse_suggestions(self, response: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _parse_suggestions(self, response: dict[str, Any]) -> list[dict[str, Any]]:
         """
         Parse AI response to extract rubric suggestions.
 
@@ -254,7 +255,7 @@ Task: Generate 3-5 evaluation criteria as a JSON array. Focus on the use case co
         try:
             # Extract content from response
             # Response format: {"choices": [{"message": {"content": "..."}}]}
-            content = response.get('choices', [{}])[0].get('message', {}).get('content', '')
+            content = response.get("choices", [{}])[0].get("message", {}).get("content", "")
 
             if not content:
                 logger.error("Empty response content")
@@ -279,9 +280,9 @@ Task: Generate 3-5 evaluation criteria as a JSON array. Focus on the use case co
         except Exception as e:
             logger.error(f"Failed to parse AI response: {e}")
             logger.error(f"Response content: {response}")
-            raise Exception(f"Failed to parse suggestions: {str(e)}")
+            raise Exception(f"Failed to parse suggestions: {e!s}") from e
 
-    def _extract_json_from_markdown(self, content: str) -> List[Dict[str, Any]]:
+    def _extract_json_from_markdown(self, content: str) -> list[dict[str, Any]]:
         """
         Extract JSON from markdown code blocks.
 
@@ -298,12 +299,12 @@ Task: Generate 3-5 evaluation criteria as a JSON array. Focus on the use case co
         import re
 
         # Pattern 1: ```json ... ```
-        pattern1 = r'```json\s*([\s\S]*?)\s*```'
+        pattern1 = r"```json\s*([\s\S]*?)\s*```"
         match = re.search(pattern1, content)
 
         if not match:
             # Pattern 2: ``` ... ```
-            pattern2 = r'```\s*([\s\S]*?)\s*```'
+            pattern2 = r"```\s*([\s\S]*?)\s*```"
             match = re.search(pattern2, content)
 
         if match:
@@ -313,7 +314,7 @@ Task: Generate 3-5 evaluation criteria as a JSON array. Focus on the use case co
         # If no code blocks found, try to parse the content as-is
         raise Exception("Could not extract JSON from markdown")
 
-    def _validate_suggestions(self, suggestions: List[Dict[str, Any]]) -> List[RubricSuggestion]:
+    def _validate_suggestions(self, suggestions: list[dict[str, Any]]) -> list[RubricSuggestion]:
         """
         Validate and sanitize AI-generated suggestions.
 
@@ -328,8 +329,8 @@ Task: Generate 3-5 evaluation criteria as a JSON array. Focus on the use case co
         for i, suggestion in enumerate(suggestions):
             try:
                 # Required fields
-                title = suggestion.get('title', '').strip()
-                description = suggestion.get('description', '').strip()
+                title = suggestion.get("title", "").strip()
+                description = suggestion.get("description", "").strip()
 
                 if not title or len(title) < 3:
                     logger.warning(f"Suggestion {i} has invalid title, skipping")
@@ -341,29 +342,29 @@ Task: Generate 3-5 evaluation criteria as a JSON array. Focus on the use case co
 
                 # Sanitize lengths
                 if len(title) > 100:
-                    title = title[:97] + '...'
+                    title = title[:97] + "..."
 
                 if len(description) > 1000:
-                    description = description[:997] + '...'
+                    description = description[:997] + "..."
 
                 # Optional fields with length limits
-                positive = suggestion.get('positive', '')
+                positive = suggestion.get("positive", "")
                 if positive and len(positive) > 500:
-                    positive = positive[:497] + '...'
+                    positive = positive[:497] + "..."
 
-                negative = suggestion.get('negative', '')
+                negative = suggestion.get("negative", "")
                 if negative and len(negative) > 500:
-                    negative = negative[:497] + '...'
+                    negative = negative[:497] + "..."
 
-                examples = suggestion.get('examples', '')
+                examples = suggestion.get("examples", "")
                 if examples and len(examples) > 500:
-                    examples = examples[:497] + '...'
+                    examples = examples[:497] + "..."
 
                 # Validate and sanitize judge type
-                judge_type = suggestion.get('judgeType', 'likert').lower()
-                if judge_type not in ['likert', 'binary', 'freeform']:
+                judge_type = suggestion.get("judgeType", "likert").lower()
+                if judge_type not in ["likert", "binary", "freeform"]:
                     logger.warning(f"Invalid judgeType '{judge_type}', defaulting to 'likert'")
-                    judge_type = 'likert'
+                    judge_type = "likert"
 
                 # Create validated suggestion
                 validated_suggestion = RubricSuggestion(
@@ -372,7 +373,7 @@ Task: Generate 3-5 evaluation criteria as a JSON array. Focus on the use case co
                     positive=positive if positive else None,
                     negative=negative if negative else None,
                     examples=examples if examples else None,
-                    judgeType=judge_type
+                    judgeType=judge_type,
                 )
 
                 validated.append(validated_suggestion)

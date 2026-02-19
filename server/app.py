@@ -70,6 +70,7 @@ async def lifespan(app: FastAPI):
     # Safety net: ensure tables exist even if Alembic bootstrap failed/skipped.
     # For SQLite the .db file may exist but be empty; for PG the schema may be missing.
     from server.database import Base, engine
+
     try:
         Base.metadata.create_all(bind=engine, checkfirst=True)
         print("✅ Database tables verified/created via SQLAlchemy metadata")
@@ -100,6 +101,7 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"⚠️  PostgreSQL schema creation failed: {e}")
             import traceback
+
             traceback.print_exc()
 
         try:
@@ -110,6 +112,7 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"⚠️  PostgreSQL table creation failed: {e}")
             import traceback
+
             traceback.print_exc()
 
         # Grant privileges on all tables in the schema to PGUSER
@@ -117,7 +120,9 @@ async def lifespan(app: FastAPI):
             if pg_user:
                 with engine.connect() as conn:
                     conn.execute(text(f'GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA "{schema_name}" TO "{pg_user}"'))
-                    conn.execute(text(f'GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA "{schema_name}" TO "{pg_user}"'))
+                    conn.execute(
+                        text(f'GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA "{schema_name}" TO "{pg_user}"')
+                    )
                     conn.commit()
                     print(f"✅ PostgreSQL privileges granted to '{pg_user}' on schema '{schema_name}'")
         except Exception as e:
@@ -169,15 +174,15 @@ class DatabaseErrorMiddleware(BaseHTTPMiddleware):
 
     # Substrings that indicate a retryable / transient database error
     _TRANSIENT_MARKERS = (
-        "database is locked",          # SQLite
-        "connection refused",           # PG serverless cold-start
-        "connection reset",             # PG dropped idle connection
-        "server closed the connection", # PG serverless idle timeout
-        "ssl connection has been closed", # PG SSL teardown
+        "database is locked",  # SQLite
+        "connection refused",  # PG serverless cold-start
+        "connection reset",  # PG dropped idle connection
+        "server closed the connection",  # PG serverless idle timeout
+        "ssl connection has been closed",  # PG SSL teardown
         "could not connect to server",  # PG unreachable
-        "connection timed out",         # PG timeout
-        "invalid authorization",        # PG Lakebase expired OAuth token
-        "connection is closed",         # PG stale pooled connection
+        "connection timed out",  # PG timeout
+        "invalid authorization",  # PG Lakebase expired OAuth token
+        "connection is closed",  # PG stale pooled connection
     )
 
     async def dispatch(self, request: Request, call_next):

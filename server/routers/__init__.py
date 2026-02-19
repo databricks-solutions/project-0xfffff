@@ -10,8 +10,8 @@ from server.routers.users import router as users_router
 from server.routers.workshops import router as workshops_router
 
 router = APIRouter()
-router.include_router(workshops_router, prefix='/workshops', tags=['workshops'])
-router.include_router(discovery_router, prefix='/workshops', tags=['discovery'])
-router.include_router(users_router, prefix='/users', tags=['users'])
-router.include_router(dbsql_export_router, tags=['dbsql-export'])
-router.include_router(databricks_router, prefix='/databricks', tags=['databricks'])
+router.include_router(workshops_router, prefix="/workshops", tags=["workshops"])
+router.include_router(discovery_router, prefix="/workshops", tags=["discovery"])
+router.include_router(users_router, prefix="/users", tags=["users"])
+router.include_router(dbsql_export_router, tags=["dbsql-export"])
+router.include_router(databricks_router, prefix="/databricks", tags=["databricks"])
