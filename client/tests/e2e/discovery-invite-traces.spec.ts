@@ -36,6 +36,7 @@ async function submitCompleteFeedback(
     });
   }
 }
+    `${API_
 
 test('discovery blocks until multiple participants complete; facilitator-driven phase with trace-based discovery', {
   tag: ['@spec:DISCOVERY_TRACE_ASSIGNMENT_SPEC'],
