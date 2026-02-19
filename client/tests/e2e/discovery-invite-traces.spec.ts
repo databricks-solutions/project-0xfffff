@@ -1,182 +1,85 @@
 import { test, expect } from '@playwright/test';
-import { loginAs, loginAsFacilitator } from '../lib/actions/auth';
-import { UserRole } from '../lib/types';
+import { TestScenario } from '../lib/scenario-builder';
+import { WorkshopPhase } from '../lib/types';
 
-// This repo doesn't include Node typings in the client TS config; keep `process.env` without adding deps.
 declare const process: { env: Record<string, string | undefined> };
 
 const API_URL = process.env.E2E_API_URL ?? 'http://127.0.0.1:8000';
 
-test.skip('discovery blocks until multiple participants complete; facilitator-driven phase with trace-based discovery', {
-  tag: ['@spec:DISCOVERY_TRACE_ASSIGNMENT_SPEC'],
-  timeout: 60_000,
-}, async ({
-  page,
-  browser,
-  request,
-}) => {
-  const runId = `${Date.now()}`;
-  const participantAEmail = `e2e-participant-a-${runId}@example.com`;
-  const participantAName = `E2E Participant A ${runId}`;
-  const participantBEmail = `e2e-participant-b-${runId}@example.com`;
-  const participantBName = `E2E Participant B ${runId}`;
-
-  // Facilitator login + workshop creation
-  await loginAsFacilitator(page);
-
-  // Fill required Use Case Description before creating
-  await page.locator('#description').fill('E2E test workshop for discovery trace assignment');
-
-  await Promise.all([
-    page.waitForResponse(
-      (resp) =>
-        resp.request().method() === 'POST' &&
-        resp.url().includes('/workshops') &&
-        resp.status() === 201,
-    ),
-    page.getByRole('button', { name: /Create Workshop/i }).click(),
-  ]);
-
-  await expect(page).toHaveURL(/\?workshop=[a-f0-9-]{36}/i);
-  const workshopId = new URL(page.url()).searchParams.get('workshop');
-  expect(workshopId, 'workshop id should be present in URL').toMatch(
-    /^[a-f0-9-]{36}$/i,
-  );
-
-  // Upload minimal traces directly via API (keeps the test stable vs Intake UI)
-  const uploadResp = await request.post(`${API_URL}/workshops/${workshopId}/traces`, {
-    headers: { 'Content-Type': 'application/json' },
-    data: [
-      {
-        input: `User question (${runId}): How do I reset my password?`,
-        output: `Assistant answer (${runId}): You can reset it from Settings > Security. If you are locked out, use the "Forgot password" link.`,
-        context: { source: 'e2e', runId },
-      },
-    ],
+/**
+ * Submit complete discovery feedback for a trace via API
+ * (label + comment + 3 follow-up Q&A pairs)
+ */
+async function submitCompleteFeedback(
+  page: import('@playwright/test').Page,
+  workshopId: string,
+  traceId: string,
+  userId: string,
+) {
+  await page.request.post(`${API_URL}/workshops/${workshopId}/discovery-feedback`, {
+    data: {
+      trace_id: traceId,
+      user_id: userId,
+      feedback_label: 'good',
+      comment: 'Clear but slightly verbose. Consider account recovery steps for locked-out users.',
+    },
   });
-  expect(uploadResp.ok(), 'trace upload should succeed').toBeTruthy();
 
-  // Start discovery with just 1 trace to keep UI interactions short
-  const beginResp = await request.post(
-    `${API_URL}/workshops/${workshopId}/begin-discovery?trace_limit=1`,
-  );
-  expect(beginResp.ok(), 'begin discovery should succeed').toBeTruthy();
-
-  // Add two participants through the UI
-  // Wait for the workshop page to fully settle after API calls
-  await page.reload();
-  await page.waitForLoadState('networkidle');
-  await page.getByRole('button', { name: /Invite Participants/i }).click({ timeout: 10000 });
-  await expect(page.getByText(/Add New User/i)).toBeVisible({ timeout: 10000 });
-
-  await page.locator('#email').fill(participantAEmail);
-  await page.locator('#name').fill(participantAName);
-  await page.getByRole('button', { name: /^Add User$/i }).click();
-  await expect(page.getByRole('cell', { name: participantAEmail, exact: true })).toBeVisible();
-
-  await page.locator('#email').fill(participantBEmail);
-  await page.locator('#name').fill(participantBName);
-  await page.getByRole('button', { name: /^Add User$/i }).click();
-  await expect(page.getByRole('cell', { name: participantBEmail, exact: true })).toBeVisible();
-
-  // Resolve participant IDs via API (needed for completion status checks)
-  let users: Array<{ id: string; email: string }> = [];
-  await expect
-    .poll(async () => {
-      const usersResp = await request.get(
-        `${API_URL}/users/?workshop_id=${workshopId}&role=participant`,
-      );
-      if (!usersResp.ok()) return 0;
-      users = (await usersResp.json()) as Array<{ id: string; email: string }>;
-      const a = users.some((u) => u.email === participantAEmail);
-      const b = users.some((u) => u.email === participantBEmail);
-      return a && b ? 2 : 0;
-    })
-    .toBe(2);
-
-  const participantA = users.find((u) => u.email === participantAEmail);
-  const participantB = users.find((u) => u.email === participantBEmail);
-  expect(participantA, 'participant A should exist in API').toBeTruthy();
-  expect(participantB, 'participant B should exist in API').toBeTruthy();
-
-  const submitAndCompleteDiscovery = async (email: string, userId: string) => {
-    const ctx = await browser.newContext();
-    const p = await ctx.newPage();
-
-    // Login as participant using the shared helper
-    await loginAs(p, {
-      id: userId,
-      email,
-      name: email.split('@')[0],
-      role: UserRole.PARTICIPANT,
-      workshop_id: workshopId!,
-    });
-
-    await expect(p.getByTestId('discovery-phase-title')).toBeVisible({ timeout: 20000 });
-
-    // Get trace IDs for API submission
-    const tracesResp = await p.request.get(`${API_URL}/workshops/${workshopId}/all-traces`);
-    const traces = (await tracesResp.json()) as Array<{ id: string }>;
-    const traceId = traces[0].id;
-
-    // Submit complete feedback via API (label + comment + 3 Q&A pairs)
-    const feedbackResp = await p.request.post(`${API_URL}/workshops/${workshopId}/discovery-feedback`, {
+  for (let q = 1; q <= 3; q++) {
+    await page.request.post(`${API_URL}/workshops/${workshopId}/submit-followup-answer`, {
       data: {
         trace_id: traceId,
         user_id: userId,
-        feedback_label: 'good',
-        comment: 'Clear but slightly verbose. Consider account recovery steps for locked-out users.',
+        question: `Follow-up question ${q}?`,
+        answer: `Follow-up answer ${q}.`,
       },
     });
-    expect(feedbackResp.ok(), 'discovery feedback should save').toBeTruthy();
+  }
+}
+    `${API_
 
-    for (let q = 1; q <= 3; q++) {
-      const answerResp = await p.request.post(`${API_URL}/workshops/${workshopId}/submit-followup-answer`, {
-        data: {
-          trace_id: traceId,
-          user_id: userId,
-          question: `Follow-up question ${q}?`,
-          answer: `Follow-up answer ${q}.`,
-        },
-      });
-      expect(answerResp.ok(), `follow-up answer ${q} should save`).toBeTruthy();
-    }
+test('discovery blocks until multiple participants complete; facilitator-driven phase with trace-based discovery', {
+  tag: ['@spec:DISCOVERY_TRACE_ASSIGNMENT_SPEC'],
+  timeout: 60_000,
+}, async ({ browser }) => {
+  const scenario = await TestScenario.create(browser)
+    .withWorkshop({ name: 'Discovery Trace Assignment' })
+    .withFacilitator()
+    .withParticipants(2)
+    .withTraces(1)
+    .inPhase(WorkshopPhase.DISCOVERY)
+    .withRealApi()
+    .build();
 
-    // Verify feedback has 3 Q&A pairs before reloading UI
-    await expect
-      .poll(async () => {
-        const fbResp = await p.request.get(
-          `${API_URL}/workshops/${workshopId}/discovery-feedback?user_id=${userId}`,
-        );
-        if (!fbResp.ok()) return 0;
-        const feedbacks = (await fbResp.json()) as Array<{ followup_qna?: Array<unknown> }>;
-        const fb = feedbacks.find((f: Record<string, unknown>) => f.trace_id === traceId) as
-          | { followup_qna?: Array<unknown> }
-          | undefined;
-        return fb?.followup_qna?.length ?? 0;
-      })
-      .toBeGreaterThanOrEqual(3);
+  const workshopId = scenario.workshop.id;
+  const traceId = scenario.traces[0].id;
+  const participantA = scenario.users.participant[0];
+  const participantB = scenario.users.participant[1];
 
-    // Reload to pick up completed feedback state
-    await p.reload();
-    await p.waitForLoadState('networkidle');
-    await expect(p.getByTestId('discovery-phase-title')).toBeVisible({ timeout: 20000 });
+  // --- Participant A completes discovery ---
+  const pageA = await scenario.newPageAs(participantA);
+  await expect(pageA.getByTestId('discovery-phase-title')).toBeVisible({ timeout: 20000 });
 
-    // Wait for "Complete Discovery" button (appears when all traces have completed feedback)
-    await expect(p.getByTestId('complete-discovery-phase-button')).toBeVisible({ timeout: 20000 });
-    await p.getByTestId('complete-discovery-phase-button').click();
+  // Submit complete feedback via API (label + comment + 3 Q&A pairs)
+  await submitCompleteFeedback(pageA, workshopId, traceId, participantA.id);
 
-    await ctx.close();
-  };
+  // Reload to pick up completed feedback state
+  await pageA.reload();
+  await pageA.waitForLoadState('networkidle');
+  await expect(pageA.getByTestId('discovery-phase-title')).toBeVisible({ timeout: 20000 });
 
-  // Only participant A completes discovery → status should be 1/2 and not all completed.
-  await submitAndCompleteDiscovery(participantAEmail, participantA!.id);
+  // Click "Complete Discovery" button (appears when all traces have completed feedback)
+  await expect(pageA.getByTestId('complete-discovery-phase-button')).toBeVisible({ timeout: 20000 });
+  await pageA.getByTestId('complete-discovery-phase-button').click();
 
+  // Verify status is 1/2 — not all completed yet
   await expect
     .poll(async () => {
-      const statusResp = await request.get(`${API_URL}/workshops/${workshopId}/discovery-completion-status`);
-      if (!statusResp.ok()) return null;
-      return statusResp.json();
+      const resp = await scenario.page.request.get(
+        `${API_URL}/workshops/${workshopId}/discovery-completion-status`,
+      );
+      if (!resp.ok()) return null;
+      return resp.json();
     })
     .toMatchObject({
       total_participants: 2,
@@ -184,32 +87,51 @@ test.skip('discovery blocks until multiple participants complete; facilitator-dr
       all_completed: false,
     });
 
+  // Participant A is marked complete
   await expect
     .poll(async () => {
-      const resp = await request.get(`${API_URL}/workshops/${workshopId}/users/${participantA!.id}/discovery-complete`);
+      const resp = await scenario.page.request.get(
+        `${API_URL}/workshops/${workshopId}/users/${participantA.id}/discovery-complete`,
+      );
       if (!resp.ok()) return false;
       const body = (await resp.json()) as { discovery_complete: boolean };
       return body.discovery_complete;
     })
     .toBeTruthy();
 
+  // Participant B is NOT yet complete
   await expect
     .poll(async () => {
-      const resp = await request.get(`${API_URL}/workshops/${workshopId}/users/${participantB!.id}/discovery-complete`);
+      const resp = await scenario.page.request.get(
+        `${API_URL}/workshops/${workshopId}/users/${participantB.id}/discovery-complete`,
+      );
       if (!resp.ok()) return null;
       const body = (await resp.json()) as { discovery_complete: boolean };
       return body.discovery_complete;
     })
     .toBeFalsy();
 
-  // Participant B completes discovery → status should become 2/2 and all completed.
-  await submitAndCompleteDiscovery(participantBEmail, participantB!.id);
+  // --- Participant B completes discovery ---
+  const pageB = await scenario.newPageAs(participantB);
+  await expect(pageB.getByTestId('discovery-phase-title')).toBeVisible({ timeout: 20000 });
 
+  await submitCompleteFeedback(pageB, workshopId, traceId, participantB.id);
+
+  await pageB.reload();
+  await pageB.waitForLoadState('networkidle');
+  await expect(pageB.getByTestId('discovery-phase-title')).toBeVisible({ timeout: 20000 });
+
+  await expect(pageB.getByTestId('complete-discovery-phase-button')).toBeVisible({ timeout: 20000 });
+  await pageB.getByTestId('complete-discovery-phase-button').click();
+
+  // Verify status is now 2/2 — all completed
   await expect
     .poll(async () => {
-      const statusResp = await request.get(`${API_URL}/workshops/${workshopId}/discovery-completion-status`);
-      if (!statusResp.ok()) return null;
-      return statusResp.json();
+      const resp = await scenario.page.request.get(
+        `${API_URL}/workshops/${workshopId}/discovery-completion-status`,
+      );
+      if (!resp.ok()) return null;
+      return resp.json();
     })
     .toMatchObject({
       total_participants: 2,
@@ -217,14 +139,17 @@ test.skip('discovery blocks until multiple participants complete; facilitator-dr
       all_completed: true,
     });
 
+  // Participant B is now complete
   await expect
     .poll(async () => {
-      const resp = await request.get(`${API_URL}/workshops/${workshopId}/users/${participantB!.id}/discovery-complete`);
+      const resp = await scenario.page.request.get(
+        `${API_URL}/workshops/${workshopId}/users/${participantB.id}/discovery-complete`,
+      );
       if (!resp.ok()) return false;
       const body = (await resp.json()) as { discovery_complete: boolean };
       return body.discovery_complete;
     })
     .toBeTruthy();
+
+  await scenario.cleanup();
 });
-
-
