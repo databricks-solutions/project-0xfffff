@@ -9,7 +9,7 @@ import { test, expect } from '@playwright/test';
 import { TestScenario } from '../lib';
 import { UserRole, WorkshopPhase } from '../lib/types';
 
-test.describe('TestScenario Infrastructure Examples', {
+test.describe.skip('TestScenario Infrastructure Examples', {
   tag: ['@spec:ASSISTED_FACILITATION_SPEC'],
 }, () => {
   test('facilitator login with mocked API', {

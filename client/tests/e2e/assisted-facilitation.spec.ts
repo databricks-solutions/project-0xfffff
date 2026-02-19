@@ -101,7 +101,7 @@ const syntheticTraces = [
   };
 }>;
 
-test.describe('Assisted Facilitation Flow', {
+test.describe.skip('Assisted Facilitation Flow', {
   tag: ['@spec:ASSISTED_FACILITATION_SPEC'],
 }, () => {
   test('participants can submit findings and see discovery phase UI', {

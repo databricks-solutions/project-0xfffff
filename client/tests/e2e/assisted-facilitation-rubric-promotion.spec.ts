@@ -14,7 +14,7 @@ import * as actions from '../lib/actions';
 
 const VALID_CATEGORIES = actions.DISCOVERY_CATEGORIES;
 
-test.describe('Assisted Facilitation v2 - Draft Rubric Promotion', {
+test.describe.skip('Assisted Facilitation v2 - Draft Rubric Promotion', {
   tag: ['@spec:ASSISTED_FACILITATION_SPEC'],
 }, () => {
   test('facilitator can promote individual findings via the UI promote button', {

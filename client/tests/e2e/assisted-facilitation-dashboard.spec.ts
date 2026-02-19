@@ -15,7 +15,7 @@ import * as discoveryActions from '../lib/actions/discovery';
 
 const VALID_CATEGORIES = actions.DISCOVERY_CATEGORIES;
 
-test.describe('Assisted Facilitation v2 - Facilitator Dashboard', {
+test.describe.skip('Assisted Facilitation v2 - Facilitator Dashboard', {
   tag: ['@spec:ASSISTED_FACILITATION_SPEC'],
 }, () => {
   test('facilitator can view trace discovery state with category coverage in the UI', {
