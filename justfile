@@ -628,8 +628,8 @@ e2e-servers db_path=".e2e-workshop.db" api_port="8000" ui_port="3000":
   (ENVIRONMENT=development DATABASE_URL="sqlite:///./${DB_PATH}" uv run uvicorn {{server-dir}}.app:app --host 127.0.0.1 --port "$API_PORT" > "$API_LOG" 2>&1) &
   api_pid=$!
 
-  # Start UI (force port for determinism)
-  (npm -C {{client-dir}} run dev -- --host 127.0.0.1 --port "$UI_PORT" --strictPort > "$UI_LOG" 2>&1) &
+  # Start UI (force port for determinism, proxy to correct API port)
+  (E2E_API_URL="http://127.0.0.1:${API_PORT}" npm -C {{client-dir}} run dev -- --host 127.0.0.1 --port "$UI_PORT" --strictPort > "$UI_LOG" 2>&1) &
   ui_pid=$!
 
   cleanup() {
