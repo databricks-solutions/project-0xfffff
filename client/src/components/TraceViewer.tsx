@@ -52,6 +52,7 @@ interface ContentBlock {
 /** A message inside a chat-completion response (choices[].message or messages[]). */
 interface LLMMessage {
   role: string;
+  type?: string;
   content?: ContentBlock[] | string | Record<string, unknown> | null;
   rationale?: string;
   result?: number;
@@ -846,7 +847,7 @@ const extractLLMResponseContent = (output: unknown): { content: string | null; m
     let content: string | null = null;
 
     // Check message.content - handle both string and array formats
-    const msgObj = (firstChoice as Record<string, unknown>).message as LLMMessage | undefined;
+    const msgObj = (firstChoice as unknown as Record<string, unknown>).message as LLMMessage | undefined;
     if (msgObj?.content !== undefined && msgObj?.content !== null) {
       const msgContent = msgObj.content;
 

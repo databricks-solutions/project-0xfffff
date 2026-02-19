@@ -223,7 +223,7 @@ export function AnnotationDemo() {
   const currentUserId = user?.id || 'demo_user';
 
   // All hooks must be called unconditionally (React rules of hooks)
-  const { data: traces, isLoading: tracesLoading, error: tracesError } = useTraces(workshopId || '', user?.id);
+  const { data: traces, isLoading: tracesLoading, error: tracesError } = useTraces(workshopId || '', user?.id ?? '');
   const { data: rubric, isLoading: rubricLoading } = useRubric(workshopId || '');
   const { data: existingAnnotations } = useUserAnnotations(workshopId || '', user);
   const { data: mlflowConfig } = useMLflowConfig(workshopId || '');
@@ -241,7 +241,7 @@ export function AnnotationDemo() {
   const deleteNote = useDeleteParticipantNote(workshopId || '');
 
   // Convert traces to TraceData format
-  const traceData = traces?.map(convertTraceToTraceData) || [];
+  const traceData: TraceData[] = traces?.map(convertTraceToTraceData) || [];
   const currentTrace = traceData[currentTraceIndex];
   const rubricQuestions = rubric ? parseRubricQuestions(rubric) : [];
 

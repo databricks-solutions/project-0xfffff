@@ -16,6 +16,7 @@ import { FileText, Users, Search, Filter, Eye, ArrowLeft } from 'lucide-react';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useUser, useRoleCheck } from '@/context/UserContext';
 import { useFacilitatorFindings, useTraces, useAllTraces } from '@/hooks/useWorkshopApi';
+import type { DiscoveryFindingWithUser } from '@/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { DiscoveryAnalysisTab } from '@/components/DiscoveryAnalysisTab';
@@ -34,7 +35,7 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
 
   // Get all workshop data with user details
-  const { data: allFindingsWithUsers } = useQuery({
+  const { data: allFindingsWithUsers } = useQuery<DiscoveryFindingWithUser[]>({
     queryKey: ['facilitator-findings-with-users', workshopId],
     queryFn: async () => {
       const response = await fetch(`/workshops/${workshopId}/findings-with-users`);
@@ -60,14 +61,14 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
 
   // Process findings data
   const findingsByTrace = React.useMemo(() => {
-    if (!allFindingsWithUsers || !traces) return new Map();
+    if (!allFindingsWithUsers || !traces) return new Map<string, DiscoveryFindingWithUser[]>();
 
-    const map = new Map();
+    const map = new Map<string, DiscoveryFindingWithUser[]>();
     allFindingsWithUsers.forEach(finding => {
       if (!map.has(finding.trace_id)) {
         map.set(finding.trace_id, []);
       }
-      map.get(finding.trace_id).push(finding);
+      map.get(finding.trace_id)!.push(finding);
     });
     return map;
   }, [allFindingsWithUsers, traces]);
@@ -103,7 +104,7 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
 
   // Get trace for selected finding details
   const getTraceById = (traceId: string) => {
-    return traces?.find(t => t.id === traceId);
+    return traces?.find((t: { id: string }) => t.id === traceId);
   };
 
   const formatUserId = (userId: string) => {
@@ -249,7 +250,7 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
 
                 {/* Participant Status */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {Object.values(completionStatus.participant_status).map((status: { user_id: string; user_name: string; user_email: string; completed: boolean; findings_count: number }) => (
+                  {Object.values(completionStatus.participant_status).map((status: any) => (
                     <div key={status.user_id} className="flex items-center justify-between p-2 bg-white rounded border">
                       <div className="flex items-center gap-2">
                         <div className={`w-3 h-3 rounded-full ${status.completed ? 'bg-green-500' : 'bg-gray-300'}`} />

@@ -1,0 +1,4 @@
+---
+description: When running things like unit tests, e2e tests, migrations, first look for a corresponding just recipe @justfile
+alwaysApply: false
+---

@@ -155,6 +155,9 @@ class WorkshopDB(Base):
     discovery_randomize_traces = Column(Boolean, default=False)  # Whether to randomize trace order in discovery
     annotation_randomize_traces = Column(Boolean, default=False)  # Whether to randomize trace order in annotation
     judge_name = Column(String, default="workshop_judge")  # Name used for feedback entries
+    discovery_questions_model_name = Column(
+        String, default="demo"
+    )  # LLM model/endpoint for discovery question generation
     input_jsonpath = Column(Text, nullable=True)  # JSONPath query for extracting trace input display
     output_jsonpath = Column(Text, nullable=True)  # JSONPath query for extracting trace output display
     auto_evaluation_job_id = Column(String, nullable=True)  # Job ID for auto-evaluation on annotation start
@@ -185,8 +188,16 @@ class WorkshopDB(Base):
     custom_llm_provider = relationship(
         "CustomLLMProviderConfigDB", back_populates="workshop", uselist=False, cascade="all, delete-orphan"
     )
-    participant_notes = relationship("ParticipantNoteDB", back_populates="workshop", cascade="all, delete-orphan")
+    participant_notes = relationship(
+        "ParticipantNoteDB", back_populates="workshop", cascade="all, delete-orphan"
+    )
+    discovery_summaries = relationship("DiscoverySummaryDB", back_populates="workshop", cascade="all, delete-orphan")
+    classified_findings = relationship("ClassifiedFindingDB", back_populates="workshop", cascade="all, delete-orphan")
+    disagreements = relationship("DisagreementDB", back_populates="workshop", cascade="all, delete-orphan")
+    trace_discovery_questions = relationship("TraceDiscoveryQuestionDB", back_populates="workshop", cascade="all, delete-orphan")
+    trace_discovery_thresholds = relationship("TraceDiscoveryThresholdDB", back_populates="workshop", cascade="all, delete-orphan")
     discovery_feedback = relationship("DiscoveryFeedbackDB", back_populates="workshop", cascade="all, delete-orphan")
+    draft_rubric_items = relationship("DraftRubricItemDB", back_populates="workshop", cascade="all, delete-orphan")
     discovery_analyses = relationship("DiscoveryAnalysisDB", back_populates="workshop", cascade="all, delete-orphan")
 
 
@@ -214,6 +225,10 @@ class TraceDB(Base):
     findings = relationship("DiscoveryFindingDB", back_populates="trace")
     annotations = relationship("AnnotationDB", back_populates="trace")
     judge_evaluations = relationship("JudgeEvaluationDB", back_populates="trace")
+    classified_findings = relationship("ClassifiedFindingDB", back_populates="trace", cascade="all, delete-orphan")
+    disagreements = relationship("DisagreementDB", back_populates="trace", cascade="all, delete-orphan")
+    trace_discovery_questions = relationship("TraceDiscoveryQuestionDB", back_populates="trace", cascade="all, delete-orphan")
+    trace_discovery_thresholds = relationship("TraceDiscoveryThresholdDB", back_populates="trace", cascade="all, delete-orphan")
 
 
 class DiscoveryFindingDB(Base):
@@ -226,11 +241,43 @@ class DiscoveryFindingDB(Base):
     trace_id = Column(String, ForeignKey("traces.id"), nullable=False)
     user_id = Column(String, nullable=False)
     insight = Column(Text, nullable=False)
+    category = Column(String, nullable=True)  # Classification category (themes, edge_cases, etc.)
     created_at = Column(DateTime, default=func.now())
 
     # Relationships
     workshop = relationship("WorkshopDB", back_populates="findings")
     trace = relationship("TraceDB", back_populates="findings")
+
+
+class DiscoveryQuestionDB(Base):
+    """Database model for per-user/per-trace generated discovery questions."""
+
+    __tablename__ = "discovery_questions"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    trace_id = Column(String, ForeignKey("traces.id"), nullable=False)
+    user_id = Column(String, nullable=False)
+    question_id = Column(String, nullable=False)  # Stable ID per (user, trace), e.g. "q_1"
+    prompt = Column(Text, nullable=False)
+    placeholder = Column(Text, nullable=True)
+    category = Column(String, nullable=True)  # Coverage category: themes, edge_cases, boundary_conditions, failure_modes, missing_info, disagreements
+    created_at = Column(DateTime, default=func.now())
+
+
+class DiscoverySummaryDB(Base):
+    """Database model for persisted discovery summaries (facilitator-oriented)."""
+
+    __tablename__ = "discovery_summaries"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    model_name = Column(String, nullable=True)
+    payload = Column(JSON, nullable=False)  # {overall, by_user, by_trace}
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    workshop = relationship("WorkshopDB", back_populates="discovery_summaries")
 
 
 class UserDiscoveryCompletionDB(Base):
@@ -246,26 +293,6 @@ class UserDiscoveryCompletionDB(Base):
     # Relationships
     workshop = relationship("WorkshopDB", back_populates="user_discovery_completions")
     user = relationship("UserDB")
-
-
-class DiscoveryFeedbackDB(Base):
-    """Database model for structured discovery feedback (good/bad + comments)."""
-
-    __tablename__ = "discovery_feedback"
-
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
-    trace_id = Column(String, ForeignKey("traces.id"), nullable=False)
-    user_id = Column(String, nullable=False)
-    feedback_label = Column(String, nullable=False)  # 'good' | 'bad'
-    comment = Column(Text, nullable=False)
-    followup_qna = Column(JSON, default=list)  # [{"question": "...", "answer": "..."}, ...]
-    created_at = Column(DateTime, default=func.now())
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
-
-    # Relationships
-    workshop = relationship("WorkshopDB", back_populates="discovery_feedback")
-    trace = relationship("TraceDB")
 
 
 class DiscoveryAnalysisDB(Base):
@@ -474,6 +501,122 @@ class CustomLLMProviderConfigDB(Base):
 
     # Relationships
     workshop = relationship("WorkshopDB", back_populates="custom_llm_provider")
+
+
+# ---------------------------------------------------------------------------
+# Assisted Facilitation v2 Tables
+# ---------------------------------------------------------------------------
+
+
+class ClassifiedFindingDB(Base):
+    """Finding with LLM-assigned category for assisted facilitation v2."""
+
+    __tablename__ = "classified_findings"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    trace_id = Column(String, ForeignKey("traces.id"), nullable=False)
+    user_id = Column(String, nullable=False)
+    text = Column(Text, nullable=False)
+    category = Column(String, nullable=False)  # themes|edge_cases|boundary_conditions|failure_modes|missing_info
+    question_id = Column(String, nullable=False)  # q_1, q_2, etc.
+    promoted = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=func.now())
+
+    # Relationships
+    workshop = relationship("WorkshopDB", back_populates="classified_findings")
+    trace = relationship("TraceDB", back_populates="classified_findings")
+
+
+class DisagreementDB(Base):
+    """Auto-detected disagreement between participants."""
+
+    __tablename__ = "disagreements"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    trace_id = Column(String, ForeignKey("traces.id"), nullable=False)
+    user_ids = Column(JSON, nullable=False)  # List of user IDs
+    finding_ids = Column(JSON, nullable=False)  # List of finding IDs
+    summary = Column(Text, nullable=False)  # LLM-generated
+    created_at = Column(DateTime, default=func.now())
+
+    # Relationships
+    workshop = relationship("WorkshopDB", back_populates="disagreements")
+    trace = relationship("TraceDB", back_populates="disagreements")
+
+
+class TraceDiscoveryQuestionDB(Base):
+    """Trace-level discovery question (broadcast to all participants)."""
+
+    __tablename__ = "trace_discovery_questions"
+
+    id = Column(String, primary_key=True)  # q_1, q_2, etc.
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    trace_id = Column(String, ForeignKey("traces.id"), nullable=False)
+    prompt = Column(Text, nullable=False)
+    placeholder = Column(Text, nullable=True)
+    target_category = Column(String, nullable=True)
+    is_fixed = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=func.now())
+
+    # Relationships
+    workshop = relationship("WorkshopDB", back_populates="trace_discovery_questions")
+    trace = relationship("TraceDB", back_populates="trace_discovery_questions")
+
+
+class TraceDiscoveryThresholdDB(Base):
+    """Per-trace thresholds for category coverage."""
+
+    __tablename__ = "trace_discovery_thresholds"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    trace_id = Column(String, ForeignKey("traces.id"), nullable=False)
+    thresholds = Column(JSON, nullable=False)  # {category: count}
+    created_at = Column(DateTime, default=func.now())
+
+    # Relationships
+    workshop = relationship("WorkshopDB", back_populates="trace_discovery_thresholds")
+    trace = relationship("TraceDB", back_populates="trace_discovery_thresholds")
+
+
+class DiscoveryFeedbackDB(Base):
+    """Structured feedback per (workshop, trace, user) for v2 discovery."""
+
+    __tablename__ = "discovery_feedback"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    trace_id = Column(String, ForeignKey("traces.id"), nullable=False)
+    user_id = Column(String, nullable=False)
+    feedback_label = Column(String, nullable=False)  # 'good' | 'bad'
+    comment = Column(Text, nullable=False)
+    followup_qna = Column(JSON, default=list)  # [{"question": "...", "answer": "..."}, ...]
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    # Relationships
+    workshop = relationship("WorkshopDB", back_populates="discovery_feedback")
+    trace = relationship("TraceDB")
+
+
+class DraftRubricItemDB(Base):
+    """Promoted finding in draft rubric staging area."""
+
+    __tablename__ = "draft_rubric_items"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    source_finding_id = Column(String, ForeignKey("classified_findings.id"), nullable=False)
+    source_trace_id = Column(String, nullable=False)
+    text = Column(Text, nullable=False)
+    promoted_by = Column(String, nullable=False)  # Facilitator user_id
+    promoted_at = Column(DateTime, default=func.now())
+
+    # Relationships
+    workshop = relationship("WorkshopDB", back_populates="draft_rubric_items")
+    source_finding = relationship("ClassifiedFindingDB")
 
 
 # Common PostgreSQL serverless connection error markers

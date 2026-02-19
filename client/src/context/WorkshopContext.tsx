@@ -2,7 +2,7 @@
  * Workshop context for managing workshop state across the application
  */
 
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Workshop } from '@/client';
 import { useUser } from './UserContext';
@@ -100,26 +100,22 @@ export function WorkshopProvider({ children, restoredWorkshopId }: WorkshopProvi
   const [workshop, setWorkshop] = useState<Workshop | null>(null);
   const [workflowMode, setWorkflowMode] = useState<'filled' | 'manual'>('filled');
 
-  const handleSetWorkshopId = (id: string | null) => {
+  const handleSetWorkshopId = useCallback((id: string | null) => {
     if (id !== workshopId) {
-      
-      
       // Clear all cached queries when workshop ID changes
       queryClient.invalidateQueries();
       queryClient.clear();
       setWorkshopId(id);
       setWorkshop(null);
-      
+
       // Persist workshop ID to localStorage
       if (id) {
         localStorage.setItem('workshop_id', id);
-        
       } else {
         localStorage.removeItem('workshop_id');
-        
       }
     }
-  };
+  }, [workshopId, queryClient]);
 
   const clearInvalidWorkshopId = () => {
     
@@ -137,15 +133,14 @@ export function WorkshopProvider({ children, restoredWorkshopId }: WorkshopProvi
     if (user?.workshop_id && user.workshop_id !== workshopId) {
       handleSetWorkshopId(user.workshop_id);
     }
-  }, [user, workshopId]);
+  }, [user, workshopId, handleSetWorkshopId]);
 
   // Handle restored workshop ID from user context
   React.useEffect(() => {
     if (restoredWorkshopId && !workshopId) {
-      
       handleSetWorkshopId(restoredWorkshopId);
     }
-  }, [restoredWorkshopId, workshopId]);
+  }, [restoredWorkshopId, workshopId, handleSetWorkshopId]);
 
   // Force refresh when component mounts to ensure fresh data
   // REMOVED: This was causing old cached queries to refetch
@@ -180,7 +175,7 @@ export function WorkshopProvider({ children, restoredWorkshopId }: WorkshopProvi
     return () => {
       window.removeEventListener('popstate', handleUrlChange);
     };
-  }, [workshopId, queryClient]);
+  }, [workshopId, queryClient, handleSetWorkshopId]);
 
   return (
     <WorkshopContext.Provider 

@@ -6,7 +6,15 @@
     "*.timestamp-*",
     "src/assets.d.ts",
     "src/components/ui/sheet.tsx",
-    "src/components/ui/skeleton.tsx"
+    "src/components/ui/skeleton.tsx",
+    "src/components/AnnotationReviewPage.tsx",
+    "src/components/DiscoveryCompletePage.tsx",
+    "src/components/DraftRubricPanel.tsx",
+    "src/components/FacilitatorInvitationManager.tsx",
+    "src/components/TraceDiscoveryPanel.tsx",
+    "src/components/WorkflowProgress.tsx",
+    "src/hooks/useDatabricksApi.ts",
+    "src/pages/AnnotationReviewPage.tsx"
   ],
   "entry": [
     "src/main.tsx!",
@@ -18,6 +26,7 @@
   ],
   "ignoreDependencies": [
     "@typescript-eslint/eslint-plugin",
-    "@typescript-eslint/parser"
+    "@typescript-eslint/parser",
+    "concurrently"
   ]
 }

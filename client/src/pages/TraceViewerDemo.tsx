@@ -17,9 +17,10 @@ import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useWorkflowContext } from '@/context/WorkflowContext';
 import { toast } from 'sonner';
 import { useUser, useRoleCheck } from '@/context/UserContext';
-import { useTraces, useUserFindings, useSubmitFinding, useParticipantNotes, useSubmitParticipantNote, useDeleteParticipantNote, useWorkshop, refetchAllWorkshopQueries } from '@/hooks/useWorkshopApi';
+import { useTraces, useUserFindings, useSubmitFinding, useParticipantNotes, useSubmitParticipantNote, useDeleteParticipantNote, useWorkshop, refetchAllWorkshopQueries, useDiscoveryFeedback } from '@/hooks/useWorkshopApi';
+import { DiscoveryFeedbackView } from '@/components/DiscoveryFeedbackView';
 import { useQueryClient } from '@tanstack/react-query';
-import { WorkshopsService } from '@/client';
+import { WorkshopsService, DiscoveryService } from '@/client';
 import type { Trace } from '@/client';
 
 // Convert API trace to TraceData format
@@ -54,7 +55,7 @@ export function TraceViewerDemo() {
   // Fetch data - pass user ID for personalized trace ordering
   const { data: traces, isLoading: tracesLoading, error: tracesError } = useTraces(
     workshopId!,
-    user?.id  // May be undefined - hook handles this gracefully
+    user?.id ?? ''  // May be empty - hook handles this gracefully
   );
   const { data: existingFindings } = useUserFindings(workshopId!, user); // Secure user-isolated findings
   const submitFinding = useSubmitFinding(workshopId!);
@@ -64,6 +65,9 @@ export function TraceViewerDemo() {
   const { data: workshopData } = useWorkshop(workshopId!);
   const notesEnabled = workshopData?.show_participant_notes ?? false;
 
+  // Discovery feedback (v2 Structured Feedback) - fetch existing for this user
+  const { data: discoveryFeedbackList } = useDiscoveryFeedback(workshopId!, user?.id);
+
   // Participant notepad (only fetch when enabled)
   const [noteContent, setNoteContent] = useState('');
   const { data: participantNotes } = useParticipantNotes(workshopId!, user?.id, 'discovery');
@@ -71,19 +75,34 @@ export function TraceViewerDemo() {
   const deleteNote = useDeleteParticipantNote(workshopId!);
 
   // Convert traces to TraceData format - memoize to prevent infinite loops
-  const traceData = useMemo(() => {
+  const traceData: TraceData[] = useMemo(() => {
     return traces?.map(convertTraceToTraceData) || [];
   }, [traces]);
   const currentTrace = traceData[currentTraceIndex];
   
-  // Check if discovery phase is complete
-  const allTracesHaveFindings = traceData.length > 0 && traceData.every(trace => submittedFindings.has(trace.id));
-  const isDiscoveryComplete = allTracesHaveFindings && submittedFindings.size === traceData.length;
+  // Compute completed traces from v2 feedback (trace has >= 3 follow-up Q&A pairs)
+  const completedFeedbackTraces = useMemo(() => {
+    if (!discoveryFeedbackList) return new Set<string>();
+    return new Set(
+      discoveryFeedbackList
+        .filter(f => (f.followup_qna?.length || 0) >= 3)
+        .map(f => f.trace_id)
+    );
+  }, [discoveryFeedbackList]);
+
+  // Traces with any feedback started (but not necessarily all Q&A complete)
+  const startedFeedbackTraces = useMemo(() => {
+    if (!discoveryFeedbackList) return new Set<string>();
+    return new Set(discoveryFeedbackList.map(f => f.trace_id));
+  }, [discoveryFeedbackList]);
+
+  // Check if discovery phase is complete (all traces have completed v2 feedback)
+  const isDiscoveryComplete = traceData.length > 0 && traceData.every(trace => completedFeedbackTraces.has(trace.id));
 
   // Initialize saved state from all existing findings (runs once)
   useEffect(() => {
     if (existingFindings && existingFindings.length > 0) {
-      existingFindings.forEach(finding => {
+      existingFindings.forEach((finding: { trace_id: string; insight?: string }) => {
         const insight = finding.insight || '';
         const parts = insight.split('\n\nImprovement Analysis: ');
         if (parts.length === 2) {
@@ -102,7 +121,7 @@ export function TraceViewerDemo() {
   useEffect(() => {
     if (currentTrace?.id && currentTrace.id !== previousTraceId.current) {
       // Check if this trace has an existing finding
-      const existingFinding = existingFindings?.find(finding => finding.trace_id === currentTrace.id);
+      const existingFinding = existingFindings?.find((finding: { trace_id: string }) => finding.trace_id === currentTrace.id);
       
       if (existingFinding) {
         // Parse and populate the existing finding text
@@ -130,11 +149,12 @@ export function TraceViewerDemo() {
 
   // Navigate to first incomplete trace (only on initial load) and handle trace additions
   useEffect(() => {
-    if (existingFindings && traceData.length > 0) {
-      const validTraceIds = new Set(traceData.map(t => t.id));
-      const completedTraceIds = new Set(existingFindings
-        .filter(f => validTraceIds.has(f.trace_id))  // Only count findings for current traces
-        .map(f => f.trace_id)
+    if (discoveryFeedbackList && traceData.length > 0) {
+      // Use v2 feedback completion (>= 3 Q&A pairs) to determine completed traces
+      const completedTraceIds = new Set(
+        discoveryFeedbackList
+          .filter(f => (f.followup_qna?.length || 0) >= 3)
+          .map(f => f.trace_id)
       );
       // NOTE: Do NOT call setSubmittedFindings here - handled by separate effect below
       
@@ -167,15 +187,15 @@ export function TraceViewerDemo() {
       // Update the trace count
       previousTraceCount.current = traceData.length;
     }
-  }, [existingFindings, traceData]);
+  }, [discoveryFeedbackList, traceData]);
 
   // Update submitted findings when existing findings change (separate effect to avoid infinite loop)
   useEffect(() => {
     if (existingFindings && traceData.length > 0) {
-      const validTraceIds = new Set(traceData.map(t => t.id));
-      const completedTraceIds = new Set(existingFindings
-        .filter(f => validTraceIds.has(f.trace_id))  // Only count findings for current traces
-        .map(f => f.trace_id)
+      const validTraceIds = new Set(traceData.map((t: TraceData) => t.id));
+      const completedTraceIds = new Set<string>(existingFindings
+        .filter((f: { trace_id: string }) => validTraceIds.has(f.trace_id))  // Only count findings for current traces
+        .map((f: { trace_id: string }) => f.trace_id)
       );
       
       // Only update if the set actually changed
@@ -493,81 +513,30 @@ export function TraceViewerDemo() {
   // Track navigation using ref (more reliable than state for preventing double-clicks)
   const isNavigatingRef = useRef(false);
   
-  // Navigate to next trace - save first, then navigate
-  const nextTrace = async () => {
-    if (!currentTrace) {
-      return;
-    }
-    
-    // Use ref to prevent concurrent navigation (more reliable than React state)
-    if (isNavigatingRef.current) {
-      return;
-    }
-    
-    // Debounce rapid clicks to prevent overwhelming the backend
+  // Navigate to next trace
+  const nextTrace = () => {
+    if (!currentTrace || currentTraceIndex >= traceData.length - 1) return;
+
+    // Debounce rapid clicks
     const now = Date.now();
-    if (now - lastNavigationTimeRef.current < NAVIGATION_DEBOUNCE_MS) {
-      return;
-    }
+    if (now - lastNavigationTimeRef.current < NAVIGATION_DEBOUNCE_MS) return;
     lastNavigationTimeRef.current = now;
-    
-    // Check if we can navigate
-    if (currentTraceIndex >= traceData.length - 1) {
-      return; // Already at last trace
-    }
-    
-    // Set navigating flag immediately using ref (no state update = no flash)
-    isNavigatingRef.current = true;
-    
-    try {
-      // Store current trace data for save
-      const currentTraceId = currentTrace.id;
-      const q1ToSave = question1Response.trim();
-      const q2ToSave = question2Response.trim();
-      const hasContent = q1ToSave || q2ToSave;
-      
-      
-      // Save FIRST if there's content (await to ensure it completes)
-      if (hasContent) {
-        await saveFinding(q1ToSave, q2ToSave, currentTraceId, true);
-      }
-      
-      // Then navigate - pre-populate with saved state to avoid flash
-      const nextIndex = currentTraceIndex + 1;
-      const nextTraceId = traceData[nextIndex]?.id;
-      const nextSavedState = nextTraceId ? savedStateRef.current.get(nextTraceId) : null;
-      if (nextSavedState) {
-        setQuestion1Response(nextSavedState.q1);
-        setQuestion2Response(nextSavedState.q2);
-      } else {
-        setQuestion1Response('');
-        setQuestion2Response('');
-      }
-      // Update ref so the useEffect doesn't re-trigger and cause a double render
-      previousTraceId.current = nextTraceId || null;
-      setCurrentTraceIndex(nextIndex);
-      
-    } finally {
-      isNavigatingRef.current = false;
-    }
+
+    const nextIndex = currentTraceIndex + 1;
+    const nextTraceId = traceData[nextIndex]?.id;
+    previousTraceId.current = nextTraceId || null;
+    setCurrentTraceIndex(nextIndex);
   };
 
   const completeDiscovery = async () => {
     if (!user?.id || !workshopId) return;
-    
+
     setIsCompletingDiscovery(true);
     try {
-      const response = await fetch(`/workshops/${workshopId}/users/${user.id}/complete-discovery`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to mark discovery complete');
-      }
-      
+      await DiscoveryService.markUserDiscoveryCompleteWorkshopsWorkshopIdUsersUserIdCompleteDiscoveryPost(
+        workshopId, user.id,
+      );
+
       toast.success('Discovery complete', { description: 'Waiting for the facilitator to advance to the next phase.' });
     } catch (error) {
 
@@ -583,70 +552,19 @@ export function TraceViewerDemo() {
     }
   };
 
-  // Navigate to previous trace - save first, then navigate
-  const prevTrace = async () => {
-    if (!currentTrace) {
-      return;
-    }
-    
-    // Use ref to prevent concurrent navigation (more reliable than React state)
-    if (isNavigatingRef.current) {
-      return;
-    }
-    
-    // Debounce rapid clicks to prevent overwhelming the backend
+  // Navigate to previous trace
+  const prevTrace = () => {
+    if (!currentTrace || currentTraceIndex <= 0) return;
+
+    // Debounce rapid clicks
     const now = Date.now();
-    if (now - lastNavigationTimeRef.current < NAVIGATION_DEBOUNCE_MS) {
-      return;
-    }
+    if (now - lastNavigationTimeRef.current < NAVIGATION_DEBOUNCE_MS) return;
     lastNavigationTimeRef.current = now;
-    
-    // Check if we can navigate
-    if (currentTraceIndex <= 0) {
-      return; // Already at first trace
-    }
-    
-    // Set navigating flag immediately using ref (no state update = no flash)
-    isNavigatingRef.current = true;
-    
-    try {
-      // Store current trace data for save
-      const currentTraceId = currentTrace.id;
-      const q1ToSave = question1Response.trim();
-      const q2ToSave = question2Response.trim();
-      const hasContent = q1ToSave || q2ToSave;
-      
-      
-      // Save FIRST if there's content (await to ensure it completes)
-      if (hasContent) {
-        await saveFinding(q1ToSave, q2ToSave, currentTraceId, true);
-      }
-      
-      // Then navigate - pre-populate with saved state to avoid flash
-      const prevIndex = currentTraceIndex - 1;
-      const prevTraceId = traceData[prevIndex]?.id;
-      const prevSavedState = prevTraceId ? savedStateRef.current.get(prevTraceId) : null;
-      if (prevSavedState) {
-        setQuestion1Response(prevSavedState.q1);
-        setQuestion2Response(prevSavedState.q2);
-      } else {
-        setQuestion1Response('');
-        setQuestion2Response('');
-      }
-      // Update ref so the useEffect doesn't re-trigger and cause a double render
-      previousTraceId.current = prevTraceId || null;
-      setCurrentTraceIndex(prevIndex);
-      
-    } finally {
-      isNavigatingRef.current = false;
-    }
-  };
 
-  const handleSubmitFinding = async () => {
-    if (!currentTrace || !question1Response.trim() || !question2Response.trim() || isSaving) return;
-
-    // Use the saveFinding function to ensure consistent behavior and prevent concurrent saves
-    await saveFinding(question1Response, question2Response, currentTrace.id);
+    const prevIndex = currentTraceIndex - 1;
+    const prevTraceId = traceData[prevIndex]?.id;
+    previousTraceId.current = prevTraceId || null;
+    setCurrentTraceIndex(prevIndex);
   };
 
   // SECURITY: Block access if no valid user (prevent undefined user access)
@@ -797,7 +715,7 @@ export function TraceViewerDemo() {
             <span className="text-sm font-medium text-gray-700 whitespace-nowrap">
               Trace <span data-testid="trace-number">{currentTraceIndex + 1}/{traceData.length}</span>
             </span>
-            {submittedFindings.has(currentTrace.id) && (
+            {completedFeedbackTraces.has(currentTrace.id) && (
               <CheckCircle className="h-4 w-4 text-green-500 flex-shrink-0" />
             )}
           </div>
@@ -805,10 +723,10 @@ export function TraceViewerDemo() {
             <div className="flex-1 bg-gray-200 rounded-full h-1.5">
               <div
                 className={`h-1.5 rounded-full transition-all duration-300 ${isDiscoveryComplete ? 'bg-green-500' : 'bg-blue-500'}`}
-                style={{ width: `${(submittedFindings.size / traceData.length) * 100}%` }}
+                style={{ width: `${(completedFeedbackTraces.size / traceData.length) * 100}%` }}
               />
             </div>
-            <span className="text-xs text-gray-500 whitespace-nowrap">{submittedFindings.size}/{traceData.length}</span>
+            <span className="text-xs text-gray-500 whitespace-nowrap">{completedFeedbackTraces.size}/{traceData.length}</span>
           </div>
           {failedSaveCount > 0 && (
             <Button
@@ -832,52 +750,23 @@ export function TraceViewerDemo() {
 
           {/* Right Column: Questions + Navigation + Notes - independently scrollable */}
           <div className="overflow-y-auto space-y-4 pr-1 scrollbar-thin">
-        {/* Discovery Questions */}
-        <Card className="border-l-4 border-blue-500">
-          <CardContent className="p-4 space-y-4">
-            <div>
-              <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2 mb-1">
-                <Lightbulb className="w-4 h-4 text-blue-600" />
-                Discovery Questions
-              </h3>
-              {!canCreateFindings && (
-                <p className="text-xs text-red-600 flex items-center gap-1.5 mt-2">
-                  <AlertCircle className="h-3.5 w-3.5" />
-                  You don't have permission to submit findings. You can view traces but cannot contribute insights.
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="question1" className="text-xs font-medium text-gray-600">
-                What makes this response effective or ineffective?
-              </Label>
-              <Textarea
-                id="question1"
-                placeholder={canCreateFindings ? "Share your thoughts on what makes this response work well or poorly..." : "You don't have permission to submit findings"}
-                value={question1Response}
-                onChange={(e) => setQuestion1Response(e.target.value)}
-                className="min-h-[100px]"
-                disabled={!canCreateFindings || isSaving}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="question2" className="text-xs font-medium text-gray-600">
-                If this response was good, what would have made it bad? If bad, what would have made it good?
-              </Label>
-              <Textarea
-                id="question2"
-                placeholder={canCreateFindings ? "Consider alternative scenarios - what changes would flip the quality of this response?" : "You don't have permission to submit findings"}
-                value={question2Response}
-                onChange={(e) => setQuestion2Response(e.target.value)}
-                className="min-h-[100px]"
-                disabled={!canCreateFindings || isSaving}
-              />
-            </div>
-
-          </CardContent>
-        </Card>
+        {/* Discovery Feedback (v2 Structured Feedback) */}
+        {currentTrace && user && (
+          <DiscoveryFeedbackView
+            workshopId={workshopId!}
+            traceId={currentTrace.id}
+            userId={user.id}
+            existingFeedback={discoveryFeedbackList?.find(f => f.trace_id === currentTrace.id) ?? null}
+            isFacilitator={isFacilitator}
+            onComplete={() => {
+              // Refetch feedback to update progress bar
+              queryClient.invalidateQueries({ queryKey: ['discovery-feedback', workshopId, user?.id] });
+              if (currentTraceIndex < traceData.length - 1) {
+                nextTrace();
+              }
+            }}
+          />
+        )}
 
         {/* Navigation */}
         <div className="flex items-center justify-between">
@@ -892,40 +781,11 @@ export function TraceViewerDemo() {
           </Button>
 
           <Button
-            onClick={async () => {
-              // On last trace, save current content then show completion state
-              if (currentTraceIndex === traceData.length - 1 && currentTrace) {
-                const q1 = question1Response.trim();
-                const q2 = question2Response.trim();
-                if (q1 || q2) {
-                  setIsSaving(true);
-                  const success = await saveFinding(q1, q2, currentTrace.id, false);
-                  setIsSaving(false);
-                  if (success) {
-                    toast.success('Response saved', { description: 'Your finding has been recorded.' });
-                  }
-                }
-              } else {
-                nextTrace();
-              }
-            }}
-            disabled={
-              isSaving ||
-              !canCreateFindings
-            }
-            className={`flex items-center gap-1.5 ${currentTraceIndex === traceData.length - 1 ? 'bg-purple-700 hover:bg-purple-800' : ''}`}
+            onClick={() => nextTrace()}
+            disabled={currentTraceIndex >= traceData.length - 1}
+            className="flex items-center gap-1.5"
           >
-            {isSaving ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Saving...
-              </>
-            ) : currentTraceIndex === traceData.length - 1 ? (
-              <>
-                <Send className="h-4 w-4" />
-                Complete
-              </>
-            ) : (
+            {(
               <>
                 Next
                 <ChevronRight className="h-4 w-4" />
@@ -1008,7 +868,7 @@ export function TraceViewerDemo() {
                       <div className="flex items-center gap-2 mt-1">
                         {note.trace_id && (
                           <span className="text-xs text-purple-600">
-                            On trace {traceData.findIndex(t => t.id === note.trace_id) + 1 || '?'}
+                            On trace {traceData.findIndex((t: TraceData) => t.id === note.trace_id) + 1 || '?'}
                           </span>
                         )}
                         <span className="text-xs text-gray-400">

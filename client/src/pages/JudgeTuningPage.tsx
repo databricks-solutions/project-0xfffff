@@ -32,17 +32,18 @@ import { getModelOptions, getBackendModelName, getFrontendModelName, getDisplayN
 import { parseRubricQuestions } from '@/utils/rubricUtils';
 import { Pagination } from '@/components/Pagination';
 import { TraceDataViewer } from '@/components/TraceDataViewer';
+import { convertTraceToTraceData } from '@/utils/traceUtils';
 import { CustomLLMProviderConfig } from '@/components/CustomLLMProviderConfig';
 import { toast } from 'sonner';
 
-import type { 
-  JudgePrompt, 
-  JudgePromptCreate, 
-  JudgeEvaluation, 
+import { JudgeType } from '@/client';
+import type {
+  JudgePrompt,
+  JudgePromptCreate,
+  JudgeEvaluation,
   JudgePerformanceMetrics,
   JudgeEvaluationResult,
   JudgeExportConfig,
-  JudgeType,
   Rubric,
   Annotation,
   Trace
@@ -84,6 +85,9 @@ interface AlignmentJobResult {
   success: boolean;
   aligned_instructions?: string;
   saved_prompt_id?: string;
+  judge_name?: string;
+  trace_count?: number;
+  saved_prompt_version?: number;
   metrics?: JudgePerformanceMetrics;
   evaluations?: JudgeEvaluation[];
 }
@@ -737,15 +741,15 @@ export function JudgeTuningPage() {
   // Helper to detect judge type from prompt content
   const detectPromptJudgeType = (promptText: string): JudgeType => {
     if (promptText.includes('scale of 0-1') || promptText.includes('0 or 1') || promptText.includes('(PASS)') || promptText.includes('(FAIL)')) {
-      return 'binary';
+      return JudgeType.BINARY;
     }
     if (promptText.includes('scale of 1-5') || promptText.includes('1 = Poor') || promptText.includes('5 = Excellent')) {
-      return 'likert';
+      return JudgeType.LIKERT;
     }
     if (promptText.includes('qualitative feedback') || promptText.includes('detailed feedback') || promptText.includes('Key observations')) {
-      return 'freeform';
+      return JudgeType.FREEFORM;
     }
-    return 'likert'; // default
+    return JudgeType.LIKERT; // default
   };
 
   const createDefaultPrompt = (rubricQuestion: string, questionIndex: number = 0) => {
@@ -755,7 +759,7 @@ export function JudgeTuningPage() {
     const questionText = targetQuestion 
       ? `${targetQuestion.title}: ${targetQuestion.description}` 
       : rubricQuestion;
-    const judgeType = targetQuestion?.judgeType || 'likert';
+    const judgeType = targetQuestion?.judgeType || JudgeType.LIKERT;
     
     // Return different prompt templates based on judge type
     // NOTE: Do NOT add custom output format instructions - MLflow InstructionsJudge
@@ -2344,8 +2348,8 @@ Think step by step about how well the output addresses the criteria, then provid
                               <tr>
                                 <td colSpan={6} className="p-0">
                                   <div className="bg-gray-50 border-t">
-                                    <TraceDataViewer 
-                                      trace={trace}
+                                    <TraceDataViewer
+                                      trace={convertTraceToTraceData(trace)}
                                       showContext={true}
                                       className="m-4"
                                     />

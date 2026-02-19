@@ -213,7 +213,7 @@ export function IRRResultsDemo({ workshopId }: IRRResultsProps) {
   const currentRubricIds = new Set(rubricQuestions.map((q: ParsedRubricQuestion) => q.id));
   const perMetricScores = Object.fromEntries(
     Object.entries(allPerMetricScores).filter(([metricId]) => currentRubricIds.has(metricId))
-  );
+  ) as Record<string, PerMetricScore>;
   const hasMetrics = Object.keys(perMetricScores).length > 0;
   
   // Traces start collapsed by default

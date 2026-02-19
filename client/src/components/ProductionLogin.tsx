@@ -307,7 +307,7 @@ export const ProductionLogin: React.FC = () => {
             <Button
               type="submit"
               className="w-full h-11 text-base font-medium"
-              disabled={isLoading || (!loginData.password && selectedWorkshopId === '') || (loginData.password && !createNewWorkshop && selectedWorkshopId === '' && workshops.length > 0)}
+              disabled={isLoading || (!loginData.password && selectedWorkshopId === '') || !!(loginData.password && !createNewWorkshop && selectedWorkshopId === '' && workshops.length > 0)}
             >
               {isLoading ? (
                 <>
