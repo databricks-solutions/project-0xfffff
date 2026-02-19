@@ -157,10 +157,10 @@ export async function loginAs(page: Page, user: User): Promise<void> {
   await expect(page.getByText('Workshop Portal')).not.toBeVisible({ timeout: 10000 });
 
   // For facilitators with a workshop_id, we need to navigate into the workshop
-  // After login, facilitators land on the "Welcome, Facilitator!" page showing workshop cards
+  // After login, facilitators land on the "Welcome, Facilitator" page showing workshop cards
   if (user.role === UserRole.FACILITATOR && user.workshop_id) {
     // Check if we're on the workshop selection page
-    const welcomeFacilitator = page.getByText('Welcome, Facilitator!');
+    const welcomeFacilitator = page.getByText('Welcome, Facilitator');
     if (await welcomeFacilitator.isVisible({ timeout: 3000 }).catch(() => false)) {
       // Wait for workshops to load on this page
       const loadingWorkshops = page.getByText(/Loading workshops/i);
