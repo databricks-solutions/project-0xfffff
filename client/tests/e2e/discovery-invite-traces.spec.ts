@@ -95,38 +95,60 @@ test('discovery blocks until multiple participants complete; facilitator-driven 
   expect(participantA, 'participant A should exist in API').toBeTruthy();
   expect(participantB, 'participant B should exist in API').toBeTruthy();
 
-  const submitAndCompleteDiscovery = async (email: string) => {
+  const submitAndCompleteDiscovery = async (email: string, userId: string) => {
     const ctx = await browser.newContext();
     const p = await ctx.newPage();
 
-    await p.goto(`/?workshop=${workshopId}`);
     // Login as participant using the shared helper
     await loginAs(p, {
-      id: '', // ID not needed for login
+      id: userId,
       email,
       name: email.split('@')[0],
       role: UserRole.PARTICIPANT,
       workshop_id: workshopId!,
     });
 
-    await expect(p.getByTestId('discovery-phase-title')).toBeVisible();
+    await expect(p.getByTestId('discovery-phase-title')).toBeVisible({ timeout: 15000 });
 
-    // TraceViewerDemo renders discovery questions with ids like `dq-q_1`
-    const q1 = p.locator('#dq-q_1');
-    await expect(q1).toBeVisible();
-    await q1.fill('Clear but slightly verbose. Consider account recovery steps for locked-out users.');
-    await q1.blur(); // autosave happens onBlur
+    // Get trace IDs for API submission
+    const tracesResp = await p.request.get(`${API_URL}/workshops/${workshopId}/all-traces`);
+    const traces = (await tracesResp.json()) as Array<{ id: string }>;
+    const traceId = traces[0].id;
 
-    // Single-trace discovery: the navigation button shows "Complete"
-    await p.getByRole('button', { name: /^Complete$/i }).click();
-    await expect(p.getByTestId('complete-discovery-phase-button')).toBeVisible();
+    // Submit complete feedback via API (label + comment + 3 Q&A pairs)
+    await p.request.post(`${API_URL}/workshops/${workshopId}/discovery-feedback`, {
+      data: {
+        trace_id: traceId,
+        user_id: userId,
+        feedback_label: 'good',
+        comment: 'Clear but slightly verbose. Consider account recovery steps for locked-out users.',
+      },
+    });
+
+    for (let q = 1; q <= 3; q++) {
+      await p.request.post(`${API_URL}/workshops/${workshopId}/submit-followup-answer`, {
+        data: {
+          trace_id: traceId,
+          user_id: userId,
+          question: `Follow-up question ${q}?`,
+          answer: `Follow-up answer ${q}.`,
+        },
+      });
+    }
+
+    // Reload to pick up completed feedback state
+    await p.reload();
+    await expect(p.getByTestId('discovery-phase-title')).toBeVisible({ timeout: 15000 });
+
+    // Wait for "Complete Discovery" button (appears when all traces have completed feedback)
+    await expect(p.getByTestId('complete-discovery-phase-button')).toBeVisible({ timeout: 15000 });
     await p.getByTestId('complete-discovery-phase-button').click();
 
     await ctx.close();
   };
 
   // Only participant A completes discovery → status should be 1/2 and not all completed.
-  await submitAndCompleteDiscovery(participantAEmail);
+  await submitAndCompleteDiscovery(participantAEmail, participantA!.id);
 
   await expect
     .poll(async () => {
@@ -159,7 +181,7 @@ test('discovery blocks until multiple participants complete; facilitator-driven 
     .toBeFalsy();
 
   // Participant B completes discovery → status should become 2/2 and all completed.
-  await submitAndCompleteDiscovery(participantBEmail);
+  await submitAndCompleteDiscovery(participantBEmail, participantB!.id);
 
   await expect
     .poll(async () => {

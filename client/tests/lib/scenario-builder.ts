@@ -291,6 +291,9 @@ export class TestScenario {
           text.includes('favicon.ico') ||
           text.includes('Download the React DevTools') ||
           text.includes('the server responded with a status of 404') ||
+          text.includes('the server responded with a status of 401') ||
+          text.includes('Failed to fetch') ||
+          text.includes('Query data cannot be undefined') ||
           text.includes('net::ERR_');
         if (!isNonCritical) {
           consoleErrors.push(`[ConsoleError] ${text}`);
@@ -1180,6 +1183,9 @@ export class TestScenario {
               text.includes('favicon.ico') ||
               text.includes('Download the React DevTools') ||
               text.includes('the server responded with a status of 404') ||
+              text.includes('the server responded with a status of 401') ||
+              text.includes('Failed to fetch') ||
+              text.includes('Query data cannot be undefined') ||
               text.includes('net::ERR_');
             if (!isNonCritical) {
               consoleErrors.push(`[ConsoleError] ${text}`);

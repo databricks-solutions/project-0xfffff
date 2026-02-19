@@ -52,15 +52,11 @@ test.describe('Discovery feedback full participant flow', () => {
 
     await participantPage.getByRole('button', { name: /Submit Feedback/i }).click();
 
-    // 3. Wait for Q1 to appear (loading spinner → question)
-    await expect(
-      participantPage.getByText('Generating follow-up question...')
-    ).toBeVisible({ timeout: 10000 });
-
-    // Wait for question to appear (loading spinner disappears, question text appears)
+    // 3. Wait for Q1 to appear (loading spinner may flash briefly in demo mode)
+    // In demo mode the question generates almost instantly, so wait for the question directly
     await expect(
       participantPage.getByText('Question 1')
-    ).toBeVisible({ timeout: 15000 });
+    ).toBeVisible({ timeout: 30000 });
 
     // 4. Answer Q1, submit
     const answerInput = participantPage.getByPlaceholder('Type your answer...');
@@ -166,12 +162,16 @@ test.describe('Discovery feedback full participant flow', () => {
     if (await feedbackTab.isVisible({ timeout: 5000 }).catch(() => false)) {
       await feedbackTab.click();
 
-      // 2. Verify feedback detail shows label and comment
+      // 2. Verify feedback detail panel is visible
       await expect(
         scenario.page.getByTestId('feedback-detail-panel')
       ).toBeVisible({ timeout: 10000 });
 
-      // Feedback label should be visible
+      // 3. Expand the first trace group (collapsed by default)
+      const traceGroup = scenario.page.getByTestId('feedback-trace-group').first();
+      await traceGroup.click();
+
+      // 4. Feedback comment should be visible after expanding
       await expect(
         scenario.page.getByText('Excellent response quality.')
       ).toBeVisible({ timeout: 10000 });

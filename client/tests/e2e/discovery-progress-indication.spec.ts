@@ -178,27 +178,25 @@ test.describe('Discovery progress indication', () => {
       scenario.page, workshopId, scenario.traces[0].id, participant.id,
     );
 
-    // Login as participant (starts on trace 1)
+    // Login as participant (auto-navigates to first incomplete trace = trace 2)
     const participantPage = await scenario.newPageAs(participant);
 
     const phaseTitle = participantPage.getByTestId('discovery-phase-title');
+    const traceNumber = participantPage.getByTestId('trace-number');
+    const checkmark = phaseTitle.locator('svg.text-green-500');
 
     // Wait for progress to load - trace 1 is completed
     const progressText = phaseTitle.locator('span.text-gray-500');
     await expect(progressText).toHaveText('1/2', { timeout: 15000 });
 
-    // Green checkmark should be visible for trace 1 (current trace is completed)
-    const checkmark = phaseTitle.locator('svg.text-green-500');
-    await expect(checkmark).toBeVisible();
-
-    // Navigate to trace 2 (incomplete)
-    await participantPage.getByRole('button', { name: /Next/i }).click();
-    await expect(
-      participantPage.getByTestId('trace-number')
-    ).toHaveText('2/2', { timeout: 10000 });
-
-    // Green checkmark should NOT be visible for trace 2
+    // Auto-navigation lands on trace 2 (first incomplete) - verify no checkmark
+    await expect(traceNumber).toHaveText('2/2', { timeout: 10000 });
     await expect(checkmark).not.toBeVisible();
+
+    // Navigate back to trace 1 (completed) and verify checkmark is present
+    await participantPage.getByRole('button', { name: /Previous/i }).click();
+    await expect(traceNumber).toHaveText('1/2', { timeout: 10000 });
+    await expect(checkmark).toBeVisible({ timeout: 5000 });
 
     await scenario.cleanup();
   });
