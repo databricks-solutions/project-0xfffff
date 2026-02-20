@@ -126,9 +126,10 @@ const mockIRRResult = {
 
 interface IRRResultsProps {
   workshopId?: string;
+  onNavigate?: (phase: string) => void;
 }
 
-export function IRRResultsDemo({ workshopId }: IRRResultsProps) {
+export function IRRResultsDemo({ workshopId, onNavigate }: IRRResultsProps) {
   const { workshopId: contextWorkshopId } = useWorkshopContext();
   const activeWorkshopId = workshopId || contextWorkshopId;
   const { isFacilitator } = useRoleCheck();
@@ -206,9 +207,11 @@ export function IRRResultsDemo({ workshopId }: IRRResultsProps) {
       
       // Invalidate workshop query to refresh phase
       queryClient.invalidateQueries({ queryKey: ['workshop', activeWorkshopId] });
-      
-      // The navigation will be handled by the WorkshopDemoLanding component
-      // when it detects the phase change
+
+      // Navigate to judge tuning view
+      if (onNavigate) {
+        onNavigate('judge_tuning');
+      }
     } catch (error) {
       
       

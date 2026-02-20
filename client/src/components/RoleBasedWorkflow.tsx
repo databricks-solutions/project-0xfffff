@@ -343,10 +343,13 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
         accessible: true
       });
     } else {
+      // If we're past annotation (results, judge_tuning, etc.), treat annotation as completed
+      const pastAnnotationPhases = ['results', 'judge_tuning', 'prompt_optimization', 'unity_volume'];
+      const isPastAnnotation = pastAnnotationPhases.includes(currentPhase);
       steps.push({
         title: 'Annotation Phase',
-        description: isSME ? 'Annotate traces with rubric' : 'SMEs will annotate traces',
-        status: 'upcoming',
+        description: isPastAnnotation ? 'Annotations completed' : (isSME ? 'Annotate traces with rubric' : 'SMEs will annotate traces'),
+        status: isPastAnnotation ? 'completed' : 'upcoming',
         action: () => onNavigate('annotation'),
         accessible: true
       });
@@ -370,17 +373,21 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
         accessible: true
       });
     } else {
+      const pastResultsPhases = ['judge_tuning', 'prompt_optimization', 'unity_volume'];
+      const isPastResults = pastResultsPhases.includes(currentPhase);
       steps.push({
         title: 'Results Review',
-        description: isFacilitator ? 'Review and share IRR results' : 'Facilitator will share results',
-        status: 'upcoming',
+        description: isPastResults ? 'IRR results reviewed' : (isFacilitator ? 'Review and share IRR results' : 'Facilitator will share results'),
+        status: isPastResults ? 'completed' : 'upcoming',
         action: () => onNavigate('results'),
-        accessible: isFacilitator
+        accessible: isFacilitator || isPastResults
       });
     }
 
     // Phase 5: Judge Tuning (Facilitator Only)
-    if (isJudgeTuningComplete) {
+    const pastJudgeTuningPhases = ['prompt_optimization', 'unity_volume'];
+    const isPastJudgeTuning = pastJudgeTuningPhases.includes(currentPhase);
+    if (isJudgeTuningComplete || isPastJudgeTuning) {
       steps.push({
         title: 'Judge Tuning',
         description: isFacilitator ? 'Create AI judges from data' : 'AI judge creation',
@@ -405,17 +412,19 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
         accessible: false
       });
     } else {
+      const isPastJT = ['judge_tuning', 'prompt_optimization', 'unity_volume'].includes(currentPhase);
       steps.push({
         title: 'Judge Tuning',
         description: isFacilitator ? 'Create AI judges' : 'AI judge creation',
-        status: 'upcoming',
+        status: isPastJT ? 'completed' : 'upcoming',
         action: () => onNavigate('judge_tuning'),
-        accessible: isFacilitator
+        accessible: isFacilitator || isPastJT
       });
     }
 
     // Phase 6: Prompt Optimization (Facilitator Only)
-    if (isPromptOptimizationComplete) {
+    const isPastPromptOpt = currentPhase === 'unity_volume';
+    if (isPromptOptimizationComplete || isPastPromptOpt) {
       steps.push({
         title: 'Prompt Optimization',
         description: isFacilitator ? 'Optimize agent prompt with GEPA' : 'Agent prompt optimization',
@@ -423,7 +432,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
         action: () => onNavigate('prompt_optimization'),
         accessible: isFacilitator
       });
-    } else if (isJudgeTuningComplete && isFacilitator) {
+    } else if ((isJudgeTuningComplete || isPastJudgeTuning) && isFacilitator) {
       steps.push({
         title: 'Prompt Optimization',
         description: 'Optimize agent prompt with GEPA',
@@ -431,7 +440,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
         action: () => onNavigate('prompt_optimization'),
         accessible: isFacilitator
       });
-    } else if (isJudgeTuningComplete && !isFacilitator) {
+    } else if ((isJudgeTuningComplete || isPastJudgeTuning) && !isFacilitator) {
       steps.push({
         title: 'Prompt Optimization',
         description: 'Facilitator optimizing agent prompt',
@@ -625,25 +634,14 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
           const activeIdx = activeViewedPhase ? CLICK_PHASE_ORDER.indexOf(activeViewedPhase) : -1;
 
           // Active = currently viewing (blue), before active = already visited (green)
-          // But only when annotation is complete — otherwise these phases stay grey
-          const isActivelyViewed = isAnnotationComplete && stepIdx >= 0 && stepIdx === activeIdx;
-          const isBeforeActive = isAnnotationComplete && stepIdx >= 0 && stepIdx <= highestVisitedPhaseIdx && stepIdx !== activeIdx;
+          // Apply when we're past annotation (backend phase is results or later)
+          const pastAnnotationPhases = ['results', 'judge_tuning', 'prompt_optimization', 'unity_volume'];
+          const isPastAnnotationPhase = pastAnnotationPhases.includes(currentPhase) || isAnnotationComplete;
+          const isActivelyViewed = isPastAnnotationPhase && stepIdx >= 0 && stepIdx === activeIdx;
+          const isBeforeActive = isPastAnnotationPhase && stepIdx >= 0 && stepIdx <= highestVisitedPhaseIdx && stepIdx !== activeIdx;
 
-          // Override status based on click-through position
-          let effectiveStatus = step.status;
-          if (isActivelyViewed) {
-            effectiveStatus = 'in_progress'; // blue
-          } else if (isBeforeActive) {
-            effectiveStatus = 'completed'; // green
-          }
-
-          const isActive = effectiveStatus === 'in_progress' || effectiveStatus === 'action_required';
-          const isCompleted = effectiveStatus === 'completed';
-          const isWaiting = effectiveStatus === 'waiting';
-          const isAvailable = effectiveStatus === 'available';
-
-          // Simplified current phase detection - direct string matching OR actively viewed
-          const isCurrentPhase = isActivelyViewed || (() => {
+          // Check if this step matches the backend's current phase
+          const isBackendCurrentPhase = (() => {
             const title = step.title.toLowerCase();
             if (title.includes('discovery')) return currentPhase === 'discovery';
             if (title.includes('rubric')) return currentPhase === 'rubric';
@@ -655,6 +653,26 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
             if (title.includes('unity')) return currentPhase === 'unity_volume';
             return false;
           })();
+
+          // Override status based on click-through position
+          // Backend current phase defaults to blue, but yields to sidebar clicks
+          let effectiveStatus = step.status;
+          if (isActivelyViewed) {
+            effectiveStatus = 'in_progress'; // blue — user clicked this in sidebar
+          } else if (isBackendCurrentPhase && !activeViewedPhase) {
+            effectiveStatus = 'in_progress'; // blue — backend phase, no sidebar selection
+          } else if (isBackendCurrentPhase && activeViewedPhase && isBeforeActive) {
+            effectiveStatus = 'completed'; // green — backend phase is before the user's sidebar selection
+          } else if (isBeforeActive) {
+            effectiveStatus = 'completed'; // green
+          }
+
+          const isActive = effectiveStatus === 'in_progress' || effectiveStatus === 'action_required';
+          const isCompleted = effectiveStatus === 'completed';
+          const isWaiting = effectiveStatus === 'waiting';
+          const isAvailable = effectiveStatus === 'available';
+
+          const isCurrentPhase = isActivelyViewed || (isBackendCurrentPhase && !activeViewedPhase);
 
           return (
             <button

@@ -497,6 +497,28 @@ export function AnnotationDemo() {
     }
   }, [existingAnnotations?.length, rubricQuestions.length]); // Only run when counts change
 
+  // Keep progress bar in sync with existing annotations (always runs, even after manual navigation)
+  useEffect(() => {
+    if (existingAnnotations && traceData.length > 0) {
+      const freshStartKey = `annotation-fresh-start-${workshopId}`;
+      const isFreshStart = localStorage.getItem(freshStartKey) === 'true';
+      if (isFreshStart) return; // Don't overwrite if fresh start will handle it
+
+      const validTraceIds = new Set(traceData.map((t: any) => t.id));
+      const completedTraceIds = new Set(
+        existingAnnotations
+          .filter(a => validTraceIds.has(a.trace_id))
+          .map(a => a.trace_id)
+      );
+      setSubmittedAnnotations(prev => {
+        // Merge server-known completions with any locally-tracked ones
+        const merged = new Set([...prev, ...completedTraceIds]);
+        if (merged.size === prev.size) return prev; // No change, avoid re-render
+        return merged;
+      });
+    }
+  }, [existingAnnotations, traceData, workshopId]);
+
   // Navigate to first incomplete trace on initial load
   const hasInitialized = useRef(false);
   useEffect(() => {
@@ -504,7 +526,7 @@ export function AnnotationDemo() {
       // Check if this is a fresh start (user just started/reset annotation phase)
       const freshStartKey = `annotation-fresh-start-${workshopId}`;
       const isFreshStart = localStorage.getItem(freshStartKey) === 'true';
-      
+
       if (isFreshStart) {
         // Clear the flag
         localStorage.removeItem(freshStartKey);
@@ -517,7 +539,7 @@ export function AnnotationDemo() {
         hasInitialized.current = true;
         return;
       }
-      
+
       // Only count annotations for traces that currently exist in traceData
       const validTraceIds = new Set(traceData.map((t: any) => t.id));
       const completedTraceIds = new Set(
@@ -525,13 +547,12 @@ export function AnnotationDemo() {
           .filter(a => validTraceIds.has(a.trace_id))
           .map(a => a.trace_id)
       );
-      setSubmittedAnnotations(completedTraceIds);
-      
+
       // Load existing annotation data for the current trace if it exists
       const currentTraceAnnotation = existingAnnotations.find(
         a => a.trace_id === currentTrace?.id && a.user_id === currentUserId
       );
-      
+
       if (currentTraceAnnotation) {
         // Use the new 'ratings' field if available (multiple questions), otherwise fall back to legacy 'rating' field
         let loadedRatings: Record<string, number> = {};
@@ -543,7 +564,7 @@ export function AnnotationDemo() {
           const firstQuestionId = rubricQuestions.length > 0 ? rubricQuestions[0].id : 'accuracy';
           loadedRatings = { [firstQuestionId]: currentTraceAnnotation.rating };
         }
-        
+
         // Parse comment to separate user comment from freeform responses
         const rawComment = currentTraceAnnotation.comment || '';
         const { userComment: loadedComment, freeformData } = parseLoadedComment(rawComment);
@@ -551,7 +572,7 @@ export function AnnotationDemo() {
         setCurrentRatings(loadedRatings);
         setComment(loadedComment);
       }
-      
+
       // Find first incomplete trace
       const firstIncompleteIndex = traceData.findIndex((trace: any) => !completedTraceIds.has(trace.id));
       if (firstIncompleteIndex !== -1) {
@@ -563,7 +584,7 @@ export function AnnotationDemo() {
         // Default to first trace
         setCurrentTraceIndex(0);
       }
-      
+
       hasInitialized.current = true;
     }
   }, [existingAnnotations, traceData, hasNavigatedManually, workshopId]);
@@ -920,23 +941,34 @@ export function AnnotationDemo() {
     
     // Clear navigating flag immediately after state update
     setIsNavigating(false);
-    
+
+    // Optimistically mark current trace as submitted so progress bar updates immediately
+    if (hasRatings) {
+      setSubmittedAnnotations(prev => new Set([...prev, currentTraceId]));
+    }
+
     // Save in background (async, non-blocking)
     if (hasRatings) {
       // Save with the stored values (before form was cleared)
       saveAnnotation(currentTraceId, true, ratingsToSave, freeformToSave, commentToSave)
         .then((success) => {
-          if (success) {
-          } else {
-            // Save failed after retries - log but don't show intrusive toast
-            // The retry logic should handle most transient failures
+          if (!success) {
+            // Save failed — remove optimistic update
+            setSubmittedAnnotations(prev => {
+              const next = new Set(prev);
+              next.delete(currentTraceId);
+              return next;
+            });
           }
         })
         .catch((error) => {
-          // This shouldn't happen as saveAnnotation catches errors, but log just in case
           console.error('nextTrace: Unexpected background save error:', error);
+          setSubmittedAnnotations(prev => {
+            const next = new Set(prev);
+            next.delete(currentTraceId);
+            return next;
+          });
         });
-    } else {
     }
   };
 
@@ -991,22 +1023,34 @@ export function AnnotationDemo() {
 
     // Clear navigating flag immediately after state update
     setIsNavigating(false);
-    
+
+    // Optimistically mark current trace as submitted so progress bar updates immediately
+    if (hasRatings) {
+      setSubmittedAnnotations(prev => new Set([...prev, currentTraceId]));
+    }
+
     // Save in background (async, non-blocking)
     if (hasRatings) {
       // Save with the stored values (before navigation)
       saveAnnotation(currentTraceId, true, ratingsToSave, freeformToSave, commentToSave)
         .then((success) => {
-          if (success) {
-          } else {
-            // Save failed after retries - log but don't show intrusive toast
+          if (!success) {
+            // Save failed — remove optimistic update
+            setSubmittedAnnotations(prev => {
+              const next = new Set(prev);
+              next.delete(currentTraceId);
+              return next;
+            });
           }
         })
         .catch((error) => {
-          // This shouldn't happen as saveAnnotation catches errors, but log just in case
           console.error('prevTrace: Unexpected background save error:', error);
+          setSubmittedAnnotations(prev => {
+            const next = new Set(prev);
+            next.delete(currentTraceId);
+            return next;
+          });
         });
-    } else {
     }
   };
 

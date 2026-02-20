@@ -122,8 +122,6 @@ export function RubricSuggestionPanel({
     // Remove accepted suggestion from list
     const newSuggestions = suggestions.filter((_, i) => i !== index);
     setSuggestions(newSuggestions);
-
-    toast.success(`"${suggestion.title}" added to rubric`);
   };
 
   const handleReject = (index: number) => {

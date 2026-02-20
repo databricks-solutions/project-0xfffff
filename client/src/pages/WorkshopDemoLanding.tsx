@@ -541,11 +541,11 @@ export function WorkshopDemoLanding() {
       case 'annotation-waiting':
         return <AnnotationWaitingView />;
       case 'annotation-complete':
-        return <IRRResultsDemo />;
+        return <IRRResultsDemo onNavigate={handleNavigation} />;
       case 'annotation-review':
         return <PhasePausedView phase="annotation" onBack={user?.role === 'facilitator' ? () => handleNavigation('annotation') : undefined} />;
       case 'results-view':
-        return <IRRResultsDemo />;
+        return <IRRResultsDemo onNavigate={handleNavigation} />;
       case 'results-waiting':
         return <ResultsWaitingView />;
       case 'judge-tuning':
