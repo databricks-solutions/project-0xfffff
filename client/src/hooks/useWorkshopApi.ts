@@ -107,9 +107,11 @@ export function useWorkshop(workshopId: string) {
     queryFn: () => WorkshopsService.getWorkshopWorkshopsWorkshopIdGet(workshopId),
     enabled: !!workshopId,
     staleTime: 10000, // Consider data stale after 10 seconds
-    refetchInterval: 30000, // Refetch every 30 seconds (was 10s — too aggressive for Databricks Apps)
-    refetchOnMount: true, // Always refetch on component mount to get latest traces
-    refetchIntervalInBackground: false, // Don't refetch when window is not focused
+    // Stop polling when the query is in an error state to avoid triggering
+    // error-recovery side effects repeatedly. Polling resumes on next success.
+    refetchInterval: (query) => query.state.status === 'error' ? false : 30000,
+    refetchOnMount: true,
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
     retry: (failureCount, error) => {
       // Don't retry on 404 errors - workshop doesn't exist
@@ -161,9 +163,9 @@ export function useTraces(workshopId: string, userId: string) {
     gcTime: 5 * 60 * 1000, // Cache for 5 minutes
     retry: 3, // Retry failed requests 3 times
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
-    refetchOnWindowFocus: true, // Refetch when user returns to tab
-    refetchOnMount: true, // Refetch on component mount to get latest traces
-    refetchInterval: 30 * 1000, // Poll every 30 seconds to pick up new traces added by facilitator
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+    refetchInterval: (query) => query.state.status === 'error' ? false : 30_000,
   });
 }
 
@@ -664,7 +666,7 @@ export function useParticipantNotes(workshopId: string, userId?: string, phase?:
     },
     enabled: !!workshopId,
     staleTime: 10 * 1000,
-    refetchInterval: 30 * 1000, // Poll for new notes from other participants
+    refetchInterval: (query) => query.state.status === 'error' ? false : 30_000,
   });
 }
 
@@ -684,7 +686,7 @@ export function useAllParticipantNotes(workshopId: string, phase?: string) {
     },
     enabled: !!workshopId,
     staleTime: 5 * 1000,
-    refetchInterval: 15 * 1000, // Poll so facilitator sees notes (was 5s, too aggressive for Databricks Apps)
+    refetchInterval: (query) => query.state.status === 'error' ? false : 15_000,
   });
 }
 
@@ -891,7 +893,7 @@ export function useFacilitatorDiscoveryFeedback(workshopId: string) {
       ) as unknown as Promise<DiscoveryFeedbackWithUser[]>,
     enabled: !!workshopId && isFacilitator,
     staleTime: 10_000,
-    refetchInterval: 30_000,
+    refetchInterval: (query) => query.state.status === 'error' ? false : 30_000,
   });
 }
 

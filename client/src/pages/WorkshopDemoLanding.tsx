@@ -146,7 +146,9 @@ export function WorkshopDemoLanding() {
   const hasAttemptedRecovery = React.useRef(false);
   const createWorkshop = useCreateWorkshop();
 
-  // Effect: Handle case where workshop doesn't exist (404/500 error) with auto-recovery
+  // Effect: Handle case where workshop doesn't exist (404 error) with auto-recovery.
+  // Only 404 triggers recovery — transient 500s are handled by the query's retry logic
+  // and refetchInterval stops polling on error to avoid cascading side effects.
   React.useEffect(() => {
     // Prevent infinite loops - only attempt recovery once
     if (workshopError && !isAutoRecovering && !hasAttemptedRecovery.current) {
@@ -155,15 +157,8 @@ export function WorkshopDemoLanding() {
         ('response' in workshopError && (workshopError as { response?: { status?: number } }).response?.status === 404) ||
         (workshopError instanceof Error && workshopError.message?.includes('404'))
       );
-      
-      const is500Error = (
-        ('status' in workshopError && (workshopError as { status?: number }).status === 500) ||
-        ('response' in workshopError && (workshopError as { response?: { status?: number } }).response?.status === 500) ||
-        (workshopError instanceof Error && workshopError.message?.includes('500')) ||
-        (workshopError instanceof Error && workshopError.message?.includes('Internal Server Error'))
-      );
-      
-      if ((is404Error || is500Error) && workshopId) {
+
+      if (is404Error && workshopId) {
         // Mark that we've attempted recovery to prevent infinite loops
         hasAttemptedRecovery.current = true;
         
