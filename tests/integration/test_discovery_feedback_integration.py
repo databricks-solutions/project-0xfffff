@@ -89,6 +89,7 @@ def users_and_participants(test_db, workshop_with_traces):
 class TestDiscoveryFeedbackIntegration:
     """Integration tests exercising the full service → DB round-trip."""
 
+    @pytest.mark.req("Q&A pairs appended in order to JSON array")
     def test_full_feedback_and_qna_flow(self, discovery_service, workshop_with_traces):
         """Complete flow: submit feedback → Q1 → A1 → Q2 → A2 → Q3 → A3.
 
@@ -155,6 +156,7 @@ class TestDiscoveryFeedbackIntegration:
         assert fb.followup_qna[0]["answer"] == "The reasoning was solid."
         assert fb.followup_qna[2]["answer"] == "Overall very good."
 
+    @pytest.mark.req("One feedback record per (workshop, trace, user) \u2014 upsert behavior")
     def test_upsert_then_qna_preserves_all_data(self, discovery_service, workshop_with_traces):
         """Upsert feedback (change label) after Q&A has been appended — Q&A preserved."""
         # Submit initial feedback
@@ -187,6 +189,7 @@ class TestDiscoveryFeedbackIntegration:
         assert len(updated.followup_qna) == 1
         assert updated.followup_qna[0]["question"] == "Q1?"
 
+    @pytest.mark.req("Completion status shows % of participants finished")
     def test_multi_user_completion_status(
         self, discovery_service, workshop_with_traces, users_and_participants
     ):
@@ -227,6 +230,7 @@ class TestDiscoveryFeedbackIntegration:
         assert status["completion_percentage"] == 50.0
         assert status["all_completed"] is False
 
+    @pytest.mark.req("Facilitator can view participant feedback details (label, comment, follow-up Q&A)")
     def test_get_feedback_with_user_details(
         self, discovery_service, workshop_with_traces, users_and_participants
     ):

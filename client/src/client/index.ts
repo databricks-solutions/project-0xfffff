@@ -8,6 +8,8 @@ export { OpenAPI } from './core/OpenAPI';
 export type { OpenAPIConfig } from './core/OpenAPI';
 
 export type { AlignmentRequest } from './models/AlignmentRequest';
+export { AnalysisTemplate } from './models/AnalysisTemplate';
+export type { AnalyzeDiscoveryRequest } from './models/AnalyzeDiscoveryRequest';
 export type { Annotation } from './models/Annotation';
 export type { AnnotationCreate } from './models/AnnotationCreate';
 export type { AuthResponse } from './models/AuthResponse';
