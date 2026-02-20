@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useFacilitatorFindings, useFacilitatorFindingsWithUserDetails, useTraces, useAllTraces, useRubric, useFacilitatorAnnotations, useFacilitatorAnnotationsWithUserDetails, useWorkshop, useDiscoveryFeedback, useFacilitatorDiscoveryFeedback, useUpdateDiscoveryModel, useMLflowConfig } from '@/hooks/useWorkshopApi';
+import { useTraces, useAllTraces, useRubric, useFacilitatorAnnotations, useFacilitatorAnnotationsWithUserDetails, useWorkshop, useDiscoveryFeedback, useFacilitatorDiscoveryFeedback, useUpdateDiscoveryModel, useMLflowConfig } from '@/hooks/useWorkshopApi';
 import type { DiscoveryFeedbackWithUser } from '@/hooks/useWorkshopApi';
 import { Settings, Users, FileText, CheckCircle, Clock, AlertCircle, ChevronRight, Play, Eye, Plus, RotateCcw, Target, TrendingUp, Activity, MessageSquare, ChevronDown, Brain } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -30,14 +30,7 @@ import { PhaseControlButton } from './PhaseControlButton';
 import { JsonPathSettings } from './JsonPathSettings';
 import { toast } from 'sonner';
 import { parseRubricQuestions } from '@/utils/rubricUtils';
-import type { DiscoveryFinding, Annotation, Trace } from '@/client';
-
-/** Finding extended with user details from the /findings-with-users endpoint */
-interface FindingWithUser extends DiscoveryFinding {
-  user_name?: string;
-  user_email?: string;
-  user_role?: string;
-}
+import type { Annotation, Trace } from '@/client';
 
 /** Annotation extended with user details from the /annotations-with-users endpoint */
 interface AnnotationWithUser extends Annotation {
@@ -70,14 +63,12 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
 
   // Get all workshop data
   const { data: workshop } = useWorkshop(workshopId!);
-  const { data: allFindings } = useFacilitatorFindings(workshopId!);
-  const { data: allFindingsWithUserDetails } = useFacilitatorFindingsWithUserDetails(workshopId!);
   // Facilitators viewing all traces - don't need personalized ordering
   const { data: traces } = useAllTraces(workshopId!);
   const { data: rubric } = useRubric(workshopId!);
   const { data: annotations } = useFacilitatorAnnotations(workshopId!);
   const { data: annotationsWithUserDetails } = useFacilitatorAnnotationsWithUserDetails(workshopId!);
-  // v2 discovery feedback with user details (for discovery metrics)
+  // v2 discovery feedback with user details (for discovery metrics + reviewer names)
   const { data: allDiscoveryFeedback } = useFacilitatorDiscoveryFeedback(workshopId!);
 
   // Additional traces functionality - separate state for each phase
@@ -123,10 +114,10 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
   const completedDiscoveryTraces = Math.min(tracesWithFeedback.size, discoveryTraceCount);
   const discoveryProgress = discoveryTraceCount > 0 ? (completedDiscoveryTraces / discoveryTraceCount) * 100 : 0;
 
-  // Active users: use v2 feedback for discovery, v1 findings as fallback
+  // Active users: use v2 feedback for discovery
   const activeUsers = allDiscoveryFeedback
     ? new Set(allDiscoveryFeedback.map(f => f.user_id))
-    : (allFindings ? new Set(allFindings.map(f => f.user_id)) : new Set());
+    : new Set();
 
   // For annotation phase, use annotation-based active users
   const activeAnnotators = annotations ? new Set(annotations.map(a => a.user_id)) : new Set();
@@ -507,7 +498,7 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
       queryClient.invalidateQueries({ queryKey: ['all-traces', workshopId] });
       queryClient.invalidateQueries({ queryKey: ['findings', workshopId] });
       queryClient.invalidateQueries({ queryKey: ['user-findings', workshopId] });
-      queryClient.invalidateQueries({ queryKey: ['facilitator-findings-with-users', workshopId] });
+      queryClient.invalidateQueries({ queryKey: ['facilitator-feedback-with-users', workshopId] });
       
       // Invalidate ALL trace queries for this workshop (including user-specific ones)
       // The participant trace query key is ['traces', workshopId, userId]
@@ -1044,9 +1035,9 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                             {trace.reviewers.length > 0 && (
                               <div className="flex flex-wrap gap-1.5">
                                 {trace.reviewers.map((reviewer: string) => {
-                                  // Find the user name from the findings with user details
-                                  const userFinding = allFindingsWithUserDetails?.find(f => f.user_id === reviewer);
-                                  const reviewerName = userFinding?.user_name || reviewer;
+                                  // Find the user name from the discovery feedback with user details
+                                  const userFeedback = allDiscoveryFeedback?.find(f => f.user_id === reviewer);
+                                  const reviewerName = userFeedback?.user_name || reviewer;
                                   return (
                                     <Badge key={reviewer} variant="outline" className="text-xs px-2 py-0.5 bg-white border-slate-300">
                                       {reviewerName}
@@ -1126,8 +1117,8 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
               focusPhase === 'annotation' ? 'md:grid-cols-2 lg:grid-cols-3' : 
               'md:grid-cols-3'
             }`}>
-              {/* View All Findings - Hide during discovery and annotation focus */}
-              {focusPhase !== 'discovery' && focusPhase !== 'annotation' && (
+              {/* View All Findings - Hide during annotation focus */}
+              {focusPhase !== 'annotation' && (
               <Button
                 variant="outline"
                 className="flex items-center gap-3 justify-start p-4 h-auto border-blue-200 hover:bg-blue-50 hover:border-blue-300 transition-colors"

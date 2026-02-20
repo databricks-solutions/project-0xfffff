@@ -33,6 +33,7 @@ export type { DBSQLExportResponse } from './models/DBSQLExportResponse';
 export type { DiscoveryCoverage } from './models/DiscoveryCoverage';
 export type { DiscoveryFeedback } from './models/DiscoveryFeedback';
 export type { DiscoveryFeedbackCreate } from './models/DiscoveryFeedbackCreate';
+export type { DiscoveryFeedbackWithUser } from './models/DiscoveryFeedbackWithUser';
 export type { DiscoveryFinding } from './models/DiscoveryFinding';
 export type { DiscoveryFindingCreate } from './models/DiscoveryFindingCreate';
 export type { DiscoveryFindingWithUser } from './models/DiscoveryFindingWithUser';

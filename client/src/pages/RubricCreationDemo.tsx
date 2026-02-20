@@ -42,14 +42,14 @@ import {
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useWorkflowContext } from '@/context/WorkflowContext';
 import { useUser, useRoleCheck } from '@/context/UserContext';
-import { useRubric, useCreateRubric, useUpdateRubric, useUserFindings, useFacilitatorFindingsWithUserDetails, useAllTraces, useAllParticipantNotes, useWorkshop, useToggleParticipantNotes } from '@/hooks/useWorkshopApi';
+import { useRubric, useCreateRubric, useUpdateRubric, useDiscoveryFeedback, useFacilitatorDiscoveryFeedback, useAllTraces, useAllParticipantNotes, useWorkshop, useToggleParticipantNotes, type DiscoveryFeedbackData, type DiscoveryFeedbackWithUser } from '@/hooks/useWorkshopApi';
 import { FocusedAnalysisView, ScratchPadEntry } from '@/components/FocusedAnalysisView';
 import { RubricSuggestionPanel, type RubricSuggestion } from '@/components/RubricSuggestionPanel';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useQueryClient } from '@tanstack/react-query';
 import { WorkshopsService } from '@/client';
 import { JudgeType } from '@/client';
-import type { Rubric, RubricCreate, DiscoveryFinding, DiscoveryFindingWithUser, Trace } from '@/client';
+import type { Rubric, RubricCreate, Trace } from '@/client';
 import { toast } from 'sonner';
 import { parseRubricQuestions, formatRubricQuestions, QUESTION_DELIMITER, type RubricQuestion } from '@/utils/rubricUtils';
 
@@ -65,9 +65,9 @@ const convertQuestionToApiRubric = (question: RubricQuestion): RubricCreate => (
   created_by: 'facilitator' // In a real app, this would be the actual user
 });
 
-// Get discovery responses from real findings data, enriched with trace information
-const useDiscoveryResponses = (findings: DiscoveryFinding[] | undefined, traces: Trace[] | undefined) => {
-  if (!findings || findings.length === 0 || !traces || traces.length === 0) return [];
+// Get discovery responses from feedback data, enriched with trace information
+const useDiscoveryResponses = (feedback: DiscoveryFeedbackData[] | undefined, traces: Trace[] | undefined) => {
+  if (!feedback || feedback.length === 0 || !traces || traces.length === 0) return [];
 
   // Create a map of trace IDs to trace data for quick lookup
   const traceMap = traces.reduce((acc, trace) => {
@@ -75,18 +75,18 @@ const useDiscoveryResponses = (findings: DiscoveryFinding[] | undefined, traces:
     return acc;
   }, {} as Record<string, Trace>);
 
-  // Group findings by trace_id to organize responses better
-  const groupedByTrace = findings.reduce((acc, finding) => {
-    if (!acc[finding.trace_id]) {
-      acc[finding.trace_id] = [];
+  // Group feedback by trace_id
+  const groupedByTrace = feedback.reduce((acc, fb) => {
+    if (!acc[fb.trace_id]) {
+      acc[fb.trace_id] = [];
     }
-    acc[finding.trace_id].push(finding);
+    acc[fb.trace_id].push(fb);
     return acc;
-  }, {} as Record<string, DiscoveryFinding[]>);
-  
-  return Object.entries(groupedByTrace).map(([traceId, traceFindings]) => {
+  }, {} as Record<string, DiscoveryFeedbackData[]>);
+
+  return Object.entries(groupedByTrace).map(([traceId, traceFeedback]) => {
     const trace = traceMap[traceId];
-    
+
     return {
       traceId,
       trace: trace ? {
@@ -95,28 +95,23 @@ const useDiscoveryResponses = (findings: DiscoveryFinding[] | undefined, traces:
         context: trace.context ?? undefined,
         mlflow_trace_id: trace.mlflow_trace_id ?? undefined
       } : null,
-      responses: traceFindings.map((finding, index) => {
-        // Parse the formatted insight string back into separate questions
-        const insight = finding.insight || '';
-        const parts = insight.split('\n\nImprovement Analysis: ');
-        
-        let question1 = insight;
-        let question2 = '';
-        
-        if (parts.length === 2) {
-          // Remove "Quality Assessment: " prefix if present
-          question1 = parts[0].replace('Quality Assessment: ', '');
-          question2 = parts[1];
-        }
-        
+      responses: traceFeedback.map((fb) => {
+        const label = fb.feedback_label === 'good' ? '[GOOD]' : '[BAD]';
+        const question1 = `${label} ${fb.comment}`;
+
+        // Format follow-up Q&A pairs as question2
+        const question2 = fb.followup_qna && fb.followup_qna.length > 0
+          ? fb.followup_qna.map(qa => `Q: ${qa.question}\nA: ${qa.answer}`).join('\n\n')
+          : '';
+
         return {
-          participant: 'user_name' in finding ? (finding as DiscoveryFindingWithUser).user_name : finding.user_id,
+          participant: 'user_name' in fb ? (fb as DiscoveryFeedbackWithUser).user_name : fb.user_id,
           question1,
           question2
         };
       })
     };
-  }).filter(item => item.trace !== null); // Only return items where we found the corresponding trace
+  }).filter(item => item.trace !== null);
 };
 
 // Keep some sample data for demonstration when no real data is available
@@ -211,13 +206,13 @@ export function RubricCreationDemo() {
   const { data: rubric, isLoading: rubricLoading, error: rubricError } = useRubric(workshopId || '');
   // Use all traces for rubric creation page
   const { data: traces, refetch: refetchTraces } = useAllTraces(workshopId || '');
-  // Facilitators see all findings to create better rubric, others see their own
+  // Discovery feedback: facilitators see all with user details, others see their own
   // Both hooks must be called unconditionally (React rules of hooks)
-  const facilitatorFindings = useFacilitatorFindingsWithUserDetails(workshopId || '');
-  const userFindings = useUserFindings(workshopId || '', user);
-  const { data: findings, refetch: refetchFindings, isRefetching: isRefetchingFindings } = isFacilitator
-    ? facilitatorFindings
-    : userFindings;
+  const facilitatorFeedback = useFacilitatorDiscoveryFeedback(workshopId || '');
+  const userFeedback = useDiscoveryFeedback(workshopId || '', user?.id);
+  const { data: feedback, refetch: refetchFeedback, isRefetching: isRefetchingFeedback } = isFacilitator
+    ? facilitatorFeedback
+    : userFeedback;
   const createRubric = useCreateRubric(workshopId || '');
   const updateRubric = useUpdateRubric(workshopId || '');
   // Fetch all participant notes for the scratch pad (facilitator sees all)
@@ -226,8 +221,8 @@ export function RubricCreationDemo() {
   const { data: workshopData } = useWorkshop(workshopId || '');
   const toggleParticipantNotes = useToggleParticipantNotes(workshopId || '');
 
-  // Get discovery responses from real findings data, enriched with trace information
-  const discoveryResponses = useDiscoveryResponses(findings, traces);
+  // Get discovery responses from feedback data, enriched with trace information
+  const discoveryResponses = useDiscoveryResponses(feedback, traces);
 
   // Helper to save scratch pad immediately to localStorage
   const saveScratchPadToStorage = useCallback((entries: ScratchPadEntry[]) => {
@@ -584,8 +579,8 @@ export function RubricCreationDemo() {
               <TabsTrigger value="discovery" className="flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm">
                 <Users className="h-4 w-4" />
                 Discovery Responses
-                {findings && findings.length > 0 && (
-                  <Badge variant="secondary" className="ml-1 bg-blue-100 text-blue-700 text-[10px] px-1.5 py-0 h-5">{findings.length}</Badge>
+                {feedback && feedback.length > 0 && (
+                  <Badge variant="secondary" className="ml-1 bg-blue-100 text-blue-700 text-[10px] px-1.5 py-0 h-5">{feedback.length}</Badge>
                 )}
               </TabsTrigger>
               <TabsTrigger value="rubric" className="flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm">
@@ -644,7 +639,7 @@ export function RubricCreationDemo() {
                   variant="outline"
                   size="sm"
                   onClick={() => setShowSuggestionPanel(true)}
-                  disabled={!findings || findings.length === 0}
+                  disabled={!feedback || feedback.length === 0}
                   className="flex items-center gap-2"
                 >
                   <Sparkles className="h-4 w-4" />

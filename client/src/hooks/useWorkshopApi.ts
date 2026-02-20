@@ -355,7 +355,7 @@ export function useSubmitFinding(workshopId: string) {
       queryClient.invalidateQueries({ queryKey: ['findings', workshopId, 'all_findings'] });
       queryClient.invalidateQueries({ queryKey: ['findings', workshopId, 'all_findings', 'with_user_details'] });
       // Also invalidate the direct endpoint query used in FindingsReviewPage
-      queryClient.invalidateQueries({ queryKey: ['facilitator-findings-with-users', workshopId] });
+      queryClient.invalidateQueries({ queryKey: ['facilitator-feedback-with-users', workshopId] });
     },
   });
 }
@@ -919,6 +919,8 @@ export function useSubmitDiscoveryFeedback(workshopId: string) {
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['discovery-feedback', workshopId, variables.user_id] });
+      queryClient.invalidateQueries({ queryKey: ['facilitator-feedback-with-users', workshopId] });
+      queryClient.invalidateQueries({ queryKey: ['discovery-feedback-with-users', workshopId] });
     },
   });
 }
@@ -1000,6 +1002,8 @@ export function useSubmitFollowUpAnswer(workshopId: string) {
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['discovery-feedback', workshopId, variables.user_id] });
+      queryClient.invalidateQueries({ queryKey: ['facilitator-feedback-with-users', workshopId] });
+      queryClient.invalidateQueries({ queryKey: ['discovery-feedback-with-users', workshopId] });
     },
   });
 }

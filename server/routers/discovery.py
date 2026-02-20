@@ -15,6 +15,7 @@ from server.database import get_db
 from server.models import (
     DiscoveryFeedback,
     DiscoveryFeedbackCreate,
+    DiscoveryFeedbackWithUser,
     DiscoveryFinding,
     DiscoveryFindingCreate,
     DiscoveryFindingWithUser,
@@ -304,12 +305,12 @@ async def get_discovery_feedback(
     return svc.get_discovery_feedback(workshop_id, user_id)
 
 
-@router.get("/{workshop_id}/discovery-feedback-with-users", response_model=list[dict[str, Any]])
+@router.get("/{workshop_id}/discovery-feedback-with-users", response_model=list[DiscoveryFeedbackWithUser])
 async def get_discovery_feedback_with_user_details(
     workshop_id: str,
     user_id: str | None = None,
     db: Session = Depends(get_db),
-) -> list[dict[str, Any]]:
+) -> list[DiscoveryFeedbackWithUser]:
     """Get all discovery feedback with user details (name, role) for facilitator view."""
     svc = DiscoveryService(db)
     return svc.get_discovery_feedback_with_user_details(workshop_id, user_id)

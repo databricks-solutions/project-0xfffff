@@ -700,6 +700,23 @@ class DiscoveryFeedback(BaseModel):
     updated_at: datetime = Field(default_factory=datetime.now)
 
 
+class DiscoveryFeedbackWithUser(BaseModel):
+    """Feedback enriched with user display info (for facilitator views)."""
+
+    id: str
+    workshop_id: str
+    trace_id: str
+    user_id: str
+    user_name: str
+    user_email: str
+    user_role: str
+    feedback_label: FeedbackLabel
+    comment: str
+    followup_qna: list[dict[str, str]] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+
 class GenerateFollowUpRequest(BaseModel):
     trace_id: str
     user_id: str
