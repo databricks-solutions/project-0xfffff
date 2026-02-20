@@ -1,5 +1,6 @@
 """MLflow intake service for pulling traces from MLflow experiments."""
 
+import math
 from typing import Any, Literal
 
 import mlflow
@@ -7,6 +8,24 @@ import mlflow.genai
 
 from server.models import MLflowIntakeConfig, MLflowTraceInfo, TraceUpload
 from server.services.database_service import DatabaseService
+
+
+def sanitize_for_json(obj: Any) -> Any:
+    """Recursively replace float NaN/Infinity values with None.
+
+    PostgreSQL JSON columns reject NaN and Infinity because they are not
+    valid JSON tokens.  MLflow span inputs/outputs can contain these values
+    (e.g. from pandas DataFrames), so we sanitize before insertion.
+    """
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    if isinstance(obj, dict):
+        return {k: sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [sanitize_for_json(v) for v in obj]
+    return obj
 
 
 class MLflowIntakeService:
@@ -132,8 +151,8 @@ class MLflowIntakeService:
                                 {
                                     "name": span.name,
                                     "span_type": span.span_type,
-                                    "inputs": span.inputs,
-                                    "outputs": span.outputs,
+                                    "inputs": sanitize_for_json(span.inputs),
+                                    "outputs": sanitize_for_json(span.outputs),
                                     "start_time_ns": span.start_time_ns,
                                     "end_time_ns": span.end_time_ns,
                                 }
