@@ -331,3 +331,13 @@
 2026-02-09 13:58:35,547 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=c289f5e9-1661-412b-bae1-a46133be4f95, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/c289f5e9-1661-412b-bae1-a46133be4f95.jsonl
 2026-02-09 13:58:35,561 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: c289f5e9-1661-412b-bae1-a46133be4f95
 2026-02-09 13:58:37,801 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-d0a18d0fbd9f99e648fd5682302fa211
+2026-02-18 16:19:48,528 - mlflow.claude_code.tracing - WARNING - Failed to set experiment: 401: Credential was not sent or was of an unsupported type for this API. [ReqId: 613a6c12-b634-4481-aef6-103e89c71294]
+2026-02-18 16:19:48,529 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=bf921e8c-9a0a-43f5-aa4d-adb6a4f69974, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/bf921e8c-9a0a-43f5-aa4d-adb6a4f69974.jsonl
+2026-02-18 16:19:48,537 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: bf921e8c-9a0a-43f5-aa4d-adb6a4f69974
+2026-02-18 16:19:49,501 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-88f1a95f5ef2e8bda090cbaf8482c523
+2026-02-20 08:23:54,406 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=a14cd4f7-5dfc-46db-b820-a7c5d8163560, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/a14cd4f7-5dfc-46db-b820-a7c5d8163560.jsonl
+2026-02-20 08:23:54,409 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: a14cd4f7-5dfc-46db-b820-a7c5d8163560
+2026-02-20 08:23:56,554 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-acbe1932a79e41d64b0b9f5571e7ce6c
+2026-02-20 08:26:54,534 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=a14cd4f7-5dfc-46db-b820-a7c5d8163560, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/a14cd4f7-5dfc-46db-b820-a7c5d8163560.jsonl
+2026-02-20 08:26:54,548 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: a14cd4f7-5dfc-46db-b820-a7c5d8163560
+2026-02-20 08:26:56,798 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-42cdd9978f884ad11c7663e45d9dce5e

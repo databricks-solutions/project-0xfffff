@@ -2788,6 +2788,8 @@ async def ingest_mlflow_traces(workshop_id: str, ingest_request: dict, db: Sessi
             "workshop_id": workshop_id,
         }
     except Exception as e:
+        # Roll back the failed transaction so the session is usable again
+        db.rollback()
         # Update ingestion status with error
         db_service.update_mlflow_ingestion_status(workshop_id, 0, str(e))
         raise HTTPException(status_code=500, detail=f"Failed to ingest traces: {e!s}") from e
@@ -2827,14 +2829,17 @@ async def upload_csv_traces(
 ) -> dict[str, Any]:
     """Upload traces from a MLflow trace export CSV file.
 
-    Expected CSV format (MLflow export):
-    - Required columns: request_preview, response_preview
-    - Optional columns: trace_id, execution_duration_ms, state, request, response,
-      spans, tags, trace_metadata, trace_location, assessments, etc.
+    Supports two CSV formats:
 
-    Example from MLflow export:
-    trace_id,request_preview,response_preview,execution_duration_ms,state,...
-    "tr-abc123","What is Python?","Python is a programming language",150,"OK",...
+    1. Preview format (MLflow UI export):
+       - Required columns: request_preview, response_preview
+       - Optional columns: trace_id, execution_duration_ms, state, etc.
+
+    2. Raw search_traces format (mlflow.search_traces() export):
+       - Required columns: request, response
+       - Optional columns: trace_id, trace, execution_duration, state, etc.
+       - Previews are extracted from the JSON request/response using the same
+         logic as the live MLflow ingest path.
     """
     db_service = DatabaseService(db)
     workshop = db_service.get_workshop(workshop_id)
@@ -2850,6 +2855,9 @@ async def upload_csv_traces(
         import io
         import json
 
+        # Raw search_traces exports can have very large JSON fields (trace column)
+        csv.field_size_limit(10 * 1024 * 1024)  # 10 MB
+
         # Read file content
         content = await file.read()
         decoded_content = content.decode("utf-8")
@@ -2857,17 +2865,28 @@ async def upload_csv_traces(
         # Parse CSV
         csv_reader = csv.DictReader(io.StringIO(decoded_content))
 
-        # Validate required columns for MLflow export format
-        if (
-            not csv_reader.fieldnames
-            or "request_preview" not in csv_reader.fieldnames
-            or "response_preview" not in csv_reader.fieldnames
-        ):
+        # Detect CSV format: preview columns vs raw search_traces export
+        fieldnames = csv_reader.fieldnames or []
+        has_preview_cols = "request_preview" in fieldnames and "response_preview" in fieldnames
+        has_raw_cols = "request" in fieldnames and "response" in fieldnames
+
+        if not has_preview_cols and not has_raw_cols:
             raise HTTPException(
                 status_code=400,
-                detail='CSV must contain "request_preview" and "response_preview" columns (MLflow export format). Found columns: '
-                + ", ".join(csv_reader.fieldnames or []),
+                detail='CSV must contain either "request_preview"/"response_preview" columns '
+                '(MLflow UI export) or "request"/"response" columns '
+                "(mlflow.search_traces() export). Found columns: "
+                + ", ".join(fieldnames),
             )
+
+        is_raw_format = not has_preview_cols and has_raw_cols
+
+        # For raw format, use the same extraction logic as the live MLflow ingest path
+        intake_service = None
+        if is_raw_format:
+            from server.services.mlflow_intake_service import MLflowIntakeService
+
+            intake_service = MLflowIntakeService(db_service)
 
         # Convert CSV rows to TraceUpload objects
         trace_uploads = []
@@ -2875,30 +2894,29 @@ async def upload_csv_traces(
         for row in csv_reader:
             row_number += 1
 
-            # Skip empty rows
-            if not row.get("request_preview") or not row.get("response_preview"):
-                continue
-
-            # Get and clean request/response text
-            def clean_csv_text(text):
-                if not text:
-                    return ""
-                text = text.strip()
-                # Remove surrounding quotes
-                while text.startswith('"') and text.endswith('"') and len(text) > 1:
-                    text = text[1:-1].strip()
-                text = text.strip('"').strip("'")
-                text = text.replace('""', '"')
-                if "\\n" in text:
-                    text = text.replace("\\n", "\n")
-                return text
+            if is_raw_format:
+                # Raw search_traces format: extract previews from JSON request/response
+                raw_request = row.get("request", "")
+                raw_response = row.get("response", "")
+                if not raw_request and not raw_response:
+                    continue
+                input_text = intake_service._extract_content_from_json(raw_request) if raw_request else ""
+                output_text = intake_service._extract_content_from_json(raw_response) if raw_response else ""
+                if not input_text and not output_text:
+                    continue
+            else:
+                # Preview format: use columns directly
+                if not row.get("request_preview") or not row.get("response_preview"):
+                    continue
+                input_text = row["request_preview"].strip()
+                output_text = row["response_preview"].strip()
 
             # Build rich context from MLflow metadata
             context = {"source": "mlflow_csv_upload", "filename": file.filename, "csv_row_number": row_number}
 
-            # Add all available MLflow metadata to context
+            # Add all available MLflow metadata to context (handle both column naming conventions)
             mlflow_fields = {
-                "execution_duration_ms": row.get("execution_duration_ms"),
+                "execution_duration_ms": row.get("execution_duration_ms") or row.get("execution_duration"),
                 "state": row.get("state"),
                 "request_time": row.get("request_time"),
                 "client_request_id": row.get("client_request_id"),
@@ -2919,6 +2937,21 @@ async def upload_csv_traces(
                         logger.warning(f"Row {row_number}: Invalid JSON in {field} column, storing as string")
                         context[field] = row[field]
 
+            # For raw format, parse the full trace blob for richer context
+            if is_raw_format and row.get("trace"):
+                try:
+                    trace_blob = json.loads(row["trace"])
+                    trace_info = trace_blob.get("info", {})
+                    trace_data = trace_blob.get("data", {})
+                    # Extract spans from the trace data
+                    if "spans" in trace_data and "spans" not in context:
+                        context["spans"] = trace_data["spans"]
+                    # Extract tags from trace info
+                    if "tags" in trace_info and "tags" not in context:
+                        context["tags"] = trace_info["tags"]
+                except json.JSONDecodeError:
+                    logger.warning(f"Row {row_number}: Invalid JSON in trace column")
+
             # Extract MLflow trace ID if available
             mlflow_trace_id = row.get("trace_id")
 
@@ -2934,8 +2967,8 @@ async def upload_csv_traces(
                     pass
 
             trace_upload = TraceUpload(
-                input=row["request_preview"].strip(),
-                output=row["response_preview"].strip(),
+                input=input_text,
+                output=output_text,
                 context=context,
                 trace_metadata=trace_metadata,
                 mlflow_trace_id=mlflow_trace_id,
