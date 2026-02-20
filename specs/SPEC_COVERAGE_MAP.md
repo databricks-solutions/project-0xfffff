@@ -36,7 +36,7 @@ This report shows test coverage for each specification's success criteria.
 
 ---
 
-## ANNOTATION_SPEC
+## DISCOVERY_SPEC
 
 **Coverage**: 13/21 requirements (61%)
 
@@ -137,9 +137,41 @@ These tests are tagged with the spec but don't link to specific requirements:
 
 ### Uncovered Requirements
 
-- [ ] Production build completes without errors
-- [ ] Console statements removed in production
-- [ ] Full deployment completes successfully
+- [ ] Previous Q&A visible while answering new questions
+- [ ] Loading spinner during LLM generation (1-3s)
+- [ ] Facilitator can trigger analysis at any time (even partial feedback)
+- [ ] Facilitator selects analysis template (Evaluation Criteria or Themes & Patterns) before running
+- [ ] System aggregates feedback by trace
+- [ ] Disagreements detected at 3 priority levels (deterministic, no LLM)
+- [ ] LLM distills evaluation criteria with evidence from trace IDs
+- [ ] LLM analyzes disagreements with follow-up questions and suggestions
+- [ ] Analysis record stores which template was used
+- [ ] Each analysis run creates a new record (history preserved)
+- [ ] Re-runnable — new analysis as more feedback comes in, prior analyses retained
+- [ ] Warning if < 2 participants (not an error)
+- [ ] Data freshness banner (participant count, last run timestamp)
+- [ ] Results organized by priority (HIGH → MEDIUM → LOWER)
+- [ ] Facilitator can promote distilled criteria to draft rubric
+- [ ] Facilitator can promote disagreement insights to draft rubric
+- [ ] Facilitator can promote raw participant feedback to draft rubric
+- [ ] Facilitator can manually add draft rubric items
+- [ ] Draft rubric items editable and removable
+- [ ] "Suggest Groups" returns LLM proposal without persisting
+- [ ] Facilitator can review, adjust, and apply group proposal
+- [ ] Manual grouping: create groups, name them, move items between groups
+- [ ] Each group maps to one rubric question (group name = question title)
+- [ ] Draft rubric items available during Rubric Creation phase
+- [ ] Source traceability maintained (which traces support each item)
+- [ ] Multiple analysis records per workshop allowed (history preserved)
+- [ ] Draft rubric items track promotion source and promoter
+- [ ] LLM failures show error toast with retry
+- [ ] Analysis shows warning (not error) if < 2 participants
+- [ ] Progressive disclosure (one question at a time)
+- [ ] Submit buttons disabled until required fields filled
+- [ ] Clear progress indication (X of Y traces completed)
+- [ ] Smooth transitions between feedback states
+- [ ] Disagreements color-coded by priority (red/yellow/blue)
+- [ ] Criteria show evidence (supporting trace IDs)
 
 ### Covered Requirements
 
