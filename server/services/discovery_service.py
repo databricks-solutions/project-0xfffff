@@ -731,7 +731,7 @@ class DiscoveryService:
             raise
         except Exception as e:
             logger.exception("Failed to generate discovery summaries via DSPy: %s", e)
-            raise HTTPException(status_code=502, detail=f"Failed to generate summaries: {str(e)}") from e
+            raise HTTPException(status_code=502, detail=f"Failed to generate summaries: {e!s}") from e
 
     def get_discovery_summaries(self, workshop_id: str) -> dict[str, Any]:
         self._get_workshop_or_404(workshop_id)
@@ -898,7 +898,7 @@ class DiscoveryService:
             raise
         except Exception as e:
             self.db.rollback()
-            raise HTTPException(status_code=500, detail=f"Failed to generate discovery data: {str(e)}") from e
+            raise HTTPException(status_code=500, detail=f"Failed to generate discovery data: {e!s}") from e
 
     # ---------------------------------------------------------------------
     # User completion tracking
@@ -1177,9 +1177,9 @@ class DiscoveryService:
         self, workshop_id: str, trace_id: str, findings: list[dict[str, Any]], trace: Any
     ) -> None:
         """Detect disagreements using LLM if configured."""
+        from server.models import ClassifiedFinding
         from server.services.classification_service import ClassificationService
         from server.services.token_storage_service import token_storage
-        from server.models import ClassifiedFinding
 
         if not findings or len(findings) < 2:
             return
@@ -1251,14 +1251,13 @@ class DiscoveryService:
 
         if any(word in text_lower for word in ["missing", "lack", "no ", "absent"]):
             return "missing_info"
-        elif any(word in text_lower for word in ["fail", "error", "broken", "not work"]):
+        if any(word in text_lower for word in ["fail", "error", "broken", "not work"]):
             return "failure_modes"
-        elif any(word in text_lower for word in ["edge", "corner", "boundary", "extreme"]):
+        if any(word in text_lower for word in ["edge", "corner", "boundary", "extreme"]):
             return "boundary_conditions"
-        elif any(word in text_lower for word in ["special", "unique", "unusual", "particular"]):
+        if any(word in text_lower for word in ["special", "unique", "unusual", "particular"]):
             return "edge_cases"
-        else:
-            return "themes"
+        return "themes"
 
     def detect_disagreements(
         self, workshop_id: str, trace_id: str, findings: list[dict[str, Any]]

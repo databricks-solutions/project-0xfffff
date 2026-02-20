@@ -700,6 +700,23 @@ class DiscoveryFeedback(BaseModel):
     updated_at: datetime = Field(default_factory=datetime.now)
 
 
+class DiscoveryFeedbackWithUser(BaseModel):
+    """Feedback enriched with user display info (for facilitator views)."""
+
+    id: str
+    workshop_id: str
+    trace_id: str
+    user_id: str
+    user_name: str
+    user_email: str
+    user_role: str
+    feedback_label: FeedbackLabel
+    comment: str
+    followup_qna: list[dict[str, str]] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+
 class GenerateFollowUpRequest(BaseModel):
     trace_id: str
     user_id: str
@@ -838,3 +855,63 @@ class FuzzyProgress(BaseModel):
 
     status: str  # "exploring" | "good_coverage" | "complete"
     percentage: float  # 0-100
+
+
+# ---------------------------------------------------------------------------
+# Discovery Analysis Models (Step 2 - Findings Synthesis)
+# ---------------------------------------------------------------------------
+
+
+class AnalysisTemplate(str, Enum):
+    EVALUATION_CRITERIA = "evaluation_criteria"
+    THEMES_PATTERNS = "themes_patterns"
+
+
+class Finding(BaseModel):
+    """A single finding from the analysis (criterion or theme)."""
+
+    text: str
+    evidence_trace_ids: list[str] = Field(default_factory=list)
+    priority: str = "medium"  # 'high' | 'medium' | 'low'
+
+
+class DisagreementAnalysis(BaseModel):
+    """Analysis of a disagreement between reviewers on a trace."""
+
+    trace_id: str
+    summary: str
+    underlying_theme: str
+    followup_questions: list[str] = Field(default_factory=list)
+    facilitator_suggestions: list[str] = Field(default_factory=list)
+
+
+class DistillationOutput(BaseModel):
+    """Structured output from the LLM distillation step."""
+
+    findings: list[Finding] = Field(default_factory=list)
+    high_priority_disagreements: list[DisagreementAnalysis] = Field(default_factory=list)
+    medium_priority_disagreements: list[DisagreementAnalysis] = Field(default_factory=list)
+    lower_priority_disagreements: list[DisagreementAnalysis] = Field(default_factory=list)
+    summary: str = ""
+
+
+class DiscoveryAnalysisResponse(BaseModel):
+    """Full analysis record returned from the API."""
+
+    id: str
+    workshop_id: str
+    template_used: str
+    analysis_data: str
+    findings: list[dict[str, Any]]
+    disagreements: dict[str, list[dict[str, Any]]]
+    participant_count: int
+    model_used: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class AnalyzeDiscoveryRequest(BaseModel):
+    """Request model for triggering discovery analysis."""
+
+    template: AnalysisTemplate = Field(default=AnalysisTemplate.EVALUATION_CRITERIA)
+    model: str = Field(default="databricks-claude-sonnet-4-5", description="Model endpoint name")

@@ -69,7 +69,7 @@ def _maybe_enable_mlflow_dspy_autolog() -> None:
 
             # Enable DSPy autologging to capture spans/traces for predictor calls.
             # Leave defaults (log_traces=True) and keep it quiet unless debugging.
-            import mlflow.dspy  # noqa: F401
+            import mlflow.dspy
 
             mlflow.dspy.autolog(log_traces=True, silent=True)
 
@@ -204,27 +204,90 @@ def _import_dspy():
     return dspy
 
 
-def build_databricks_lm(endpoint_name: str, workspace_url: str, token: str, *, temperature: float = 0.2):
-    """Create a DSPy LM pointed at Databricks model serving (OpenAI-compatible).
+def _get_sdk_token(workspace_url: str | None = None) -> str | None:
+    """Get an OAuth token via the Databricks SDK (unified auth).
 
-    Databricks Model Serving exposes an OpenAI-compatible Chat Completions API at:
-      {workspace_url}/serving-endpoints
-    where `model` is the endpoint name.
+    Resolution order:
+    1. ``WorkspaceClient()`` with no args — picks up platform-injected creds
+       on Databricks Apps (``DATABRICKS_HOST`` / ``DATABRICKS_CLIENT_ID`` /
+       ``DATABRICKS_CLIENT_SECRET``) and CLI profiles locally.
+    2. ``WorkspaceClient(host=workspace_url)`` — explicit host override when
+       the workshop's configured URL differs from the default SDK host.
+    """
+    try:
+        from databricks.sdk import WorkspaceClient
+
+        # Try platform / default SDK credentials first (Databricks Apps + local CLI)
+        w = WorkspaceClient()
+        headers = w.config.authenticate()
+        auth_header = headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            # If a workspace_url was given, verify the SDK host matches
+            sdk_host = (w.config.host or "").rstrip("/")
+            target_host = (workspace_url or "").rstrip("/")
+            if target_host and sdk_host and sdk_host.lower() != target_host.lower():
+                # Host mismatch — retry with explicit host
+                logger.debug(
+                    "SDK host %s != target %s, retrying with explicit host",
+                    sdk_host,
+                    target_host,
+                )
+                w2 = WorkspaceClient(host=workspace_url)
+                headers2 = w2.config.authenticate()
+                auth2 = headers2.get("Authorization", "")
+                if auth2.startswith("Bearer "):
+                    return auth2[len("Bearer ") :]
+                return None
+            return auth_header[len("Bearer ") :]
+    except Exception as exc:
+        logger.warning("Databricks SDK auth failed (will fall back to caller token): %s", exc)
+    return None
+
+
+def build_databricks_lm(endpoint_name: str, workspace_url: str, token: str, *, temperature: float = 0.2):
+    """Create a DSPy LM pointed at Databricks model serving.
+
+    Authentication strategy:
+    1. Resolve an OAuth token via the Databricks SDK (handles M2M OAuth on
+       Databricks Apps and CLI auth locally).
+    2. Fall back to the caller-supplied token (PAT or otherwise).
+    3. Use the ``openai/`` LiteLLM provider prefix so LiteLLM passes our
+       token as a simple Bearer header.  The ``databricks/`` prefix cannot
+       be used because LiteLLM's databricks provider independently attempts
+       its own M2M OAuth token exchange (using ``DATABRICKS_CLIENT_ID`` /
+       ``DATABRICKS_CLIENT_SECRET`` env vars) and ignores the explicit
+       ``api_key``.  Its implementation is incompatible with the service
+       principal credentials injected by Databricks Apps, causing
+       ``invalid_client`` errors even though the SDK handles them correctly.
+       Databricks serving endpoints are OpenAI-compatible, so the
+       ``openai/`` prefix works correctly.
     """
     dspy = _import_dspy()
 
     api_base = f"{workspace_url.rstrip('/')}/serving-endpoints"
 
-    # DSPy commonly uses LiteLLM-style model names like `openai/gpt-4o-mini`.
-    # We keep the `databricks/` provider prefix but point `api_base` to Databricks.
-    # Handle case where endpoint_name already has the prefix
-    if endpoint_name.startswith("databricks/"):
-        model = endpoint_name
-    else:
-        model = f"databricks/{endpoint_name}"
+    # Prefer the Databricks SDK for auth — it returns OAuth tokens that are
+    # accepted on both /chat/completions and /invocations paths.
+    # Fall back to the caller-supplied token (PAT or otherwise).
+    effective_token = _get_sdk_token(workspace_url) or token
+
+    # Strip any existing provider prefix to normalize.
+    bare_name = endpoint_name
+    for prefix in ("databricks/", "openai/"):
+        if bare_name.startswith(prefix):
+            bare_name = bare_name[len(prefix) :]
+            break
+    model = f"openai/{bare_name}"
+
+    logger.info(
+        "build_databricks_lm: model=%s, api_base=%s, token_source=%s",
+        model,
+        api_base,
+        "sdk" if effective_token != token else "caller",
+    )
 
     try:
-        return dspy.LM(model=model, api_key=token, api_base=api_base, temperature=temperature)
+        return dspy.LM(model=model, api_key=effective_token, api_base=api_base, temperature=temperature)
     except TypeError:
         # Older/newer DSPy versions may use slightly different kwarg names.
         # Fall back to the simplest constructor and rely on environment/defaults.
@@ -462,9 +525,7 @@ def get_legacy_summaries_signature():
 class CategoryOutput(BaseModel):
     """Output model for classification."""
 
-    category: str = Field(
-        description="One of: themes, edge_cases, boundary_conditions, failure_modes, missing_info"
-    )
+    category: str = Field(description="One of: themes, edge_cases, boundary_conditions, failure_modes, missing_info")
 
 
 class DisagreementOutput(BaseModel):
@@ -479,9 +540,7 @@ class ClassifyFinding(BaseModel):
     finding_text: str = Field(description="The finding text to classify")
     trace_input: str = Field(description="The LLM input for context")
     trace_output: str = Field(description="The LLM output for context")
-    category: str = Field(
-        description="One of: themes, edge_cases, boundary_conditions, failure_modes, missing_info"
-    )
+    category: str = Field(description="One of: themes, edge_cases, boundary_conditions, failure_modes, missing_info")
 
 
 def _define_classification_signature():
@@ -550,7 +609,7 @@ def _define_followup_question_signature():
         system_prompt: str = dspy.InputField(desc="System prompt for the UX researcher persona")
         user_prompt: str = dspy.InputField(desc="User prompt with trace + feedback context")
 
-        question: str = dspy.OutputField(desc="The follow-up question for the reviewer")
+        question: str = dspy.OutputField(desc="The follow-up question for the reviewer. Be concise and to the point.")
 
     return GenerateFollowUpQuestion
 
@@ -595,9 +654,7 @@ def _define_disagreement_signature():
         trace_id: str = dspy.InputField(desc="Trace identifier")
         trace_input: str = dspy.InputField(desc="The LLM input (for context)")
         trace_output: str = dspy.InputField(desc="The LLM output (for context)")
-        findings_with_users: list[str] = dspy.InputField(
-            desc="Findings formatted as 'USER_ID|FINDING_ID|FINDING_TEXT'"
-        )
+        findings_with_users: list[str] = dspy.InputField(desc="Findings formatted as 'USER_ID|FINDING_ID|FINDING_TEXT'")
 
         disagreements: list[DetectedDisagreement] = dspy.OutputField(
             desc="List of detected disagreements between users (may be empty)"

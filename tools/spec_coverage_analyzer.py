@@ -588,6 +588,10 @@ class SpecCoverageScanner:
                 if spec_name not in KNOWN_SPECS:
                     self.unknown_specs.add(spec_name)
                     continue
+                # Read @req from source (same as describe-block path)
+                req_data = self._read_vitest_req(str(abs_path.resolve()))
+                requirement = req_data[1]
+
                 # Count how many tests are in this file from the reporter
                 file_tests = [
                     t for t in tests
@@ -602,7 +606,7 @@ class SpecCoverageScanner:
                             test_name=test_name,
                             spec_name=spec_name,
                             test_type="unit",
-                            requirement=None,
+                            requirement=requirement,
                             line_number=None,
                         )
                     )

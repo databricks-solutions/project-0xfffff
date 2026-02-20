@@ -33,6 +33,7 @@ const QUERY_KEYS = {
   annotations: (workshopId: string, userId?: string) => ['annotations', workshopId, userId],
   irr: (workshopId: string) => ['irr', workshopId],
   mlflowConfig: (workshopId: string) => ['mlflowConfig', workshopId],
+  discoveryAnalyses: (workshopId: string) => ['discovery-analyses', workshopId],
 };
 
 // Helper function to invalidate all workshop-related queries
@@ -106,9 +107,11 @@ export function useWorkshop(workshopId: string) {
     queryFn: () => WorkshopsService.getWorkshopWorkshopsWorkshopIdGet(workshopId),
     enabled: !!workshopId,
     staleTime: 10000, // Consider data stale after 10 seconds
-    refetchInterval: 30000, // Refetch every 30 seconds (was 10s — too aggressive for Databricks Apps)
-    refetchOnMount: true, // Always refetch on component mount to get latest traces
-    refetchIntervalInBackground: false, // Don't refetch when window is not focused
+    // Stop polling when the query is in an error state to avoid triggering
+    // error-recovery side effects repeatedly. Polling resumes on next success.
+    refetchInterval: (query) => query.state.status === 'error' ? false : 30000,
+    refetchOnMount: true,
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
     retry: (failureCount, error) => {
       // Don't retry on 404 errors - workshop doesn't exist
@@ -160,9 +163,9 @@ export function useTraces(workshopId: string, userId: string) {
     gcTime: 5 * 60 * 1000, // Cache for 5 minutes
     retry: 3, // Retry failed requests 3 times
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
-    refetchOnWindowFocus: true, // Refetch when user returns to tab
-    refetchOnMount: true, // Refetch on component mount to get latest traces
-    refetchInterval: 30 * 1000, // Poll every 30 seconds to pick up new traces added by facilitator
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+    refetchInterval: (query) => query.state.status === 'error' ? false : 30_000,
   });
 }
 
@@ -352,7 +355,7 @@ export function useSubmitFinding(workshopId: string) {
       queryClient.invalidateQueries({ queryKey: ['findings', workshopId, 'all_findings'] });
       queryClient.invalidateQueries({ queryKey: ['findings', workshopId, 'all_findings', 'with_user_details'] });
       // Also invalidate the direct endpoint query used in FindingsReviewPage
-      queryClient.invalidateQueries({ queryKey: ['facilitator-findings-with-users', workshopId] });
+      queryClient.invalidateQueries({ queryKey: ['facilitator-feedback-with-users', workshopId] });
     },
   });
 }
@@ -663,7 +666,7 @@ export function useParticipantNotes(workshopId: string, userId?: string, phase?:
     },
     enabled: !!workshopId,
     staleTime: 10 * 1000,
-    refetchInterval: 30 * 1000, // Poll for new notes from other participants
+    refetchInterval: (query) => query.state.status === 'error' ? false : 30_000,
   });
 }
 
@@ -683,7 +686,7 @@ export function useAllParticipantNotes(workshopId: string, phase?: string) {
     },
     enabled: !!workshopId,
     staleTime: 5 * 1000,
-    refetchInterval: 15 * 1000, // Poll so facilitator sees notes (was 5s, too aggressive for Databricks Apps)
+    refetchInterval: (query) => query.state.status === 'error' ? false : 15_000,
   });
 }
 
@@ -801,6 +804,59 @@ export interface DiscoveryFeedbackData {
   updated_at: string;
 }
 
+// Discovery Analysis hooks (Step 2)
+
+export interface DiscoveryAnalysis {
+  id: string;
+  workshop_id: string;
+  template_used: string;
+  analysis_data: string;
+  findings: Array<{ text: string; evidence_trace_ids: string[]; priority: string }>;
+  disagreements: {
+    high: Array<{
+      trace_id: string;
+      summary: string;
+      underlying_theme: string;
+      followup_questions: string[];
+      facilitator_suggestions: string[];
+    }>;
+    medium: Array<{
+      trace_id: string;
+      summary: string;
+      underlying_theme: string;
+      followup_questions: string[];
+      facilitator_suggestions: string[];
+    }>;
+    lower: Array<{
+      trace_id: string;
+      summary: string;
+      underlying_theme: string;
+      followup_questions: string[];
+      facilitator_suggestions: string[];
+    }>;
+  };
+  participant_count: number;
+  model_used: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export function useDiscoveryAnalyses(workshopId: string, template?: string) {
+  return useQuery<DiscoveryAnalysis[]>({
+    queryKey: [...QUERY_KEYS.discoveryAnalyses(workshopId), template],
+    queryFn: async () => {
+      const params = template ? `?template=${encodeURIComponent(template)}` : '';
+      const response = await fetch(`/workshops/${workshopId}/discovery-analysis${params}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch discovery analyses');
+      }
+      return response.json();
+    },
+    enabled: !!workshopId,
+    staleTime: 30 * 1000,
+  });
+}
+
 export function useDiscoveryFeedback(workshopId: string, userId?: string) {
   return useQuery<DiscoveryFeedbackData[]>({
     queryKey: ['discovery-feedback', workshopId, userId],
@@ -837,7 +893,7 @@ export function useFacilitatorDiscoveryFeedback(workshopId: string) {
       ) as unknown as Promise<DiscoveryFeedbackWithUser[]>,
     enabled: !!workshopId && isFacilitator,
     staleTime: 10_000,
-    refetchInterval: 30_000,
+    refetchInterval: (query) => query.state.status === 'error' ? false : 30_000,
   });
 }
 
@@ -863,6 +919,8 @@ export function useSubmitDiscoveryFeedback(workshopId: string) {
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['discovery-feedback', workshopId, variables.user_id] });
+      queryClient.invalidateQueries({ queryKey: ['facilitator-feedback-with-users', workshopId] });
+      queryClient.invalidateQueries({ queryKey: ['discovery-feedback-with-users', workshopId] });
     },
   });
 }
@@ -944,6 +1002,30 @@ export function useSubmitFollowUpAnswer(workshopId: string) {
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['discovery-feedback', workshopId, variables.user_id] });
+      queryClient.invalidateQueries({ queryKey: ['facilitator-feedback-with-users', workshopId] });
+      queryClient.invalidateQueries({ queryKey: ['discovery-feedback-with-users', workshopId] });
+    },
+  });
+}
+
+export function useRunDiscoveryAnalysis(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation<DiscoveryAnalysis, Error, { template: string; model: string }>({
+    mutationFn: async ({ template, model }) => {
+      const response = await fetch(`/workshops/${workshopId}/analyze-discovery`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ template, model }),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Analysis failed' }));
+        throw new Error(error.detail || 'Analysis failed');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.discoveryAnalyses(workshopId) });
     },
   });
 }

@@ -1,8 +1,8 @@
 /**
  * FindingsReviewPage Component
- * 
- * Dedicated page for facilitators to review all discovery findings in a summary format.
- * Shows findings organized by trace with filtering capabilities.
+ *
+ * Dedicated page for facilitators to review all discovery feedback in a summary format.
+ * Shows feedback organized by trace with filtering capabilities.
  */
 
 import React, { useState } from 'react';
@@ -12,16 +12,58 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { FileText, Users, Search, Filter, Eye, ArrowLeft } from 'lucide-react';
+import { FileText, Users, Search, Filter, Eye, ArrowLeft, ChevronDown, ChevronRight } from 'lucide-react';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useUser, useRoleCheck } from '@/context/UserContext';
-import { useFacilitatorFindings, useTraces, useAllTraces } from '@/hooks/useWorkshopApi';
-import type { DiscoveryFindingWithUser } from '@/client';
+import { useAllTraces } from '@/hooks/useWorkshopApi';
+import type { DiscoveryFeedbackWithUser } from '@/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { DiscoveryAnalysisTab } from '@/components/DiscoveryAnalysisTab';
 
 interface FindingsReviewPageProps {
   onBack?: () => void;
+}
+
+/** Render a feedback_label badge with appropriate colour. */
+function FeedbackLabelBadge({ label }: { label: string }) {
+  if (label === 'good') {
+    return <Badge className="bg-green-100 text-green-800 border-green-300">GOOD</Badge>;
+  }
+  return <Badge className="bg-red-100 text-red-800 border-red-300">BAD</Badge>;
+}
+
+/** Collapsible follow-up Q&A pairs. */
+function FollowUpQnA({ pairs }: { pairs: Array<Record<string, string>> }) {
+  const [open, setOpen] = useState(false);
+
+  if (!pairs || pairs.length === 0) return null;
+
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700"
+        onClick={() => setOpen(!open)}
+      >
+        {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+        {pairs.length} follow-up Q&A{pairs.length !== 1 ? 's' : ''}
+      </button>
+      {open && (
+        <div className="mt-1 space-y-1 pl-4 border-l border-slate-200">
+          {pairs.map((pair, i) => (
+            <div key={i} className="text-xs">
+              <span className="font-medium text-slate-600">Q: </span>
+              <span className="text-slate-700">{pair.question}</span>
+              <br />
+              <span className="font-medium text-slate-600">A: </span>
+              <span className="text-slate-700">{pair.answer}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }) => {
@@ -34,19 +76,19 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
 
   // Get all workshop data with user details
-  const { data: allFindingsWithUsers } = useQuery<DiscoveryFindingWithUser[]>({
-    queryKey: ['facilitator-findings-with-users', workshopId],
+  const { data: allFeedbackWithUsers } = useQuery<DiscoveryFeedbackWithUser[]>({
+    queryKey: ['facilitator-feedback-with-users', workshopId],
     queryFn: async () => {
-      const response = await fetch(`/workshops/${workshopId}/findings-with-users`);
-      if (!response.ok) throw new Error('Failed to fetch findings');
+      const response = await fetch(`/workshops/${workshopId}/discovery-feedback-with-users`);
+      if (!response.ok) throw new Error('Failed to fetch feedback');
       return response.json();
     },
     enabled: !!workshopId,
   });
-  
+
   // Use all traces for facilitator review (no personalized ordering needed)
   const { data: traces } = useAllTraces(workshopId!);
-  
+
   // Get discovery completion status
   const { data: completionStatus, refetch: refetchCompletionStatus } = useQuery({
     queryKey: ['discovery-completion-status', workshopId],
@@ -58,31 +100,31 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
     enabled: !!workshopId,
   });
 
-  // Process findings data
-  const findingsByTrace = React.useMemo(() => {
-    if (!allFindingsWithUsers || !traces) return new Map<string, DiscoveryFindingWithUser[]>();
+  // Process feedback data
+  const feedbackByTrace = React.useMemo(() => {
+    if (!allFeedbackWithUsers || !traces) return new Map<string, DiscoveryFeedbackWithUser[]>();
 
-    const map = new Map<string, DiscoveryFindingWithUser[]>();
-    allFindingsWithUsers.forEach(finding => {
-      if (!map.has(finding.trace_id)) {
-        map.set(finding.trace_id, []);
+    const map = new Map<string, DiscoveryFeedbackWithUser[]>();
+    allFeedbackWithUsers.forEach(fb => {
+      if (!map.has(fb.trace_id)) {
+        map.set(fb.trace_id, []);
       }
-      map.get(finding.trace_id)!.push(finding);
+      map.get(fb.trace_id)!.push(fb);
     });
     return map;
-  }, [allFindingsWithUsers, traces]);
+  }, [allFeedbackWithUsers, traces]);
 
   // Get unique users
   const uniqueUsers = React.useMemo(() => {
-    if (!allFindingsWithUsers) return [];
-    return Array.from(new Set(allFindingsWithUsers.map(f => f.user_id)));
-  }, [allFindingsWithUsers]);
+    if (!allFeedbackWithUsers) return [];
+    return Array.from(new Set(allFeedbackWithUsers.map(f => f.user_id)));
+  }, [allFeedbackWithUsers]);
 
-  // Filter findings
-  const filteredFindings = React.useMemo(() => {
-    if (!allFindingsWithUsers) return [];
+  // Filter feedback
+  const filteredFeedback = React.useMemo(() => {
+    if (!allFeedbackWithUsers) return [];
 
-    let filtered = allFindingsWithUsers;
+    let filtered = allFeedbackWithUsers;
 
     // Filter by user if specified
     if (userFilter !== 'all') {
@@ -92,14 +134,14 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
     // Filter by search text
     if (searchFilter) {
       filtered = filtered.filter(f =>
-        f.insight.toLowerCase().includes(searchFilter.toLowerCase()) ||
+        f.comment.toLowerCase().includes(searchFilter.toLowerCase()) ||
         f.user_name.toLowerCase().includes(searchFilter.toLowerCase()) ||
         f.user_email.toLowerCase().includes(searchFilter.toLowerCase())
       );
     }
 
     return filtered;
-  }, [allFindingsWithUsers, userFilter, searchFilter]);
+  }, [allFeedbackWithUsers, userFilter, searchFilter]);
 
   // Get trace for selected finding details
   const getTraceById = (traceId: string) => {
@@ -161,13 +203,13 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
               <div className="flex items-center gap-2">
                 <FileText className="w-5 h-5 text-emerald-600" />
                 <div>
-                  <div className="text-2xl font-bold text-slate-900">{allFindingsWithUsers?.length || 0}</div>
+                  <div className="text-2xl font-bold text-slate-900">{allFeedbackWithUsers?.length || 0}</div>
                   <div className="text-sm text-slate-600">Total Findings</div>
                 </div>
               </div>
             </CardContent>
           </Card>
-          
+
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-2">
@@ -179,25 +221,25 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
               </div>
             </CardContent>
           </Card>
-          
+
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-2">
                 <Eye className="w-5 h-5 text-purple-600" />
                 <div>
-                  <div className="text-2xl font-bold text-slate-900">{findingsByTrace.size}</div>
+                  <div className="text-2xl font-bold text-slate-900">{feedbackByTrace.size}</div>
                   <div className="text-sm text-slate-600">Traces Reviewed</div>
                 </div>
               </div>
             </CardContent>
           </Card>
-          
+
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-2">
                 <Filter className="w-5 h-5 text-orange-600" />
                 <div>
-                  <div className="text-2xl font-bold text-slate-900">{filteredFindings.length}</div>
+                  <div className="text-2xl font-bold text-slate-900">{filteredFeedback.length}</div>
                   <div className="text-sm text-slate-600">Filtered Results</div>
                 </div>
               </div>
@@ -235,7 +277,7 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
                       <div className="text-sm text-blue-700">Completion Rate</div>
                     </div>
                   </div>
-                  
+
                   {/* Progress Bar */}
                   <div className="flex-1 max-w-md">
                     <div className="w-full bg-blue-200 rounded-full h-3">
@@ -283,7 +325,7 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
                       </span>
                     )}
                   </div>
-                  
+
                   <div className="flex gap-2">
                     <Button
                       variant="outline"
@@ -292,7 +334,7 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
                     >
                       Refresh Status
                     </Button>
-                    
+
                     {completionStatus.all_completed && (
                       <Button
                         size="sm"
@@ -301,28 +343,28 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
                           if (!confirm('Are you sure you want to move to Rubric Creation? This will complete the discovery phase.')) {
                             return;
                           }
-                          
+
                           try {
-                            
-                            
+
+
                             // Check workshop state first
                             const workshopResponse = await fetch(`/workshops/${workshopId}`);
                             if (!workshopResponse.ok) {
                               throw new Error(`Failed to fetch workshop: ${workshopResponse.statusText}`);
                             }
                             const workshop = await workshopResponse.json();
-                            
-                            
+
+
                             if (workshop.current_phase !== 'discovery') {
                               throw new Error(`Cannot advance to rubric: workshop is in ${workshop.current_phase} phase, not discovery phase`);
                             }
-                            
-                            // Check if there are any findings
-                            if (!allFindingsWithUsers || allFindingsWithUsers.length === 0) {
-                              throw new Error('Cannot advance to rubric: No discovery findings submitted yet');
+
+                            // Check if there are any feedback entries
+                            if (!allFeedbackWithUsers || allFeedbackWithUsers.length === 0) {
+                              throw new Error('Cannot advance to rubric: No discovery feedback submitted yet');
                             }
-                            
-                            
+
+
                             // First, mark discovery phase as complete
                             const completeResponse = await fetch(`/workshops/${workshopId}/complete-phase/discovery`, {
                               method: 'POST',
@@ -330,16 +372,16 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
                                 'Content-Type': 'application/json'
                               }
                             });
-                            
-                            
-                            
+
+
+
                             if (!completeResponse.ok) {
                               const errorData = await completeResponse.json().catch(() => ({}));
                               throw new Error(`Failed to complete discovery phase: ${errorData.detail || completeResponse.statusText}`);
                             }
-                            
-                            
-                            
+
+
+
                             // Then, advance to rubric phase
                             const advanceResponse = await fetch(`/workshops/${workshopId}/advance-to-rubric`, {
                               method: 'POST',
@@ -347,26 +389,26 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
                                 'Content-Type': 'application/json'
                               }
                             });
-                            
-                            
-                            
+
+
+
                             if (!advanceResponse.ok) {
                               const errorData = await advanceResponse.json().catch(() => ({}));
                               throw new Error(`Failed to advance to rubric phase: ${errorData.detail || advanceResponse.statusText}`);
                             }
-                            
+
                             toast.success('Discovery phase completed! Moving to Rubric Creation.');
-                            
+
                             // Invalidate queries to refresh the UI
                             queryClient.invalidateQueries({ queryKey: ['workshop', workshopId] });
                             queryClient.invalidateQueries({ queryKey: ['discovery-completion-status', workshopId] });
-                            
+
                             // Navigate to rubric creation
                             if (onBack) {
                               onBack(); // Go back to dashboard
                             }
                           } catch (error) {
-                            
+
                             const errorMessage = error instanceof Error ? error.message : 'Failed to complete discovery phase. Please try again.';
                             toast.error(errorMessage);
                           }
@@ -407,10 +449,10 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
                 <SelectContent>
                   <SelectItem value="all">All Users</SelectItem>
                   {uniqueUsers.map(userId => {
-                    const user = allFindingsWithUsers?.find(f => f.user_id === userId);
+                    const u = allFeedbackWithUsers?.find(f => f.user_id === userId);
                     return (
                       <SelectItem key={userId} value={userId}>
-                        {user ? `${user.user_name} (${user.user_email})` : formatUserId(userId)}
+                        {u ? `${u.user_name} (${u.user_email})` : formatUserId(userId)}
                       </SelectItem>
                     );
                   })}
@@ -426,32 +468,34 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
             <TabsTrigger value="by-finding">All Findings</TabsTrigger>
             <TabsTrigger value="by-trace">By Trace</TabsTrigger>
             <TabsTrigger value="by-user">By User</TabsTrigger>
+            <TabsTrigger value="analysis">Analysis</TabsTrigger>
           </TabsList>
 
           {/* All Findings View */}
           <TabsContent value="by-finding">
             <Card>
               <CardHeader>
-                <CardTitle>All Findings ({filteredFindings.length})</CardTitle>
+                <CardTitle>All Findings ({filteredFeedback.length})</CardTitle>
                 <CardDescription>
                   Chronological list of all discovery findings
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {filteredFindings.length > 0 ? (
-                    filteredFindings.map((finding) => {
-                      const trace = getTraceById(finding.trace_id);
+                  {filteredFeedback.length > 0 ? (
+                    filteredFeedback.map((fb) => {
+                      const trace = getTraceById(fb.trace_id);
                       return (
-                        <div key={finding.id} className="border rounded-lg p-4 bg-slate-50">
+                        <div key={fb.id} className="border rounded-lg p-4 bg-slate-50">
                           <div className="flex items-start justify-between mb-3">
                             <div className="flex items-center gap-3">
+                              <FeedbackLabelBadge label={fb.feedback_label} />
                               <div className="flex flex-col">
                                 <Badge variant="outline" className="text-xs">
-                                  {finding.user_name}
+                                  {fb.user_name}
                                 </Badge>
                                 <span className="text-xs text-slate-500">
-                                  {finding.user_email}
+                                  {fb.user_email}
                                 </span>
                               </div>
                               <span className="text-xs text-slate-500">
@@ -459,14 +503,15 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
                               </span>
                             </div>
                             <span className="text-xs text-slate-400">
-                              {new Date(finding.created_at).toLocaleString()}
+                              {new Date(fb.created_at).toLocaleString()}
                             </span>
                           </div>
                           <div className="prose prose-sm max-w-none">
                             <div className="whitespace-pre-wrap text-slate-700">
-                              {finding.insight}
+                              {fb.comment}
                             </div>
                           </div>
+                          <FollowUpQnA pairs={fb.followup_qna ?? []} />
                         </div>
                       );
                     })
@@ -492,21 +537,21 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
               </CardHeader>
               <CardContent>
                 <div className="space-y-6">
-                  {Array.from(findingsByTrace.entries()).map(([traceId, traceFindings]) => {
+                  {Array.from(feedbackByTrace.entries()).map(([traceId, traceFeedback]) => {
                     const trace = getTraceById(traceId);
-                    const filteredTraceFindings = traceFindings.filter(f => 
-                      filteredFindings.some(ff => ff.id === f.id)
+                    const filteredTraceFeedback = traceFeedback.filter(f =>
+                      filteredFeedback.some(ff => ff.id === f.id)
                     );
-                    
-                    if (filteredTraceFindings.length === 0) return null;
-                    
+
+                    if (filteredTraceFeedback.length === 0) return null;
+
                     return (
                       <div key={traceId} className="border rounded-lg p-4">
                         <div className="mb-4">
                           <h3 className="font-semibold text-slate-900 mb-2">
-                            Trace: {traceId.slice(0, 8)}... 
+                            Trace: {traceId.slice(0, 8)}...
                             <Badge variant="secondary" className="ml-2">
-                              {filteredTraceFindings.length} finding{filteredTraceFindings.length !== 1 ? 's' : ''}
+                              {filteredTraceFeedback.length} finding{filteredTraceFeedback.length !== 1 ? 's' : ''}
                             </Badge>
                           </h3>
                           {trace && (
@@ -516,24 +561,28 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
                           )}
                         </div>
                         <div className="space-y-3">
-                          {filteredTraceFindings.map((finding) => (
-                            <div key={finding.id} className="pl-4 border-l-2 border-emerald-200 bg-emerald-50 p-3 rounded-r">
+                          {filteredTraceFeedback.map((fb) => (
+                            <div key={fb.id} className="pl-4 border-l-2 border-emerald-200 bg-emerald-50 p-3 rounded-r">
                               <div className="flex items-center justify-between mb-2">
-                                <div className="flex flex-col">
-                                  <Badge variant="outline" className="text-xs">
-                                    {finding.user_name}
-                                  </Badge>
-                                  <span className="text-xs text-slate-500">
-                                    {finding.user_email}
-                                  </span>
+                                <div className="flex items-center gap-2">
+                                  <FeedbackLabelBadge label={fb.feedback_label} />
+                                  <div className="flex flex-col">
+                                    <Badge variant="outline" className="text-xs">
+                                      {fb.user_name}
+                                    </Badge>
+                                    <span className="text-xs text-slate-500">
+                                      {fb.user_email}
+                                    </span>
+                                  </div>
                                 </div>
                                 <span className="text-xs text-slate-400">
-                                  {new Date(finding.created_at).toLocaleString()}
+                                  {new Date(fb.created_at).toLocaleString()}
                                 </span>
                               </div>
                               <div className="whitespace-pre-wrap text-slate-700 text-sm">
-                                {finding.insight}
+                                {fb.comment}
                               </div>
+                              <FollowUpQnA pairs={fb.followup_qna ?? []} />
                             </div>
                           ))}
                         </div>
@@ -557,40 +606,44 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
               <CardContent>
                 <div className="space-y-6">
                   {uniqueUsers.map(userId => {
-                    const userFindings = filteredFindings.filter(f => f.user_id === userId);
-                    if (userFindings.length === 0) return null;
-                    
-                    const user = allFindingsWithUsers?.find(f => f.user_id === userId);
-                    
+                    const userFeedback = filteredFeedback.filter(f => f.user_id === userId);
+                    if (userFeedback.length === 0) return null;
+
+                    const u = allFeedbackWithUsers?.find(f => f.user_id === userId);
+
                     return (
                       <div key={userId} className="border rounded-lg p-4">
                         <div className="mb-4">
                           <h3 className="font-semibold text-slate-900 mb-2">
-                            {user ? user.user_name : formatUserId(userId)}
+                            {u ? u.user_name : formatUserId(userId)}
                             <Badge variant="secondary" className="ml-2">
-                              {userFindings.length} finding{userFindings.length !== 1 ? 's' : ''}
+                              {userFeedback.length} finding{userFeedback.length !== 1 ? 's' : ''}
                             </Badge>
                           </h3>
-                          {user && (
-                            <p className="text-sm text-slate-600">{user.user_email}</p>
+                          {u && (
+                            <p className="text-sm text-slate-600">{u.user_email}</p>
                           )}
                         </div>
                         <div className="space-y-3">
-                          {userFindings.map((finding) => {
-                            const trace = getTraceById(finding.trace_id);
+                          {userFeedback.map((fb) => {
+                            const trace = getTraceById(fb.trace_id);
                             return (
-                              <div key={finding.id} className="pl-4 border-l-2 border-blue-200 bg-blue-50 p-3 rounded-r">
+                              <div key={fb.id} className="pl-4 border-l-2 border-blue-200 bg-blue-50 p-3 rounded-r">
                                 <div className="flex items-center justify-between mb-2">
-                                  <span className="text-xs text-slate-600">
-                                    Trace: {trace?.id?.slice(0, 8) || 'Unknown'}...
-                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    <FeedbackLabelBadge label={fb.feedback_label} />
+                                    <span className="text-xs text-slate-600">
+                                      Trace: {trace?.id?.slice(0, 8) || 'Unknown'}...
+                                    </span>
+                                  </div>
                                   <span className="text-xs text-slate-400">
-                                    {new Date(finding.created_at).toLocaleString()}
+                                    {new Date(fb.created_at).toLocaleString()}
                                   </span>
                                 </div>
                                 <div className="whitespace-pre-wrap text-slate-700 text-sm">
-                                  {finding.insight}
+                                  {fb.comment}
                                 </div>
+                                <FollowUpQnA pairs={fb.followup_qna ?? []} />
                               </div>
                             );
                           })}
@@ -601,6 +654,11 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Analysis View */}
+          <TabsContent value="analysis">
+            <DiscoveryAnalysisTab workshopId={workshopId!} />
           </TabsContent>
         </Tabs>
       </div>

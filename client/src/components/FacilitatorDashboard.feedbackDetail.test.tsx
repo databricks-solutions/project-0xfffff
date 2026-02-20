@@ -31,8 +31,6 @@ vi.mock('@/hooks/useWorkshopApi', () => ({
       active_discovery_trace_ids: ['t1'],
     },
   }),
-  useFacilitatorFindings: () => ({ data: [] }),
-  useFacilitatorFindingsWithUserDetails: () => ({ data: [] }),
   useAllTraces: () => ({ data: [{ id: 't1', input: 'hi' }] }),
   useRubric: () => ({ data: null }),
   useFacilitatorAnnotations: () => ({ data: [] }),

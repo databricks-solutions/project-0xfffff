@@ -14,6 +14,7 @@ from server.database import (
   ClassifiedFindingDB,
   DatabricksTokenDB,
   DisagreementDB,
+  DiscoveryAnalysisDB,
   DiscoveryFeedbackDB,
   DiscoveryFindingDB,
   DiscoveryQuestionDB,
@@ -4265,3 +4266,70 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       'created_at': summary.created_at,
       'updated_at': summary.updated_at,
     }
+
+  # =========================================================================
+  # Discovery Analysis operations (Step 2 - Findings Synthesis)
+  # =========================================================================
+
+  def save_discovery_analysis(
+    self,
+    workshop_id: str,
+    template_used: str,
+    analysis_data: str,
+    findings: list,
+    disagreements: dict,
+    participant_count: int,
+    model_used: str,
+  ) -> DiscoveryAnalysisDB:
+    """Save a new discovery analysis record.
+
+    Each analysis run creates a new record (history preserved).
+
+    Returns:
+        The created DiscoveryAnalysisDB record
+    """
+    analysis = DiscoveryAnalysisDB(
+      id=str(uuid.uuid4()),
+      workshop_id=workshop_id,
+      template_used=template_used,
+      analysis_data=analysis_data,
+      findings=findings,
+      disagreements=disagreements,
+      participant_count=participant_count,
+      model_used=model_used,
+    )
+    self.db.add(analysis)
+    self.db.commit()
+    self.db.refresh(analysis)
+    return analysis
+
+  def get_discovery_analyses(
+    self,
+    workshop_id: str,
+    template: Optional[str] = None,
+  ) -> List[DiscoveryAnalysisDB]:
+    """List analyses for a workshop, newest first.
+
+    Args:
+        workshop_id: Workshop ID
+        template: Optional filter by template_used
+
+    Returns:
+        List of DiscoveryAnalysisDB records ordered by created_at desc
+    """
+    query = self.db.query(DiscoveryAnalysisDB).filter(
+      DiscoveryAnalysisDB.workshop_id == workshop_id
+    )
+    if template:
+      query = query.filter(DiscoveryAnalysisDB.template_used == template)
+    return query.order_by(DiscoveryAnalysisDB.created_at.desc()).all()
+
+  def get_discovery_analysis(self, analysis_id: str) -> Optional[DiscoveryAnalysisDB]:
+    """Get a single discovery analysis by ID.
+
+    Returns:
+        DiscoveryAnalysisDB or None
+    """
+    return self.db.query(DiscoveryAnalysisDB).filter(
+      DiscoveryAnalysisDB.id == analysis_id
+    ).first()

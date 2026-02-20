@@ -3,6 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { AlignmentRequest } from '../models/AlignmentRequest';
+import type { AnalyzeDiscoveryRequest } from '../models/AnalyzeDiscoveryRequest';
 import type { Annotation } from '../models/Annotation';
 import type { AnnotationCreate } from '../models/AnnotationCreate';
 import type { AuthResponse } from '../models/AuthResponse';
@@ -21,6 +22,7 @@ import type { DBSQLExportRequest } from '../models/DBSQLExportRequest';
 import type { DBSQLExportResponse } from '../models/DBSQLExportResponse';
 import type { DiscoveryFeedback } from '../models/DiscoveryFeedback';
 import type { DiscoveryFeedbackCreate } from '../models/DiscoveryFeedbackCreate';
+import type { DiscoveryFeedbackWithUser } from '../models/DiscoveryFeedbackWithUser';
 import type { DiscoveryFinding } from '../models/DiscoveryFinding';
 import type { DiscoveryFindingCreate } from '../models/DiscoveryFindingCreate';
 import type { DiscoveryFindingWithUser } from '../models/DiscoveryFindingWithUser';
@@ -1949,6 +1951,84 @@ export class ApiService {
         });
     }
     /**
+     * Analyze Discovery
+     * Trigger AI analysis of discovery feedback.
+     *
+     * Aggregates feedback by trace, detects disagreements deterministically,
+     * and calls an LLM to distill findings.
+     * @param workshopId
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static analyzeDiscoveryWorkshopsWorkshopIdAnalyzeDiscoveryPost(
+        workshopId: string,
+        requestBody: AnalyzeDiscoveryRequest,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/analyze-discovery',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * List Discovery Analyses
+     * List discovery analyses for a workshop (newest first).
+     * @param workshopId
+     * @param template
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static listDiscoveryAnalysesWorkshopsWorkshopIdDiscoveryAnalysisGet(
+        workshopId: string,
+        template?: (string | null),
+    ): CancelablePromise<Array<Record<string, any>>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/discovery-analysis',
+            path: {
+                'workshop_id': workshopId,
+            },
+            query: {
+                'template': template,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Discovery Analysis
+     * Get a single discovery analysis by ID.
+     * @param workshopId
+     * @param analysisId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getDiscoveryAnalysisWorkshopsWorkshopIdDiscoveryAnalysisAnalysisIdGet(
+        workshopId: string,
+        analysisId: string,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/discovery-analysis/{analysis_id}',
+            path: {
+                'workshop_id': workshopId,
+                'analysis_id': analysisId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * Migrate Annotations To Multi Metric
      * Migrate old annotations (with single 'rating' field) to new format (with 'ratings' dict).
      * This populates the 'ratings' dictionary by copying the legacy 'rating' value to all rubric questions.
@@ -2748,13 +2828,13 @@ export class ApiService {
      * Get all discovery feedback with user details (name, role) for facilitator view.
      * @param workshopId
      * @param userId
-     * @returns any Successful Response
+     * @returns DiscoveryFeedbackWithUser Successful Response
      * @throws ApiError
      */
     public static getDiscoveryFeedbackWithUserDetailsWorkshopsWorkshopIdDiscoveryFeedbackWithUsersGet(
         workshopId: string,
         userId?: (string | null),
-    ): CancelablePromise<Array<Record<string, any>>> {
+    ): CancelablePromise<Array<DiscoveryFeedbackWithUser>> {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/workshops/{workshop_id}/discovery-feedback-with-users',

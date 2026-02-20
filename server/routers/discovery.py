@@ -5,7 +5,7 @@ and non-discovery flows.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -15,6 +15,7 @@ from server.database import get_db
 from server.models import (
     DiscoveryFeedback,
     DiscoveryFeedbackCreate,
+    DiscoveryFeedbackWithUser,
     DiscoveryFinding,
     DiscoveryFindingCreate,
     DiscoveryFindingWithUser,
@@ -32,23 +33,23 @@ class DiscoveryQuestion(BaseModel):
 
     id: str
     prompt: str
-    placeholder: Optional[str] = None
-    category: Optional[str] = None
+    placeholder: str | None = None
+    category: str | None = None
 
 
 class DiscoveryCoverage(BaseModel):
     """Coverage state for discovery questions."""
 
-    covered: List[str]
-    missing: List[str]
+    covered: list[str]
+    missing: list[str]
 
 
 class DiscoveryQuestionsResponse(BaseModel):
     """Response model for discovery questions with coverage metadata."""
 
-    questions: List[DiscoveryQuestion]
+    questions: list[DiscoveryQuestion]
     can_generate_more: bool = True
-    stop_reason: Optional[str] = None
+    stop_reason: str | None = None
     coverage: DiscoveryCoverage
 
 
@@ -62,8 +63,8 @@ class KeyDisagreementResponse(BaseModel):
     """A disagreement between participants."""
 
     theme: str
-    trace_ids: List[str] = []
-    viewpoints: List[str] = []
+    trace_ids: list[str] = []
+    viewpoints: list[str] = []
 
 
 class DiscussionPromptResponse(BaseModel):
@@ -76,19 +77,19 @@ class DiscussionPromptResponse(BaseModel):
 class ConvergenceMetricsResponse(BaseModel):
     """Cross-participant agreement metrics."""
 
-    theme_agreement: Dict[str, float] = {}
+    theme_agreement: dict[str, float] = {}
     overall_alignment_score: float = 0.0
 
 
 class DiscoverySummariesResponse(BaseModel):
     """LLM-generated summaries of discovery findings for facilitators."""
 
-    overall: Dict[str, Any]
-    by_user: List[Dict[str, Any]]
-    by_trace: List[Dict[str, Any]]
-    candidate_rubric_questions: List[str] = []
-    key_disagreements: List[KeyDisagreementResponse] = []
-    discussion_prompts: List[DiscussionPromptResponse] = []
+    overall: dict[str, Any]
+    by_user: list[dict[str, Any]]
+    by_trace: list[dict[str, Any]]
+    candidate_rubric_questions: list[str] = []
+    key_disagreements: list[KeyDisagreementResponse] = []
+    discussion_prompts: list[DiscussionPromptResponse] = []
     convergence: ConvergenceMetricsResponse = ConvergenceMetricsResponse()
     ready_for_rubric: bool = False
 
@@ -100,7 +101,7 @@ class DiscoverySummariesResponse(BaseModel):
 async def get_discovery_questions(
     workshop_id: str,
     trace_id: str,
-    user_id: Optional[str] = None,
+    user_id: str | None = None,
     append: bool = False,
     db: Session = Depends(get_db),
 ) -> DiscoveryQuestionsResponse:
@@ -125,7 +126,7 @@ async def update_discovery_questions_model(
     return {"message": "Discovery questions model updated", "model_name": model_name}
 
 
-def _build_summaries_response(payload: Dict[str, Any]) -> DiscoverySummariesResponse:
+def _build_summaries_response(payload: dict[str, Any]) -> DiscoverySummariesResponse:
     """Build a DiscoverySummariesResponse from a payload dict."""
     # Parse key_disagreements
     key_disagreements = []
@@ -182,18 +183,18 @@ async def submit_finding(
     return svc.submit_finding(workshop_id, finding)
 
 
-@router.get("/{workshop_id}/findings", response_model=List[DiscoveryFinding])
+@router.get("/{workshop_id}/findings", response_model=list[DiscoveryFinding])
 async def get_findings(
-    workshop_id: str, user_id: Optional[str] = None, db: Session = Depends(get_db)
-) -> List[DiscoveryFinding]:
+    workshop_id: str, user_id: str | None = None, db: Session = Depends(get_db)
+) -> list[DiscoveryFinding]:
     svc = DiscoveryService(db)
     return svc.get_findings(workshop_id, user_id)
 
 
-@router.get("/{workshop_id}/findings-with-users", response_model=List[DiscoveryFindingWithUser])
+@router.get("/{workshop_id}/findings-with-users", response_model=list[DiscoveryFindingWithUser])
 async def get_findings_with_user_details(
-    workshop_id: str, user_id: Optional[str] = None, db: Session = Depends(get_db)
-) -> List[DiscoveryFindingWithUser]:
+    workshop_id: str, user_id: str | None = None, db: Session = Depends(get_db)
+) -> list[DiscoveryFindingWithUser]:
     svc = DiscoveryService(db)
     return svc.get_findings_with_user_details(workshop_id, user_id)
 
@@ -226,19 +227,19 @@ async def generate_discovery_test_data(workshop_id: str, db: Session = Depends(g
 
 # User Discovery Completion endpoints
 @router.post("/{workshop_id}/users/{user_id}/complete-discovery")
-async def mark_user_discovery_complete(workshop_id: str, user_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
+async def mark_user_discovery_complete(workshop_id: str, user_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
     svc = DiscoveryService(db)
     return svc.mark_user_discovery_complete(workshop_id, user_id)
 
 
 @router.get("/{workshop_id}/discovery-completion-status")
-async def get_discovery_completion_status(workshop_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
+async def get_discovery_completion_status(workshop_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
     svc = DiscoveryService(db)
     return svc.get_discovery_completion_status(workshop_id)
 
 
 @router.get("/{workshop_id}/users/{user_id}/discovery-complete")
-async def is_user_discovery_complete(workshop_id: str, user_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
+async def is_user_discovery_complete(workshop_id: str, user_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
     svc = DiscoveryService(db)
     return svc.is_user_discovery_complete(workshop_id, user_id)
 
@@ -265,7 +266,7 @@ async def generate_followup_question(
     request: GenerateFollowUpRequest,
     question_number: int = 1,
     db: Session = Depends(get_db),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Generate the next follow-up question for a trace's feedback."""
     svc = DiscoveryService(db)
     return svc.generate_followup_question(
@@ -281,7 +282,7 @@ async def submit_followup_answer(
     workshop_id: str,
     request: SubmitFollowUpAnswerRequest,
     db: Session = Depends(get_db),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Append a Q&A pair to the feedback record."""
     svc = DiscoveryService(db)
     return svc.submit_followup_answer(
@@ -293,23 +294,23 @@ async def submit_followup_answer(
     )
 
 
-@router.get("/{workshop_id}/discovery-feedback", response_model=List[DiscoveryFeedback])
+@router.get("/{workshop_id}/discovery-feedback", response_model=list[DiscoveryFeedback])
 async def get_discovery_feedback(
     workshop_id: str,
-    user_id: Optional[str] = None,
+    user_id: str | None = None,
     db: Session = Depends(get_db),
-) -> List[DiscoveryFeedback]:
+) -> list[DiscoveryFeedback]:
     """Get all discovery feedback, optionally filtered by user_id."""
     svc = DiscoveryService(db)
     return svc.get_discovery_feedback(workshop_id, user_id)
 
 
-@router.get("/{workshop_id}/discovery-feedback-with-users", response_model=List[Dict[str, Any]])
+@router.get("/{workshop_id}/discovery-feedback-with-users", response_model=list[DiscoveryFeedbackWithUser])
 async def get_discovery_feedback_with_user_details(
     workshop_id: str,
-    user_id: Optional[str] = None,
+    user_id: str | None = None,
     db: Session = Depends(get_db),
-) -> List[Dict[str, Any]]:
+) -> list[DiscoveryFeedbackWithUser]:
     """Get all discovery feedback with user details (name, role) for facilitator view."""
     svc = DiscoveryService(db)
     return svc.get_discovery_feedback_with_user_details(workshop_id, user_id)
@@ -328,12 +329,12 @@ class SubmitFindingV2Request(BaseModel):
     text: str
 
 
-@router.post("/{workshop_id}/findings-v2", response_model=Dict[str, Any])
+@router.post("/{workshop_id}/findings-v2", response_model=dict[str, Any])
 async def submit_finding_v2(
     workshop_id: str,
     request: SubmitFindingV2Request,
     db: Session = Depends(get_db),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Submit finding with real-time classification (v2 assisted facilitation)."""
     svc = DiscoveryService(db)
     return await svc.submit_finding_v2(
@@ -344,22 +345,22 @@ async def submit_finding_v2(
     )
 
 
-@router.get("/{workshop_id}/traces/{trace_id}/discovery-state", response_model=Dict[str, Any])
+@router.get("/{workshop_id}/traces/{trace_id}/discovery-state", response_model=dict[str, Any])
 async def get_trace_discovery_state(
     workshop_id: str,
     trace_id: str,
     db: Session = Depends(get_db),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Get full structured state for facilitator."""
     svc = DiscoveryService(db)
     return svc.get_trace_discovery_state(workshop_id=workshop_id, trace_id=trace_id)
 
 
-@router.get("/{workshop_id}/discovery-progress", response_model=Dict[str, Any])
+@router.get("/{workshop_id}/discovery-progress", response_model=dict[str, Any])
 async def get_discovery_progress(
     workshop_id: str,
     db: Session = Depends(get_db),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Get fuzzy global progress for participants."""
     svc = DiscoveryService(db)
     return svc.get_fuzzy_progress(workshop_id=workshop_id)
@@ -372,13 +373,13 @@ class PromoteFindingRequest(BaseModel):
     promoter_id: str
 
 
-@router.post("/{workshop_id}/findings/{finding_id}/promote", response_model=Dict[str, Any])
+@router.post("/{workshop_id}/findings/{finding_id}/promote", response_model=dict[str, Any])
 async def promote_finding(
     workshop_id: str,
     finding_id: str,
     request: PromoteFindingRequest,
     db: Session = Depends(get_db),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Promote finding to draft rubric."""
     svc = DiscoveryService(db)
     return svc.promote_finding(
@@ -391,16 +392,16 @@ async def promote_finding(
 class UpdateThresholdsRequest(BaseModel):
     """Request to update trace thresholds."""
 
-    thresholds: Dict[str, int]
+    thresholds: dict[str, int]
 
 
-@router.put("/{workshop_id}/traces/{trace_id}/thresholds", response_model=Dict[str, Any])
+@router.put("/{workshop_id}/traces/{trace_id}/thresholds", response_model=dict[str, Any])
 async def update_trace_thresholds(
     workshop_id: str,
     trace_id: str,
     request: UpdateThresholdsRequest,
     db: Session = Depends(get_db),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Update thresholds for trace."""
     svc = DiscoveryService(db)
     return svc.update_trace_thresholds(
@@ -410,11 +411,11 @@ async def update_trace_thresholds(
     )
 
 
-@router.get("/{workshop_id}/draft-rubric", response_model=List[Dict[str, Any]])
+@router.get("/{workshop_id}/draft-rubric", response_model=list[dict[str, Any]])
 async def get_draft_rubric(
     workshop_id: str,
     db: Session = Depends(get_db),
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Get all promoted findings."""
     # Placeholder - will query DraftRubricItemDB in Phase 3
     return []
