@@ -204,16 +204,65 @@ def _import_dspy():
     return dspy
 
 
-def build_databricks_lm(endpoint_name: str, workspace_url: str, token: str, *, temperature: float = 0.2):
-    """Create a DSPy LM pointed at Databricks model serving (OpenAI-compatible).
+def _get_sdk_token(workspace_url: str | None = None) -> str | None:
+    """Get an OAuth token via the Databricks SDK (unified auth).
 
-    Databricks Model Serving exposes an OpenAI-compatible Chat Completions API at:
-      {workspace_url}/serving-endpoints
-    where `model` is the endpoint name.
+    Resolution order:
+    1. ``WorkspaceClient()`` with no args — picks up platform-injected creds
+       on Databricks Apps (``DATABRICKS_HOST`` / ``DATABRICKS_CLIENT_ID`` /
+       ``DATABRICKS_CLIENT_SECRET``) and CLI profiles locally.
+    2. ``WorkspaceClient(host=workspace_url)`` — explicit host override when
+       the workshop's configured URL differs from the default SDK host.
+    """
+    try:
+        from databricks.sdk import WorkspaceClient
+
+        # Try platform / default SDK credentials first (Databricks Apps + local CLI)
+        w = WorkspaceClient()
+        headers = w.config.authenticate()
+        auth_header = headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            # If a workspace_url was given, verify the SDK host matches
+            sdk_host = (w.config.host or "").rstrip("/")
+            target_host = (workspace_url or "").rstrip("/")
+            if target_host and sdk_host and sdk_host.lower() != target_host.lower():
+                # Host mismatch — retry with explicit host
+                logger.debug(
+                    "SDK host %s != target %s, retrying with explicit host",
+                    sdk_host, target_host,
+                )
+                w2 = WorkspaceClient(host=workspace_url)
+                headers2 = w2.config.authenticate()
+                auth2 = headers2.get("Authorization", "")
+                if auth2.startswith("Bearer "):
+                    return auth2[len("Bearer "):]
+                return None
+            return auth_header[len("Bearer "):]
+    except Exception as exc:
+        logger.debug("Databricks SDK auth not available: %s", exc)
+    return None
+
+
+def build_databricks_lm(endpoint_name: str, workspace_url: str, token: str, *, temperature: float = 0.2):
+    """Create a DSPy LM pointed at Databricks model serving.
+
+    LiteLLM 1.81's ``databricks/`` provider hardcodes the
+    ``/serving-endpoints/chat/completions`` route.  On many workspaces PATs
+    are only accepted on the per-model ``/invocations`` path, not on the
+    shared ``/chat/completions`` gateway.
+
+    To work around this we resolve credentials through the Databricks SDK
+    (which returns OAuth tokens accepted on both paths) and only fall back
+    to the raw token when the SDK is unavailable.
     """
     dspy = _import_dspy()
 
     api_base = f"{workspace_url.rstrip('/')}/serving-endpoints"
+
+    # Prefer the Databricks SDK for auth — it returns OAuth tokens that are
+    # accepted on both /chat/completions and /invocations paths.
+    # Fall back to the caller-supplied token (PAT or otherwise).
+    effective_token = _get_sdk_token(workspace_url) or token
 
     # DSPy commonly uses LiteLLM-style model names like `openai/gpt-4o-mini`.
     # We keep the `databricks/` provider prefix but point `api_base` to Databricks.
@@ -224,7 +273,7 @@ def build_databricks_lm(endpoint_name: str, workspace_url: str, token: str, *, t
         model = f"databricks/{endpoint_name}"
 
     try:
-        return dspy.LM(model=model, api_key=token, api_base=api_base, temperature=temperature)
+        return dspy.LM(model=model, api_key=effective_token, api_base=api_base, temperature=temperature)
     except TypeError:
         # Older/newer DSPy versions may use slightly different kwarg names.
         # Fall back to the simplest constructor and rely on environment/defaults.
