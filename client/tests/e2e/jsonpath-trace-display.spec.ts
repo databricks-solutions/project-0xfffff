@@ -16,7 +16,7 @@ const tag = ['@spec:TRACE_DISPLAY_SPEC'];
 
 test.describe('JSONPath Trace Display Customization', { tag }, () => {
   test('facilitator can configure JSONPath settings and preview extraction', {
-    tag: ['@spec:TRACE_DISPLAY_SPEC'],
+    tag: ['@spec:TRACE_DISPLAY_SPEC', '@req:Facilitator can configure input/output JSONPath in settings panel'],
   }, async ({ page }) => {
     const runId = `${Date.now()}`;
 
@@ -88,7 +88,7 @@ test.describe('JSONPath Trace Display Customization', { tag }, () => {
   });
 
   test('TraceViewer displays extracted content when JSONPath is configured', {
-    tag: ['@spec:TRACE_DISPLAY_SPEC'],
+    tag: ['@spec:TRACE_DISPLAY_SPEC', '@req:Settings are persisted per workshop'],
   }, async ({ browser }) => {
     const runId = `${Date.now()}`;
     const expectedInputContent = `What is the capital of France? (${runId})`;
@@ -144,7 +144,7 @@ test.describe('JSONPath Trace Display Customization', { tag }, () => {
   });
 
   test('TraceViewer shows content when JSONPath is not configured', {
-    tag: ['@spec:TRACE_DISPLAY_SPEC'],
+    tag: ['@spec:TRACE_DISPLAY_SPEC', '@req:System falls back to raw display when JSONPath is not configured, JSON parsing fails, JSONPath query fails, or JSONPath returns null/empty'],
   }, async ({ browser }) => {
     const runId = `${Date.now()}`;
 
@@ -182,7 +182,7 @@ test.describe('JSONPath Trace Display Customization', { tag }, () => {
   });
 
   test('JSONPath extraction falls back to raw display on no match', {
-    tag: ['@spec:TRACE_DISPLAY_SPEC'],
+    tag: ['@spec:TRACE_DISPLAY_SPEC', '@req:System falls back to raw display when JSONPath is not configured, JSON parsing fails, JSONPath query fails, or JSONPath returns null/empty'],
   }, async ({ page }) => {
     const runId = `${Date.now()}`;
 
@@ -234,7 +234,7 @@ test.describe('JSONPath Trace Display Customization', { tag }, () => {
   });
 
   test('multiple JSONPath matches are concatenated with newlines', {
-    tag: ['@spec:TRACE_DISPLAY_SPEC'],
+    tag: ['@spec:TRACE_DISPLAY_SPEC', '@req:Preview shows extraction results against first workshop trace'],
   }, async ({ page }) => {
     const runId = `${Date.now()}`;
 
@@ -295,7 +295,7 @@ test.describe('JSONPath Trace Display Customization', { tag }, () => {
   });
 
   test('invalid JSONPath shows error message to user', {
-    tag: ['@spec:TRACE_DISPLAY_SPEC'],
+    tag: ['@spec:TRACE_DISPLAY_SPEC', '@req:Invalid JSONPath syntax shows helpful error message in preview'],
   }, async ({ page }) => {
     // Spec: TRACE_DISPLAY_SPEC line 349
     // "Invalid JSONPath syntax shows helpful error message in preview"
