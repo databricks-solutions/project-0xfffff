@@ -1426,16 +1426,29 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({
     if (!filter || !trace.context) {
       return { baseInput: trace.input, baseOutput: trace.output };
     }
-    const spans = (trace.context as Record<string, unknown>).spans;
+    // Parse spans: may be an array already or a string (Python repr from CSV upload)
+    let spans = (trace.context as Record<string, unknown>).spans;
+    if (typeof spans === 'string') {
+      try { spans = JSON.parse(spans); } catch { /* not JSON, can't parse client-side */ }
+    }
     if (!Array.isArray(spans)) {
       return { baseInput: trace.input, baseOutput: trace.output };
     }
+    // Unwrap one layer of JSON encoding (MLflow raw wire format stores attribute values as JSON strings)
+    const unwrapJsonStr = (v: unknown): unknown => {
+      if (typeof v !== 'string') return v;
+      try { return JSON.parse(v); } catch { return v; }
+    };
     for (const span of spans) {
       if (typeof span !== 'object' || !span) continue;
       const s = span as Record<string, unknown>;
       let match = true;
       if ('span_name' in filter && s.name !== filter.span_name) match = false;
-      if ('span_type' in filter && s.span_type !== filter.span_type) match = false;
+      if ('span_type' in filter) {
+        const attrs = s.attributes as Record<string, unknown> | undefined;
+        const spanType = s.span_type ?? unwrapJsonStr(attrs?.['mlflow.spanType']);
+        if (spanType !== filter.span_type) match = false;
+      }
       if ('attribute_key' in filter) {
         const attrs = s.attributes as Record<string, unknown> | undefined;
         const key = filter.attribute_key;
@@ -1451,7 +1464,10 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({
           if (v == null) return '';
           try { return JSON.stringify(v, null, 2); } catch { return String(v); }
         };
-        return { baseInput: toStr(s.inputs), baseOutput: toStr(s.outputs) };
+        const attrs = s.attributes as Record<string, unknown> | undefined;
+        const inputs = s.inputs ?? unwrapJsonStr(attrs?.['mlflow.spanInputs']);
+        const outputs = s.outputs ?? unwrapJsonStr(attrs?.['mlflow.spanOutputs']);
+        return { baseInput: toStr(inputs), baseOutput: toStr(outputs) };
       }
     }
     return { baseInput: trace.input, baseOutput: trace.output };

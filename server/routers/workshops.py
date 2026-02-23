@@ -3002,8 +3002,17 @@ async def upload_csv_traces(
                     try:
                         context[field] = json.loads(row[field])
                     except json.JSONDecodeError:
-                        logger.warning(f"Row {row_number}: Invalid JSON in {field} column, storing as string")
-                        context[field] = row[field]
+                        # Python dict notation fallback (common in pandas CSV exports)
+                        if field == "spans":
+                            try:
+                                import ast
+                                context[field] = ast.literal_eval(row[field])
+                            except (ValueError, SyntaxError):
+                                logger.warning(f"Row {row_number}: Invalid JSON/Python in {field} column, storing as string")
+                                context[field] = row[field]
+                        else:
+                            logger.warning(f"Row {row_number}: Invalid JSON in {field} column, storing as string")
+                            context[field] = row[field]
 
             # For raw format, parse the full trace blob for richer context
             if is_raw_format and row.get("trace"):

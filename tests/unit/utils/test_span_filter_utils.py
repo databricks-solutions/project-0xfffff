@@ -210,3 +210,162 @@ class TestApplySpanFilter:
         inputs, outputs = apply_span_filter(context, {"span_name": "NullSpan"})
         assert inputs is None
         assert outputs is None
+
+
+# ---------------------------------------------------------------------------
+# Raw MLflow span format tests (CSV-uploaded spans)
+# ---------------------------------------------------------------------------
+
+# Spans in MLflow's raw wire format: span_type and inputs/outputs live inside
+# attributes as JSON-encoded strings (exactly how they appear in CSV exports)
+RAW_MLFLOW_SPANS_JSON_ENCODED = [
+    {
+        "name": "json_creation_node",
+        "attributes": {
+            "mlflow.spanType": '"CHAIN"',
+            "mlflow.spanInputs": '{"question": "What is AI?"}',
+            "mlflow.spanOutputs": '{"answer": "Artificial Intelligence"}',
+        },
+    },
+    {
+        "name": "AzureChatOpenAI",
+        "attributes": {
+            "mlflow.spanType": '"CHAT_MODEL"',
+            "mlflow.spanInputs": '{"messages": [{"role": "user", "content": "Hello"}]}',
+            "mlflow.spanOutputs": '{"choices": [{"message": {"content": "Hi"}}]}',
+            "model": "gpt-4",
+        },
+    },
+]
+
+# Same spans but with plain (unwrapped) attribute values
+RAW_MLFLOW_SPANS_PLAIN = [
+    {
+        "name": "json_creation_node",
+        "attributes": {
+            "mlflow.spanType": "CHAIN",
+            "mlflow.spanInputs": {"question": "What is AI?"},
+            "mlflow.spanOutputs": {"answer": "Artificial Intelligence"},
+        },
+    },
+    {
+        "name": "AzureChatOpenAI",
+        "attributes": {
+            "mlflow.spanType": "CHAT_MODEL",
+            "mlflow.spanInputs": {"messages": [{"role": "user", "content": "Hello"}]},
+            "mlflow.spanOutputs": {"choices": [{"message": {"content": "Hi"}}]},
+            "model": "gpt-4",
+        },
+    },
+]
+
+
+@pytest.mark.spec("TRACE_DISPLAY_SPEC")
+class TestRawMLflowSpanFormat:
+    """Tests for spans using MLflow's raw wire format where metadata is inside attributes."""
+
+    @pytest.mark.req("Facilitator can configure span attribute filter with span name, span type, attribute key, and attribute value")
+    def test_match_span_type_from_json_encoded_attributes(self):
+        """span_type in attributes as JSON string ('"CHAT_MODEL"') should be unwrapped."""
+        result = find_matching_span(RAW_MLFLOW_SPANS_JSON_ENCODED, {"span_type": "CHAT_MODEL"})
+        assert result is not None
+        assert result["name"] == "AzureChatOpenAI"
+
+    @pytest.mark.req("Facilitator can configure span attribute filter with span name, span type, attribute key, and attribute value")
+    def test_match_span_type_from_plain_attributes(self):
+        """span_type in attributes as plain string should also match."""
+        result = find_matching_span(RAW_MLFLOW_SPANS_PLAIN, {"span_type": "CHAT_MODEL"})
+        assert result is not None
+        assert result["name"] == "AzureChatOpenAI"
+
+    @pytest.mark.req("Span filter is applied before JSONPath extraction in TraceViewer")
+    def test_apply_filter_extracts_inputs_from_json_encoded_attributes(self):
+        """inputs/outputs stored as JSON strings in attributes should be unwrapped."""
+        context = {"spans": RAW_MLFLOW_SPANS_JSON_ENCODED}
+        inputs, outputs = apply_span_filter(context, {"span_name": "json_creation_node"})
+        assert inputs is not None
+        assert outputs is not None
+        parsed_inputs = json.loads(inputs)
+        parsed_outputs = json.loads(outputs)
+        assert parsed_inputs["question"] == "What is AI?"
+        assert parsed_outputs["answer"] == "Artificial Intelligence"
+
+    @pytest.mark.req("Span filter is applied before JSONPath extraction in TraceViewer")
+    def test_apply_filter_extracts_inputs_from_plain_attributes(self):
+        """inputs/outputs stored as dicts in attributes should work directly."""
+        context = {"spans": RAW_MLFLOW_SPANS_PLAIN}
+        inputs, outputs = apply_span_filter(context, {"span_name": "json_creation_node"})
+        assert inputs is not None
+        assert outputs is not None
+        parsed_inputs = json.loads(inputs)
+        parsed_outputs = json.loads(outputs)
+        assert parsed_inputs["question"] == "What is AI?"
+        assert parsed_outputs["answer"] == "Artificial Intelligence"
+
+    @pytest.mark.req("Span filter is applied before JSONPath extraction in TraceViewer")
+    def test_apply_filter_prefers_top_level_over_attributes(self):
+        """Top-level inputs/outputs take precedence over attributes."""
+        spans = [
+            {
+                "name": "MixedSpan",
+                "span_type": "CHAIN",
+                "inputs": {"from": "top-level"},
+                "outputs": {"from": "top-level"},
+                "attributes": {
+                    "mlflow.spanInputs": {"from": "attributes"},
+                    "mlflow.spanOutputs": {"from": "attributes"},
+                },
+            }
+        ]
+        context = {"spans": spans}
+        inputs, outputs = apply_span_filter(context, {"span_name": "MixedSpan"})
+        parsed_inputs = json.loads(inputs)
+        parsed_outputs = json.loads(outputs)
+        assert parsed_inputs["from"] == "top-level"
+        assert parsed_outputs["from"] == "top-level"
+
+    @pytest.mark.req("Facilitator can configure span attribute filter with span name, span type, attribute key, and attribute value")
+    def test_match_combined_name_and_attribute_type(self):
+        """Combined filter with span_name and span_type from attributes should work."""
+        result = find_matching_span(
+            RAW_MLFLOW_SPANS_JSON_ENCODED, {"span_name": "AzureChatOpenAI", "span_type": "CHAT_MODEL"}
+        )
+        assert result is not None
+        assert result["name"] == "AzureChatOpenAI"
+
+
+@pytest.mark.spec("TRACE_DISPLAY_SPEC")
+class TestSpansStoredAsString:
+    """Tests for spans stored as a string in the context (already-uploaded CSV data)."""
+
+    @pytest.mark.req("Span filter is applied before JSONPath extraction in TraceViewer")
+    def test_spans_as_python_repr_string(self):
+        """Spans stored as Python repr string should be parsed via ast.literal_eval."""
+        context = {
+            "spans": "[{'name': 'MySpan', 'span_type': 'CHAIN', "
+            "'inputs': {'q': 'hello'}, 'outputs': {'a': 'world'}, 'attributes': {}}]"
+        }
+        inputs, outputs = apply_span_filter(context, {"span_name": "MySpan"})
+        assert inputs is not None
+        parsed = json.loads(inputs)
+        assert parsed["q"] == "hello"
+
+    @pytest.mark.req("Span filter is applied before JSONPath extraction in TraceViewer")
+    def test_spans_as_json_string(self):
+        """Spans stored as JSON string should be parsed via json.loads."""
+        spans_list = [
+            {"name": "MySpan", "span_type": "CHAIN", "inputs": {"q": "hi"}, "outputs": {"a": "bye"}, "attributes": {}}
+        ]
+        context = {"spans": json.dumps(spans_list)}
+        inputs, outputs = apply_span_filter(context, {"span_name": "MySpan"})
+        assert inputs is not None
+        parsed = json.loads(inputs)
+        assert parsed["q"] == "hi"
+
+    @pytest.mark.req("Empty filter config results in no filtering and root trace data is used")
+    def test_unparseable_string_returns_none(self):
+        """If spans is a string that can't be parsed, return (None, None)."""
+        context = {"spans": "not a valid list at all"}
+        inputs, outputs = apply_span_filter(context, {"span_name": "X"})
+        assert inputs is None
+        assert outputs is None
