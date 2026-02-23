@@ -347,6 +347,7 @@ async def preview_jsonpath(
     to verify they extract the expected content.
     """
     from server.utils.jsonpath_utils import apply_jsonpath
+    from server.utils.span_filter_utils import apply_span_filter
 
     db_service = DatabaseService(db)
     workshop = db_service.get_workshop(workshop_id)
@@ -360,23 +361,35 @@ async def preview_jsonpath(
 
     first_trace = traces[0]
 
-    # Apply JSONPath to input
+    # Apply span filter first if configured (span filter → JSONPath pipeline)
+    base_input = first_trace.input
+    base_output = first_trace.output
+    span_filter = workshop.span_attribute_filter
+    if span_filter:
+        context = first_trace.context if first_trace.context else None
+        span_input, span_output = apply_span_filter(context, span_filter)
+        if span_input is not None:
+            base_input = span_input
+        if span_output is not None:
+            base_output = span_output
+
+    # Apply JSONPath to (possibly span-filtered) input
     input_result = None
     input_success = False
     if preview_request.input_jsonpath:
-        input_result, input_success = apply_jsonpath(first_trace.input, preview_request.input_jsonpath)
+        input_result, input_success = apply_jsonpath(base_input, preview_request.input_jsonpath)
 
-    # Apply JSONPath to output
+    # Apply JSONPath to (possibly span-filtered) output
     output_result = None
     output_success = False
     if preview_request.output_jsonpath:
-        output_result, output_success = apply_jsonpath(first_trace.output, preview_request.output_jsonpath)
+        output_result, output_success = apply_jsonpath(base_output, preview_request.output_jsonpath)
 
     return {
         "trace_id": first_trace.id,
-        "input_result": input_result if input_success else first_trace.input,
+        "input_result": input_result if input_success else base_input,
         "input_success": input_success,
-        "output_result": output_result if output_success else first_trace.output,
+        "output_result": output_result if output_success else base_output,
         "output_success": output_success,
     }
 
@@ -418,6 +431,7 @@ async def preview_span_filter(
     workshop_id: str, body: SpanAttributeFilterUpdate, db: Session = Depends(get_db)
 ) -> dict[str, Any]:
     """Preview span attribute filter against the first trace in the workshop."""
+    from server.utils.jsonpath_utils import apply_jsonpath
     from server.utils.span_filter_utils import apply_span_filter
 
     db_service = DatabaseService(db)
@@ -434,11 +448,23 @@ async def preview_span_filter(
 
     inputs_str, outputs_str = apply_span_filter(context, body.span_attribute_filter)
 
+    # Apply JSONPath on top of span-filtered results if configured
+    final_input = inputs_str
+    final_output = outputs_str
+    if inputs_str is not None and workshop.input_jsonpath:
+        extracted, ok = apply_jsonpath(inputs_str, workshop.input_jsonpath)
+        if ok:
+            final_input = extracted
+    if outputs_str is not None and workshop.output_jsonpath:
+        extracted, ok = apply_jsonpath(outputs_str, workshop.output_jsonpath)
+        if ok:
+            final_output = extracted
+
     return {
         "trace_id": first_trace.id,
         "matched": inputs_str is not None or outputs_str is not None,
-        "input_result": inputs_str,
-        "output_result": outputs_str,
+        "input_result": final_input,
+        "output_result": final_output,
         "original_input": first_trace.input[:400] if first_trace.input else None,
         "original_output": first_trace.output[:400] if first_trace.output else None,
     }
