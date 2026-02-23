@@ -164,6 +164,7 @@ class WorkshopDB(Base):
     auto_evaluation_prompt = Column(Text, nullable=True)  # Derived judge prompt used for auto-evaluation
     auto_evaluation_model = Column(String, nullable=True)  # Model used for auto-evaluation
     show_participant_notes = Column(Boolean, default=False)  # Facilitator toggle: show notepad to SMEs
+    span_attribute_filter = Column(JSON, nullable=True)  # Filter config for selecting a span's inputs/outputs
     created_at = Column(DateTime, default=func.now())
 
     # Relationships
@@ -975,6 +976,19 @@ def _apply_schema_updates():
                 print("✅ Database schema updated for participant_notes (added phase column)")
             except Exception as e:
                 print(f"ℹ️ participant_notes phase column skipped (may already exist): {e}")
+
+            try:
+                # Add span_attribute_filter column to workshops table
+                if is_postgres:
+                    conn.execute(
+                        text("ALTER TABLE workshops ADD COLUMN IF NOT EXISTS span_attribute_filter JSON")
+                    )
+                else:
+                    conn.execute(text("ALTER TABLE workshops ADD COLUMN span_attribute_filter JSON"))
+                conn.commit()
+                print("✅ Database schema updated for workshops (added span_attribute_filter column)")
+            except Exception as e:
+                print(f"ℹ️ workshops span_attribute_filter column skipped (may already exist): {e}")
 
     except Exception as e:
         # Schema updates are optional, don't fail if they error

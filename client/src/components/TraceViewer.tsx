@@ -1420,13 +1420,50 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({
   const { data: mlflowConfig } = useMLflowConfig(workshopId!);
   const { data: workshop } = useWorkshop(workshopId!);
 
+  // Apply span attribute filter: if configured, use matching span's inputs/outputs
+  const { baseInput, baseOutput } = useMemo(() => {
+    const filter = workshop?.span_attribute_filter;
+    if (!filter || !trace.context) {
+      return { baseInput: trace.input, baseOutput: trace.output };
+    }
+    const spans = (trace.context as Record<string, unknown>).spans;
+    if (!Array.isArray(spans)) {
+      return { baseInput: trace.input, baseOutput: trace.output };
+    }
+    for (const span of spans) {
+      if (typeof span !== 'object' || !span) continue;
+      const s = span as Record<string, unknown>;
+      let match = true;
+      if ('span_name' in filter && s.name !== filter.span_name) match = false;
+      if ('span_type' in filter && s.span_type !== filter.span_type) match = false;
+      if ('attribute_key' in filter) {
+        const attrs = s.attributes as Record<string, unknown> | undefined;
+        const key = filter.attribute_key;
+        if (!attrs || !(key in attrs)) {
+          match = false;
+        } else if ('attribute_value' in filter && String(attrs[key]) !== String(filter.attribute_value)) {
+          match = false;
+        }
+      }
+      if (match) {
+        const toStr = (v: unknown) => {
+          if (typeof v === 'string') return v;
+          if (v == null) return '';
+          try { return JSON.stringify(v, null, 2); } catch { return String(v); }
+        };
+        return { baseInput: toStr(s.inputs), baseOutput: toStr(s.outputs) };
+      }
+    }
+    return { baseInput: trace.input, baseOutput: trace.output };
+  }, [trace.input, trace.output, trace.context, workshop?.span_attribute_filter]);
+
   // Get JSONPath settings from props or workshop settings
   const effectiveInputJsonPath = inputJsonPath ?? workshop?.input_jsonpath;
   const effectiveOutputJsonPath = outputJsonPath ?? workshop?.output_jsonpath;
 
   // Apply JSONPath extraction to input and output
-  const displayInput = useJsonPathExtraction(trace.input, effectiveInputJsonPath);
-  const displayOutput = useJsonPathExtraction(trace.output, effectiveOutputJsonPath);
+  const displayInput = useJsonPathExtraction(baseInput, effectiveInputJsonPath);
+  const displayOutput = useJsonPathExtraction(baseOutput, effectiveOutputJsonPath);
 
   // Check if input/output are JSON for badge display
   const isInputJson = useMemo(() => {

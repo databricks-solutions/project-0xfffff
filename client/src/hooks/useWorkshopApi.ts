@@ -764,6 +764,62 @@ export function usePreviewJsonPath(workshopId: string) {
   });
 }
 
+// Span Attribute Filter hooks
+
+interface SpanAttributeFilterUpdate {
+  span_attribute_filter?: Record<string, string> | null;
+}
+
+interface SpanFilterPreviewResult {
+  trace_id?: string;
+  matched?: boolean;
+  input_result?: string | null;
+  output_result?: string | null;
+  original_input?: string | null;
+  original_output?: string | null;
+  error?: string;
+}
+
+export function useUpdateSpanAttributeFilter(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (body: SpanAttributeFilterUpdate): Promise<Workshop> => {
+      const response = await fetch(`/workshops/${workshopId}/span-attribute-filter`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to update span filter' }));
+        throw new Error(error.detail || 'Failed to update span filter');
+      }
+      return response.json();
+    },
+    onSuccess: (workshop) => {
+      queryClient.setQueryData(QUERY_KEYS.workshop(workshopId), workshop);
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.workshop(workshopId) });
+    },
+  });
+}
+
+export function usePreviewSpanFilter(workshopId: string) {
+  return useMutation({
+    mutationFn: async (body: SpanAttributeFilterUpdate): Promise<SpanFilterPreviewResult> => {
+      const response = await fetch(`/workshops/${workshopId}/preview-span-filter`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to preview span filter' }));
+        throw new Error(error.detail || 'Failed to preview span filter');
+      }
+      return response.json();
+    },
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Discovery Feedback hooks (v2 Structured Feedback)
 // ---------------------------------------------------------------------------

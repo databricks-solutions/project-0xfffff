@@ -14,6 +14,7 @@ from server.models import AnalysisTemplate, DistillationOutput
 from server.services.database_service import DatabaseService
 from server.services.databricks_service import DatabricksService
 from server.utils.jsonpath_utils import apply_jsonpath
+from server.utils.span_filter_utils import apply_span_filter
 
 logger = logging.getLogger(__name__)
 
@@ -143,10 +144,11 @@ class DiscoveryAnalysisService:
         if not feedback_rows:
             return {}
 
-        # Get workshop for JSONPath config
+        # Get workshop for filter configs
         workshop = self.db_service.get_workshop(workshop_id)
         input_jsonpath = workshop.input_jsonpath if workshop else None
         output_jsonpath = workshop.output_jsonpath if workshop else None
+        span_filter = workshop.span_attribute_filter if workshop else None
 
         # Get traces for input/output
         traces = self.db_service.get_traces(workshop_id)
@@ -157,13 +159,19 @@ class DiscoveryAnalysisService:
             if fb.trace_id not in aggregated:
                 trace = trace_map.get(fb.trace_id)
                 if trace:
-                    # Use JSONPath-extracted values if configured
+                    # First apply span filter if configured
                     trace_input = trace.input
                     trace_output = trace.output
-                    extracted_input, ok = apply_jsonpath(trace.input, input_jsonpath)
+                    span_input, span_output = apply_span_filter(trace.context, span_filter)
+                    if span_input is not None:
+                        trace_input = span_input
+                    if span_output is not None:
+                        trace_output = span_output
+                    # Then apply JSONPath extraction if configured
+                    extracted_input, ok = apply_jsonpath(trace_input, input_jsonpath)
                     if ok:
                         trace_input = extracted_input
-                    extracted_output, ok = apply_jsonpath(trace.output, output_jsonpath)
+                    extracted_output, ok = apply_jsonpath(trace_output, output_jsonpath)
                     if ok:
                         trace_output = extracted_output
                 else:

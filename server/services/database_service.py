@@ -165,6 +165,7 @@ class DatabaseService:
       auto_evaluation_prompt=getattr(db_workshop, 'auto_evaluation_prompt', None),
       auto_evaluation_model=getattr(db_workshop, 'auto_evaluation_model', None),
       show_participant_notes=getattr(db_workshop, 'show_participant_notes', False) or False,
+      span_attribute_filter=getattr(db_workshop, 'span_attribute_filter', None),
       created_at=db_workshop.created_at,
     )
 
@@ -291,6 +292,30 @@ class DatabaseService:
     db_workshop.input_jsonpath = input_jsonpath if input_jsonpath and input_jsonpath.strip() else None
     db_workshop.output_jsonpath = output_jsonpath if output_jsonpath and output_jsonpath.strip() else None
 
+    self.db.commit()
+    self.db.refresh(db_workshop)
+
+    return self.get_workshop(workshop_id)
+
+  def update_workshop_span_attribute_filter(
+    self,
+    workshop_id: str,
+    span_attribute_filter: dict | None = None,
+  ) -> Optional[Workshop]:
+    """Update the span attribute filter for a workshop.
+
+    Args:
+      workshop_id: The workshop ID
+      span_attribute_filter: Filter config dict (or None to clear)
+
+    Returns:
+      Updated Workshop model or None if workshop not found
+    """
+    db_workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if not db_workshop:
+      return None
+
+    db_workshop.span_attribute_filter = span_attribute_filter
     self.db.commit()
     self.db.refresh(db_workshop)
 

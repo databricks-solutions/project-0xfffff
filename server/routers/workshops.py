@@ -381,6 +381,69 @@ async def preview_jsonpath(
     }
 
 
+# Span Attribute Filter Models
+class SpanAttributeFilterUpdate(BaseModel):
+    """Request model for updating span attribute filter."""
+
+    span_attribute_filter: dict | None = None
+
+
+@router.put("/{workshop_id}/span-attribute-filter")
+async def update_span_attribute_filter(
+    workshop_id: str, body: SpanAttributeFilterUpdate, db: Session = Depends(get_db)
+) -> Workshop:
+    """Update the span attribute filter for trace display.
+
+    When configured, the TraceViewer will display a matching span's
+    inputs/outputs instead of the root trace input/output.
+    """
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    updated_workshop = db_service.update_workshop_span_attribute_filter(
+        workshop_id,
+        span_attribute_filter=body.span_attribute_filter,
+    )
+
+    if not updated_workshop:
+        raise HTTPException(status_code=500, detail="Failed to update span attribute filter")
+
+    return updated_workshop
+
+
+@router.post("/{workshop_id}/preview-span-filter")
+async def preview_span_filter(
+    workshop_id: str, body: SpanAttributeFilterUpdate, db: Session = Depends(get_db)
+) -> dict[str, Any]:
+    """Preview span attribute filter against the first trace in the workshop."""
+    from server.utils.span_filter_utils import apply_span_filter
+
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    traces = db_service.get_traces(workshop_id)
+    if not traces:
+        return {"error": "No traces available for preview"}
+
+    first_trace = traces[0]
+    context = first_trace.context if first_trace.context else None
+
+    inputs_str, outputs_str = apply_span_filter(context, body.span_attribute_filter)
+
+    return {
+        "trace_id": first_trace.id,
+        "matched": inputs_str is not None or outputs_str is not None,
+        "input_result": inputs_str,
+        "output_result": outputs_str,
+        "original_input": first_trace.input[:400] if first_trace.input else None,
+        "original_output": first_trace.output[:400] if first_trace.output else None,
+    }
+
+
 @router.post("/{workshop_id}/resync-annotations")
 async def resync_annotations(workshop_id: str, db: Session = Depends(get_db)):
     """Re-sync all annotations to MLflow with the current workshop judge_name.
