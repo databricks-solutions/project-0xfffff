@@ -18,6 +18,7 @@ from server.database import (
   DiscoveryFindingDB,
   DiscoveryQuestionDB,
   DiscoverySummaryDB,
+  DraftRubricItemDB,
   FacilitatorConfigDB,
   JudgeEvaluationDB,
   JudgePromptDB,
@@ -39,6 +40,9 @@ from server.models import (
   DiscoveryFeedbackCreate,
   DiscoveryFinding,
   DiscoveryFindingCreate,
+  DraftRubricItem,
+  DraftRubricItemCreate,
+  DraftRubricItemUpdate,
   FacilitatorConfig,
   FacilitatorConfigCreate,
   JudgeEvaluation,
@@ -4280,3 +4284,130 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       'created_at': summary.created_at,
       'updated_at': summary.updated_at,
     }
+
+  # -----------------------------------------------------------------
+  # Draft Rubric Items (Step 3 — Structured Feedback & Promotion)
+  # -----------------------------------------------------------------
+
+  def add_draft_rubric_item(
+      self, workshop_id: str, data: DraftRubricItemCreate, promoted_by: str
+  ) -> DraftRubricItem:
+      """Create a new draft rubric item."""
+      row = DraftRubricItemDB(
+          id=str(uuid.uuid4()),
+          workshop_id=workshop_id,
+          text=data.text,
+          source_type=data.source_type,
+          source_analysis_id=data.source_analysis_id,
+          source_trace_ids=data.source_trace_ids or [],
+          promoted_by=promoted_by,
+      )
+      self.db.add(row)
+      self.db.commit()
+      self.db.refresh(row)
+      return DraftRubricItem(
+          id=row.id,
+          workshop_id=row.workshop_id,
+          text=row.text,
+          source_type=row.source_type,
+          source_analysis_id=row.source_analysis_id,
+          source_trace_ids=row.source_trace_ids or [],
+          group_id=row.group_id,
+          group_name=row.group_name,
+          promoted_by=row.promoted_by,
+          promoted_at=row.promoted_at,
+      )
+
+  def get_draft_rubric_items(self, workshop_id: str) -> list[DraftRubricItem]:
+      """Get all draft rubric items for a workshop."""
+      rows = (
+          self.db.query(DraftRubricItemDB)
+          .filter(DraftRubricItemDB.workshop_id == workshop_id)
+          .order_by(DraftRubricItemDB.promoted_at)
+          .all()
+      )
+      return [
+          DraftRubricItem(
+              id=r.id,
+              workshop_id=r.workshop_id,
+              text=r.text,
+              source_type=r.source_type,
+              source_analysis_id=r.source_analysis_id,
+              source_trace_ids=r.source_trace_ids or [],
+              group_id=r.group_id,
+              group_name=r.group_name,
+              promoted_by=r.promoted_by,
+              promoted_at=r.promoted_at,
+          )
+          for r in rows
+      ]
+
+  def update_draft_rubric_item(
+      self, item_id: str, updates: DraftRubricItemUpdate
+  ) -> DraftRubricItem | None:
+      """Update a draft rubric item (text, group_id, group_name)."""
+      row = self.db.query(DraftRubricItemDB).filter(DraftRubricItemDB.id == item_id).first()
+      if not row:
+          return None
+      if updates.text is not None:
+          row.text = updates.text
+      if updates.group_id is not None:
+          row.group_id = updates.group_id
+      if updates.group_name is not None:
+          row.group_name = updates.group_name
+      self.db.commit()
+      self.db.refresh(row)
+      return DraftRubricItem(
+          id=row.id,
+          workshop_id=row.workshop_id,
+          text=row.text,
+          source_type=row.source_type,
+          source_analysis_id=row.source_analysis_id,
+          source_trace_ids=row.source_trace_ids or [],
+          group_id=row.group_id,
+          group_name=row.group_name,
+          promoted_by=row.promoted_by,
+          promoted_at=row.promoted_at,
+      )
+
+  def delete_draft_rubric_item(self, item_id: str) -> bool:
+      """Delete a draft rubric item. Returns True if deleted."""
+      row = self.db.query(DraftRubricItemDB).filter(DraftRubricItemDB.id == item_id).first()
+      if not row:
+          return False
+      self.db.delete(row)
+      self.db.commit()
+      return True
+
+  def apply_draft_rubric_groups(
+      self, workshop_id: str, groups: list[dict[str, Any]]
+  ) -> None:
+      """Persist group assignments to draft rubric items.
+
+      Each entry in *groups* has ``name`` (str) and ``item_ids`` (list[str]).
+      Items not in any group have their group cleared.
+      """
+      # First clear all groups for this workshop
+      rows = (
+          self.db.query(DraftRubricItemDB)
+          .filter(DraftRubricItemDB.workshop_id == workshop_id)
+          .all()
+      )
+      for r in rows:
+          r.group_id = None
+          r.group_name = None
+
+      # Apply new groups
+      for group in groups:
+          group_id = str(uuid.uuid4())
+          group_name = group.get("name", "")
+          for item_id in group.get("item_ids", []):
+              row = self.db.query(DraftRubricItemDB).filter(
+                  DraftRubricItemDB.id == item_id,
+                  DraftRubricItemDB.workshop_id == workshop_id,
+              ).first()
+              if row:
+                  row.group_id = group_id
+                  row.group_name = group_name
+
+      self.db.commit()

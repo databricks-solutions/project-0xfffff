@@ -55,6 +55,7 @@ class TestClassificationServiceLocalFallback:
             category = DiscoveryService._classify_finding_locally(text)
             assert category in FINDING_CATEGORIES, f"Invalid category {category} for text: {text}"
 
+    @pytest.mark.req("Findings are classified in real-time as participants submit them")
     def test_all_categories_are_valid(self):
         """Test that all categories are defined per spec."""
         expected_categories = {

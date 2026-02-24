@@ -49,6 +49,7 @@ def test_parse_rubric_questions_with_judge_type_likert():
 
 
 @pytest.mark.spec("RUBRIC_SPEC")
+@pytest.mark.req("Per-question judge_type parsed from `[JUDGE_TYPE:xxx]` format")
 def test_parse_rubric_questions_default_to_likert():
     """Defaults to 'likert' when no judge type specified.
 
@@ -96,6 +97,7 @@ def test_parse_rubric_questions_mixed_types():
 
 
 @pytest.mark.spec("RUBRIC_SPEC")
+@pytest.mark.req("Per-question judge_type parsed from `[JUDGE_TYPE:xxx]` format")
 def test_parse_rubric_questions_with_freeform():
     """Parses freeform judge type.
 
@@ -148,6 +150,7 @@ def test_parse_rubric_questions_multiline_description():
 
 
 @pytest.mark.spec("RUBRIC_SPEC")
+@pytest.mark.req("Per-question judge_type parsed from `[JUDGE_TYPE:xxx]` format")
 def test_reconstruct_rubric_questions_with_judge_type():
     """Reconstructs questions with judge type delimiter.
 
@@ -168,6 +171,7 @@ def test_reconstruct_rubric_questions_with_judge_type():
 
 
 @pytest.mark.spec("RUBRIC_SPEC")
+@pytest.mark.req("Empty/whitespace-only parts filtered out")
 def test_reconstruct_rubric_questions_empty():
     """Handles empty questions list.
 
@@ -183,6 +187,7 @@ def test_reconstruct_rubric_questions_empty():
 
 
 @pytest.mark.spec("RUBRIC_SPEC")
+@pytest.mark.req("Questions with multi-line descriptions parse correctly")
 def test_parse_reconstruct_roundtrip():
     """Parse and reconstruct should be reversible.
 

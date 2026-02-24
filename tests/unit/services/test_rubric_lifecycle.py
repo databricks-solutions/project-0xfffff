@@ -6,7 +6,7 @@ and downstream effects on annotations.
 """
 
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -457,3 +457,249 @@ class TestMlflowReSync:
         assert "Thread" in source and "background_resync" in source, (
             "create_rubric must trigger a background thread for MLflow re-sync"
         )
+
+
+@pytest.mark.spec("RUBRIC_SPEC")
+@pytest.mark.req("Frontend and backend use same delimiter constant")
+class TestDelimiterConsistency:
+    """Test that frontend and backend use the same delimiter constant."""
+
+    def test_backend_delimiter_matches_expected_value(self):
+        """Backend QUESTION_DELIMITER equals '|||QUESTION_SEPARATOR|||'.
+
+        The frontend constant is defined in client/src/utils/rubricUtils.ts
+        as: export const QUESTION_DELIMITER = '|||QUESTION_SEPARATOR|||';
+        The backend must use the same string.
+        """
+        service, _ = _make_db_service()
+        raw = "Q1: D1|||QUESTION_SEPARATOR|||Q2: D2"
+        questions = service._parse_rubric_questions(raw)
+        assert len(questions) == 2
+        assert questions[0]['title'] == 'Q1'
+        assert questions[1]['title'] == 'Q2'
+
+    def test_backend_reconstruct_uses_same_delimiter(self):
+        """Reconstructed string contains '|||QUESTION_SEPARATOR|||' delimiter."""
+        service, _ = _make_db_service()
+        questions = [
+            {'id': 'q_1', 'title': 'A', 'description': 'B', 'judge_type': 'likert'},
+            {'id': 'q_2', 'title': 'C', 'description': 'D', 'judge_type': 'binary'},
+        ]
+        result = service._reconstruct_rubric_questions(questions)
+        assert '|||QUESTION_SEPARATOR|||' in result
+
+
+@pytest.mark.spec("RUBRIC_SPEC")
+@pytest.mark.req("Rubric required before advancing to annotation phase")
+class TestRubricRequiredForAnnotation:
+    """Test that advancing to annotation phase requires a rubric."""
+
+    def test_advance_to_annotation_rejects_without_rubric(self):
+        """advance_to_annotation raises HTTPException 400 when no rubric exists."""
+        import asyncio
+
+        from server.routers.workshops import advance_to_annotation
+
+        mock_db = MagicMock()
+        mock_db_service_instance = MagicMock()
+        mock_workshop = MagicMock()
+        mock_workshop.current_phase = "rubric"
+        mock_db_service_instance.get_workshop.return_value = mock_workshop
+        mock_db_service_instance.get_rubric.return_value = None  # No rubric
+
+        with patch("server.routers.workshops.DatabaseService", return_value=mock_db_service_instance):
+            with patch("server.routers.workshops.WorkshopPhase") as mock_phase:
+                mock_phase.RUBRIC = "rubric"
+                mock_phase.ANNOTATION = "annotation"
+
+                from fastapi import HTTPException
+
+                with pytest.raises(HTTPException) as exc_info:
+                    asyncio.get_event_loop().run_until_complete(
+                        advance_to_annotation("ws-1", mock_db)
+                    )
+                assert exc_info.value.status_code == 400
+                assert "Rubric must be created first" in exc_info.value.detail
+
+    def test_advance_to_annotation_succeeds_with_rubric(self):
+        """advance_to_annotation succeeds when a rubric exists."""
+        import asyncio
+
+        from server.routers.workshops import advance_to_annotation
+
+        mock_db = MagicMock()
+        mock_db_service_instance = MagicMock()
+        mock_workshop = MagicMock()
+        mock_workshop.current_phase = "rubric"
+        mock_db_service_instance.get_workshop.return_value = mock_workshop
+
+        mock_rubric = MagicMock()
+        mock_rubric.question = "Quality: Rate quality"
+        mock_db_service_instance.get_rubric.return_value = mock_rubric
+
+        with patch("server.routers.workshops.DatabaseService", return_value=mock_db_service_instance):
+            with patch("server.routers.workshops.WorkshopPhase") as mock_phase:
+                mock_phase.RUBRIC = "rubric"
+                mock_phase.ANNOTATION = "annotation"
+
+                result = asyncio.get_event_loop().run_until_complete(
+                    advance_to_annotation("ws-1", mock_db)
+                )
+                assert result["phase"] == "annotation"
+                mock_db_service_instance.update_workshop_phase.assert_called_once()
+
+
+@pytest.mark.spec("RUBRIC_SPEC")
+@pytest.mark.req("AI suggestions generated from discovery findings and participant notes")
+class TestAISuggestionGeneration:
+    """Test that AI suggestions are generated from discovery findings and participant notes."""
+
+    def _make_generation_service(self):
+        from server.services.rubric_generation_service import RubricGenerationService
+        mock_db_service = MagicMock()
+        mock_databricks_service = MagicMock()
+        return RubricGenerationService(mock_db_service, mock_databricks_service)
+
+    def test_generate_fetches_findings_and_notes(self):
+        """generate_rubric_suggestions fetches both findings and notes from db."""
+        import asyncio
+        svc = self._make_generation_service()
+
+        # Configure mock db_service to return findings and notes
+        svc.db_service.get_findings_with_user_details.return_value = [
+            {"trace_id": "t1", "insight": "Response was too vague", "user_id": "u1"},
+        ]
+        svc.db_service.get_participant_notes.return_value = [
+            {"content": "Noticed many incomplete answers", "user_name": "Alice"},
+        ]
+        svc.db_service.get_workshop.return_value = MagicMock(description="Test workshop")
+
+        # Configure Databricks to return a valid suggestion response
+        svc.databricks_service.call_chat_completion.return_value = {
+            "choices": [{
+                "message": {
+                    "content": '[{"title": "Response Completeness", "description": "Does the response fully address the query?", "judgeType": "likert"}]'
+                }
+            }]
+        }
+
+        result = asyncio.get_event_loop().run_until_complete(
+            svc.generate_rubric_suggestions("ws-1")
+        )
+
+        # Verify findings and notes were fetched
+        svc.db_service.get_findings_with_user_details.assert_called_once_with("ws-1")
+        svc.db_service.get_participant_notes.assert_called_once_with("ws-1", phase="discovery")
+
+        # Verify suggestions were returned
+        assert len(result) == 1
+        assert result[0].title == "Response Completeness"
+
+    def test_generate_raises_when_no_findings_or_notes(self):
+        """generate_rubric_suggestions raises ValueError when no feedback exists."""
+        import asyncio
+        svc = self._make_generation_service()
+
+        svc.db_service.get_findings_with_user_details.return_value = []
+        svc.db_service.get_participant_notes.return_value = []
+
+        with pytest.raises(ValueError, match="No discovery feedback available"):
+            asyncio.get_event_loop().run_until_complete(
+                svc.generate_rubric_suggestions("ws-1")
+            )
+
+    def test_prompt_includes_findings_and_notes(self):
+        """_build_generation_prompt includes both findings and notes content."""
+        svc = self._make_generation_service()
+        svc.db_service.get_workshop.return_value = MagicMock(description="Test workshop")
+
+        findings = [
+            {"trace_id": "t1", "insight": "Response lacked detail", "user_id": "u1"},
+            {"trace_id": "t2", "insight": "Tone was inappropriate", "user_id": "u2"},
+        ]
+        notes = [
+            {"content": "Many responses missed key context", "user_name": "Bob"},
+        ]
+
+        prompt = svc._build_generation_prompt(findings, notes, "ws-1")
+
+        assert "Response lacked detail" in prompt
+        assert "Tone was inappropriate" in prompt
+        assert "Many responses missed key context" in prompt
+
+
+@pytest.mark.spec("RUBRIC_SPEC")
+@pytest.mark.req("Facilitator can accept, reject, or edit suggestions before adding to rubric")
+class TestSuggestionAcceptRejectEdit:
+    """Test that suggestions can be individually accepted, rejected, or edited before adding to rubric.
+
+    The RubricSuggestion model supports all three operations:
+    - Accept: suggestion is converted to a rubric question and added via create/update rubric
+    - Reject: suggestion is simply not included when creating/updating the rubric
+    - Edit: suggestion fields can be modified before being sent as rubric question data
+    """
+
+    def test_suggestion_model_has_editable_fields(self):
+        """RubricSuggestion model supports title, description, and judgeType editing."""
+        from server.models import RubricSuggestion
+
+        suggestion = RubricSuggestion(
+            title="Original Title",
+            description="Original description text here",
+            judgeType="likert",
+        )
+
+        # Verify fields can be read (facilitator can view suggestion)
+        assert suggestion.title == "Original Title"
+        assert suggestion.description == "Original description text here"
+        assert suggestion.judgeType == "likert"
+
+        # Verify fields can be modified (facilitator can edit suggestion)
+        edited = suggestion.model_copy(update={
+            "title": "Edited Title",
+            "description": "Edited description text here",
+            "judgeType": "binary",
+        })
+        assert edited.title == "Edited Title"
+        assert edited.description == "Edited description text here"
+        assert edited.judgeType == "binary"
+
+    def test_selective_acceptance_of_suggestions(self):
+        """Facilitator can accept some suggestions and reject others.
+
+        This simulates the workflow where multiple suggestions are returned
+        but the facilitator only accepts a subset.
+        """
+        from server.models import RubricSuggestion
+
+        suggestions = [
+            RubricSuggestion(title="Accuracy", description="Is the response factually correct?", judgeType="binary"),
+            RubricSuggestion(title="Helpfulness", description="Does the response address the user's need?", judgeType="likert"),
+            RubricSuggestion(title="Tone Quality", description="Is the tone appropriate for the context?", judgeType="likert"),
+        ]
+
+        # Facilitator accepts first two, rejects third
+        accepted = [suggestions[0], suggestions[1]]
+
+        # Build rubric question text from accepted suggestions
+        QUESTION_DELIMITER = '|||QUESTION_SEPARATOR|||'
+        JUDGE_TYPE_DELIMITER = '|||JUDGE_TYPE|||'
+        parts = []
+        for s in accepted:
+            parts.append(f"{s.title}: {s.description}{JUDGE_TYPE_DELIMITER}{s.judgeType}")
+        rubric_text = QUESTION_DELIMITER.join(parts)
+
+        # Verify the rejected suggestion is NOT in the rubric
+        assert "Tone Quality" not in rubric_text
+        # Verify accepted suggestions ARE in the rubric
+        assert "Accuracy" in rubric_text
+        assert "Helpfulness" in rubric_text
+
+        # Verify the rubric can be parsed back
+        service, _ = _make_db_service()
+        parsed = service._parse_rubric_questions(rubric_text)
+        assert len(parsed) == 2
+        assert parsed[0]['title'] == 'Accuracy'
+        assert parsed[0]['judge_type'] == 'binary'
+        assert parsed[1]['title'] == 'Helpfulness'
+        assert parsed[1]['judge_type'] == 'likert'

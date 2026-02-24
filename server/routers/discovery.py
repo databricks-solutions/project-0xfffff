@@ -18,8 +18,13 @@ from server.models import (
     DiscoveryFinding,
     DiscoveryFindingCreate,
     DiscoveryFindingWithUser,
+    DraftRubricItem,
+    DraftRubricItemCreate,
+    DraftRubricItemUpdate,
     GenerateFollowUpRequest,
+    ProposedGroup,
     SubmitFollowUpAnswerRequest,
+    SuggestGroupsResponse,
 )
 from server.services.discovery_service import DiscoveryService
 
@@ -410,13 +415,121 @@ async def update_trace_thresholds(
     )
 
 
-@router.get("/{workshop_id}/draft-rubric", response_model=List[Dict[str, Any]])
+@router.get("/{workshop_id}/draft-rubric", response_model=List[DraftRubricItem])
 async def get_draft_rubric(
     workshop_id: str,
     db: Session = Depends(get_db),
-) -> List[Dict[str, Any]]:
-    """Get all promoted findings."""
-    # Placeholder - will query DraftRubricItemDB in Phase 3
-    return []
+) -> List[DraftRubricItem]:
+    """Get all promoted findings (legacy endpoint, delegates to draft-rubric-items)."""
+    svc = DiscoveryService(db)
+    return svc.get_draft_rubric_items(workshop_id)
+
+
+# ---------------------------------------------------------------------------
+# Draft Rubric Items (Step 3 — Structured Feedback & Promotion)
+# ---------------------------------------------------------------------------
+
+
+class CreateDraftRubricItemRequest(BaseModel):
+    """Request to create a draft rubric item."""
+
+    text: str
+    source_type: str = "manual"
+    source_analysis_id: Optional[str] = None
+    source_trace_ids: List[str] = []
+    promoted_by: str
+
+
+class UpdateDraftRubricItemRequest(BaseModel):
+    """Request to update a draft rubric item."""
+
+    text: Optional[str] = None
+    group_id: Optional[str] = None
+    group_name: Optional[str] = None
+
+
+class ApplyGroupsRequest(BaseModel):
+    """Request to apply group assignments."""
+
+    groups: List[Dict[str, Any]]  # [{name: str, item_ids: [str]}]
+
+
+@router.post("/{workshop_id}/draft-rubric-items", response_model=DraftRubricItem)
+async def create_draft_rubric_item(
+    workshop_id: str,
+    request: CreateDraftRubricItemRequest,
+    db: Session = Depends(get_db),
+) -> DraftRubricItem:
+    """Create a new draft rubric item."""
+    svc = DiscoveryService(db)
+    data = DraftRubricItemCreate(
+        text=request.text,
+        source_type=request.source_type,
+        source_analysis_id=request.source_analysis_id,
+        source_trace_ids=request.source_trace_ids,
+    )
+    return svc.create_draft_rubric_item(workshop_id, data, promoted_by=request.promoted_by)
+
+
+@router.get("/{workshop_id}/draft-rubric-items", response_model=List[DraftRubricItem])
+async def get_draft_rubric_items(
+    workshop_id: str,
+    db: Session = Depends(get_db),
+) -> List[DraftRubricItem]:
+    """Get all draft rubric items for a workshop."""
+    svc = DiscoveryService(db)
+    return svc.get_draft_rubric_items(workshop_id)
+
+
+@router.post("/{workshop_id}/draft-rubric-items/suggest-groups")
+async def suggest_draft_rubric_groups(
+    workshop_id: str,
+    db: Session = Depends(get_db),
+) -> SuggestGroupsResponse:
+    """LLM-suggested grouping of draft rubric items (not persisted)."""
+    svc = DiscoveryService(db)
+    groups = svc.suggest_draft_rubric_groups(workshop_id)
+    return SuggestGroupsResponse(groups=[ProposedGroup(**g) if isinstance(g, dict) else g for g in groups])
+
+
+@router.post("/{workshop_id}/draft-rubric-items/apply-groups")
+async def apply_draft_rubric_groups(
+    workshop_id: str,
+    request: ApplyGroupsRequest,
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Persist group assignments to draft rubric items."""
+    svc = DiscoveryService(db)
+    svc.apply_draft_rubric_groups(workshop_id, request.groups)
+    return {"message": "Groups applied successfully"}
+
+
+@router.put("/{workshop_id}/draft-rubric-items/{item_id}", response_model=DraftRubricItem)
+async def update_draft_rubric_item(
+    workshop_id: str,
+    item_id: str,
+    request: UpdateDraftRubricItemRequest,
+    db: Session = Depends(get_db),
+) -> DraftRubricItem:
+    """Update a draft rubric item."""
+    svc = DiscoveryService(db)
+    updates = DraftRubricItemUpdate(
+        text=request.text,
+        group_id=request.group_id,
+        group_name=request.group_name,
+    )
+    return svc.update_draft_rubric_item(item_id, updates)
+
+
+@router.delete("/{workshop_id}/draft-rubric-items/{item_id}")
+async def delete_draft_rubric_item(
+    workshop_id: str,
+    item_id: str,
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Delete a draft rubric item."""
+    svc = DiscoveryService(db)
+    svc.delete_draft_rubric_item(item_id)
+    return {"message": "Draft rubric item deleted"}
 
 

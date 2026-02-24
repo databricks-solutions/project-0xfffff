@@ -615,3 +615,49 @@ def get_disagreement_signature():
     if _DISAGREEMENT_SIG is None:
         _DISAGREEMENT_SIG = _define_disagreement_signature()
     return _DISAGREEMENT_SIG
+
+
+# ---------------------------------------------------------------------------
+# Draft Rubric Grouping Signature (Step 3)
+# ---------------------------------------------------------------------------
+
+
+class ProposedGroup(BaseModel):
+    """A proposed grouping of draft rubric items."""
+
+    name: str = Field(description="Suggested rubric question title")
+    item_ids: list[str] = Field(description="Draft item IDs in this group")
+    rationale: str = Field(description="Why these items belong together")
+
+
+def _define_suggest_groups_signature():
+    """Define the suggest-groups DSPy signature."""
+    dspy = _import_dspy()
+
+    class SuggestRubricGroups(dspy.Signature):
+        """Cluster related draft rubric items into groups, where each group
+        will become one rubric question.
+
+        Rules:
+        - Group items that address the same quality dimension
+        - Each group should have a clear, concise name suitable as a rubric question title
+        - Items that don't fit any group should be in their own single-item group
+        - Provide a brief rationale for each grouping
+        - Aim for 3-7 groups total
+        """
+
+        items: str = dspy.InputField(desc="Draft rubric items with IDs and text, one per line")
+        groups: list[ProposedGroup] = dspy.OutputField(desc="Proposed groupings of items")
+
+    return SuggestRubricGroups
+
+
+_SUGGEST_GROUPS_SIG: type | None = None
+
+
+def get_suggest_groups_signature():
+    """Get the suggest-groups DSPy signature."""
+    global _SUGGEST_GROUPS_SIG
+    if _SUGGEST_GROUPS_SIG is None:
+        _SUGGEST_GROUPS_SIG = _define_suggest_groups_signature()
+    return _SUGGEST_GROUPS_SIG

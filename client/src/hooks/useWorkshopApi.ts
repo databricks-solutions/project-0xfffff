@@ -19,8 +19,11 @@ import type {
   Annotation,
   AnnotationCreate,
   IRRResult,
-  MLflowIntakeConfig
+  MLflowIntakeConfig,
 } from '@/client';
+import type { DraftRubricItem } from '@/client/models/DraftRubricItem';
+import type { CreateDraftRubricItemRequest } from '@/client/models/CreateDraftRubricItemRequest';
+import type { UpdateDraftRubricItemRequest } from '@/client/models/UpdateDraftRubricItemRequest';
 
 // Query keys
 const QUERY_KEYS = {
@@ -33,6 +36,7 @@ const QUERY_KEYS = {
   annotations: (workshopId: string, userId?: string) => ['annotations', workshopId, userId],
   irr: (workshopId: string) => ['irr', workshopId],
   mlflowConfig: (workshopId: string) => ['mlflowConfig', workshopId],
+  draftRubricItems: (workshopId: string) => ['draftRubricItems', workshopId],
 };
 
 // Helper function to invalidate all workshop-related queries
@@ -944,6 +948,72 @@ export function useSubmitFollowUpAnswer(workshopId: string) {
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['discovery-feedback', workshopId, variables.user_id] });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Draft Rubric Items hooks (Step 3)
+// ---------------------------------------------------------------------------
+
+export function useDraftRubricItems(workshopId: string) {
+  return useQuery({
+    queryKey: QUERY_KEYS.draftRubricItems(workshopId),
+    queryFn: () => DiscoveryService.getDraftRubricItemsWorkshopsWorkshopIdDraftRubricItemsGet(workshopId),
+    enabled: !!workshopId,
+  });
+}
+
+export function useCreateDraftRubricItem(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data: CreateDraftRubricItemRequest) =>
+      DiscoveryService.createDraftRubricItemWorkshopsWorkshopIdDraftRubricItemsPost(workshopId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.draftRubricItems(workshopId) });
+    },
+  });
+}
+
+export function useUpdateDraftRubricItem(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ itemId, updates }: { itemId: string; updates: UpdateDraftRubricItemRequest }) =>
+      DiscoveryService.updateDraftRubricItemWorkshopsWorkshopIdDraftRubricItemsItemIdPut(workshopId, itemId, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.draftRubricItems(workshopId) });
+    },
+  });
+}
+
+export function useDeleteDraftRubricItem(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (itemId: string) =>
+      DiscoveryService.deleteDraftRubricItemWorkshopsWorkshopIdDraftRubricItemsItemIdDelete(workshopId, itemId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.draftRubricItems(workshopId) });
+    },
+  });
+}
+
+export function useSuggestGroups(workshopId: string) {
+  return useMutation({
+    mutationFn: () => DiscoveryService.suggestDraftRubricGroupsWorkshopsWorkshopIdDraftRubricItemsSuggestGroupsPost(workshopId),
+  });
+}
+
+export function useApplyGroups(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (groups: Array<{ name: string; item_ids: Array<string> }>) =>
+      DiscoveryService.applyDraftRubricGroupsWorkshopsWorkshopIdDraftRubricItemsApplyGroupsPost(workshopId, { groups }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.draftRubricItems(workshopId) });
     },
   });
 }

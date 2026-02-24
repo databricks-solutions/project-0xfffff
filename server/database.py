@@ -587,15 +587,17 @@ class DraftRubricItemDB(Base):
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
-    source_finding_id = Column(String, ForeignKey("classified_findings.id"), nullable=False)
-    source_trace_id = Column(String, nullable=False)
     text = Column(Text, nullable=False)
+    source_type = Column(String, nullable=False, default="manual")  # 'finding' | 'disagreement' | 'feedback' | 'manual'
+    source_analysis_id = Column(String, nullable=True)
+    source_trace_ids = Column(JSON, default=list)  # list of trace IDs that support this item
+    group_id = Column(String, nullable=True)
+    group_name = Column(String, nullable=True)
     promoted_by = Column(String, nullable=False)  # Facilitator user_id
     promoted_at = Column(DateTime, default=func.now())
 
     # Relationships
     workshop = relationship("WorkshopDB", back_populates="draft_rubric_items")
-    source_finding = relationship("ClassifiedFindingDB")
 
 
 # Common PostgreSQL serverless connection error markers

@@ -44,6 +44,7 @@ from typing import Literal
 # All known specs (without .md extension)
 KNOWN_SPECS = [
     "ANNOTATION_SPEC",
+    "ASSISTED_FACILITATION_SPEC",
     "AUTHENTICATION_SPEC",
     "BUILD_AND_DEPLOY_SPEC",
     "CUSTOM_LLM_PROVIDER_SPEC",

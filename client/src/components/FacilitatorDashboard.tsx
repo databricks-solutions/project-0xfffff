@@ -28,6 +28,7 @@ import { Label } from '@/components/ui/label';
 import { useQueryClient } from '@tanstack/react-query';
 import { PhaseControlButton } from './PhaseControlButton';
 import { JsonPathSettings } from './JsonPathSettings';
+import { DraftRubricPanel } from './DraftRubricPanel';
 import { toast } from 'sonner';
 import { parseRubricQuestions } from '@/utils/rubricUtils';
 import type { DiscoveryFinding, Annotation, Trace } from '@/client';
@@ -923,19 +924,25 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
           </CardHeader>
           <CardContent>
             <Tabs defaultValue="users" className="space-y-4">
-              <TabsList className={`grid w-full ${focusPhase === 'discovery' ? 'grid-cols-3' : 'grid-cols-2'}`}>
+              <TabsList className={`grid w-full ${focusPhase === 'discovery' ? 'grid-cols-4' : 'grid-cols-2'}`}>
                 <TabsTrigger value="users" className="flex items-center gap-2">
                   <Users className="w-4 h-4" />
-                  User Participation
+                  Users
                 </TabsTrigger>
                 <TabsTrigger value="traces" className="flex items-center gap-2">
                   <FileText className="w-4 h-4" />
-                  Trace Coverage
+                  Traces
                 </TabsTrigger>
                 {focusPhase === 'discovery' && (
                   <TabsTrigger value="feedback-detail" className="flex items-center gap-2">
                     <MessageSquare className="w-4 h-4" />
-                    Feedback Detail
+                    Feedback
+                  </TabsTrigger>
+                )}
+                {focusPhase === 'discovery' && (
+                  <TabsTrigger value="draft-rubric" className="flex items-center gap-2">
+                    <Target className="w-4 h-4" />
+                    Draft Rubric
                   </TabsTrigger>
                 )}
               </TabsList>
@@ -1101,6 +1108,13 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
               {focusPhase === 'discovery' && (
                 <TabsContent value="feedback-detail">
                   <FeedbackDetailPanel workshopId={workshopId!} />
+                </TabsContent>
+              )}
+
+              {/* Draft Rubric Tab (discovery only) */}
+              {focusPhase === 'discovery' && (
+                <TabsContent value="draft-rubric">
+                  <DraftRubricPanel workshopId={workshopId!} userId={user?.id || ''} />
                 </TabsContent>
               )}
             </Tabs>
