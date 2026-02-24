@@ -92,9 +92,9 @@ vi.mock('@/utils/rubricUtils', () => ({
   parseRubricQuestions: () => [],
 }));
 
-// Helper: switch to the Feedback Detail tab
+// Helper: switch to the Feedback tab
 async function switchToFeedbackTab() {
-  const tab = screen.getByRole('tab', { name: /Feedback Detail/i });
+  const tab = screen.getByRole('tab', { name: /^Feedback$/i });
   await userEvent.click(tab);
 }
 
