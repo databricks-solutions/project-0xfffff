@@ -20,6 +20,7 @@ const mockAnalyses: { data: DiscoveryAnalysis[] | undefined; isLoading: boolean 
 vi.mock('@/hooks/useWorkshopApi', () => ({
   useDiscoveryAnalyses: () => mockAnalyses,
   useRunDiscoveryAnalysis: () => ({ mutate: vi.fn(), isPending: false }),
+  useCreateDraftRubricItem: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock('@tanstack/react-query', () => ({
@@ -50,7 +51,7 @@ describe('DiscoveryAnalysisTab - evidence trace IDs', () => {
 
   it('renders evidence trace IDs for findings (truncated to 8 chars)', () => {
     mockAnalyses.data = [makeAnalysis()];
-    render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+    render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
     expect(screen.getAllByText('Evidence:').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('trace-aa')).toBeInTheDocument();
     expect(screen.getByText('trace-bb')).toBeInTheDocument();
@@ -59,7 +60,7 @@ describe('DiscoveryAnalysisTab - evidence trace IDs', () => {
 
   it('shows trace ID badge for each disagreement item', () => {
     mockAnalyses.data = [makeAnalysis()];
-    render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+    render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
     expect(screen.getByText('Trace: trace-aa')).toBeInTheDocument();
   });
 });

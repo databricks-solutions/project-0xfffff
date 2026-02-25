@@ -19,6 +19,8 @@ interface DraftRubricPanelProps {
   userId: string;
 }
 
+const CREATE_GROUP_OPTION = '__create_new_group__';
+
 const SOURCE_TYPE_STYLES: Record<string, { bg: string; text: string; label: string }> = {
   finding: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Analysis' },
   disagreement: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Disagreement' },
@@ -42,6 +44,25 @@ export const DraftRubricPanel: React.FC<DraftRubricPanelProps> = ({
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [editText, setEditText] = React.useState('');
   const [proposedGroups, setProposedGroups] = React.useState<ProposedGroup[] | null>(null);
+
+  const groupsByName = React.useMemo(() => {
+    const map = new Map<string, string>();
+    for (const item of items) {
+      if (item.group_name && item.group_id && !map.has(item.group_name)) {
+        map.set(item.group_name, item.group_id);
+      }
+    }
+    return map;
+  }, [items]);
+
+  const groupNames = React.useMemo(() => Array.from(groupsByName.keys()).sort(), [groupsByName]);
+
+  const createManualGroupId = () => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return `manual-${crypto.randomUUID()}`;
+    }
+    return `manual-${Date.now()}`;
+  };
 
   const handleCreate = () => {
     if (!newItemText.trim()) return;
@@ -90,6 +111,57 @@ export const DraftRubricPanel: React.FC<DraftRubricPanelProps> = ({
   const startEdit = (item: DraftRubricItem) => {
     setEditingId(item.id);
     setEditText(item.text);
+  };
+
+  const assignItemToGroup = (item: DraftRubricItem, groupName: string | null) => {
+    if (!groupName) {
+      updateMutation.mutate({
+        itemId: item.id,
+        updates: { group_id: null, group_name: null },
+      });
+      return;
+    }
+
+    const existingGroupId = groupsByName.get(groupName) ?? createManualGroupId();
+    updateMutation.mutate({
+      itemId: item.id,
+      updates: {
+        group_id: existingGroupId,
+        group_name: groupName,
+      },
+    });
+  };
+
+  const handleGroupSelection = (item: DraftRubricItem, value: string) => {
+    if (value === CREATE_GROUP_OPTION) {
+      const groupName = window.prompt('Enter a name for the new group');
+      if (!groupName || !groupName.trim()) return;
+      assignItemToGroup(item, groupName.trim());
+      return;
+    }
+
+    if (value === '') {
+      assignItemToGroup(item, null);
+      return;
+    }
+
+    assignItemToGroup(item, value);
+  };
+
+  const handleRenameGroup = (groupName: string, groupItems: DraftRubricItem[]) => {
+    if (groupItems.length === 0) return;
+    const renamed = window.prompt('Rename group', groupName);
+    if (!renamed || !renamed.trim()) return;
+    const nextName = renamed.trim();
+    if (nextName === groupName) return;
+
+    const groupId = groupItems[0].group_id ?? createManualGroupId();
+    for (const item of groupItems) {
+      updateMutation.mutate({
+        itemId: item.id,
+        updates: { group_id: groupId, group_name: nextName },
+      });
+    }
   };
 
   // Group items by group_name for display
@@ -206,6 +278,25 @@ export const DraftRubricPanel: React.FC<DraftRubricPanelProps> = ({
           {renderSourceBadge(item)}
           {renderTraceBadges(item)}
         </div>
+        <div className="mt-3">
+          <label className="text-xs text-slate-600 block mb-1" htmlFor={`group-select-${item.id}`}>
+            Assign item to group
+          </label>
+          <select
+            id={`group-select-${item.id}`}
+            value={item.group_name ?? ''}
+            onChange={(e) => handleGroupSelection(item, e.target.value)}
+            className="w-full border rounded px-2 py-1 text-sm bg-white"
+          >
+            <option value="">Ungrouped</option>
+            {groupNames.map((groupName) => (
+              <option key={groupName} value={groupName}>
+                {groupName}
+              </option>
+            ))}
+            <option value={CREATE_GROUP_OPTION}>+ Create new group...</option>
+          </select>
+        </div>
       </div>
     );
   };
@@ -296,9 +387,19 @@ export const DraftRubricPanel: React.FC<DraftRubricPanelProps> = ({
               {/* Grouped items */}
               {Object.entries(grouped.groups).map(([groupName, groupItems]) => (
                 <div key={groupName} className="space-y-2">
-                  <h4 className="text-sm font-semibold text-slate-700 border-b pb-1">
-                    {groupName} ({groupItems.length})
-                  </h4>
+                  <div className="flex items-center justify-between border-b pb-1">
+                    <h4 className="text-sm font-semibold text-slate-700">
+                      {groupName} ({groupItems.length})
+                    </h4>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs"
+                      onClick={() => handleRenameGroup(groupName, groupItems)}
+                    >
+                      Rename
+                    </Button>
+                  </div>
                   <div className="space-y-2 pl-2">
                     {groupItems.map(renderItem)}
                   </div>

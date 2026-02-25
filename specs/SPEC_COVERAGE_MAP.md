@@ -1,6 +1,6 @@
 # Spec Test Coverage Map
 
-**Generated**: 2026-02-24 11:38:56
+**Generated**: 2026-02-25 09:52:34
 
 This report shows test coverage for each specification's success criteria.
 
@@ -8,32 +8,32 @@ This report shows test coverage for each specification's success criteria.
 
 | Type | Count | Description |
 |------|-------|-------------|
-| Unit | 684 | pytest unit tests, Vitest tests |
+| Unit | 736 | pytest unit tests, Vitest tests |
 | Integration | 50 | pytest with real DB/API |
-| E2E (Mocked) | 16 | Playwright with mocked API |
-| E2E (Real) | 87 | Playwright with real API |
+| E2E (Mocked) | 17 | Playwright with mocked API |
+| E2E (Real) | 99 | Playwright with real API |
 
 ## Coverage Summary
 
-| Spec | Reqs | Covered | Cover% | Unit | Int | E2E-M | E2E-R |
-|------|------|---------|--------|------|-----|-------|-------|
-| [ANNOTATION_SPEC](#annotation-spec) | 21 | 13 | 61% | 47 | 0 | 0 | 10 |
-| [ASSISTED_FACILITATION_SPEC](#assisted-facilitation-spec) | 7 | 7 | 100% | 30 | 0 | 0 | 42 |
-| [AUTHENTICATION_SPEC](#authentication-spec) | 7 | 7 | 100% | 12 | 0 | 3 | 0 |
-| [BUILD_AND_DEPLOY_SPEC](#build-and-deploy-spec) | 15 | 12 | 80% | 56 | 0 | 0 | 0 |
-| [CUSTOM_LLM_PROVIDER_SPEC](#custom-llm-provider-spec) | 15 | 0 | 0% | 13 | 0 | 7 | 0 |
-| [DATASETS_SPEC](#datasets-spec) | 9 | 9 | 100% | 33 | 0 | 0 | 2 |
-| [DESIGN_SYSTEM_SPEC](#design-system-spec) | 7 | 0 | 0% | 40 | 0 | 0 | 0 |
-| [DISCOVERY_SPEC](#discovery-spec) | 50 | 22 | 44% | 103 | 4 | 3 | 7 |
-| [DISCOVERY_TRACE_ASSIGNMENT_SPEC](#discovery-trace-assignment-spec) | 13 | 13 | 100% | 21 | 0 | 2 | 3 |
-| [JUDGE_EVALUATION_SPEC](#judge-evaluation-spec) | 25 | 25 | 100% | 87 | 0 | 0 | 9 |
-| [ROLE_PERMISSIONS_SPEC](#role-permissions-spec) | 16 | 16 | 100% | 24 | 0 | 0 | 0 |
-| [RUBRIC_SPEC](#rubric-spec) | 25 | 25 | 100% | 83 | 0 | 1 | 6 |
-| [TESTING_SPEC](#testing-spec) | 30 | 0 | 0% | 35 | 46 | 0 | 0 |
-| [TRACE_DISPLAY_SPEC](#trace-display-spec) | 0 | 0 | 100% | 43 | 0 | 0 | 6 |
-| [UI_COMPONENTS_SPEC](#ui-components-spec) | 16 | 0 | 0% | 57 | 0 | 0 | 2 |
+| Spec | Reqs | Covered | Cover% | Unit | Int | E2E-M | E2E-R | BE-only |
+|------|------|---------|--------|------|-----|-------|-------|---------|
+| [ANNOTATION_SPEC](#annotation-spec) | 21 | 13 | 61% | 47 | 0 | 0 | 10 | **7** |
+| [ASSISTED_FACILITATION_SPEC](#assisted-facilitation-spec) | 7 | 7 | 100% | 30 | 0 | 0 | 42 | 0 |
+| [AUTHENTICATION_SPEC](#authentication-spec) | 7 | 7 | 100% | 12 | 0 | 3 | 0 | **5** |
+| [BUILD_AND_DEPLOY_SPEC](#build-and-deploy-spec) | 15 | 12 | 80% | 56 | 0 | 0 | 0 | **12** |
+| [CUSTOM_LLM_PROVIDER_SPEC](#custom-llm-provider-spec) | 15 | 0 | 0% | 13 | 0 | 7 | 0 | 0 |
+| [DATASETS_SPEC](#datasets-spec) | 9 | 9 | 100% | 33 | 0 | 0 | 2 | **7** |
+| [DESIGN_SYSTEM_SPEC](#design-system-spec) | 7 | 0 | 0% | 40 | 0 | 0 | 0 | 0 |
+| [DISCOVERY_SPEC](#discovery-spec) | 50 | 50 | 100% | 155 | 4 | 3 | 19 | **28** |
+| [DISCOVERY_TRACE_ASSIGNMENT_SPEC](#discovery-trace-assignment-spec) | 13 | 13 | 100% | 21 | 0 | 2 | 3 | **10** |
+| [JUDGE_EVALUATION_SPEC](#judge-evaluation-spec) | 25 | 25 | 100% | 87 | 0 | 0 | 9 | **19** |
+| [ROLE_PERMISSIONS_SPEC](#role-permissions-spec) | 16 | 16 | 100% | 24 | 0 | 0 | 0 | **16** |
+| [RUBRIC_SPEC](#rubric-spec) | 25 | 25 | 100% | 83 | 0 | 2 | 6 | **17** |
+| [TESTING_SPEC](#testing-spec) | 30 | 0 | 0% | 35 | 46 | 0 | 0 | 0 |
+| [TRACE_DISPLAY_SPEC](#trace-display-spec) | 0 | 0 | 100% | 43 | 0 | 0 | 6 | 0 |
+| [UI_COMPONENTS_SPEC](#ui-components-spec) | 16 | 0 | 0% | 57 | 0 | 0 | 2 | 0 |
 
-**Total**: 149/256 requirements covered (58%)
+**Total**: 177/256 requirements covered (69%)
 
 ---
 
@@ -52,21 +52,33 @@ This report shows test coverage for each specification's success criteria.
 - [ ] Freeform question responses are optional (not required for navigation)
 - [ ] Freeform responses are encoded in the comment field as JSON
 
+### Backend-Only Requirements (no frontend tests)
+
+These requirements are covered by backend tests only. UI regressions won't be caught:
+
+- :warning: Users can edit previously submitted annotations (unit)
+- :warning: Annotations sync to MLflow as feedback on save (one entry per rubric question) (unit)
+- :warning: MLflow trace tagged with `label: "align"` and `workshop_id` on annotation (unit)
+- :warning: Feedback source is HUMAN with annotator's user_id (unit)
+- :warning: Annotation comment maps to MLflow feedback rationale (unit)
+- :warning: Duplicate feedback entries are detected and skipped (unit)
+- :warning: Legacy single-rating format loads correctly alongside multi-rating format (unit)
+
 ### Covered Requirements
 
-- [x] Users can edit previously submitted annotations (unit)
+- [x] Users can edit previously submitted annotations (unit) **[BE-only]**
 - [x] Changes automatically save on navigation (Next/Previous) (e2e-real, unit)
 - [x] Toast shows "Annotation saved!" for new submissions (e2e-real)
 - [x] Toast shows "Annotation updated!" only when changes detected (e2e-real)
 - [x] Multi-line comments preserved throughout the stack (e2e-real)
 - [x] Next button enabled for annotated traces (allows re-navigation) (e2e-real)
 - [x] Annotation count reflects unique submissions (not re-submissions) (e2e-real, unit)
-- [x] Annotations sync to MLflow as feedback on save (one entry per rubric question) (unit)
-- [x] MLflow trace tagged with `label: "align"` and `workshop_id` on annotation (unit)
-- [x] Feedback source is HUMAN with annotator's user_id (unit)
-- [x] Annotation comment maps to MLflow feedback rationale (unit)
-- [x] Duplicate feedback entries are detected and skipped (unit)
-- [x] Legacy single-rating format loads correctly alongside multi-rating format (unit)
+- [x] Annotations sync to MLflow as feedback on save (one entry per rubric question) (unit) **[BE-only]**
+- [x] MLflow trace tagged with `label: "align"` and `workshop_id` on annotation (unit) **[BE-only]**
+- [x] Feedback source is HUMAN with annotator's user_id (unit) **[BE-only]**
+- [x] Annotation comment maps to MLflow feedback rationale (unit) **[BE-only]**
+- [x] Duplicate feedback entries are detected and skipped (unit) **[BE-only]**
+- [x] Legacy single-rating format loads correctly alongside multi-rating format (unit) **[BE-only]**
 
 ### Tests Without Requirement Links
 
@@ -142,15 +154,25 @@ These tests are tagged with the spec but don't link to specific requirements:
 
 **Coverage**: 7/7 requirements (100%)
 
+### Backend-Only Requirements (no frontend tests)
+
+These requirements are covered by backend tests only. UI regressions won't be caught:
+
+- :warning: No "permission denied" errors on normal login (unit)
+- :warning: No page refresh required after login (unit)
+- :warning: Permission API failure: User can log in with defaults (unit)
+- :warning: 404 on validation: Session cleared, fresh login allowed (unit)
+- :warning: Error recovery: Errors cleared on new login attempt (unit)
+
 ### Covered Requirements
 
-- [x] No "permission denied" errors on normal login (unit)
-- [x] No page refresh required after login (unit)
+- [x] No "permission denied" errors on normal login (unit) **[BE-only]**
+- [x] No page refresh required after login (unit) **[BE-only]**
 - [x] Slow network: Loading indicator shown until ready (e2e-mocked)
-- [x] Permission API failure: User can log in with defaults (unit)
-- [x] 404 on validation: Session cleared, fresh login allowed (unit)
+- [x] Permission API failure: User can log in with defaults (unit) **[BE-only]**
+- [x] 404 on validation: Session cleared, fresh login allowed (unit) **[BE-only]**
 - [x] Rapid navigation: Components wait for `isLoading = false` (unit)
-- [x] Error recovery: Errors cleared on new login attempt (unit)
+- [x] Error recovery: Errors cleared on new login attempt (unit) **[BE-only]**
 
 ### Tests Without Requirement Links
 
@@ -171,20 +193,37 @@ These tests are tagged with the spec but don't link to specific requirements:
 - [ ] Console statements removed in production
 - [ ] Full deployment completes successfully
 
+### Backend-Only Requirements (no frontend tests)
+
+These requirements are covered by backend tests only. UI regressions won't be caught:
+
+- :warning: Assets minified and hashed (unit)
+- :warning: Build directory contains all required files (unit)
+- :warning: `just db-bootstrap` creates database if missing (unit)
+- :warning: Migrations apply without errors (unit)
+- :warning: Batch mode works for SQLite ALTER TABLE (unit)
+- :warning: File lock prevents race conditions with multiple workers (unit)
+- :warning: Server starts and serves frontend (unit)
+- :warning: API endpoints respond correctly (unit)
+- :warning: Database connection established (unit)
+- :warning: Release workflow creates zip artifact (unit)
+- :warning: Pre-built client included in release (unit)
+- :warning: No sensitive files in artifact (unit)
+
 ### Covered Requirements
 
-- [x] Assets minified and hashed (unit)
-- [x] Build directory contains all required files (unit)
-- [x] `just db-bootstrap` creates database if missing (unit)
-- [x] Migrations apply without errors (unit)
-- [x] Batch mode works for SQLite ALTER TABLE (unit)
-- [x] File lock prevents race conditions with multiple workers (unit)
-- [x] Server starts and serves frontend (unit)
-- [x] API endpoints respond correctly (unit)
-- [x] Database connection established (unit)
-- [x] Release workflow creates zip artifact (unit)
-- [x] Pre-built client included in release (unit)
-- [x] No sensitive files in artifact (unit)
+- [x] Assets minified and hashed (unit) **[BE-only]**
+- [x] Build directory contains all required files (unit) **[BE-only]**
+- [x] `just db-bootstrap` creates database if missing (unit) **[BE-only]**
+- [x] Migrations apply without errors (unit) **[BE-only]**
+- [x] Batch mode works for SQLite ALTER TABLE (unit) **[BE-only]**
+- [x] File lock prevents race conditions with multiple workers (unit) **[BE-only]**
+- [x] Server starts and serves frontend (unit) **[BE-only]**
+- [x] API endpoints respond correctly (unit) **[BE-only]**
+- [x] Database connection established (unit) **[BE-only]**
+- [x] Release workflow creates zip artifact (unit) **[BE-only]**
+- [x] Pre-built client included in release (unit) **[BE-only]**
+- [x] No sensitive files in artifact (unit) **[BE-only]**
 
 ### Tests Without Requirement Links
 
@@ -265,17 +304,29 @@ These tests are tagged with the spec but don't link to specific requirements:
 
 **Coverage**: 9/9 requirements (100%)
 
+### Backend-Only Requirements (no frontend tests)
+
+These requirements are covered by backend tests only. UI regressions won't be caught:
+
+- :warning: Union operation combines traces from multiple datasets (unit)
+- :warning: Subtract operation removes specified traces (unit)
+- :warning: Same user sees same order for same dataset (deterministic) (unit)
+- :warning: Adding traces preserves existing order (incremental) (unit)
+- :warning: New round triggers fresh randomization (unit)
+- :warning: Dataset lineage tracked (source datasets, operations) (unit)
+- :warning: Facilitators see chronological order (no randomization) (unit)
+
 ### Covered Requirements
 
 - [x] Datasets can be created with arbitrary trace lists (e2e-real, unit)
-- [x] Union operation combines traces from multiple datasets (unit)
-- [x] Subtract operation removes specified traces (unit)
-- [x] Same user sees same order for same dataset (deterministic) (unit)
+- [x] Union operation combines traces from multiple datasets (unit) **[BE-only]**
+- [x] Subtract operation removes specified traces (unit) **[BE-only]**
+- [x] Same user sees same order for same dataset (deterministic) (unit) **[BE-only]**
 - [x] Different users see different orders (per-user randomization) (e2e-real, unit)
-- [x] Adding traces preserves existing order (incremental) (unit)
-- [x] New round triggers fresh randomization (unit)
-- [x] Dataset lineage tracked (source datasets, operations) (unit)
-- [x] Facilitators see chronological order (no randomization) (unit)
+- [x] Adding traces preserves existing order (incremental) (unit) **[BE-only]**
+- [x] New round triggers fresh randomization (unit) **[BE-only]**
+- [x] Dataset lineage tracked (source datasets, operations) (unit) **[BE-only]**
+- [x] Facilitators see chronological order (no randomization) (unit) **[BE-only]**
 
 ### Tests Without Requirement Links
 
@@ -361,109 +412,137 @@ These tests are tagged with the spec but don't link to specific requirements:
 
 ## DISCOVERY_SPEC
 
-**Coverage**: 22/50 requirements (44%)
+**Coverage**: 50/50 requirements (100%)
 
-### Uncovered Requirements
+### Backend-Only Requirements (no frontend tests)
 
-- [ ] Facilitator can trigger analysis at any time (even partial feedback)
-- [ ] Facilitator selects analysis template (Evaluation Criteria or Themes & Patterns) before running
-- [ ] System aggregates feedback by trace
-- [ ] Disagreements detected at 3 priority levels (deterministic, no LLM)
-- [ ] LLM distills evaluation criteria with evidence from trace IDs
-- [ ] LLM analyzes disagreements with follow-up questions and suggestions
-- [ ] Analysis record stores which template was used
-- [ ] Each analysis run creates a new record (history preserved)
-- [ ] Re-runnable — new analysis as more feedback comes in, prior analyses retained
-- [ ] Warning if < 2 participants (not an error)
-- [ ] Data freshness banner (participant count, last run timestamp)
-- [ ] Results organized by priority (HIGH → MEDIUM → LOWER)
-- [ ] Facilitator can promote distilled criteria to draft rubric
-- [ ] Facilitator can promote disagreement insights to draft rubric
-- [ ] Facilitator can promote raw participant feedback to draft rubric
-- [ ] Facilitator can manually add draft rubric items
-- [ ] Draft rubric items editable and removable
-- [ ] "Suggest Groups" returns LLM proposal without persisting
-- [ ] Facilitator can review, adjust, and apply group proposal
-- [ ] Manual grouping: create groups, name them, move items between groups
-- [ ] Each group maps to one rubric question (group name = question title)
-- [ ] Draft rubric items available during Rubric Creation phase
-- [ ] Source traceability maintained (which traces support each item)
-- [ ] Multiple analysis records per workshop allowed (history preserved)
-- [ ] Draft rubric items track promotion source and promoter
-- [ ] Analysis shows warning (not error) if < 2 participants
-- [ ] Disagreements color-coded by priority (red/yellow/blue)
-- [ ] Criteria show evidence (supporting trace IDs)
+These requirements are covered by backend tests only. UI regressions won't be caught:
+
+- :warning: Facilitator can start Discovery phase with configurable trace limit (unit)
+- :warning: Participants view traces and provide GOOD/BAD + comment (unit)
+- :warning: AI generates 3 follow-up questions per trace based on feedback (unit)
+- :warning: Questions build progressively on prior answers (unit)
+- :warning: All 3 questions required before moving to next trace (unit)
+- :warning: Error handling with retry for LLM failures (unit)
+- :warning: Completion status shows % of participants finished (integration, unit)
+- :warning: Facilitator can trigger analysis at any time (even partial feedback) (unit)
+- :warning: Facilitator selects analysis template (Evaluation Criteria or Themes & Patterns) before running (unit)
+- :warning: System aggregates feedback by trace (unit)
+- :warning: Disagreements detected at 3 priority levels (deterministic, no LLM) (unit)
+- :warning: LLM distills evaluation criteria with evidence from trace IDs (unit)
+- :warning: LLM analyzes disagreements with follow-up questions and suggestions (unit)
+- :warning: Analysis record stores which template was used (unit)
+- :warning: Each analysis run creates a new record (history preserved) (unit)
+- :warning: Re-runnable — new analysis as more feedback comes in, prior analyses retained (unit)
+- :warning: Warning if < 2 participants (not an error) (unit)
+- :warning: Data freshness banner (participant count, last run timestamp) (unit)
+- :warning: Results organized by priority (HIGH → MEDIUM → LOWER) (unit)
+- :warning: One feedback record per (workshop, trace, user) — upsert behavior (integration, unit)
+- :warning: Q&A pairs appended in order to JSON array (unit)
+- :warning: Multiple analysis records per workshop allowed (history preserved) (unit)
+- :warning: Draft rubric items track promotion source and promoter (unit)
+- :warning: Fallback question if LLM unavailable after retries (unit)
+- :warning: Analysis shows warning (not error) if < 2 participants (unit)
+- :warning: Form validation prevents empty submissions (unit)
+- :warning: Disagreements color-coded by priority (red/yellow/blue) (unit)
+- :warning: Criteria show evidence (supporting trace IDs) (unit)
 
 ### Covered Requirements
 
-- [x] Facilitator can start Discovery phase with configurable trace limit (unit)
-- [x] Participants view traces and provide GOOD/BAD + comment (unit)
+- [x] Facilitator can start Discovery phase with configurable trace limit (unit) **[BE-only]**
+- [x] Participants view traces and provide GOOD/BAD + comment (unit) **[BE-only]**
 - [x] Facilitator can select LLM model for follow-up question generation in Discovery dashboard (e2e-mocked, unit)
-- [x] AI generates 3 follow-up questions per trace based on feedback (unit)
-- [x] Questions build progressively on prior answers (unit)
-- [x] All 3 questions required before moving to next trace (unit)
+- [x] AI generates 3 follow-up questions per trace based on feedback (unit) **[BE-only]**
+- [x] Questions build progressively on prior answers (unit) **[BE-only]**
+- [x] All 3 questions required before moving to next trace (unit) **[BE-only]**
 - [x] Previous Q&A visible while answering new questions (unit)
 - [x] Loading spinner during LLM generation (1-3s) (unit)
-- [x] Error handling with retry for LLM failures (unit)
-- [x] Feedback saved incrementally (no data loss on failure) (e2e-real, unit)
-- [x] Completion status shows % of participants finished (unit)
-- [x] Facilitator can view participant feedback details (label, comment, follow-up Q&A) (e2e-real, unit)
-- [x] One feedback record per (workshop, trace, user) — upsert behavior (unit)
-- [x] Q&A pairs appended in order to JSON array (unit)
+- [x] Error handling with retry for LLM failures (unit) **[BE-only]**
+- [x] Feedback saved incrementally (no data loss on failure) (e2e-real, integration, unit)
+- [x] Completion status shows % of participants finished (integration, unit) **[BE-only]**
+- [x] Facilitator can view participant feedback details (label, comment, follow-up Q&A) (e2e-real, integration, unit)
+- [x] Facilitator can trigger analysis at any time (even partial feedback) (unit) **[BE-only]**
+- [x] Facilitator selects analysis template (Evaluation Criteria or Themes & Patterns) before running (unit) **[BE-only]**
+- [x] System aggregates feedback by trace (unit) **[BE-only]**
+- [x] Disagreements detected at 3 priority levels (deterministic, no LLM) (unit) **[BE-only]**
+- [x] LLM distills evaluation criteria with evidence from trace IDs (unit) **[BE-only]**
+- [x] LLM analyzes disagreements with follow-up questions and suggestions (unit) **[BE-only]**
+- [x] Analysis record stores which template was used (unit) **[BE-only]**
+- [x] Each analysis run creates a new record (history preserved) (unit) **[BE-only]**
+- [x] Re-runnable — new analysis as more feedback comes in, prior analyses retained (unit) **[BE-only]**
+- [x] Warning if < 2 participants (not an error) (unit) **[BE-only]**
+- [x] Data freshness banner (participant count, last run timestamp) (unit) **[BE-only]**
+- [x] Results organized by priority (HIGH → MEDIUM → LOWER) (unit) **[BE-only]**
+- [x] Facilitator can promote distilled criteria to draft rubric (e2e-real, unit)
+- [x] Facilitator can promote disagreement insights to draft rubric (e2e-real, unit)
+- [x] Facilitator can promote raw participant feedback to draft rubric (e2e-real, unit)
+- [x] Facilitator can manually add draft rubric items (e2e-real, unit)
+- [x] Draft rubric items editable and removable (e2e-real, unit)
+- [x] "Suggest Groups" returns LLM proposal without persisting (e2e-real, unit)
+- [x] Facilitator can review, adjust, and apply group proposal (e2e-real, unit)
+- [x] Manual grouping: create groups, name them, move items between groups (e2e-real, unit)
+- [x] Each group maps to one rubric question (group name = question title) (e2e-real, unit)
+- [x] Draft rubric items available during Rubric Creation phase (e2e-real, unit)
+- [x] Source traceability maintained (which traces support each item) (e2e-real, unit)
+- [x] One feedback record per (workshop, trace, user) — upsert behavior (integration, unit) **[BE-only]**
+- [x] Q&A pairs appended in order to JSON array (unit) **[BE-only]**
+- [x] Multiple analysis records per workshop allowed (history preserved) (unit) **[BE-only]**
+- [x] Draft rubric items track promotion source and promoter (unit) **[BE-only]**
 - [x] LLM failures show error toast with retry (unit)
-- [x] Fallback question if LLM unavailable after retries (unit)
+- [x] Fallback question if LLM unavailable after retries (unit) **[BE-only]**
 - [x] Fallback warning banner shown only to facilitators, never to participants/SMEs (unit)
-- [x] Form validation prevents empty submissions (unit)
+- [x] Analysis shows warning (not error) if < 2 participants (unit) **[BE-only]**
+- [x] Form validation prevents empty submissions (unit) **[BE-only]**
 - [x] Progressive disclosure (one question at a time) (e2e-real, unit)
 - [x] Submit buttons disabled until required fields filled (unit)
 - [x] Clear progress indication (X of Y traces completed) (e2e-real)
 - [x] Smooth transitions between feedback states (unit)
+- [x] Disagreements color-coded by priority (red/yellow/blue) (unit) **[BE-only]**
+- [x] Criteria show evidence (supporting trace IDs) (unit) **[BE-only]**
 
 ### Tests Without Requirement Links
 
 These tests are tagged with the spec but don't link to specific requirements:
 
-- `tests/integration/test_discovery_feedback_integration.py` (test_full_feedback_and_qna_flow) [integration]
-- `tests/integration/test_discovery_feedback_integration.py` (test_upsert_then_qna_preserves_all_data) [integration]
-- `tests/integration/test_discovery_feedback_integration.py` (test_multi_user_completion_status) [integration]
-- `tests/integration/test_discovery_feedback_integration.py` (test_get_feedback_with_user_details) [integration]
-- `tests/unit/services/test_draft_rubric_items.py` (test_create_draft_rubric_item) [unit]
-- `tests/unit/services/test_draft_rubric_items.py` (test_create_item_with_source_metadata) [unit]
-- `tests/unit/services/test_draft_rubric_items.py` (test_list_draft_rubric_items) [unit]
-- `tests/unit/services/test_draft_rubric_items.py` (test_list_items_empty_workshop) [unit]
-- `tests/unit/services/test_draft_rubric_items.py` (test_update_text) [unit]
-- `tests/unit/services/test_draft_rubric_items.py` (test_update_group_fields) [unit]
-- `tests/unit/services/test_draft_rubric_items.py` (test_update_nonexistent_item) [unit]
-- `tests/unit/services/test_draft_rubric_items.py` (test_delete_draft_rubric_item) [unit]
-- `tests/unit/services/test_draft_rubric_items.py` (test_delete_nonexistent_item) [unit]
-- `tests/unit/services/test_draft_rubric_items.py` (test_apply_groups) [unit]
-- `tests/unit/services/test_draft_rubric_items.py` (test_apply_groups_clears_previous) [unit]
-- `tests/unit/services/test_draft_rubric_items.py` (test_apply_empty_groups_clears_all) [unit]
-- `tests/unit/services/test_draft_rubric_items.py` (test_valid_source_types[finding]) [unit]
-- `tests/unit/services/test_draft_rubric_items.py` (test_valid_source_types[disagreement]) [unit]
-- `tests/unit/services/test_draft_rubric_items.py` (test_valid_source_types[feedback]) [unit]
-- `tests/unit/services/test_draft_rubric_items.py` (test_valid_source_types[manual]) [unit]
-- `tests/unit/services/test_draft_rubric_items.py` (test_source_analysis_id) [unit]
+- `client/src/components/DraftRubricPanel.test.tsx` (renders trace ID badges for items with source_trace_ids) [unit]
+- `client/src/components/DraftRubricPanel.test.tsx` (does not render trace badges for manual items with no trace IDs) [unit]
+- `client/src/components/DraftRubricPanel.test.tsx` (renders source type badges for each item) [unit]
+- `client/src/components/DraftRubricPanel.test.tsx` (shows item count in header) [unit]
 
 ## DISCOVERY_TRACE_ASSIGNMENT_SPEC
 
 **Coverage**: 13/13 requirements (100%)
 
+### Backend-Only Requirements (no frontend tests)
+
+These requirements are covered by backend tests only. UI regressions won't be caught:
+
+- :warning: Switching between discovery rounds hides/shows appropriate traces (unit)
+- :warning: Phase/round context properly scoped in database (unit)
+- :warning: Annotation traces randomized per (user_id, trace_set) pair (unit)
+- :warning: When annotation dataset changes mid-round, new traces appended (unit)
+- :warning: When annotation round changes, full re-randomization applied (unit)
+- :warning: Randomization context includes phase and round info (unit)
+- :warning: Dataset operations (union, subtract) work correctly and maintain audit trail (unit)
+- :warning: Multiple participants can see same trace with different orders (unit)
+- :warning: Assignment metadata properly tracks all context (unit)
+- :warning: Inter-rater reliability (IRR) can be measured (same traces, different orders) (unit)
+
 ### Covered Requirements
 
 - [x] Participants only see traces in current active discovery dataset (e2e-real, unit)
 - [x] When new discovery round starts, old traces hidden (not deleted) (e2e-real)
-- [x] Switching between discovery rounds hides/shows appropriate traces (unit)
-- [x] Phase/round context properly scoped in database (unit)
-- [x] Annotation traces randomized per (user_id, trace_set) pair (unit)
+- [x] Switching between discovery rounds hides/shows appropriate traces (unit) **[BE-only]**
+- [x] Phase/round context properly scoped in database (unit) **[BE-only]**
+- [x] Annotation traces randomized per (user_id, trace_set) pair (unit) **[BE-only]**
 - [x] Randomization persistent across page reloads for same trace set (e2e-real, unit)
-- [x] When annotation dataset changes mid-round, new traces appended (unit)
-- [x] When annotation round changes, full re-randomization applied (unit)
-- [x] Randomization context includes phase and round info (unit)
-- [x] Dataset operations (union, subtract) work correctly and maintain audit trail (unit)
-- [x] Multiple participants can see same trace with different orders (unit)
-- [x] Assignment metadata properly tracks all context (unit)
-- [x] Inter-rater reliability (IRR) can be measured (same traces, different orders) (unit)
+- [x] When annotation dataset changes mid-round, new traces appended (unit) **[BE-only]**
+- [x] When annotation round changes, full re-randomization applied (unit) **[BE-only]**
+- [x] Randomization context includes phase and round info (unit) **[BE-only]**
+- [x] Dataset operations (union, subtract) work correctly and maintain audit trail (unit) **[BE-only]**
+- [x] Multiple participants can see same trace with different orders (unit) **[BE-only]**
+- [x] Assignment metadata properly tracks all context (unit) **[BE-only]**
+- [x] Inter-rater reliability (IRR) can be measured (same traces, different orders) (unit) **[BE-only]**
 
 ### Tests Without Requirement Links
 
@@ -478,33 +557,57 @@ These tests are tagged with the spec but don't link to specific requirements:
 
 **Coverage**: 25/25 requirements (100%)
 
+### Backend-Only Requirements (no frontend tests)
+
+These requirements are covered by backend tests only. UI regressions won't be caught:
+
+- :warning: Likert judges return values 1-5 (unit)
+- :warning: Fallback conversion handles Likert-style returns for binary (unit)
+- :warning: Evaluation results persisted to database (unit)
+- :warning: Results reload correctly in UI (unit)
+- :warning: Judge prompt auto-derived from rubric questions (unit)
+- :warning: Per-question judge_type parsed from rubric (`[JUDGE_TYPE:xxx]`) (unit)
+- :warning: Binary rubrics evaluated with 0/1 scale (not 1-5) (unit)
+- :warning: Re-evaluate loads registered judge with aligned instructions (unit)
+- :warning: Uses same model as initial auto-evaluation (unit)
+- :warning: Results stored against correct prompt version (unit)
+- :warning: Alignment jobs run asynchronously (unit)
+- :warning: MemAlign distills semantic memory (guidelines) (unit)
+- :warning: Aligned judge registered to MLflow (unit)
+- :warning: Metrics reported (guideline count, example count) (unit)
+- :warning: Works for both Likert and Binary scales (unit)
+- :warning: Krippendorff's Alpha calculated correctly (unit)
+- :warning: Cohen's Kappa calculated for rater pairs (unit)
+- :warning: Handles edge cases (no variation, single rater) (unit)
+- :warning: Updates when new annotations added (unit)
+
 ### Covered Requirements
 
-- [x] Likert judges return values 1-5 (unit)
+- [x] Likert judges return values 1-5 (unit) **[BE-only]**
 - [x] Binary judges return values 0 or 1 (unit)
-- [x] Fallback conversion handles Likert-style returns for binary (unit)
-- [x] Evaluation results persisted to database (unit)
-- [x] Results reload correctly in UI (unit)
+- [x] Fallback conversion handles Likert-style returns for binary (unit) **[BE-only]**
+- [x] Evaluation results persisted to database (unit) **[BE-only]**
+- [x] Results reload correctly in UI (unit) **[BE-only]**
 - [x] Auto-evaluation runs in background when annotation phase starts (e2e-real, unit)
-- [x] Judge prompt auto-derived from rubric questions (unit)
-- [x] Per-question judge_type parsed from rubric (`[JUDGE_TYPE:xxx]`) (unit)
-- [x] Binary rubrics evaluated with 0/1 scale (not 1-5) (unit)
+- [x] Judge prompt auto-derived from rubric questions (unit) **[BE-only]**
+- [x] Per-question judge_type parsed from rubric (`[JUDGE_TYPE:xxx]`) (unit) **[BE-only]**
+- [x] Binary rubrics evaluated with 0/1 scale (not 1-5) (unit) **[BE-only]**
 - [x] Auto-evaluation model stored for re-evaluation consistency (e2e-real)
 - [x] Results appear in Judge Tuning page (e2e-real)
-- [x] Re-evaluate loads registered judge with aligned instructions (unit)
-- [x] Uses same model as initial auto-evaluation (unit)
+- [x] Re-evaluate loads registered judge with aligned instructions (unit) **[BE-only]**
+- [x] Uses same model as initial auto-evaluation (unit) **[BE-only]**
 - [x] Spinner stops when re-evaluation completes (e2e-real)
-- [x] Results stored against correct prompt version (unit)
+- [x] Results stored against correct prompt version (unit) **[BE-only]**
 - [x] Pre-align and post-align scores directly comparable (e2e-real)
-- [x] Alignment jobs run asynchronously (unit)
-- [x] MemAlign distills semantic memory (guidelines) (unit)
-- [x] Aligned judge registered to MLflow (unit)
-- [x] Metrics reported (guideline count, example count) (unit)
-- [x] Works for both Likert and Binary scales (unit)
-- [x] Krippendorff's Alpha calculated correctly (unit)
-- [x] Cohen's Kappa calculated for rater pairs (unit)
-- [x] Handles edge cases (no variation, single rater) (unit)
-- [x] Updates when new annotations added (unit)
+- [x] Alignment jobs run asynchronously (unit) **[BE-only]**
+- [x] MemAlign distills semantic memory (guidelines) (unit) **[BE-only]**
+- [x] Aligned judge registered to MLflow (unit) **[BE-only]**
+- [x] Metrics reported (guideline count, example count) (unit) **[BE-only]**
+- [x] Works for both Likert and Binary scales (unit) **[BE-only]**
+- [x] Krippendorff's Alpha calculated correctly (unit) **[BE-only]**
+- [x] Cohen's Kappa calculated for rater pairs (unit) **[BE-only]**
+- [x] Handles edge cases (no variation, single rater) (unit) **[BE-only]**
+- [x] Updates when new annotations added (unit) **[BE-only]**
 
 ### Tests Without Requirement Links
 
@@ -531,56 +634,99 @@ These tests are tagged with the spec but don't link to specific requirements:
 
 **Coverage**: 16/16 requirements (100%)
 
+### Backend-Only Requirements (no frontend tests)
+
+These requirements are covered by backend tests only. UI regressions won't be caught:
+
+- :warning: Facilitator role grants: can_create_rubric, can_manage_workshop, can_assign_annotations, can_view_all_findings, can_view_all_annotations, can_view_results (unit)
+- :warning: Facilitator role denies: can_annotate, can_create_findings (unit)
+- :warning: SME role grants: can_annotate, can_create_findings, can_view_discovery (unit)
+- :warning: SME role denies: can_create_rubric, can_manage_workshop, can_view_results, can_view_all_annotations (unit)
+- :warning: Participant role grants: can_annotate, can_create_findings, can_view_discovery (unit)
+- :warning: Participant role denies: can_create_rubric, can_manage_workshop, can_view_results, can_view_all_annotations (unit)
+- :warning: Permissions derived from role via UserPermissions.for_role() classmethod (unit)
+- :warning: Facilitator role cannot be changed via update endpoint (unit)
+- :warning: Facilitator accounts cannot be deleted via delete endpoint (unit)
+- :warning: Only facilitators can create invitations (unit)
+- :warning: Only facilitators can advance workshop phases (unit)
+- :warning: Phase advancement validates prerequisites before transitioning (unit)
+- :warning: Phase advancement returns 400 if prerequisites not met (unit)
+- :warning: Facilitators authenticate via YAML config (preconfigured credentials) (unit)
+- :warning: SMEs and participants authenticate via database credentials (unit)
+- :warning: Login response includes is_preconfigured_facilitator flag for facilitator logins (unit)
+
 ### Covered Requirements
 
-- [x] Facilitator role grants: can_create_rubric, can_manage_workshop, can_assign_annotations, can_view_all_findings, can_view_all_annotations, can_view_results (unit)
-- [x] Facilitator role denies: can_annotate, can_create_findings (unit)
-- [x] SME role grants: can_annotate, can_create_findings, can_view_discovery (unit)
-- [x] SME role denies: can_create_rubric, can_manage_workshop, can_view_results, can_view_all_annotations (unit)
-- [x] Participant role grants: can_annotate, can_create_findings, can_view_discovery (unit)
-- [x] Participant role denies: can_create_rubric, can_manage_workshop, can_view_results, can_view_all_annotations (unit)
-- [x] Permissions derived from role via UserPermissions.for_role() classmethod (unit)
-- [x] Facilitator role cannot be changed via update endpoint (unit)
-- [x] Facilitator accounts cannot be deleted via delete endpoint (unit)
-- [x] Only facilitators can create invitations (unit)
-- [x] Only facilitators can advance workshop phases (unit)
-- [x] Phase advancement validates prerequisites before transitioning (unit)
-- [x] Phase advancement returns 400 if prerequisites not met (unit)
-- [x] Facilitators authenticate via YAML config (preconfigured credentials) (unit)
-- [x] SMEs and participants authenticate via database credentials (unit)
-- [x] Login response includes is_preconfigured_facilitator flag for facilitator logins (unit)
+- [x] Facilitator role grants: can_create_rubric, can_manage_workshop, can_assign_annotations, can_view_all_findings, can_view_all_annotations, can_view_results (unit) **[BE-only]**
+- [x] Facilitator role denies: can_annotate, can_create_findings (unit) **[BE-only]**
+- [x] SME role grants: can_annotate, can_create_findings, can_view_discovery (unit) **[BE-only]**
+- [x] SME role denies: can_create_rubric, can_manage_workshop, can_view_results, can_view_all_annotations (unit) **[BE-only]**
+- [x] Participant role grants: can_annotate, can_create_findings, can_view_discovery (unit) **[BE-only]**
+- [x] Participant role denies: can_create_rubric, can_manage_workshop, can_view_results, can_view_all_annotations (unit) **[BE-only]**
+- [x] Permissions derived from role via UserPermissions.for_role() classmethod (unit) **[BE-only]**
+- [x] Facilitator role cannot be changed via update endpoint (unit) **[BE-only]**
+- [x] Facilitator accounts cannot be deleted via delete endpoint (unit) **[BE-only]**
+- [x] Only facilitators can create invitations (unit) **[BE-only]**
+- [x] Only facilitators can advance workshop phases (unit) **[BE-only]**
+- [x] Phase advancement validates prerequisites before transitioning (unit) **[BE-only]**
+- [x] Phase advancement returns 400 if prerequisites not met (unit) **[BE-only]**
+- [x] Facilitators authenticate via YAML config (preconfigured credentials) (unit) **[BE-only]**
+- [x] SMEs and participants authenticate via database credentials (unit) **[BE-only]**
+- [x] Login response includes is_preconfigured_facilitator flag for facilitator logins (unit) **[BE-only]**
 
 ## RUBRIC_SPEC
 
 **Coverage**: 25/25 requirements (100%)
 
+### Backend-Only Requirements (no frontend tests)
+
+These requirements are covered by backend tests only. UI regressions won't be caught:
+
+- :warning: Questions with multi-line descriptions parse correctly (unit)
+- :warning: Delimiter never appears in user input (by design) (unit)
+- :warning: Parsed questions have stable UUIDs within session (unit)
+- :warning: Empty/whitespace-only parts filtered out (unit)
+- :warning: Facilitator can edit an existing rubric question (unit)
+- :warning: Facilitator can delete a rubric question (unit)
+- :warning: Only one rubric exists per workshop (upsert semantics) (unit)
+- :warning: Rubric required before advancing to annotation phase (unit)
+- :warning: No phase restriction on rubric CRUD (unit)
+- :warning: Question IDs re-indexed sequentially after deletion (unit)
+- :warning: Annotation data preserved when rubric questions are deleted (unit)
+- :warning: Judge name auto-derived from first rubric question title (unit)
+- :warning: MLflow re-sync triggered on rubric create/update (best-effort) (unit)
+- :warning: AI suggestions generated from discovery findings and participant notes (unit)
+- :warning: Suggestions validated: title >= 3 chars, description >= 10 chars (unit)
+- :warning: Invalid judge type in suggestions defaults to likert (unit)
+- :warning: Facilitator can accept, reject, or edit suggestions before adding to rubric (unit)
+
 ### Covered Requirements
 
-- [x] Questions with multi-line descriptions parse correctly (unit)
-- [x] Delimiter never appears in user input (by design) (unit)
+- [x] Questions with multi-line descriptions parse correctly (unit) **[BE-only]**
+- [x] Delimiter never appears in user input (by design) (unit) **[BE-only]**
 - [x] Frontend and backend use same delimiter constant (unit)
 - [x] Per-question judge_type parsed from `[JUDGE_TYPE:xxx]` format (e2e-real, unit)
-- [x] Parsed questions have stable UUIDs within session (unit)
-- [x] Empty/whitespace-only parts filtered out (unit)
+- [x] Parsed questions have stable UUIDs within session (unit) **[BE-only]**
+- [x] Empty/whitespace-only parts filtered out (unit) **[BE-only]**
 - [x] Likert scale shows 1-5 rating options (e2e-real)
 - [x] Binary scale shows Pass/Fail buttons (not star ratings) (e2e-real)
 - [x] Binary feedback logged as 0/1 to MLflow (not 3) (e2e-real)
 - [x] Mixed rubrics support different scales per question (e2e-real, unit)
-- [x] Facilitator can create a rubric question with title and description (unit)
-- [x] Facilitator can edit an existing rubric question (unit)
-- [x] Facilitator can delete a rubric question (unit)
-- [x] Only one rubric exists per workshop (upsert semantics) (unit)
+- [x] Facilitator can create a rubric question with title and description (e2e-mocked, unit)
+- [x] Facilitator can edit an existing rubric question (unit) **[BE-only]**
+- [x] Facilitator can delete a rubric question (unit) **[BE-only]**
+- [x] Only one rubric exists per workshop (upsert semantics) (unit) **[BE-only]**
 - [x] Rubric persists and is retrievable via GET after creation (e2e-mocked, e2e-real)
-- [x] Rubric required before advancing to annotation phase (unit)
-- [x] No phase restriction on rubric CRUD (unit)
-- [x] Question IDs re-indexed sequentially after deletion (unit)
-- [x] Annotation data preserved when rubric questions are deleted (unit)
-- [x] Judge name auto-derived from first rubric question title (unit)
-- [x] MLflow re-sync triggered on rubric create/update (best-effort) (unit)
-- [x] AI suggestions generated from discovery findings and participant notes (unit)
-- [x] Suggestions validated: title >= 3 chars, description >= 10 chars (unit)
-- [x] Invalid judge type in suggestions defaults to likert (unit)
-- [x] Facilitator can accept, reject, or edit suggestions before adding to rubric (unit)
+- [x] Rubric required before advancing to annotation phase (unit) **[BE-only]**
+- [x] No phase restriction on rubric CRUD (unit) **[BE-only]**
+- [x] Question IDs re-indexed sequentially after deletion (unit) **[BE-only]**
+- [x] Annotation data preserved when rubric questions are deleted (unit) **[BE-only]**
+- [x] Judge name auto-derived from first rubric question title (unit) **[BE-only]**
+- [x] MLflow re-sync triggered on rubric create/update (best-effort) (unit) **[BE-only]**
+- [x] AI suggestions generated from discovery findings and participant notes (unit) **[BE-only]**
+- [x] Suggestions validated: title >= 3 chars, description >= 10 chars (unit) **[BE-only]**
+- [x] Invalid judge type in suggestions defaults to likert (unit) **[BE-only]**
+- [x] Facilitator can accept, reject, or edit suggestions before adding to rubric (unit) **[BE-only]**
 
 ## TESTING_SPEC
 

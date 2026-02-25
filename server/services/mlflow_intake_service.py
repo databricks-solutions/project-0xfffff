@@ -1,9 +1,7 @@
 """MLflow intake service for pulling traces from MLflow experiments."""
 
+import os
 from typing import Any, Literal
-
-import mlflow
-import mlflow.genai
 
 from server.models import MLflowIntakeConfig, MLflowTraceInfo, TraceUpload
 from server.services.database_service import DatabaseService
@@ -17,6 +15,8 @@ class MLflowIntakeService:
 
     def configure_mlflow(self, config: MLflowIntakeConfig) -> None:
         """Configure MLflow with Databricks credentials."""
+        import mlflow
+
         try:
             # Validate configuration
             if not config.databricks_host or not config.databricks_token:
@@ -26,27 +26,28 @@ class MLflowIntakeService:
             if not config.databricks_host.startswith("https://"):
                 raise ValueError("Databricks host must start with https://")
 
-            # Set tracking URI to Databricks
-            mlflow.set_tracking_uri("databricks")
-
-            # Set authentication
-            import os
-
+            # Set authentication env vars BEFORE setting tracking URI
             os.environ["DATABRICKS_HOST"] = config.databricks_host.rstrip("/")
             os.environ["DATABRICKS_TOKEN"] = config.databricks_token
+            os.environ.pop("DATABRICKS_CLIENT_ID", None)
+            os.environ.pop("DATABRICKS_CLIENT_SECRET", None)
+
+            mlflow.set_tracking_uri("databricks")
 
         except Exception as e:
             raise ValueError(f"Failed to configure MLflow: {e!s}") from e
 
     def search_traces(self, config: MLflowIntakeConfig) -> list[MLflowTraceInfo]:
         """Search for traces in MLflow experiment with proper error handling."""
+        import mlflow
+
         try:
             # Configure MLflow
             self.configure_mlflow(config)
 
             # Search for traces with error handling
             traces = mlflow.search_traces(
-                experiment_ids=[config.experiment_id],
+                locations=[config.experiment_id],
                 max_results=config.max_traces or 100,
                 filter_string=config.filter_string,
                 return_type="list",
@@ -101,6 +102,8 @@ class MLflowIntakeService:
 
     def ingest_traces(self, workshop_id: str, config: MLflowIntakeConfig) -> int:
         """Ingest traces from MLflow into the workshop."""
+        import mlflow
+
         try:
             # Search for traces
             trace_infos = self.search_traces(config)
@@ -417,6 +420,8 @@ class MLflowIntakeService:
 
     def test_connection(self, config: MLflowIntakeConfig) -> dict[str, Any]:
         """Test MLflow connection and return experiment info."""
+        import mlflow
+
         try:
             # Configure MLflow
             self.configure_mlflow(config)
@@ -433,7 +438,7 @@ class MLflowIntakeService:
             # Try to search for traces to verify access (with minimal request)
             try:
                 traces = mlflow.search_traces(
-                    experiment_ids=[config.experiment_id],
+                    locations=[config.experiment_id],
                     max_results=1,  # Just get one trace to test access
                     return_type="list",
                 )

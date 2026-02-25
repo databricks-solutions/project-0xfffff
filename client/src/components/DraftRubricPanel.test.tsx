@@ -45,6 +45,24 @@ const MOCK_ITEMS = [
   },
 ];
 
+const GROUPED_ITEMS = [
+  ...MOCK_ITEMS,
+  {
+    id: 'item-4',
+    workshop_id: 'ws-1',
+    text: 'Answers should be factually accurate',
+    source_type: 'finding',
+    source_analysis_id: 'analysis-2',
+    source_trace_ids: ['trace-jkl000'],
+    group_id: 'group-quality',
+    group_name: 'Quality',
+    promoted_by: 'facilitator-1',
+    promoted_at: '2026-01-01T00:03:00Z',
+  },
+];
+
+let mockItems = MOCK_ITEMS;
+
 const mockSuggestGroups = { mutate: vi.fn(), isPending: false };
 const mockApplyGroups = { mutate: vi.fn(), isPending: false };
 const mockCreateItem = { mutate: vi.fn(), isPending: false };
@@ -52,7 +70,7 @@ const mockUpdateItem = { mutate: vi.fn(), isPending: false };
 const mockDeleteItem = { mutate: vi.fn(), isPending: false };
 
 vi.mock('@/hooks/useWorkshopApi', () => ({
-  useDraftRubricItems: () => ({ data: MOCK_ITEMS, isLoading: false }),
+  useDraftRubricItems: () => ({ data: mockItems, isLoading: false }),
   useCreateDraftRubricItem: () => mockCreateItem,
   useUpdateDraftRubricItem: () => mockUpdateItem,
   useDeleteDraftRubricItem: () => mockDeleteItem,
@@ -76,6 +94,7 @@ function renderPanel() {
 describe('DraftRubricPanel evidence display', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockItems = MOCK_ITEMS;
   });
 
   it('renders trace ID badges for items with source_trace_ids', async () => {
@@ -120,6 +139,44 @@ describe('DraftRubricPanel evidence display', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/Draft Rubric Items \(3\)/)).toBeTruthy();
+    });
+  });
+
+  it('creates a new manual group from item controls', async () => {
+    const user = userEvent.setup();
+    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('Communication Clarity');
+    renderPanel();
+
+    const groupSelects = await screen.findAllByLabelText('Assign item to group');
+    await user.selectOptions(groupSelects[0], '__create_new_group__');
+
+    expect(mockUpdateItem.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        itemId: 'item-1',
+        updates: expect.objectContaining({
+          group_name: 'Communication Clarity',
+        }),
+      })
+    );
+    promptSpy.mockRestore();
+  });
+
+  it('moves an item into an existing group from item controls', async () => {
+    mockItems = GROUPED_ITEMS;
+    const user = userEvent.setup();
+    renderPanel();
+
+    const targetSelect = (await screen.findByLabelText('Assign item to group', {
+      selector: '#group-select-item-1',
+    })) as HTMLSelectElement;
+    await user.selectOptions(targetSelect, 'Quality');
+
+    expect(mockUpdateItem.mutate).toHaveBeenCalledWith({
+      itemId: 'item-1',
+      updates: {
+        group_id: 'group-quality',
+        group_name: 'Quality',
+      },
     });
   });
 });

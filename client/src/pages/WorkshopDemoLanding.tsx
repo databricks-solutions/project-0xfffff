@@ -84,6 +84,7 @@ export function WorkshopDemoLanding() {
       switch(requestedPhase) {
         case 'intake': return 'intake';
         case 'user-management': return 'user-management';
+        case 'view-all-findings': return 'findings-review';
         case 'discovery': 
           // Show start page ONLY if discovery has never been started
           if (!state.discovery_started) {

@@ -47,6 +47,11 @@ export {
   clickGenerateQuestion,
   getDisagreementsCount,
   getDisagreementSummary,
+  // Draft Rubric Panel actions (Step 3)
+  createDraftRubricItemViaApi,
+  addDraftRubricItemViaUI,
+  editDraftRubricItem,
+  deleteDraftRubricItem,
 } from './discovery';
 export type { DiscoveryCategory } from './discovery';
 

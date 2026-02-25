@@ -28,6 +28,7 @@ const mockRunAnalysis = {
 vi.mock('@/hooks/useWorkshopApi', () => ({
   useDiscoveryAnalyses: () => mockAnalyses,
   useRunDiscoveryAnalysis: () => mockRunAnalysis,
+  useCreateDraftRubricItem: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock('@tanstack/react-query', () => ({
@@ -113,7 +114,7 @@ describe('DiscoveryAnalysisTab', () => {
   // Requirement: "Facilitator selects analysis template (Evaluation Criteria or Themes & Patterns) before running"
   describe('template selector', () => {
     it('renders template selector with Evaluation Criteria as the default selected value', () => {
-      render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       // The select trigger should display the default template
       const label = screen.getByText('Analysis Template');
@@ -124,7 +125,7 @@ describe('DiscoveryAnalysisTab', () => {
     });
 
     it('renders a model selector alongside the template selector', () => {
-      render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       // Both selectors are labeled
       expect(screen.getByText('Model')).toBeInTheDocument();
@@ -132,7 +133,7 @@ describe('DiscoveryAnalysisTab', () => {
     });
 
     it('renders the Run Analysis button', () => {
-      render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       const button = screen.getByRole('button', { name: /Run Analysis/i });
       expect(button).toBeInTheDocument();
@@ -147,7 +148,7 @@ describe('DiscoveryAnalysisTab', () => {
       const analysis = makeAnalysis({ participant_count: 1 });
       mockAnalyses.data = [analysis];
 
-      render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       expect(screen.getByText('Limited Participant Data')).toBeInTheDocument();
       expect(
@@ -159,7 +160,7 @@ describe('DiscoveryAnalysisTab', () => {
       const analysis = makeAnalysis({ participant_count: 0 });
       mockAnalyses.data = [analysis];
 
-      render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       expect(screen.getByText('Limited Participant Data')).toBeInTheDocument();
       expect(
@@ -171,7 +172,7 @@ describe('DiscoveryAnalysisTab', () => {
       const analysis = makeAnalysis({ participant_count: 3 });
       mockAnalyses.data = [analysis];
 
-      render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       expect(screen.queryByText('Limited Participant Data')).not.toBeInTheDocument();
     });
@@ -180,7 +181,7 @@ describe('DiscoveryAnalysisTab', () => {
       const analysis = makeAnalysis({ participant_count: 1 });
       mockAnalyses.data = [analysis];
 
-      const { container } = render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      const { container } = render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       // The Alert containing the warning should NOT have variant="destructive"
       const alertEl = container.querySelector('[role="alert"]');
@@ -203,7 +204,7 @@ describe('DiscoveryAnalysisTab', () => {
       const analysis = makeAnalysis({ participant_count: 5 });
       mockAnalyses.data = [analysis];
 
-      render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       expect(screen.getByText('5 participants')).toBeInTheDocument();
     });
@@ -212,7 +213,7 @@ describe('DiscoveryAnalysisTab', () => {
       const analysis = makeAnalysis({ participant_count: 1 });
       mockAnalyses.data = [analysis];
 
-      render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       expect(screen.getByText('1 participant')).toBeInTheDocument();
     });
@@ -221,7 +222,7 @@ describe('DiscoveryAnalysisTab', () => {
       const analysis = makeAnalysis({ created_at: '2026-02-19T10:30:00Z' });
       mockAnalyses.data = [analysis];
 
-      render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       // The timestamp is rendered via toLocaleString(), verify it appears
       const formattedDate = new Date('2026-02-19T10:30:00Z').toLocaleString();
@@ -232,7 +233,7 @@ describe('DiscoveryAnalysisTab', () => {
       const analysis = makeAnalysis({ template_used: 'themes_patterns' });
       mockAnalyses.data = [analysis];
 
-      render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       // The banner shows the human-readable template name
       expect(screen.getByText('Themes & Patterns')).toBeInTheDocument();
@@ -242,7 +243,7 @@ describe('DiscoveryAnalysisTab', () => {
       const analysis = makeAnalysis({ model_used: 'databricks-claude-sonnet-4-5' });
       mockAnalyses.data = [analysis];
 
-      render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       expect(screen.getByText('databricks-claude-sonnet-4-5')).toBeInTheDocument();
     });
@@ -254,7 +255,7 @@ describe('DiscoveryAnalysisTab', () => {
       const analysis = makeAnalysis();
       mockAnalyses.data = [analysis];
 
-      const { container } = render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      const { container } = render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       // Get all disagreement section titles in DOM order
       const highTitle = screen.getByText(/HIGH Priority/);
@@ -280,7 +281,7 @@ describe('DiscoveryAnalysisTab', () => {
       const analysis = makeAnalysis();
       mockAnalyses.data = [analysis];
 
-      render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       // Each finding has a priority badge
       expect(screen.getByText('high')).toBeInTheDocument();
@@ -295,7 +296,7 @@ describe('DiscoveryAnalysisTab', () => {
       const analysis = makeAnalysis();
       mockAnalyses.data = [analysis];
 
-      const { container } = render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      const { container } = render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       // Find the HIGH priority card by its title text
       const highSection = screen.getByText(/HIGH Priority/).closest('[class*="border-red"]');
@@ -307,7 +308,7 @@ describe('DiscoveryAnalysisTab', () => {
       const analysis = makeAnalysis();
       mockAnalyses.data = [analysis];
 
-      render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       const mediumSection = screen.getByText(/MEDIUM Priority/).closest('[class*="border-yellow"]');
       expect(mediumSection).not.toBeNull();
@@ -318,7 +319,7 @@ describe('DiscoveryAnalysisTab', () => {
       const analysis = makeAnalysis();
       mockAnalyses.data = [analysis];
 
-      render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       const lowerSection = screen.getByText(/LOWER Priority/).closest('[class*="border-blue"]');
       expect(lowerSection).not.toBeNull();
@@ -329,7 +330,7 @@ describe('DiscoveryAnalysisTab', () => {
       const analysis = makeAnalysis();
       mockAnalyses.data = [analysis];
 
-      const { container } = render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      const { container } = render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       // Find the disagreement item inside the HIGH section
       const highCard = screen.getByText(/HIGH Priority/).closest('[class*="border-red"]');
@@ -342,7 +343,7 @@ describe('DiscoveryAnalysisTab', () => {
       const analysis = makeAnalysis();
       mockAnalyses.data = [analysis];
 
-      render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       const mediumCard = screen.getByText(/MEDIUM Priority/).closest('[class*="border-yellow"]');
       expect(mediumCard).not.toBeNull();
@@ -354,7 +355,7 @@ describe('DiscoveryAnalysisTab', () => {
       const analysis = makeAnalysis();
       mockAnalyses.data = [analysis];
 
-      render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       const lowerCard = screen.getByText(/LOWER Priority/).closest('[class*="border-blue"]');
       expect(lowerCard).not.toBeNull();
@@ -369,7 +370,7 @@ describe('DiscoveryAnalysisTab', () => {
       const analysis = makeAnalysis();
       mockAnalyses.data = [analysis];
 
-      render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       // Evidence label is present
       expect(screen.getAllByText('Evidence:').length).toBeGreaterThanOrEqual(1);
@@ -384,7 +385,7 @@ describe('DiscoveryAnalysisTab', () => {
       const analysis = makeAnalysis();
       mockAnalyses.data = [analysis];
 
-      render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       // Disagreement items show "Trace: <id>" badges
       expect(screen.getByText('Trace: trace-aa')).toBeInTheDocument();
@@ -399,7 +400,7 @@ describe('DiscoveryAnalysisTab', () => {
       const analysis = makeAnalysis();
       mockAnalyses.data = [analysis];
 
-      render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       // The findings section header includes the count
       expect(screen.getByText(/Findings \(3\)/)).toBeInTheDocument();
@@ -409,7 +410,7 @@ describe('DiscoveryAnalysisTab', () => {
       const analysis = makeAnalysis();
       mockAnalyses.data = [analysis];
 
-      render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       expect(screen.getByText('HIGH Disagreements')).toBeInTheDocument();
       expect(screen.getByText('MEDIUM Disagreements')).toBeInTheDocument();
@@ -423,7 +424,7 @@ describe('DiscoveryAnalysisTab', () => {
       const analysis = makeAnalysis();
       mockAnalyses.data = [analysis];
 
-      render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       expect(screen.getByText('One reviewer said GOOD, the other BAD')).toBeInTheDocument();
       expect(screen.getByText(/Accuracy expectations differ/)).toBeInTheDocument();
@@ -433,7 +434,7 @@ describe('DiscoveryAnalysisTab', () => {
       const analysis = makeAnalysis();
       mockAnalyses.data = [analysis];
 
-      render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       expect(screen.getByText('What counts as accurate?')).toBeInTheDocument();
       expect(screen.getByText('Which failure is more impactful?')).toBeInTheDocument();
@@ -443,7 +444,7 @@ describe('DiscoveryAnalysisTab', () => {
       const analysis = makeAnalysis();
       mockAnalyses.data = [analysis];
 
-      render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       expect(screen.getByText('Calibrate on accuracy')).toBeInTheDocument();
       expect(screen.getByText('Discuss failure priorities')).toBeInTheDocument();
@@ -457,7 +458,7 @@ describe('DiscoveryAnalysisTab', () => {
       mockAnalyses.data = undefined;
       mockAnalyses.isLoading = false;
 
-      render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       expect(screen.getByText(/No analysis runs yet/)).toBeInTheDocument();
     });
@@ -475,7 +476,7 @@ describe('DiscoveryAnalysisTab', () => {
       });
       mockAnalyses.data = [analysis];
 
-      render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+      render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
 
       expect(screen.queryByText(/HIGH Priority/)).not.toBeInTheDocument();
       expect(screen.queryByText(/MEDIUM Priority/)).not.toBeInTheDocument();

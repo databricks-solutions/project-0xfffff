@@ -658,7 +658,7 @@ export const FindingsReviewPage: React.FC<FindingsReviewPageProps> = ({ onBack }
 
           {/* Analysis View */}
           <TabsContent value="analysis">
-            <DiscoveryAnalysisTab workshopId={workshopId!} />
+            <DiscoveryAnalysisTab workshopId={workshopId!} userId={user?.id || ''} />
           </TabsContent>
         </Tabs>
       </div>

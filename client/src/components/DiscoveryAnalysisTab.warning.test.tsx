@@ -20,6 +20,7 @@ const mockAnalyses: { data: DiscoveryAnalysis[] | undefined; isLoading: boolean 
 vi.mock('@/hooks/useWorkshopApi', () => ({
   useDiscoveryAnalyses: () => mockAnalyses,
   useRunDiscoveryAnalysis: () => ({ mutate: vi.fn(), isPending: false }),
+  useCreateDraftRubricItem: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock('@tanstack/react-query', () => ({
@@ -43,26 +44,26 @@ describe('DiscoveryAnalysisTab - participant warning', () => {
 
   it('shows warning alert when participant_count is 1', () => {
     mockAnalyses.data = [makeAnalysis({ participant_count: 1 })];
-    render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+    render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
     expect(screen.getByText('Limited Participant Data')).toBeInTheDocument();
     expect(screen.getByText(/based on feedback from only 1 participant\./)).toBeInTheDocument();
   });
 
   it('shows warning alert when participant_count is 0', () => {
     mockAnalyses.data = [makeAnalysis({ participant_count: 0 })];
-    render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+    render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
     expect(screen.getByText('Limited Participant Data')).toBeInTheDocument();
   });
 
   it('does NOT show warning when participant_count >= 2', () => {
     mockAnalyses.data = [makeAnalysis({ participant_count: 3 })];
-    render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+    render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
     expect(screen.queryByText('Limited Participant Data')).not.toBeInTheDocument();
   });
 
   it('warning uses default Alert variant (not destructive/error)', () => {
     mockAnalyses.data = [makeAnalysis({ participant_count: 1 })];
-    const { container } = render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+    const { container } = render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
     const alertEl = container.querySelector('[role="alert"]');
     expect(alertEl).toBeInTheDocument();
     expect(alertEl!.className).not.toContain('destructive');
