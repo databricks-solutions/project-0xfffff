@@ -553,6 +553,12 @@ def _define_followup_question_signature():
         Do not ask the original user follow-up questions about their request or
         issue. Instead, ask the REVIEWER about their assessment of the chatbot's
         response quality.
+
+        Rules:
+        - Maximum 1-2 sentences
+        - No preamble or acknowledgment (don't start with "That's a great point...")
+        - Ask ONE thing — no compound or either/or questions
+        - Don't quote the reviewer's words back to them
         """
 
         trace_input: str = dspy.InputField(desc="The user's original input to the chatbot")
@@ -561,7 +567,7 @@ def _define_followup_question_signature():
         feedback_comment: str = dspy.InputField(desc="Reviewer's written comment")
         prior_qna: str = dspy.InputField(desc="Prior follow-up Q&A history, or '(none yet)'")
 
-        question: str = dspy.OutputField(desc="The follow-up question for the reviewer")
+        question: str = dspy.OutputField(desc="A single concise follow-up question (1-2 sentences, no preamble)")
 
     return GenerateFollowUpQuestion
 
