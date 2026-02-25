@@ -530,25 +530,36 @@ def get_classification_signature():
     return _CLASSIFICATION_SIG
 
 
-class FollowUpQuestionOutput(BaseModel):
-    """Output model for a follow-up question."""
-
-    question: str = Field(description="The follow-up question to ask the reviewer")
-
-
 def _define_followup_question_signature():
     """Define the follow-up question DSPy signature."""
     dspy = _import_dspy()
 
     class GenerateFollowUpQuestion(dspy.Signature):
-        """Generate a follow-up question for a reviewer based on their feedback.
+        """You are interviewing someone who is reviewing a chatbot conversation.
+        They have already given initial feedback. Ask them ONE sharp follow-up
+        question to better understand their perspective and extract actionable
+        UX insights.
 
-        The question should probe deeper into the reviewer's assessment,
-        building on any prior Q&A context provided.
+        IMPORTANT: You are NOT the chatbot. You are asking the REVIEWER questions
+        about their opinion of the chatbot's response.
+
+        - If they mentioned something POSITIVE/GOOD: Ask what specifically made
+          it good, why it worked well, etc.
+        - If they mentioned something NEGATIVE/BAD: Ask what specifically was
+          problematic, how it could be improved, etc.
+        - If they mentioned something NEUTRAL: Ask for clarification on their
+          perspective.
+
+        Do not ask the original user follow-up questions about their request or
+        issue. Instead, ask the REVIEWER about their assessment of the chatbot's
+        response quality.
         """
 
-        system_prompt: str = dspy.InputField(desc="System prompt for the UX researcher persona")
-        user_prompt: str = dspy.InputField(desc="User prompt with trace + feedback context")
+        trace_input: str = dspy.InputField(desc="The user's original input to the chatbot")
+        trace_output: str = dspy.InputField(desc="The chatbot's response")
+        feedback_label: str = dspy.InputField(desc="Reviewer's label (e.g. good, bad, neutral)")
+        feedback_comment: str = dspy.InputField(desc="Reviewer's written comment")
+        prior_qna: str = dspy.InputField(desc="Prior follow-up Q&A history, or '(none yet)'")
 
         question: str = dspy.OutputField(desc="The follow-up question for the reviewer")
 

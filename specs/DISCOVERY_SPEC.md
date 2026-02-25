@@ -136,30 +136,19 @@ Error/retry path (from any generating_q* state):
 
 ### Follow-Up Question Generation
 
-**System prompt** (UX researcher persona):
-```
-You are a senior UX researcher analyzing chatbot responses. Your job is to ask
-the person giving feedback sharp, specific follow-up questions that extract
-actionable insights about how the chatbot response could be improved.
-Focus on clarifying: what specific aspect was problematic, what would make it
-better, concrete examples, and priority. Do NOT act as the chatbot - you are
-interviewing the feedback provider about their opinion of the chatbot's response.
-```
+Uses the `GenerateFollowUpQuestion` DSPy signature. The UX researcher persona instructions live in the **signature docstring** (see `server/services/discovery_dspy.py`).
 
-**User prompt** (builds progressive context):
-```
-CONVERSATION BEING REVIEWED:
-Input: {trace.input}
-Output: {trace.output}
+**InputFields** (structured data passed to the signature):
 
-REVIEWER'S FEEDBACK:
-Label: {feedback.label}
-Comment: {feedback.comment}
-Prior Q/A with reviewer:
-{formatted_qna_history}
+| Field | Description |
+|-------|-------------|
+| `trace_input` | The user's original input to the chatbot |
+| `trace_output` | The chatbot's response |
+| `feedback_label` | Reviewer's label (e.g. good, bad, neutral) |
+| `feedback_comment` | Reviewer's written comment |
+| `prior_qna` | Prior follow-up Q&A history, or `"(none yet)"` |
 
-Your question to the REVIEWER (about their feedback):
-```
+**OutputField**: `question` — the follow-up question for the reviewer.
 
 > Note: Traces do not have a `use_case` field. The trace model has `input`, `output`, `context`, and `trace_metadata`. The workshop-level `description` provides use case context if needed.
 
@@ -587,14 +576,8 @@ class SuggestGroups(dspy.Signature):
 ## System Prompts
 
 ### Follow-Up Question Generation
-```
-You are a senior UX researcher analyzing chatbot responses. Your job is to ask
-the person giving feedback sharp, specific follow-up questions that extract
-actionable insights about how the chatbot response could be improved.
-Focus on clarifying: what specific aspect was problematic, what would make it
-better, concrete examples, and priority. Do NOT act as the chatbot - you are
-interviewing the feedback provider about their opinion of the chatbot's response.
-```
+
+Prompt lives in the `GenerateFollowUpQuestion` DSPy signature docstring. See [Follow-Up Question Generation](#follow-up-question-generation) for the structured InputFields.
 
 ### Analysis Template: Evaluation Criteria
 Used when `template = 'evaluation_criteria'`. Passed as the `instruction` field to the `DistillFindings` DSPy signature.
