@@ -6,6 +6,7 @@ import type { ApplyGroupsRequest } from '../models/ApplyGroupsRequest';
 import type { CreateDraftRubricItemRequest } from '../models/CreateDraftRubricItemRequest';
 import type { DiscoveryFeedback } from '../models/DiscoveryFeedback';
 import type { DiscoveryFeedbackCreate } from '../models/DiscoveryFeedbackCreate';
+import type { DiscoveryFeedbackWithUser } from '../models/DiscoveryFeedbackWithUser';
 import type { DiscoveryFinding } from '../models/DiscoveryFinding';
 import type { DiscoveryFindingCreate } from '../models/DiscoveryFindingCreate';
 import type { DiscoveryFindingWithUser } from '../models/DiscoveryFindingWithUser';
@@ -456,13 +457,13 @@ export class DiscoveryService {
      * Get all discovery feedback with user details (name, role) for facilitator view.
      * @param workshopId
      * @param userId
-     * @returns any Successful Response
+     * @returns DiscoveryFeedbackWithUser Successful Response
      * @throws ApiError
      */
     public static getDiscoveryFeedbackWithUserDetailsWorkshopsWorkshopIdDiscoveryFeedbackWithUsersGet(
         workshopId: string,
         userId?: (string | null),
-    ): CancelablePromise<Array<Record<string, any>>> {
+    ): CancelablePromise<Array<DiscoveryFeedbackWithUser>> {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/workshops/{workshop_id}/discovery-feedback-with-users',

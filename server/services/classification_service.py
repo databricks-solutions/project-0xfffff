@@ -7,7 +7,6 @@ and detection of disagreements between participants.
 from __future__ import annotations
 
 import logging
-from typing import List
 
 from sqlalchemy.orm import Session
 
@@ -111,12 +110,12 @@ class ClassificationService:
     async def detect_disagreements(
         self,
         trace_id: str,
-        findings: List[ClassifiedFinding],
+        findings: list[ClassifiedFinding],
         workshop_id: str,
         model_name: str,
         databricks_host: str,
         databricks_token: str,
-    ) -> List[Disagreement]:
+    ) -> list[Disagreement]:
         """Compare findings and detect conflicting viewpoints.
 
         Args:

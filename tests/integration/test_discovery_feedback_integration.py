@@ -89,7 +89,7 @@ def users_and_participants(test_db, workshop_with_traces):
 class TestDiscoveryFeedbackIntegration:
     """Integration tests exercising the full service → DB round-trip."""
 
-    @pytest.mark.req("Feedback saved incrementally (no data loss on failure)")
+    @pytest.mark.req("Q&A pairs appended in order to JSON array")
     def test_full_feedback_and_qna_flow(self, discovery_service, workshop_with_traces):
         """Complete flow: submit feedback → Q1 → A1 → Q2 → A2 → Q3 → A3.
 
@@ -156,7 +156,7 @@ class TestDiscoveryFeedbackIntegration:
         assert fb.followup_qna[0]["answer"] == "The reasoning was solid."
         assert fb.followup_qna[2]["answer"] == "Overall very good."
 
-    @pytest.mark.req("One feedback record per (workshop, trace, user) — upsert behavior")
+    @pytest.mark.req("One feedback record per (workshop, trace, user) \u2014 upsert behavior")
     def test_upsert_then_qna_preserves_all_data(self, discovery_service, workshop_with_traces):
         """Upsert feedback (change label) after Q&A has been appended — Q&A preserved."""
         # Submit initial feedback

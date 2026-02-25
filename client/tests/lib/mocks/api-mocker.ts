@@ -63,6 +63,24 @@ export interface CustomLLMProviderConfig {
   has_api_key: boolean;
 }
 
+/** A single discovery analysis record (Step 2) */
+export interface MockDiscoveryAnalysis {
+  id: string;
+  workshop_id: string;
+  template_used: string;
+  analysis_data: string;
+  findings: Array<{ text: string; evidence_trace_ids: string[]; priority: string }>;
+  disagreements: {
+    high: Array<{ trace_id: string; summary: string; underlying_theme: string; followup_questions: string[]; facilitator_suggestions: string[] }>;
+    medium: Array<{ trace_id: string; summary: string; underlying_theme: string; followup_questions: string[]; facilitator_suggestions: string[] }>;
+    lower: Array<{ trace_id: string; summary: string; underlying_theme: string; followup_questions: string[]; facilitator_suggestions: string[] }>;
+  };
+  participant_count: number;
+  model_used: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface MockDataStore {
   workshop?: Workshop;
   users: User[];
@@ -72,6 +90,7 @@ export interface MockDataStore {
   annotations: Annotation[];
   discoveryComplete: Map<string, boolean>;
   customLlmProvider?: CustomLLMProviderConfig;
+  discoveryAnalyses: MockDiscoveryAnalysis[];
 }
 
 /**
@@ -473,6 +492,78 @@ export class ApiMocker {
         await route.fulfill({ status: 201, json: annotation });
       },
     });
+
+    // Discovery analysis (Step 2)
+    this.routes.push({
+      pattern: /\/workshops\/([a-f0-9-]+)\/analyze-discovery$/i,
+      post: async (route) => {
+        const body = route.request().postDataJSON();
+        const workshopId = this.store.workshop?.id || '';
+        const template = body?.template || 'evaluation_criteria';
+        const model = body?.model || 'databricks-claude-sonnet-4-5';
+        const traceIds = this.store.traces.map((t) => t.id);
+
+        const analysis: MockDiscoveryAnalysis = {
+          id: 'analysis-' + Date.now(),
+          workshop_id: workshopId,
+          template_used: template,
+          analysis_data: 'Mock analysis summary for E2E testing.',
+          findings: [
+            { text: 'Responses should include specific references', evidence_trace_ids: traceIds.slice(0, 2), priority: 'high' },
+            { text: 'Tone is generally appropriate', evidence_trace_ids: traceIds.slice(0, 1), priority: 'medium' },
+          ],
+          disagreements: {
+            high: traceIds.length >= 1 ? [{ trace_id: traceIds[0], summary: 'Rating split: GOOD vs BAD', underlying_theme: 'Accuracy expectations', followup_questions: ['What counts as accurate?'], facilitator_suggestions: ['Calibrate on accuracy'] }] : [],
+            medium: [],
+            lower: [],
+          },
+          participant_count: this.store.users.filter((u) => u.role === UserRole.PARTICIPANT || u.role === UserRole.SME).length,
+          model_used: model,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+
+        this.store.discoveryAnalyses.push(analysis);
+        await route.fulfill({ status: 200, json: analysis });
+      },
+    });
+
+    this.routes.push({
+      pattern: /\/workshops\/([a-f0-9-]+)\/discovery-analysis\/([a-z0-9-]+)$/i,
+      get: async (route) => {
+        const url = route.request().url();
+        const idMatch = url.match(/\/discovery-analysis\/([a-z0-9-]+)$/i);
+        const analysisId = idMatch?.[1];
+        const record = this.store.discoveryAnalyses.find((a) => a.id === analysisId);
+        if (record) {
+          await route.fulfill({ json: record });
+        } else {
+          await route.fulfill({ status: 404, json: { detail: 'Analysis not found' } });
+        }
+      },
+    });
+
+    this.routes.push({
+      pattern: /\/workshops\/([a-f0-9-]+)\/discovery-analysis$/i,
+      get: async (route) => {
+        const url = new URL(route.request().url());
+        const templateFilter = url.searchParams.get('template');
+        let analyses = [...this.store.discoveryAnalyses].reverse(); // newest first
+        if (templateFilter) {
+          analyses = analyses.filter((a) => a.template_used === templateFilter);
+        }
+        await route.fulfill({ json: analyses });
+      },
+    });
+
+    // MLflow config (needed by DiscoveryAnalysisTab to enable Run Analysis button)
+    this.routes.push({
+      pattern: /\/workshops\/([a-f0-9-]+)\/mlflow-config$/i,
+      get: async (route) => {
+        await route.fulfill({ json: { id: 'mock-mlflow-config', experiment_name: 'test' } });
+      },
+    });
+
 
     // Discovery questions model selection
     this.routes.push({

@@ -864,6 +864,7 @@ export class TestScenario {
       findings: [],
       annotations: [],
       discoveryComplete: new Map(),
+      discoveryAnalyses: [],
     };
 
     // Build workshop

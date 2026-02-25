@@ -24,6 +24,35 @@ def _get_token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()[:16]
 
 
+def _get_sdk_token(workspace_url: str | None = None) -> str | None:
+    """Get an OAuth token via the Databricks SDK (unified auth).
+
+    On Databricks Apps the platform injects ``DATABRICKS_CLIENT_ID`` /
+    ``DATABRICKS_CLIENT_SECRET`` which the SDK uses for M2M OAuth.
+    Locally, the SDK uses CLI profile auth.
+    """
+    try:
+        from databricks.sdk import WorkspaceClient
+
+        w = WorkspaceClient()
+        headers = w.config.authenticate()
+        auth_header = headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            sdk_host = (w.config.host or "").rstrip("/")
+            target_host = (workspace_url or "").rstrip("/")
+            if target_host and sdk_host and sdk_host.lower() != target_host.lower():
+                w2 = WorkspaceClient(host=workspace_url)
+                headers2 = w2.config.authenticate()
+                auth2 = headers2.get("Authorization", "")
+                if auth2.startswith("Bearer "):
+                    return auth2[len("Bearer "):]
+                return None
+            return auth_header[len("Bearer "):]
+    except Exception as exc:
+        logger.warning("Databricks SDK auth failed in DatabricksService: %s", exc)
+    return None
+
+
 class DatabricksService:
     """Service for interacting with Databricks model serving endpoints."""
 
@@ -44,39 +73,38 @@ class DatabricksService:
             db_service: Database service instance to fetch MLflow config
             init_sdk: Whether to initialize the Databricks SDK (set False for direct HTTP calls only)
         """
-        # If workshop_id and db_service are provided, try to get token from memory storage
+        # Resolve workspace URL first
         if workshop_id and db_service:
+            try:
+                mlflow_config = db_service.get_mlflow_config(workshop_id)
+                if mlflow_config:
+                    self.workspace_url = workspace_url or mlflow_config.databricks_host
+                else:
+                    self.workspace_url = workspace_url or os.getenv("DATABRICKS_HOST")
+            except Exception:
+                self.workspace_url = workspace_url or os.getenv("DATABRICKS_HOST")
+        else:
+            self.workspace_url = workspace_url or os.getenv("DATABRICKS_HOST")
+
+        # Resolve token: prefer SDK OAuth token (accepted on /chat/completions)
+        # over stored PATs (which may lack required scopes for that path).
+        sdk_token = _get_sdk_token(self.workspace_url)
+        if sdk_token:
+            self.token = sdk_token
+            logger.info("Using Databricks SDK OAuth token for serving endpoint auth")
+        elif token:
+            self.token = token
+        elif workshop_id and db_service:
             try:
                 from server.services.token_storage_service import token_storage
 
-                databricks_token = token_storage.get_token(workshop_id)
-                if not databricks_token and db_service:
-                    databricks_token = db_service.get_databricks_token(workshop_id)
-                    if databricks_token:
-                        token_storage.store_token(workshop_id, databricks_token)
-                if databricks_token:
-                    mlflow_config = db_service.get_mlflow_config(workshop_id)
-                    if mlflow_config:
-                        self.workspace_url = workspace_url or mlflow_config.databricks_host
-                        self.token = token or databricks_token
-                        print(f"Using token from memory storage for workshop {workshop_id}")
-                    else:
-                        # Fallback to provided parameters or environment variables
-                        self.workspace_url = workspace_url or os.getenv("DATABRICKS_HOST")
-                        self.token = token or databricks_token
-                else:
-                    # Fallback to provided parameters or environment variables
-                    self.workspace_url = workspace_url or os.getenv("DATABRICKS_HOST")
-                    self.token = token or os.getenv("DATABRICKS_TOKEN")
-            except Exception as e:
-                print(f"Failed to get token from memory storage for workshop {workshop_id}: {e}")
-                # Fallback to provided parameters or environment variables
-                self.workspace_url = workspace_url or os.getenv("DATABRICKS_HOST")
-                self.token = token or os.getenv("DATABRICKS_TOKEN")
+                self.token = token_storage.get_token(workshop_id)
+                if not self.token:
+                    self.token = db_service.get_databricks_token(workshop_id)
+            except Exception:
+                self.token = None
         else:
-            # Use provided parameters or environment variables
-            self.workspace_url = workspace_url or os.getenv("DATABRICKS_HOST")
-            self.token = token or os.getenv("DATABRICKS_TOKEN")
+            self.token = os.getenv("DATABRICKS_TOKEN")
 
         if not self.workspace_url or not self.token:
             raise ValueError("Databricks workspace URL and token are required")
