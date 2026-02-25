@@ -246,34 +246,6 @@ export function useUserFindings(workshopId: string, user: Pick<User, 'id'> | nul
   });
 }
 
-// Facilitator overview hook - gets ALL findings for workshop management
-export function useFacilitatorFindings(workshopId: string) {
-  const { isFacilitator } = useRoleCheck();
-  
-  return useQuery({
-    queryKey: QUERY_KEYS.findings(workshopId, 'all_findings'),
-    queryFn: () => DiscoveryService.getFindingsWorkshopsWorkshopIdFindingsGet(
-      workshopId,
-      undefined  // No user filter - gets ALL findings
-    ),
-    enabled: !!workshopId && isFacilitator, // Only for facilitators
-  });
-}
-
-// Facilitator overview hook - gets ALL findings with user details for workshop management
-export function useFacilitatorFindingsWithUserDetails(workshopId: string) {
-  const { isFacilitator } = useRoleCheck();
-  
-  return useQuery({
-    queryKey: [...QUERY_KEYS.findings(workshopId, 'all_findings'), 'with_user_details'],
-    queryFn: () => DiscoveryService.getFindingsWithUserDetailsWorkshopsWorkshopIdFindingsWithUsersGet(
-      workshopId,
-      undefined  // No user filter - gets ALL findings with user details
-    ),
-    enabled: !!workshopId && isFacilitator, // Only for facilitators
-  });
-}
-
 export function useSubmitFinding(workshopId: string) {
   const queryClient = useQueryClient();
   

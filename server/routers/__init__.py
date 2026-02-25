@@ -4,7 +4,6 @@
 from fastapi import APIRouter
 
 from server.routers.databricks import router as databricks_router
-from server.routers.discovery import router as discovery_router
 from server.routers.dbsql_export import router as dbsql_export_router
 from server.routers.discovery import router as discovery_router
 from server.routers.users import router as users_router
