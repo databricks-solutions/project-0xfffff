@@ -103,7 +103,6 @@ export function WorkshopDemoLanding() {
         case 'results': return 'results-view';
         case 'judge_tuning': return 'judge-tuning';
         case 'unity_volume': return 'unity-volume';
-        case 'view-all-findings': return 'findings-review';
         default: return 'dashboard-general';
       }
     }
