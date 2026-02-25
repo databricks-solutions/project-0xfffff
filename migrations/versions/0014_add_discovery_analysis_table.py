@@ -23,6 +23,13 @@ depends_on = None
 
 
 def upgrade() -> None:
+    from sqlalchemy import inspect as sa_inspect
+
+    bind = op.get_bind()
+    inspector = sa_inspect(bind)
+    if "discovery_analysis" in inspector.get_table_names():
+        return
+
     op.create_table(
         "discovery_analysis",
         sa.Column("id", sa.String(), primary_key=True),
