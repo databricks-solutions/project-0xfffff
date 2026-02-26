@@ -822,9 +822,12 @@ class DraftRubricItem(BaseModel):
 
     id: str
     workshop_id: str
-    source_finding_id: str
-    source_trace_id: str
     text: str
+    source_type: str  # 'finding' | 'disagreement' | 'feedback' | 'manual'
+    source_analysis_id: str | None = None
+    source_trace_ids: list[str] = []
+    group_id: str | None = None
+    group_name: str | None = None
     promoted_by: str
     promoted_at: datetime | None = None
 
@@ -835,9 +838,32 @@ class DraftRubricItem(BaseModel):
 class DraftRubricItemCreate(BaseModel):
     """Create a draft rubric item."""
 
-    source_finding_id: str
-    source_trace_id: str
     text: str
+    source_type: str = "manual"
+    source_analysis_id: str | None = None
+    source_trace_ids: list[str] = []
+
+
+class DraftRubricItemUpdate(BaseModel):
+    """Update a draft rubric item."""
+
+    text: str | None = None
+    group_id: str | None = None
+    group_name: str | None = None
+
+
+class ProposedGroup(BaseModel):
+    """A proposed grouping of draft rubric items."""
+
+    name: str
+    item_ids: list[str]
+    rationale: str = ""
+
+
+class SuggestGroupsResponse(BaseModel):
+    """Response from suggest-groups endpoint."""
+
+    groups: list[ProposedGroup] = []
 
 
 class TraceDiscoveryState(BaseModel):

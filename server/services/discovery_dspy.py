@@ -589,27 +589,44 @@ def get_classification_signature():
     return _CLASSIFICATION_SIG
 
 
-class FollowUpQuestionOutput(BaseModel):
-    """Output model for a follow-up question."""
-
-    question: str = Field(description="The follow-up question to ask the reviewer")
-
-
 def _define_followup_question_signature():
     """Define the follow-up question DSPy signature."""
     dspy = _import_dspy()
 
     class GenerateFollowUpQuestion(dspy.Signature):
-        """Generate a follow-up question for a reviewer based on their feedback.
+        """You are interviewing someone who is reviewing a chatbot conversation.
+        They have already given initial feedback. Ask them ONE sharp follow-up
+        question to better understand their perspective and extract actionable
+        UX insights.
 
-        The question should probe deeper into the reviewer's assessment,
-        building on any prior Q&A context provided.
+        IMPORTANT: You are NOT the chatbot. You are asking the REVIEWER questions
+        about their opinion of the chatbot's response.
+
+        - If they mentioned something POSITIVE/GOOD: Ask what specifically made
+          it good, why it worked well, etc.
+        - If they mentioned something NEGATIVE/BAD: Ask what specifically was
+          problematic, how it could be improved, etc.
+        - If they mentioned something NEUTRAL: Ask for clarification on their
+          perspective.
+
+        Do not ask the original user follow-up questions about their request or
+        issue. Instead, ask the REVIEWER about their assessment of the chatbot's
+        response quality.
+
+        Rules:
+        - Maximum 1-2 sentences
+        - No preamble or acknowledgment (don't start with "That's a great point...")
+        - Ask ONE thing — no compound or either/or questions
+        - Don't quote the reviewer's words back to them
         """
 
-        system_prompt: str = dspy.InputField(desc="System prompt for the UX researcher persona")
-        user_prompt: str = dspy.InputField(desc="User prompt with trace + feedback context")
+        trace_input: str = dspy.InputField(desc="The user's original input to the chatbot")
+        trace_output: str = dspy.InputField(desc="The chatbot's response")
+        feedback_label: str = dspy.InputField(desc="Reviewer's label (e.g. good, bad, neutral)")
+        feedback_comment: str = dspy.InputField(desc="Reviewer's written comment")
+        prior_qna: str = dspy.InputField(desc="Prior follow-up Q&A history, or '(none yet)'")
 
-        question: str = dspy.OutputField(desc="The follow-up question for the reviewer. Be concise and to the point.")
+        question: str = dspy.OutputField(desc="A single concise follow-up question (1-2 sentences, no preamble)")
 
     return GenerateFollowUpQuestion
 
@@ -672,3 +689,49 @@ def get_disagreement_signature():
     if _DISAGREEMENT_SIG is None:
         _DISAGREEMENT_SIG = _define_disagreement_signature()
     return _DISAGREEMENT_SIG
+
+
+# ---------------------------------------------------------------------------
+# Draft Rubric Grouping Signature (Step 3)
+# ---------------------------------------------------------------------------
+
+
+class ProposedGroup(BaseModel):
+    """A proposed grouping of draft rubric items."""
+
+    name: str = Field(description="Suggested rubric question title")
+    item_ids: list[str] = Field(description="Draft item IDs in this group")
+    rationale: str = Field(description="Why these items belong together")
+
+
+def _define_suggest_groups_signature():
+    """Define the suggest-groups DSPy signature."""
+    dspy = _import_dspy()
+
+    class SuggestRubricGroups(dspy.Signature):
+        """Cluster related draft rubric items into groups, where each group
+        will become one rubric question.
+
+        Rules:
+        - Group items that address the same quality dimension
+        - Each group should have a clear, concise name suitable as a rubric question title
+        - Items that don't fit any group should be in their own single-item group
+        - Provide a brief rationale for each grouping
+        - Aim for 3-7 groups total
+        """
+
+        items: str = dspy.InputField(desc="Draft rubric items with IDs and text, one per line")
+        groups: list[ProposedGroup] = dspy.OutputField(desc="Proposed groupings of items")
+
+    return SuggestRubricGroups
+
+
+_SUGGEST_GROUPS_SIG: type | None = None
+
+
+def get_suggest_groups_signature():
+    """Get the suggest-groups DSPy signature."""
+    global _SUGGEST_GROUPS_SIG
+    if _SUGGEST_GROUPS_SIG is None:
+        _SUGGEST_GROUPS_SIG = _define_suggest_groups_signature()
+    return _SUGGEST_GROUPS_SIG

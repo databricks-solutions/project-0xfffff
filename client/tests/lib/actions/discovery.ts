@@ -368,3 +368,91 @@ export async function getDisagreementSummary(
   const summary = await item.locator('p').first().textContent();
   return summary || '';
 }
+
+// ========================================
+// Draft Rubric Panel Actions (Step 3)
+// ========================================
+
+/**
+ * Create a draft rubric item via the API
+ */
+export async function createDraftRubricItemViaApi(
+  page: Page,
+  workshopId: string,
+  item: {
+    text: string;
+    source_type: string;
+    source_trace_ids?: string[];
+    promoted_by: string;
+  },
+  apiUrl: string = 'http://127.0.0.1:8000'
+): Promise<Record<string, unknown>> {
+  const response = await page.request.post(
+    `${apiUrl}/workshops/${workshopId}/draft-rubric-items`,
+    {
+      data: {
+        text: item.text,
+        source_type: item.source_type,
+        source_trace_ids: item.source_trace_ids ?? [],
+        promoted_by: item.promoted_by,
+      },
+    },
+  );
+
+  if (!response.ok()) {
+    throw new Error(
+      `Failed to create draft rubric item: ${response.status()} ${await response.text()}`
+    );
+  }
+
+  return (await response.json()) as Record<string, unknown>;
+}
+
+/**
+ * Click the "Add Item" button, fill the textarea, and click "Add"
+ */
+export async function addDraftRubricItemViaUI(
+  page: Page,
+  text: string
+): Promise<void> {
+  await page.getByRole('button', { name: /Add Item/i }).click();
+
+  const addForm = page.locator('.bg-slate-50').filter({
+    has: page.getByPlaceholder('Enter draft rubric item text...'),
+  });
+  const textarea = addForm.getByPlaceholder('Enter draft rubric item text...');
+  await expect(textarea).toBeVisible({ timeout: 5000 });
+  await textarea.fill(text);
+
+  // Click the "Add" button inside the add form (not the "Add" button in Quick Actions)
+  await addForm.getByRole('button', { name: /^Add$/i }).click();
+}
+
+/**
+ * Click the pencil (edit) icon on the first draft rubric item, clear + retype, save
+ */
+export async function editDraftRubricItem(
+  page: Page,
+  newText: string
+): Promise<void> {
+  const editButton = page.locator('button').filter({
+    has: page.locator('svg.lucide-pencil'),
+  }).first();
+  await editButton.click();
+
+  const editTextarea = page.locator('textarea').first();
+  await expect(editTextarea).toBeVisible({ timeout: 5000 });
+  await editTextarea.fill(newText);
+
+  await page.getByRole('button', { name: /Save/i }).click();
+}
+
+/**
+ * Click the trash (delete) icon on the first draft rubric item
+ */
+export async function deleteDraftRubricItem(page: Page): Promise<void> {
+  const deleteButton = page.locator('button').filter({
+    has: page.locator('svg.lucide-trash2'),
+  }).first();
+  await deleteButton.click();
+}

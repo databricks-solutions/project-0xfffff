@@ -3,6 +3,7 @@ import { formatRubricQuestions, parseRubricQuestions, QUESTION_DELIMITER, type R
 import { JudgeType } from '@/client';
 
 // @spec RUBRIC_SPEC
+// @req Frontend and backend use same delimiter constant
 describe('@spec:RUBRIC_SPEC rubricUtils', () => {
   describe('parseRubricQuestions', () => {
     it('parses rubric questions using delimiter and first-colon split', () => {

@@ -6,11 +6,13 @@ import type { AlignmentRequest } from '../models/AlignmentRequest';
 import type { AnalyzeDiscoveryRequest } from '../models/AnalyzeDiscoveryRequest';
 import type { Annotation } from '../models/Annotation';
 import type { AnnotationCreate } from '../models/AnnotationCreate';
+import type { ApplyGroupsRequest } from '../models/ApplyGroupsRequest';
 import type { AuthResponse } from '../models/AuthResponse';
 import type { Body_call_chat_completion_databricks_chat_post } from '../models/Body_call_chat_completion_databricks_chat_post';
 import type { Body_call_serving_endpoint_databricks_call_post } from '../models/Body_call_serving_endpoint_databricks_call_post';
 import type { Body_upload_csv_and_log_to_mlflow_workshops__workshop_id__csv_upload_to_mlflow_post } from '../models/Body_upload_csv_and_log_to_mlflow_workshops__workshop_id__csv_upload_to_mlflow_post';
 import type { Body_upload_csv_traces_workshops__workshop_id__csv_upload_post } from '../models/Body_upload_csv_traces_workshops__workshop_id__csv_upload_post';
+import type { CreateDraftRubricItemRequest } from '../models/CreateDraftRubricItemRequest';
 import type { CustomLLMProviderConfigCreate } from '../models/CustomLLMProviderConfigCreate';
 import type { CustomLLMProviderStatus } from '../models/CustomLLMProviderStatus';
 import type { CustomLLMProviderTestResult } from '../models/CustomLLMProviderTestResult';
@@ -29,6 +31,7 @@ import type { DiscoveryFindingWithUser } from '../models/DiscoveryFindingWithUse
 import type { DiscoveryQuestionsModelConfig } from '../models/DiscoveryQuestionsModelConfig';
 import type { DiscoveryQuestionsResponse } from '../models/DiscoveryQuestionsResponse';
 import type { DiscoverySummariesResponse } from '../models/DiscoverySummariesResponse';
+import type { DraftRubricItem } from '../models/DraftRubricItem';
 import type { FacilitatorConfigCreate } from '../models/FacilitatorConfigCreate';
 import type { GenerateFollowUpRequest } from '../models/GenerateFollowUpRequest';
 import type { IRRResult } from '../models/IRRResult';
@@ -56,8 +59,10 @@ import type { RubricSuggestion } from '../models/RubricSuggestion';
 import type { SimpleEvaluationRequest } from '../models/SimpleEvaluationRequest';
 import type { SubmitFindingV2Request } from '../models/SubmitFindingV2Request';
 import type { SubmitFollowUpAnswerRequest } from '../models/SubmitFollowUpAnswerRequest';
+import type { SuggestGroupsResponse } from '../models/SuggestGroupsResponse';
 import type { Trace } from '../models/Trace';
 import type { TraceUpload } from '../models/TraceUpload';
+import type { UpdateDraftRubricItemRequest } from '../models/UpdateDraftRubricItemRequest';
 import type { UpdateThresholdsRequest } from '../models/UpdateThresholdsRequest';
 import type { User } from '../models/User';
 import type { UserCreate } from '../models/UserCreate';
@@ -1812,14 +1817,17 @@ export class ApiService {
      * Upload Csv Traces
      * Upload traces from a MLflow trace export CSV file.
      *
-     * Expected CSV format (MLflow export):
-     * - Required columns: request_preview, response_preview
-     * - Optional columns: trace_id, execution_duration_ms, state, request, response,
-     * spans, tags, trace_metadata, trace_location, assessments, etc.
+     * Supports two CSV formats:
      *
-     * Example from MLflow export:
-     * trace_id,request_preview,response_preview,execution_duration_ms,state,...
-     * "tr-abc123","What is Python?","Python is a programming language",150,"OK",...
+     * 1. Preview format (MLflow UI export):
+     * - Required columns: request_preview, response_preview
+     * - Optional columns: trace_id, execution_duration_ms, state, etc.
+     *
+     * 2. Raw search_traces format (mlflow.search_traces() export):
+     * - Required columns: request, response
+     * - Optional columns: trace_id, trace, execution_duration, state, etc.
+     * - Previews are extracted from the JSON request/response using the same
+     * logic as the live MLflow ingest path.
      * @param workshopId
      * @param formData
      * @returns any Successful Response
@@ -2977,19 +2985,163 @@ export class ApiService {
     }
     /**
      * Get Draft Rubric
-     * Get all promoted findings.
+     * Get all promoted findings (legacy endpoint, delegates to draft-rubric-items).
      * @param workshopId
-     * @returns any Successful Response
+     * @returns DraftRubricItem Successful Response
      * @throws ApiError
      */
     public static getDraftRubricWorkshopsWorkshopIdDraftRubricGet(
         workshopId: string,
-    ): CancelablePromise<Array<Record<string, any>>> {
+    ): CancelablePromise<Array<DraftRubricItem>> {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/workshops/{workshop_id}/draft-rubric',
             path: {
                 'workshop_id': workshopId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Create Draft Rubric Item
+     * Create a new draft rubric item.
+     * @param workshopId
+     * @param requestBody
+     * @returns DraftRubricItem Successful Response
+     * @throws ApiError
+     */
+    public static createDraftRubricItemWorkshopsWorkshopIdDraftRubricItemsPost(
+        workshopId: string,
+        requestBody: CreateDraftRubricItemRequest,
+    ): CancelablePromise<DraftRubricItem> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/draft-rubric-items',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Draft Rubric Items
+     * Get all draft rubric items for a workshop.
+     * @param workshopId
+     * @returns DraftRubricItem Successful Response
+     * @throws ApiError
+     */
+    public static getDraftRubricItemsWorkshopsWorkshopIdDraftRubricItemsGet(
+        workshopId: string,
+    ): CancelablePromise<Array<DraftRubricItem>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/draft-rubric-items',
+            path: {
+                'workshop_id': workshopId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Suggest Draft Rubric Groups
+     * LLM-suggested grouping of draft rubric items (not persisted).
+     * @param workshopId
+     * @returns SuggestGroupsResponse Successful Response
+     * @throws ApiError
+     */
+    public static suggestDraftRubricGroupsWorkshopsWorkshopIdDraftRubricItemsSuggestGroupsPost(
+        workshopId: string,
+    ): CancelablePromise<SuggestGroupsResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/draft-rubric-items/suggest-groups',
+            path: {
+                'workshop_id': workshopId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Apply Draft Rubric Groups
+     * Persist group assignments to draft rubric items.
+     * @param workshopId
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static applyDraftRubricGroupsWorkshopsWorkshopIdDraftRubricItemsApplyGroupsPost(
+        workshopId: string,
+        requestBody: ApplyGroupsRequest,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/draft-rubric-items/apply-groups',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Update Draft Rubric Item
+     * Update a draft rubric item.
+     * @param workshopId
+     * @param itemId
+     * @param requestBody
+     * @returns DraftRubricItem Successful Response
+     * @throws ApiError
+     */
+    public static updateDraftRubricItemWorkshopsWorkshopIdDraftRubricItemsItemIdPut(
+        workshopId: string,
+        itemId: string,
+        requestBody: UpdateDraftRubricItemRequest,
+    ): CancelablePromise<DraftRubricItem> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/workshops/{workshop_id}/draft-rubric-items/{item_id}',
+            path: {
+                'workshop_id': workshopId,
+                'item_id': itemId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Delete Draft Rubric Item
+     * Delete a draft rubric item.
+     * @param workshopId
+     * @param itemId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static deleteDraftRubricItemWorkshopsWorkshopIdDraftRubricItemsItemIdDelete(
+        workshopId: string,
+        itemId: string,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/workshops/{workshop_id}/draft-rubric-items/{item_id}',
+            path: {
+                'workshop_id': workshopId,
+                'item_id': itemId,
             },
             errors: {
                 422: `Validation Error`,

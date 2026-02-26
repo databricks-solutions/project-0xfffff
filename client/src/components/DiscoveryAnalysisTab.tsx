@@ -23,11 +23,13 @@ import {
   ChevronDown,
   ChevronRight,
   Loader2,
+  ArrowUpRight,
 } from 'lucide-react';
 import { getModelOptions, getBackendModelName } from '@/utils/modelMapping';
 import {
   useDiscoveryAnalyses,
   useRunDiscoveryAnalysis,
+  useCreateDraftRubricItem,
   type DiscoveryAnalysis,
 } from '@/hooks/useWorkshopApi';
 import { useQuery } from '@tanstack/react-query';
@@ -35,9 +37,10 @@ import { toast } from 'sonner';
 
 interface DiscoveryAnalysisTabProps {
   workshopId: string;
+  userId: string;
 }
 
-export const DiscoveryAnalysisTab: React.FC<DiscoveryAnalysisTabProps> = ({ workshopId }) => {
+export const DiscoveryAnalysisTab: React.FC<DiscoveryAnalysisTabProps> = ({ workshopId, userId }) => {
   const [template, setTemplate] = useState<string>('evaluation_criteria');
   const [modelName, setModelName] = useState<string>('Claude Sonnet 4.5');
   const [selectedAnalysisId, setSelectedAnalysisId] = useState<string | null>(null);
@@ -197,7 +200,7 @@ export const DiscoveryAnalysisTab: React.FC<DiscoveryAnalysisTabProps> = ({ work
 
       {/* Results */}
       {!runAnalysis.isPending && currentAnalysis && (
-        <AnalysisResults analysis={currentAnalysis} />
+        <AnalysisResults analysis={currentAnalysis} workshopId={workshopId} userId={userId} />
       )}
 
       {/* No results state */}
@@ -217,9 +220,59 @@ export const DiscoveryAnalysisTab: React.FC<DiscoveryAnalysisTabProps> = ({ work
 
 interface AnalysisResultsProps {
   analysis: DiscoveryAnalysis;
+  workshopId: string;
+  userId: string;
 }
 
-const AnalysisResults: React.FC<AnalysisResultsProps> = ({ analysis }) => {
+const AnalysisResults: React.FC<AnalysisResultsProps> = ({ analysis, workshopId, userId }) => {
+  const createDraftItem = useCreateDraftRubricItem(workshopId);
+  const [promotedKeys, setPromotedKeys] = useState<Set<string>>(new Set());
+
+  const handlePromoteFinding = (findingIndex: number) => {
+    const finding = analysis.findings[findingIndex];
+    const key = `finding-${analysis.id}-${findingIndex}`;
+    createDraftItem.mutate(
+      {
+        text: finding.text,
+        source_type: 'finding',
+        source_analysis_id: analysis.id,
+        source_trace_ids: finding.evidence_trace_ids ?? [],
+        promoted_by: userId,
+      },
+      {
+        onSuccess: () => {
+          setPromotedKeys((prev) => new Set(prev).add(key));
+          toast.success('Finding promoted to draft rubric');
+        },
+        onError: (error) => {
+          toast.error(error.message || 'Failed to promote finding');
+        },
+      }
+    );
+  };
+
+  const handlePromoteDisagreement = (traceId: string, summary: string) => {
+    const key = `disagreement-${analysis.id}-${traceId}`;
+    createDraftItem.mutate(
+      {
+        text: summary,
+        source_type: 'disagreement',
+        source_analysis_id: analysis.id,
+        source_trace_ids: traceId ? [traceId] : [],
+        promoted_by: userId,
+      },
+      {
+        onSuccess: () => {
+          setPromotedKeys((prev) => new Set(prev).add(key));
+          toast.success('Disagreement promoted to draft rubric');
+        },
+        onError: (error) => {
+          toast.error(error.message || 'Failed to promote disagreement');
+        },
+      }
+    );
+  };
+
   const highCount = analysis.disagreements?.high?.length ?? 0;
   const mediumCount = analysis.disagreements?.medium?.length ?? 0;
   const lowerCount = analysis.disagreements?.lower?.length ?? 0;
@@ -316,29 +369,40 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ analysis }) => {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {analysis.findings.map((finding, i) => (
-                <div key={i} className="border rounded-lg p-4 bg-slate-50">
-                  <div className="flex items-start justify-between mb-2">
-                    <p className="text-slate-800 font-medium flex-1">{finding.text}</p>
-                    <PriorityBadge priority={finding.priority} />
-                  </div>
-                  {finding.evidence_trace_ids && finding.evidence_trace_ids.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-2">
-                      <span className="text-xs text-slate-500">Evidence:</span>
-                      {finding.evidence_trace_ids.map((tid) => (
-                        <Badge key={tid} variant="outline" className="text-xs font-mono">
-                          {tid.slice(0, 8)}
-                        </Badge>
-                      ))}
+              {analysis.findings.map((finding, i) => {
+                const key = `finding-${analysis.id}-${i}`;
+                const isPromoted = promotedKeys.has(key);
+                return (
+                  <div key={i} className="border rounded-lg p-4 bg-slate-50">
+                    <div className="flex items-start justify-between mb-2">
+                      <p className="text-slate-800 font-medium flex-1">{finding.text}</p>
+                      <PriorityBadge priority={finding.priority} />
                     </div>
-                  )}
-                  <div className="mt-3">
-                    <Button variant="outline" size="sm" disabled className="text-xs">
-                      Promote to Rubric (Step 3)
-                    </Button>
+                    {finding.evidence_trace_ids && finding.evidence_trace_ids.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        <span className="text-xs text-slate-500">Evidence:</span>
+                        {finding.evidence_trace_ids.map((tid) => (
+                          <Badge key={tid} variant="outline" className="text-xs font-mono">
+                            {tid.slice(0, 8)}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                    <div className="mt-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-xs"
+                        disabled={isPromoted || createDraftItem.isPending}
+                        onClick={() => handlePromoteFinding(i)}
+                      >
+                        <ArrowUpRight className="w-3 h-3 mr-1" />
+                        {isPromoted ? 'Promoted' : 'Promote to Rubric'}
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </CardContent>
         </Card>
@@ -350,18 +414,30 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({ analysis }) => {
         description="Reviewers gave opposite labels (GOOD vs BAD)"
         items={analysis.disagreements?.high ?? []}
         colorClass="red"
+        promotedKeys={promotedKeys}
+        analysisId={analysis.id}
+        onPromote={handlePromoteDisagreement}
+        isPromoting={createDraftItem.isPending}
       />
       <DisagreementSection
         title="MEDIUM Priority — Both BAD, Different Issues"
         description="All reviewers rated BAD but identified different problems"
         items={analysis.disagreements?.medium ?? []}
         colorClass="yellow"
+        promotedKeys={promotedKeys}
+        analysisId={analysis.id}
+        onPromote={handlePromoteDisagreement}
+        isPromoting={createDraftItem.isPending}
       />
       <DisagreementSection
         title="LOWER Priority — Both GOOD, Different Strengths"
         description="All reviewers rated GOOD but valued different aspects"
         items={analysis.disagreements?.lower ?? []}
         colorClass="blue"
+        promotedKeys={promotedKeys}
+        analysisId={analysis.id}
+        onPromote={handlePromoteDisagreement}
+        isPromoting={createDraftItem.isPending}
       />
     </div>
   );
@@ -395,6 +471,10 @@ interface DisagreementSectionProps {
   description: string;
   items: DisagreementItem[];
   colorClass: 'red' | 'yellow' | 'blue';
+  promotedKeys: Set<string>;
+  analysisId: string;
+  onPromote: (traceId: string, summary: string) => void;
+  isPromoting: boolean;
 }
 
 const DisagreementSection: React.FC<DisagreementSectionProps> = ({
@@ -402,6 +482,10 @@ const DisagreementSection: React.FC<DisagreementSectionProps> = ({
   description,
   items,
   colorClass,
+  promotedKeys,
+  analysisId,
+  onPromote,
+  isPromoting,
 }) => {
   const [isOpen, setIsOpen] = useState(true);
 
@@ -485,6 +569,24 @@ const DisagreementSection: React.FC<DisagreementSectionProps> = ({
                     </ul>
                   </div>
                 )}
+                {(() => {
+                  const key = `disagreement-${analysisId}-${item.trace_id}`;
+                  const isPromoted = promotedKeys.has(key);
+                  return (
+                    <div className="mt-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-xs"
+                        disabled={isPromoted || isPromoting}
+                        onClick={() => onPromote(item.trace_id, item.summary)}
+                      >
+                        <ArrowUpRight className="w-3 h-3 mr-1" />
+                        {isPromoted ? 'Promoted' : 'Promote to Rubric'}
+                      </Button>
+                    </div>
+                  );
+                })()}
               </div>
             ))}
           </div>

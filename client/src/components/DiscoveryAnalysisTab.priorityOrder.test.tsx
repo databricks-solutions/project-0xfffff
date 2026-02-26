@@ -6,9 +6,13 @@ import { DiscoveryAnalysisTab } from './DiscoveryAnalysisTab';
 import type { DiscoveryAnalysis } from '@/hooks/useWorkshopApi';
 
 beforeAll(() => {
+  // eslint-disable-next-line @typescript-eslint/unbound-method
   Element.prototype.hasPointerCapture = Element.prototype.hasPointerCapture || (() => false);
+  // eslint-disable-next-line @typescript-eslint/unbound-method
   Element.prototype.setPointerCapture = Element.prototype.setPointerCapture || vi.fn();
+  // eslint-disable-next-line @typescript-eslint/unbound-method
   Element.prototype.releasePointerCapture = Element.prototype.releasePointerCapture || vi.fn();
+  // eslint-disable-next-line @typescript-eslint/unbound-method
   Element.prototype.scrollIntoView = Element.prototype.scrollIntoView || vi.fn();
 });
 
@@ -20,6 +24,7 @@ const mockAnalyses: { data: DiscoveryAnalysis[] | undefined; isLoading: boolean 
 vi.mock('@/hooks/useWorkshopApi', () => ({
   useDiscoveryAnalyses: () => mockAnalyses,
   useRunDiscoveryAnalysis: () => ({ mutate: vi.fn(), isPending: false }),
+  useCreateDraftRubricItem: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock('@tanstack/react-query', () => ({
@@ -52,7 +57,7 @@ describe('DiscoveryAnalysisTab - priority ordering', () => {
 
   it('renders disagreement sections in order: HIGH, MEDIUM, LOWER', () => {
     mockAnalyses.data = [makeAnalysis()];
-    const { container } = render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+    const { container } = render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
     const allText = container.textContent ?? '';
     const highIdx = allText.indexOf('HIGH Priority');
     const mediumIdx = allText.indexOf('MEDIUM Priority');
@@ -63,7 +68,7 @@ describe('DiscoveryAnalysisTab - priority ordering', () => {
 
   it('renders findings with priority badges', () => {
     mockAnalyses.data = [makeAnalysis()];
-    render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+    render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
     expect(screen.getByText('high')).toBeInTheDocument();
     expect(screen.getByText('medium')).toBeInTheDocument();
     expect(screen.getByText('low')).toBeInTheDocument();

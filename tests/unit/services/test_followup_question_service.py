@@ -9,7 +9,6 @@ import pytest
 
 from server.services.followup_question_service import (
     FALLBACK_QUESTIONS,
-    FOLLOWUP_SYSTEM_PROMPT,
     FollowUpQuestionService,
     MAX_RETRIES,
 )
@@ -81,8 +80,8 @@ def test_generate_rejects_invalid_question_number():
 @pytest.mark.spec("DISCOVERY_SPEC")
 @pytest.mark.req("Questions build progressively on prior answers")
 @pytest.mark.unit
-def test_build_user_prompt_includes_prior_qna():
-    """User prompt includes prior Q&A for progressive questioning."""
+def test_extract_fields_includes_prior_qna():
+    """Extracted fields include prior Q&A for progressive questioning."""
     svc = FollowUpQuestionService()
     trace = _make_trace(input_text="What is 2+2?", output_text="4")
     feedback = _make_feedback(
@@ -93,27 +92,27 @@ def test_build_user_prompt_includes_prior_qna():
         ],
     )
 
-    prompt = svc._build_user_prompt(trace, feedback)
+    trace_input, trace_output, fb_label, fb_comment, prior_qna = svc._extract_fields(trace, feedback)
 
-    assert "What is 2+2?" in prompt
-    assert "4" in prompt
-    assert "bad" in prompt
-    assert "Too terse" in prompt
-    assert "Q1: What was missing?" in prompt
-    assert "A1: An explanation of the math" in prompt
+    assert trace_input == "What is 2+2?"
+    assert trace_output == "4"
+    assert fb_label == "bad"
+    assert fb_comment == "Too terse"
+    assert "Q1: What was missing?" in prior_qna
+    assert "A1: An explanation of the math" in prior_qna
 
 
 @pytest.mark.spec("DISCOVERY_SPEC")
 @pytest.mark.req("Questions build progressively on prior answers")
 @pytest.mark.unit
-def test_build_user_prompt_empty_qna():
-    """User prompt shows '(none yet)' when no prior Q&A exists."""
+def test_extract_fields_empty_qna():
+    """Extracted fields show '(none yet)' when no prior Q&A exists."""
     svc = FollowUpQuestionService()
     trace = _make_trace()
     feedback = _make_feedback(qna=[])
 
-    prompt = svc._build_user_prompt(trace, feedback)
-    assert "(none yet)" in prompt
+    _, _, _, _, prior_qna = svc._extract_fields(trace, feedback)
+    assert prior_qna == "(none yet)"
 
 
 # ============================================================================
@@ -250,6 +249,11 @@ def test_generate_uses_custom_llm_when_custom_params_provided():
     mock_call.assert_called_once()
 
     call_kwargs = mock_call.call_args[1]
+    assert call_kwargs["trace_input"] == "Hello"
+    assert call_kwargs["trace_output"] == "Hi there"
+    assert call_kwargs["feedback_label"] == "good"
+    assert call_kwargs["feedback_comment"] == "Great answer"
+    assert call_kwargs["prior_qna"] == "(none yet)"
     assert call_kwargs["custom_base_url"] == "https://custom.example.com"
     assert call_kwargs["custom_model_name"] == "custom-model-v1"
     assert call_kwargs["custom_api_key"] == "custom-key-abc"

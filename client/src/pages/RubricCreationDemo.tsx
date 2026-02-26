@@ -105,7 +105,7 @@ const useDiscoveryResponses = (feedback: DiscoveryFeedbackData[] | undefined, tr
           : '';
 
         return {
-          participant: 'user_name' in fb ? (fb as DiscoveryFeedbackWithUser).user_name : fb.user_id,
+          participant: ('user_name' in fb ? (fb as DiscoveryFeedbackWithUser).user_name : fb.user_id) ?? fb.user_id,
           question1,
           question2
         };

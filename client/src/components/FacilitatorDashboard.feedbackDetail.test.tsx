@@ -39,6 +39,12 @@ vi.mock('@/hooks/useWorkshopApi', () => ({
   useFacilitatorDiscoveryFeedback: () => ({ data: [], isLoading: false }),
   useMLflowConfig: () => ({ data: null }),
   useUpdateDiscoveryModel: () => ({ mutate: vi.fn() }),
+  useDraftRubricItems: () => ({ data: [], isLoading: false }),
+  useCreateDraftRubricItem: () => ({ mutate: vi.fn(), isPending: false }),
+  useUpdateDraftRubricItem: () => ({ mutate: vi.fn(), isPending: false }),
+  useDeleteDraftRubricItem: () => ({ mutate: vi.fn(), isPending: false }),
+  useSuggestGroups: () => ({ mutate: vi.fn(), isPending: false }),
+  useApplyGroups: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock('@/context/WorkshopContext', () => ({
@@ -84,9 +90,9 @@ vi.mock('@/utils/rubricUtils', () => ({
   parseRubricQuestions: () => [],
 }));
 
-// Helper: switch to the Feedback Detail tab
+// Helper: switch to the Feedback tab
 async function switchToFeedbackTab() {
-  const tab = screen.getByRole('tab', { name: /Feedback Detail/i });
+  const tab = screen.getByRole('tab', { name: /^Feedback$/i });
   await userEvent.click(tab);
 }
 

@@ -44,6 +44,7 @@ from typing import Literal
 # All known specs (without .md extension)
 KNOWN_SPECS = [
     "ANNOTATION_SPEC",
+    "ASSISTED_FACILITATION_SPEC",
     "AUTHENTICATION_SPEC",
     "BUILD_AND_DEPLOY_SPEC",
     "CUSTOM_LLM_PROVIDER_SPEC",
@@ -98,6 +99,21 @@ class RequirementCoverage:
     def test_types(self) -> set[TestType]:
         return {t.test_type for t in self.tests}
 
+    @property
+    def has_frontend_test(self) -> bool:
+        """True if at least one test is a frontend test (E2E or client/ unit)."""
+        for t in self.tests:
+            if t.test_type in ("e2e-mocked", "e2e-real"):
+                return True
+            if t.file_path.startswith("client/"):
+                return True
+        return False
+
+    @property
+    def is_backend_only(self) -> bool:
+        """True if covered but all tests are backend (no frontend tests)."""
+        return self.is_covered and not self.has_frontend_test
+
 
 @dataclass
 class SpecCoverage:
@@ -131,6 +147,11 @@ class SpecCoverage:
 
     def count_by_type(self, test_type: TestType) -> int:
         return sum(1 for t in self.all_tests if t.test_type == test_type)
+
+    @property
+    def backend_only_requirements(self) -> int:
+        """Count requirements that are covered but lack any frontend test."""
+        return sum(1 for r in self.requirements if r.is_backend_only)
 
 
 class SpecParser:
@@ -408,9 +429,9 @@ class SpecCoverageScanner:
                 # Normalize to project-relative path (reporter uses testDir-relative)
                 file_path = f"client/tests/{reporter_file}"
 
-                # Extract spec names and requirement from tags
+                # Extract spec names and requirements from tags
                 spec_names: set[str] = set()
-                requirement: str | None = None
+                requirements: list[str] = []
                 has_real_tag = False
 
                 for tag in tags:
@@ -422,7 +443,7 @@ class SpecCoverageScanner:
                         else:
                             self.unknown_specs.add(name)
                     elif tag_clean.startswith("req:"):
-                        requirement = tag_clean[4:]
+                        requirements.append(tag_clean[4:])
                     elif tag_clean == "e2e-real":
                         has_real_tag = True
 
@@ -433,17 +454,21 @@ class SpecCoverageScanner:
                 is_real = has_real_tag or file_path in real_api_files
                 test_type: TestType = "e2e-real" if is_real else "e2e-mocked"
 
+                # Emit one TestCoverage per (spec, requirement) pair.
+                # If no requirements, emit one with requirement=None.
+                reqs_to_emit = requirements if requirements else [None]
                 for spec_name in spec_names:
-                    self.tests.append(
-                        TestCoverage(
-                            file_path=file_path,
-                            test_name=title,
-                            spec_name=spec_name,
-                            test_type=test_type,
-                            requirement=requirement,
-                            line_number=line,
+                    for req in reqs_to_emit:
+                        self.tests.append(
+                            TestCoverage(
+                                file_path=file_path,
+                                test_name=title,
+                                spec_name=spec_name,
+                                test_type=test_type,
+                                requirement=req,
+                                line_number=line,
+                            )
                         )
-                    )
 
             self._walk_playwright_suites(suite.get("suites", []), real_api_files)
 
@@ -892,14 +917,15 @@ def build_coverage(
 def print_console_summary(coverage: dict[str, SpecCoverage], verbose: bool = False):
     """Print a pytest-cov style console summary."""
     print("\nSPEC COVERAGE REPORT")
-    print("=" * 78)
+    print("=" * 90)
     print(
-        f"{'Name':<35} {'Reqs':>5} {'Cover%':>7} {'Unit':>5} {'Int':>4} {'E2E-M':>6} {'E2E-R':>6}"
+        f"{'Name':<35} {'Reqs':>5} {'Cover%':>7} {'Unit':>5} {'Int':>4} {'E2E-M':>6} {'E2E-R':>6} {'BE-only':>8}"
     )
-    print("-" * 78)
+    print("-" * 90)
 
     total_reqs = 0
     total_covered = 0
+    total_backend_only = 0
     total_by_type: dict[TestType, int] = {
         "unit": 0,
         "integration": 0,
@@ -913,6 +939,8 @@ def print_console_summary(coverage: dict[str, SpecCoverage], verbose: bool = Fal
         cov = coverage[spec_name]
         total_reqs += cov.total_requirements
         total_covered += cov.covered_requirements
+        backend_only = cov.backend_only_requirements
+        total_backend_only += backend_only
 
         unit_count = cov.count_by_type("unit")
         int_count = cov.count_by_type("integration")
@@ -927,27 +955,32 @@ def print_console_summary(coverage: dict[str, SpecCoverage], verbose: bool = Fal
         # Determine status indicator
         if cov.total_requirements == 0:
             status = "   " if cov.unlinked_tests else " ! "
-        elif cov.coverage_percent == 100:
+        elif cov.coverage_percent == 100 and backend_only == 0:
             status = "   "
+        elif cov.coverage_percent == 100 and backend_only > 0:
+            status = " ~ "  # 100% but has backend-only gaps
         elif cov.coverage_percent >= 50:
             status = " * "
         else:
             status = " ! "
 
+        be_only_str = str(backend_only) if backend_only > 0 else ""
         print(
             f"{status}{spec_name:<32} {cov.total_requirements:>5} {cov.coverage_percent:>6}% "
-            f"{unit_count:>5} {int_count:>4} {e2e_mocked_count:>6} {e2e_real_count:>6}"
+            f"{unit_count:>5} {int_count:>4} {e2e_mocked_count:>6} {e2e_real_count:>6} {be_only_str:>8}"
         )
 
-    print("-" * 78)
+    print("-" * 90)
     total_percent = 100 * total_covered // total_reqs if total_reqs > 0 else 0
     print(
         f"{'TOTAL':<35} {total_reqs:>5} {total_percent:>6}% "
         f"{total_by_type['unit']:>5} {total_by_type['integration']:>4} "
-        f"{total_by_type['e2e-mocked']:>6} {total_by_type['e2e-real']:>6}"
+        f"{total_by_type['e2e-mocked']:>6} {total_by_type['e2e-real']:>6} {total_backend_only:>8}"
     )
     print("")
-    print("Legend: ! = low coverage (<50%), * = partial coverage (50-99%)")
+    print("Legend: ! = low coverage (<50%), * = partial coverage (50-99%),")
+    print("        ~ = 100% but has backend-only requirements (no frontend tests)")
+    print("   BE-only = requirements covered exclusively by backend tests (no E2E/Vitest)")
     print("")
 
 
@@ -986,6 +1019,7 @@ def generate_json_report(coverage: dict[str, SpecCoverage]) -> dict:
                 {
                     "text": req_cov.requirement.text,
                     "covered": req_cov.is_covered,
+                    "backend_only": req_cov.is_backend_only,
                     "tests": tests_data,
                 }
             )
@@ -994,6 +1028,12 @@ def generate_json_report(coverage: dict[str, SpecCoverage]) -> dict:
             req_cov.requirement.text
             for req_cov in cov.requirements
             if not req_cov.is_covered
+        ]
+
+        backend_only = [
+            req_cov.requirement.text
+            for req_cov in cov.requirements
+            if req_cov.is_backend_only
         ]
 
         unlinked_tests_data = [
@@ -1017,6 +1057,8 @@ def generate_json_report(coverage: dict[str, SpecCoverage]) -> dict:
             },
             "requirements": requirements_data,
             "uncovered": uncovered,
+            "backend_only": backend_only,
+            "backend_only_count": len(backend_only),
             "unlinked_tests": unlinked_tests_data,
         }
 
@@ -1077,8 +1119,8 @@ def generate_markdown_report(coverage: dict[str, SpecCoverage]) -> str:
         [
             "## Coverage Summary",
             "",
-            "| Spec | Reqs | Covered | Cover% | Unit | Int | E2E-M | E2E-R |",
-            "|------|------|---------|--------|------|-----|-------|-------|",
+            "| Spec | Reqs | Covered | Cover% | Unit | Int | E2E-M | E2E-R | BE-only |",
+            "|------|------|---------|--------|------|-----|-------|-------|---------|",
         ]
     )
 
@@ -1095,11 +1137,13 @@ def generate_markdown_report(coverage: dict[str, SpecCoverage]) -> str:
             "   " if cov.coverage_percent == 100 else " ! " if cov.coverage_percent < 50 else " * "
         )
 
+        backend_only = cov.backend_only_requirements
+        be_only_str = f"**{backend_only}**" if backend_only > 0 else "0"
         lines.append(
             f"| [{spec_name}](#{anchor}) | {cov.total_requirements} | "
             f"{cov.covered_requirements} | {cov.coverage_percent}% | "
             f"{cov.count_by_type('unit')} | {cov.count_by_type('integration')} | "
-            f"{cov.count_by_type('e2e-mocked')} | {cov.count_by_type('e2e-real')} |"
+            f"{cov.count_by_type('e2e-mocked')} | {cov.count_by_type('e2e-real')} | {be_only_str} |"
         )
 
     total_percent = 100 * total_covered // total_reqs if total_reqs > 0 else 0
@@ -1140,6 +1184,21 @@ def generate_markdown_report(coverage: dict[str, SpecCoverage]) -> str:
                     lines.append(f"- [ ] {req_cov.requirement.text}")
                 lines.append("")
 
+            # Show backend-only requirements (covered but no frontend tests)
+            backend_only = [req for req in cov.requirements if req.is_backend_only]
+            if backend_only:
+                lines.append("### Backend-Only Requirements (no frontend tests)")
+                lines.append("")
+                lines.append(
+                    "These requirements are covered by backend tests only. "
+                    "UI regressions won't be caught:"
+                )
+                lines.append("")
+                for req_cov in backend_only:
+                    test_types = ", ".join(sorted(req_cov.test_types))
+                    lines.append(f"- :warning: {req_cov.requirement.text} ({test_types})")
+                lines.append("")
+
             # Show covered requirements
             covered = [req for req in cov.requirements if req.is_covered]
             if covered:
@@ -1147,7 +1206,8 @@ def generate_markdown_report(coverage: dict[str, SpecCoverage]) -> str:
                 lines.append("")
                 for req_cov in covered:
                     test_types = ", ".join(sorted(req_cov.test_types))
-                    lines.append(f"- [x] {req_cov.requirement.text} ({test_types})")
+                    be_flag = " **[BE-only]**" if req_cov.is_backend_only else ""
+                    lines.append(f"- [x] {req_cov.requirement.text} ({test_types}){be_flag}")
                 lines.append("")
 
         # Show unlinked tests (tests without @req markers)

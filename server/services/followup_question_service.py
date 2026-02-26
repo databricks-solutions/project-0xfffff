@@ -1,7 +1,7 @@
 """Follow-up question generation service for Discovery Step 1.
 
 Generates progressive AI follow-up questions during feedback collection.
-Uses the exact system/user prompts from DISCOVERY_SPEC.
+Uses the GenerateFollowUpQuestion DSPy signature with structured input fields.
 """
 
 from __future__ import annotations
@@ -10,15 +10,6 @@ import logging
 from typing import Any
 
 logger = logging.getLogger(__name__)
-
-FOLLOWUP_SYSTEM_PROMPT = (
-    "You are a senior UX researcher analyzing chatbot responses. Your job is to ask "
-    "the person giving feedback sharp, specific follow-up questions that extract "
-    "actionable insights about how the chatbot response could be improved.\n"
-    "Focus on clarifying: what specific aspect was problematic, what would make it "
-    "better, concrete examples, and priority. Do NOT act as the chatbot - you are "
-    "interviewing the feedback provider about their opinion of the chatbot's response."
-)
 
 FALLBACK_QUESTIONS = [
     "Can you describe what specifically about this response influenced your rating?",
@@ -64,7 +55,9 @@ class FollowUpQuestionService:
         if question_number < 1 or question_number > 3:
             raise ValueError(f"question_number must be 1-3, got {question_number}")
 
-        user_prompt = self._build_user_prompt(trace, feedback)
+        trace_input, trace_output, fb_label, fb_comment, prior_qna = (
+            self._extract_fields(trace, feedback)
+        )
 
         has_databricks = workspace_url and databricks_token and model_name and model_name != "demo"
         has_custom = custom_base_url and custom_model_name and custom_api_key
@@ -90,8 +83,11 @@ class FollowUpQuestionService:
         for attempt in range(MAX_RETRIES):
             try:
                 question = self._call_llm(
-                    system_prompt=FOLLOWUP_SYSTEM_PROMPT,
-                    user_prompt=user_prompt,
+                    trace_input=trace_input,
+                    trace_output=trace_output,
+                    feedback_label=fb_label,
+                    feedback_comment=fb_comment,
+                    prior_qna=prior_qna,
                     workspace_url=workspace_url,
                     databricks_token=databricks_token,
                     model_name=model_name,
@@ -115,8 +111,14 @@ class FollowUpQuestionService:
         )
         return FALLBACK_QUESTIONS[question_number - 1], True
 
-    def _build_user_prompt(self, trace: Any, feedback: Any) -> str:
-        """Build the user prompt with progressive context per spec."""
+    def _extract_fields(
+        self, trace: Any, feedback: Any
+    ) -> tuple[str, str, str, str, str]:
+        """Extract structured fields from trace and feedback for the DSPy signature.
+
+        Returns:
+            (trace_input, trace_output, feedback_label, feedback_comment, prior_qna)
+        """
         trace_input = getattr(trace, "input", "") or ""
         trace_output = getattr(trace, "output", "") or ""
 
@@ -141,22 +143,15 @@ class FollowUpQuestionService:
         if not qna_history:
             qna_history = "(none yet)"
 
-        return (
-            f"CONVERSATION BEING REVIEWED:\n"
-            f"Input: {trace_input}\n"
-            f"Output: {trace_output}\n\n"
-            f"REVIEWER'S FEEDBACK:\n"
-            f"Label: {fb_label}\n"
-            f"Comment: {fb_comment}\n"
-            f"Prior Q/A with reviewer:\n"
-            f"{qna_history}\n"
-            f"Your question to the REVIEWER (about their feedback):"
-        )
+        return trace_input, trace_output, fb_label, fb_comment, qna_history
 
     def _call_llm(
         self,
-        system_prompt: str,
-        user_prompt: str,
+        trace_input: str,
+        trace_output: str,
+        feedback_label: str,
+        feedback_comment: str,
+        prior_qna: str,
         workspace_url: str | None = None,
         databricks_token: str | None = None,
         model_name: str | None = None,
@@ -195,8 +190,11 @@ class FollowUpQuestionService:
         result = run_predict(
             predictor,
             lm,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
+            trace_input=trace_input,
+            trace_output=trace_output,
+            feedback_label=feedback_label,
+            feedback_comment=feedback_comment,
+            prior_qna=prior_qna,
         )
 
         question = getattr(result, "question", None)

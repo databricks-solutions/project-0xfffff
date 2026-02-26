@@ -1625,14 +1625,17 @@ export class WorkshopsService {
      * Upload Csv Traces
      * Upload traces from a MLflow trace export CSV file.
      *
-     * Expected CSV format (MLflow export):
-     * - Required columns: request_preview, response_preview
-     * - Optional columns: trace_id, execution_duration_ms, state, request, response,
-     * spans, tags, trace_metadata, trace_location, assessments, etc.
+     * Supports two CSV formats:
      *
-     * Example from MLflow export:
-     * trace_id,request_preview,response_preview,execution_duration_ms,state,...
-     * "tr-abc123","What is Python?","Python is a programming language",150,"OK",...
+     * 1. Preview format (MLflow UI export):
+     * - Required columns: request_preview, response_preview
+     * - Optional columns: trace_id, execution_duration_ms, state, etc.
+     *
+     * 2. Raw search_traces format (mlflow.search_traces() export):
+     * - Required columns: request, response
+     * - Optional columns: trace_id, trace, execution_duration, state, etc.
+     * - Previews are extracted from the JSON request/response using the same
+     * logic as the live MLflow ingest path.
      * @param workshopId
      * @param formData
      * @returns any Successful Response

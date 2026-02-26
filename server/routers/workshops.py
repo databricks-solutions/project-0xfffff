@@ -1815,11 +1815,14 @@ async def advance_to_rubric(workshop_id: str, db: Session = Depends(get_db)):
     if workshop.current_phase != WorkshopPhase.DISCOVERY:
         raise HTTPException(status_code=400, detail=f"Cannot advance to rubric from {workshop.current_phase} phase")
 
-    # Check if any findings exist (facilitator decides if sufficient)
+    # Phase gate: advance when draft items, discovery feedback, or v1 findings exist
     findings = db_service.get_findings(workshop_id)
-    if len(findings) == 0:
+    draft_items = db_service.get_draft_rubric_items(workshop_id)
+    feedback = db_service.get_discovery_feedback(workshop_id)
+    has_content = len(findings) > 0 or len(draft_items) > 0 or len(feedback) > 0
+    if not has_content:
         raise HTTPException(
-            status_code=400, detail="Cannot advance to rubric phase: No discovery findings submitted yet"
+            status_code=400, detail="Cannot advance to rubric phase: No discovery findings, draft rubric items, or feedback submitted yet"
         )
 
     # Update workshop phase
@@ -1830,6 +1833,8 @@ async def advance_to_rubric(workshop_id: str, db: Session = Depends(get_db)):
         "phase": "rubric",
         "workshop_id": workshop_id,
         "findings_collected": len(findings),
+        "draft_rubric_items": len(draft_items),
+        "feedback_count": len(feedback),
     }
 
 

@@ -6,9 +6,13 @@ import { DiscoveryAnalysisTab } from './DiscoveryAnalysisTab';
 import type { DiscoveryAnalysis } from '@/hooks/useWorkshopApi';
 
 beforeAll(() => {
+  // eslint-disable-next-line @typescript-eslint/unbound-method
   Element.prototype.hasPointerCapture = Element.prototype.hasPointerCapture || (() => false);
+  // eslint-disable-next-line @typescript-eslint/unbound-method
   Element.prototype.setPointerCapture = Element.prototype.setPointerCapture || vi.fn();
+  // eslint-disable-next-line @typescript-eslint/unbound-method
   Element.prototype.releasePointerCapture = Element.prototype.releasePointerCapture || vi.fn();
+  // eslint-disable-next-line @typescript-eslint/unbound-method
   Element.prototype.scrollIntoView = Element.prototype.scrollIntoView || vi.fn();
 });
 
@@ -20,6 +24,7 @@ const mockAnalyses: { data: DiscoveryAnalysis[] | undefined; isLoading: boolean 
 vi.mock('@/hooks/useWorkshopApi', () => ({
   useDiscoveryAnalyses: () => mockAnalyses,
   useRunDiscoveryAnalysis: () => ({ mutate: vi.fn(), isPending: false }),
+  useCreateDraftRubricItem: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock('@tanstack/react-query', () => ({
@@ -47,7 +52,7 @@ describe('DiscoveryAnalysisTab - disagreement color-coding', () => {
 
   it('HIGH disagreement section uses red border', () => {
     mockAnalyses.data = [makeAnalysis()];
-    render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+    render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
     const section = screen.getByText(/HIGH Priority/).closest('[class*="border-red"]');
     expect(section).not.toBeNull();
     expect(section!.className).toContain('border-red-200');
@@ -55,7 +60,7 @@ describe('DiscoveryAnalysisTab - disagreement color-coding', () => {
 
   it('MEDIUM disagreement section uses yellow border', () => {
     mockAnalyses.data = [makeAnalysis()];
-    render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+    render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
     const section = screen.getByText(/MEDIUM Priority/).closest('[class*="border-yellow"]');
     expect(section).not.toBeNull();
     expect(section!.className).toContain('border-yellow-200');
@@ -63,7 +68,7 @@ describe('DiscoveryAnalysisTab - disagreement color-coding', () => {
 
   it('LOWER disagreement section uses blue border', () => {
     mockAnalyses.data = [makeAnalysis()];
-    render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+    render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
     const section = screen.getByText(/LOWER Priority/).closest('[class*="border-blue"]');
     expect(section).not.toBeNull();
     expect(section!.className).toContain('border-blue-200');
@@ -71,21 +76,21 @@ describe('DiscoveryAnalysisTab - disagreement color-coding', () => {
 
   it('HIGH items use red background', () => {
     mockAnalyses.data = [makeAnalysis()];
-    render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+    render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
     const card = screen.getByText(/HIGH Priority/).closest('[class*="border-red"]');
     expect(card!.querySelectorAll('[class*="bg-red-50"]').length).toBeGreaterThanOrEqual(1);
   });
 
   it('MEDIUM items use yellow background', () => {
     mockAnalyses.data = [makeAnalysis()];
-    render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+    render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
     const card = screen.getByText(/MEDIUM Priority/).closest('[class*="border-yellow"]');
     expect(card!.querySelectorAll('[class*="bg-yellow-50"]').length).toBeGreaterThanOrEqual(1);
   });
 
   it('LOWER items use blue background', () => {
     mockAnalyses.data = [makeAnalysis()];
-    render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+    render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
     const card = screen.getByText(/LOWER Priority/).closest('[class*="border-blue"]');
     expect(card!.querySelectorAll('[class*="bg-blue-50"]').length).toBeGreaterThanOrEqual(1);
   });

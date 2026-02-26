@@ -19,6 +19,7 @@ from server.database import (
   DiscoveryFindingDB,
   DiscoveryQuestionDB,
   DiscoverySummaryDB,
+  DraftRubricItemDB,
   FacilitatorConfigDB,
   JudgeEvaluationDB,
   JudgePromptDB,
@@ -40,6 +41,9 @@ from server.models import (
   DiscoveryFeedbackCreate,
   DiscoveryFinding,
   DiscoveryFindingCreate,
+  DraftRubricItem,
+  DraftRubricItemCreate,
+  DraftRubricItemUpdate,
   FacilitatorConfig,
   FacilitatorConfigCreate,
   JudgeEvaluation,
@@ -194,41 +198,49 @@ class DatabaseService:
 
   def get_workshops_for_user(self, user_id: str) -> List[Workshop]:
     """Get all workshops that a user is part of (either as facilitator or participant).
-    
+
     Args:
         user_id: The user ID to find workshops for
-        
+
     Returns:
         List of Workshop objects the user has access to
     """
-    from server.database import UserDB, WorkshopDB
-    
+    from server.database import UserDB, WorkshopDB, WorkshopParticipantDB
+
     # Get workshops where user is the facilitator
     facilitator_workshops = self.db.query(WorkshopDB).filter(
       WorkshopDB.facilitator_id == user_id
     ).all()
-    
-    # Get workshops where user has been added as a participant
-    participant_workshop_ids = self.db.query(UserDB.workshop_id).filter(
+
+    # Get workshop_id from the user's current workshop_id field
+    user_workshop_ids = self.db.query(UserDB.workshop_id).filter(
       UserDB.id == user_id,
       UserDB.workshop_id.isnot(None)
     ).distinct().all()
-    
+    user_workshop_ids = [w[0] for w in user_workshop_ids if w[0]]
+
+    # Also get all workshops from the workshop_participants table (multi-workshop support)
+    participant_workshop_ids = self.db.query(WorkshopParticipantDB.workshop_id).filter(
+      WorkshopParticipantDB.user_id == user_id
+    ).distinct().all()
     participant_workshop_ids = [w[0] for w in participant_workshop_ids if w[0]]
-    
+
+    # Combine all participant workshop IDs
+    all_participant_ids = list(set(user_workshop_ids + participant_workshop_ids))
+
     participant_workshops = self.db.query(WorkshopDB).filter(
-      WorkshopDB.id.in_(participant_workshop_ids)
-    ).all() if participant_workshop_ids else []
-    
+      WorkshopDB.id.in_(all_participant_ids)
+    ).all() if all_participant_ids else []
+
     # Combine and deduplicate
     all_workshops = {w.id: w for w in facilitator_workshops}
     for w in participant_workshops:
       if w.id not in all_workshops:
         all_workshops[w.id] = w
-    
+
     # Sort by creation date, newest first
     sorted_workshops = sorted(all_workshops.values(), key=lambda w: w.created_at or '', reverse=True)
-    
+
     return [self._workshop_from_db(w) for w in sorted_workshops]
 
   def update_workshop_judge_name(self, workshop_id: str, judge_name: str) -> Optional[Workshop]:
@@ -2764,6 +2776,13 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
     self.db.refresh(db_user)
     return user
 
+  def update_user_workshop_id(self, user_id: str, workshop_id: str) -> None:
+    """Update the user's current workshop_id to the selected workshop."""
+    db_user = self.db.query(UserDB).filter(UserDB.id == user_id).first()
+    if db_user:
+      db_user.workshop_id = workshop_id
+      self.db.commit()
+
   def activate_user_on_login(self, user_id: str) -> None:
     """Activate a user when they log in for the first time."""
     db_user = self.db.query(UserDB).filter(UserDB.id == user_id).first()
@@ -4266,6 +4285,133 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       'created_at': summary.created_at,
       'updated_at': summary.updated_at,
     }
+
+  # -----------------------------------------------------------------
+  # Draft Rubric Items (Step 3 — Structured Feedback & Promotion)
+  # -----------------------------------------------------------------
+
+  def add_draft_rubric_item(
+      self, workshop_id: str, data: DraftRubricItemCreate, promoted_by: str
+  ) -> DraftRubricItem:
+      """Create a new draft rubric item."""
+      row = DraftRubricItemDB(
+          id=str(uuid.uuid4()),
+          workshop_id=workshop_id,
+          text=data.text,
+          source_type=data.source_type,
+          source_analysis_id=data.source_analysis_id,
+          source_trace_ids=data.source_trace_ids or [],
+          promoted_by=promoted_by,
+      )
+      self.db.add(row)
+      self.db.commit()
+      self.db.refresh(row)
+      return DraftRubricItem(
+          id=row.id,
+          workshop_id=row.workshop_id,
+          text=row.text,
+          source_type=row.source_type,
+          source_analysis_id=row.source_analysis_id,
+          source_trace_ids=row.source_trace_ids or [],
+          group_id=row.group_id,
+          group_name=row.group_name,
+          promoted_by=row.promoted_by,
+          promoted_at=row.promoted_at,
+      )
+
+  def get_draft_rubric_items(self, workshop_id: str) -> list[DraftRubricItem]:
+      """Get all draft rubric items for a workshop."""
+      rows = (
+          self.db.query(DraftRubricItemDB)
+          .filter(DraftRubricItemDB.workshop_id == workshop_id)
+          .order_by(DraftRubricItemDB.promoted_at)
+          .all()
+      )
+      return [
+          DraftRubricItem(
+              id=r.id,
+              workshop_id=r.workshop_id,
+              text=r.text,
+              source_type=r.source_type,
+              source_analysis_id=r.source_analysis_id,
+              source_trace_ids=r.source_trace_ids or [],
+              group_id=r.group_id,
+              group_name=r.group_name,
+              promoted_by=r.promoted_by,
+              promoted_at=r.promoted_at,
+          )
+          for r in rows
+      ]
+
+  def update_draft_rubric_item(
+      self, item_id: str, updates: DraftRubricItemUpdate
+  ) -> DraftRubricItem | None:
+      """Update a draft rubric item (text, group_id, group_name)."""
+      row = self.db.query(DraftRubricItemDB).filter(DraftRubricItemDB.id == item_id).first()
+      if not row:
+          return None
+      if updates.text is not None:
+          row.text = updates.text
+      if updates.group_id is not None:
+          row.group_id = updates.group_id
+      if updates.group_name is not None:
+          row.group_name = updates.group_name
+      self.db.commit()
+      self.db.refresh(row)
+      return DraftRubricItem(
+          id=row.id,
+          workshop_id=row.workshop_id,
+          text=row.text,
+          source_type=row.source_type,
+          source_analysis_id=row.source_analysis_id,
+          source_trace_ids=row.source_trace_ids or [],
+          group_id=row.group_id,
+          group_name=row.group_name,
+          promoted_by=row.promoted_by,
+          promoted_at=row.promoted_at,
+      )
+
+  def delete_draft_rubric_item(self, item_id: str) -> bool:
+      """Delete a draft rubric item. Returns True if deleted."""
+      row = self.db.query(DraftRubricItemDB).filter(DraftRubricItemDB.id == item_id).first()
+      if not row:
+          return False
+      self.db.delete(row)
+      self.db.commit()
+      return True
+
+  def apply_draft_rubric_groups(
+      self, workshop_id: str, groups: list[dict[str, Any]]
+  ) -> None:
+      """Persist group assignments to draft rubric items.
+
+      Each entry in *groups* has ``name`` (str) and ``item_ids`` (list[str]).
+      Items not in any group have their group cleared.
+      """
+      # First clear all groups for this workshop
+      rows = (
+          self.db.query(DraftRubricItemDB)
+          .filter(DraftRubricItemDB.workshop_id == workshop_id)
+          .all()
+      )
+      for r in rows:
+          r.group_id = None
+          r.group_name = None
+
+      # Apply new groups
+      for group in groups:
+          group_id = str(uuid.uuid4())
+          group_name = group.get("name", "")
+          for item_id in group.get("item_ids", []):
+              row = self.db.query(DraftRubricItemDB).filter(
+                  DraftRubricItemDB.id == item_id,
+                  DraftRubricItemDB.workshop_id == workshop_id,
+              ).first()
+              if row:
+                  row.group_id = group_id
+                  row.group_name = group_name
+
+      self.db.commit()
 
   # =========================================================================
   # Discovery Analysis operations (Step 2 - Findings Synthesis)

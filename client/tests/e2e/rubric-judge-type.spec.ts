@@ -215,7 +215,7 @@ test.describe('Per-Question Judge Type', () => {
   });
 
   test('default judge type is likert when not specified', {
-    tag: ['@spec:RUBRIC_SPEC'],
+    tag: ['@spec:RUBRIC_SPEC', '@req:Per-question judge_type parsed from `[JUDGE_TYPE:xxx]` format'],
   }, async ({ page, request }) => {
     // Spec: RUBRIC_SPEC lines 86-89
     // Default to 'likert' if not specified

@@ -469,6 +469,12 @@ async def test_advance_to_rubric_requires_findings(
         def get_findings(self, workshop_id):
             return []  # No findings
 
+        def get_draft_rubric_items(self, workshop_id):
+            return []  # No draft items
+
+        def get_discovery_feedback(self, workshop_id):
+            return []  # No feedback
+
     monkeypatch.setattr(workshops_router, "DatabaseService", FakeDatabaseService)
 
     resp = await async_client.post("/workshops/w-nof/advance-to-rubric")

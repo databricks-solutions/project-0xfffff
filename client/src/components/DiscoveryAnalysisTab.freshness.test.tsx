@@ -6,9 +6,13 @@ import { DiscoveryAnalysisTab } from './DiscoveryAnalysisTab';
 import type { DiscoveryAnalysis } from '@/hooks/useWorkshopApi';
 
 beforeAll(() => {
+  // eslint-disable-next-line @typescript-eslint/unbound-method
   Element.prototype.hasPointerCapture = Element.prototype.hasPointerCapture || (() => false);
+  // eslint-disable-next-line @typescript-eslint/unbound-method
   Element.prototype.setPointerCapture = Element.prototype.setPointerCapture || vi.fn();
+  // eslint-disable-next-line @typescript-eslint/unbound-method
   Element.prototype.releasePointerCapture = Element.prototype.releasePointerCapture || vi.fn();
+  // eslint-disable-next-line @typescript-eslint/unbound-method
   Element.prototype.scrollIntoView = Element.prototype.scrollIntoView || vi.fn();
 });
 
@@ -20,6 +24,7 @@ const mockAnalyses: { data: DiscoveryAnalysis[] | undefined; isLoading: boolean 
 vi.mock('@/hooks/useWorkshopApi', () => ({
   useDiscoveryAnalyses: () => mockAnalyses,
   useRunDiscoveryAnalysis: () => ({ mutate: vi.fn(), isPending: false }),
+  useCreateDraftRubricItem: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock('@tanstack/react-query', () => ({
@@ -43,32 +48,32 @@ describe('DiscoveryAnalysisTab - data freshness banner', () => {
 
   it('displays participant count', () => {
     mockAnalyses.data = [makeAnalysis({ participant_count: 5 })];
-    render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+    render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
     expect(screen.getByText('5 participants')).toBeInTheDocument();
   });
 
   it('displays singular participant text when count is 1', () => {
     mockAnalyses.data = [makeAnalysis({ participant_count: 1 })];
-    render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+    render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
     expect(screen.getByText('1 participant')).toBeInTheDocument();
   });
 
   it('displays the analysis timestamp', () => {
     mockAnalyses.data = [makeAnalysis({ created_at: '2026-02-19T10:30:00Z' })];
-    render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+    render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
     const formattedDate = new Date('2026-02-19T10:30:00Z').toLocaleString();
     expect(screen.getByText(formattedDate)).toBeInTheDocument();
   });
 
   it('displays the template name', () => {
     mockAnalyses.data = [makeAnalysis({ template_used: 'themes_patterns' })];
-    render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+    render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
     expect(screen.getByText('Themes & Patterns')).toBeInTheDocument();
   });
 
   it('displays the model used', () => {
     mockAnalyses.data = [makeAnalysis({ model_used: 'databricks-claude-sonnet-4-5' })];
-    render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+    render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
     expect(screen.getByText('databricks-claude-sonnet-4-5')).toBeInTheDocument();
   });
 });

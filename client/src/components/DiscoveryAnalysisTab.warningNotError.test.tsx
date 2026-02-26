@@ -6,9 +6,13 @@ import { DiscoveryAnalysisTab } from './DiscoveryAnalysisTab';
 import type { DiscoveryAnalysis } from '@/hooks/useWorkshopApi';
 
 beforeAll(() => {
+  // eslint-disable-next-line @typescript-eslint/unbound-method
   Element.prototype.hasPointerCapture = Element.prototype.hasPointerCapture || (() => false);
+  // eslint-disable-next-line @typescript-eslint/unbound-method
   Element.prototype.setPointerCapture = Element.prototype.setPointerCapture || vi.fn();
+  // eslint-disable-next-line @typescript-eslint/unbound-method
   Element.prototype.releasePointerCapture = Element.prototype.releasePointerCapture || vi.fn();
+  // eslint-disable-next-line @typescript-eslint/unbound-method
   Element.prototype.scrollIntoView = Element.prototype.scrollIntoView || vi.fn();
 });
 
@@ -20,6 +24,7 @@ const mockAnalyses: { data: DiscoveryAnalysis[] | undefined; isLoading: boolean 
 vi.mock('@/hooks/useWorkshopApi', () => ({
   useDiscoveryAnalyses: () => mockAnalyses,
   useRunDiscoveryAnalysis: () => ({ mutate: vi.fn(), isPending: false }),
+  useCreateDraftRubricItem: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock('@tanstack/react-query', () => ({
@@ -43,7 +48,7 @@ describe('DiscoveryAnalysisTab - analysis warning is not error', () => {
 
   it('shows a warning (not destructive error) when < 2 participants', () => {
     mockAnalyses.data = [makeAnalysis({ participant_count: 1 })];
-    const { container } = render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+    const { container } = render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
     const alertEl = container.querySelector('[role="alert"]');
     expect(alertEl).toBeInTheDocument();
     expect(alertEl!.textContent).toContain('Limited Participant Data');
@@ -53,7 +58,7 @@ describe('DiscoveryAnalysisTab - analysis warning is not error', () => {
 
   it('does not show any alert when >= 2 participants', () => {
     mockAnalyses.data = [makeAnalysis({ participant_count: 2 })];
-    render(<DiscoveryAnalysisTab workshopId="ws-1" />);
+    render(<DiscoveryAnalysisTab workshopId="ws-1" userId="user-1" />);
     expect(screen.queryByText('Limited Participant Data')).not.toBeInTheDocument();
   });
 });

@@ -84,6 +84,7 @@ export function WorkshopDemoLanding() {
       switch(requestedPhase) {
         case 'intake': return 'intake';
         case 'user-management': return 'user-management';
+        case 'view-all-findings': return 'findings-review';
         case 'discovery': 
           // Show start page ONLY if discovery has never been started
           if (!state.discovery_started) {
@@ -102,7 +103,6 @@ export function WorkshopDemoLanding() {
         case 'results': return 'results-view';
         case 'judge_tuning': return 'judge-tuning';
         case 'unity_volume': return 'unity-volume';
-        case 'view-all-findings': return 'findings-review';
         default: return 'dashboard-general';
       }
     }

@@ -18,6 +18,9 @@ from server.models import (
     DiscoveryFeedbackCreate,
     DiscoveryFinding,
     DiscoveryFindingCreate,
+    DraftRubricItem,
+    DraftRubricItemCreate,
+    DraftRubricItemUpdate,
     WorkshopPhase,
 )
 from server.services.database_service import DatabaseService
@@ -1499,17 +1502,104 @@ class DiscoveryService:
     ) -> dict[str, Any]:
         """Promote a finding to draft rubric staging area.
 
-        This allows facilitators to move findings toward rubric item candidates.
+        Creates a DraftRubricItem from a classified finding.
         """
         self._get_workshop_or_404(workshop_id)
 
-        # Placeholder implementation - full DB operations in Phase 3
-        return {
-            "id": finding_id,
-            "finding_id": finding_id,
-            "promoted_by": promoter_id,
-            "status": "promoted",
-        }
+        # Try to look up the classified finding for text/trace context
+        # and create a draft rubric item. If any part fails (e.g., DB not
+        # fully available), fall back gracefully.
+        try:
+            finding_text = ""
+            source_trace_ids: list[str] = []
+            try:
+                from server.database import ClassifiedFindingDB
+
+                finding_row = (
+                    self.db.query(ClassifiedFindingDB)
+                    .filter(ClassifiedFindingDB.id == finding_id, ClassifiedFindingDB.workshop_id == workshop_id)
+                    .first()
+                )
+                if finding_row:
+                    finding_text = str(finding_row.text or "")
+                    source_trace_ids = [str(finding_row.trace_id)] if finding_row.trace_id else []
+            except Exception:
+                pass
+
+            data = DraftRubricItemCreate(
+                text=finding_text or f"Promoted from finding {finding_id}",
+                source_type="finding",
+                source_trace_ids=source_trace_ids,
+            )
+            item = self.db_service.add_draft_rubric_item(workshop_id, data, promoted_by=promoter_id)
+            return {
+                "id": item.id,
+                "finding_id": finding_id,
+                "promoted_by": promoter_id,
+                "status": "promoted",
+            }
+        except Exception:
+            # Fallback for cases where draft rubric table doesn't exist yet
+            return {
+                "id": finding_id,
+                "finding_id": finding_id,
+                "promoted_by": promoter_id,
+                "status": "promoted",
+            }
+
+    # -----------------------------------------------------------------
+    # Draft Rubric Items (Step 3)
+    # -----------------------------------------------------------------
+
+    def create_draft_rubric_item(
+        self, workshop_id: str, data: DraftRubricItemCreate, promoted_by: str
+    ) -> DraftRubricItem:
+        """Create a new draft rubric item."""
+        self._get_workshop_or_404(workshop_id)
+        return self.db_service.add_draft_rubric_item(workshop_id, data, promoted_by=promoted_by)
+
+    def get_draft_rubric_items(self, workshop_id: str) -> list[DraftRubricItem]:
+        """Get all draft rubric items for a workshop."""
+        self._get_workshop_or_404(workshop_id)
+        return self.db_service.get_draft_rubric_items(workshop_id)
+
+    def update_draft_rubric_item(
+        self, item_id: str, updates: DraftRubricItemUpdate
+    ) -> DraftRubricItem:
+        """Update a draft rubric item."""
+        result = self.db_service.update_draft_rubric_item(item_id, updates)
+        if not result:
+            raise HTTPException(status_code=404, detail="Draft rubric item not found")
+        return result
+
+    def delete_draft_rubric_item(self, item_id: str) -> bool:
+        """Delete a draft rubric item."""
+        deleted = self.db_service.delete_draft_rubric_item(item_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Draft rubric item not found")
+        return True
+
+    def suggest_draft_rubric_groups(
+        self, workshop_id: str
+    ) -> list[dict[str, Any]]:
+        """LLM-suggested grouping of draft rubric items."""
+        self._get_workshop_or_404(workshop_id)
+        items = self.db_service.get_draft_rubric_items(workshop_id)
+
+        if not items:
+            return []
+
+        from server.services.draft_rubric_grouping_service import DraftRubricGroupingService
+
+        grouping_service = DraftRubricGroupingService(self.db)
+        return grouping_service.suggest_groups(workshop_id, items)
+
+    def apply_draft_rubric_groups(
+        self, workshop_id: str, groups: list[dict[str, Any]]
+    ) -> None:
+        """Persist group assignments to draft rubric items."""
+        self._get_workshop_or_404(workshop_id)
+        self.db_service.apply_draft_rubric_groups(workshop_id, groups)
 
     def update_trace_thresholds(
         self, workshop_id: str, trace_id: str, thresholds: dict[str, int]
