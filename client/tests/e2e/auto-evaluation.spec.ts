@@ -12,6 +12,8 @@ import { test, expect } from '@playwright/test';
 import { TestScenario } from '../lib';
 import { beginAnnotation, beginAnnotationViaSidebar } from '../lib/actions';
 
+const API_URL = process.env.E2E_API_URL ?? 'http://127.0.0.1:8000';
+
 test.describe('Auto-Evaluation UI', () => {
   test('begin annotation dialog shows model selection when auto-eval is available', {
     tag: ['@spec:JUDGE_EVALUATION_SPEC', '@req:Auto-evaluation runs in background when annotation phase starts'],
@@ -39,7 +41,7 @@ test.describe('Auto-Evaluation UI', () => {
 
     // Navigate to annotation phase setup
     // The "Begin Annotation" button should be visible in rubric phase
-    await beginAnnotation(page, scenario.workshop.id);
+    await beginAnnotation(page, scenario.workshop.id, API_URL);
 
     // Wait for the annotation dialog/modal to appear
     // The dialog should have options for auto-evaluation

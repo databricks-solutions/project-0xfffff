@@ -10,7 +10,7 @@ import { test, expect } from '@playwright/test';
 import { TestScenario } from '../lib/scenario-builder';
 import { WorkshopPhase } from '../lib/types';
 
-const API_URL = 'http://127.0.0.1:8000';
+const API_URL = process.env.E2E_API_URL ?? 'http://127.0.0.1:8000';
 
 const tag = ['@spec:TRACE_DISPLAY_SPEC'];
 

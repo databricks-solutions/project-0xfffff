@@ -85,7 +85,7 @@ test.describe('Discovery Analysis (Step 2)', {
       await runButton.click();
 
       // Wait for results to appear (mock returns immediately)
-      await expect(page.getByText('Findings')).toBeVisible({ timeout: 10000 });
+      await expect(page.getByRole('heading', { name: /Findings/ }).first()).toBeVisible({ timeout: 10000 });
 
       // Verify findings are displayed
       await expect(page.getByText('Responses should include specific references')).toBeVisible();
@@ -130,10 +130,10 @@ test.describe('Discovery Analysis (Step 2)', {
       await runButton.click();
 
       // Wait for results
-      await expect(page.getByText('Findings')).toBeVisible({ timeout: 10000 });
+      await expect(page.getByRole('heading', { name: /Findings/ }).first()).toBeVisible({ timeout: 10000 });
 
       // Verify History dropdown appears with 1 entry
-      await expect(page.getByText('History')).toBeVisible();
+      await expect(page.getByText('History').first()).toBeVisible();
       await expect(page.getByText('Latest')).toBeVisible();
 
       // Run second analysis (click Run Analysis again)
@@ -188,8 +188,8 @@ test.describe('Discovery Analysis (Step 2)', {
 
       // Should show warning (not error) about limited participant data
       await expect(page.getByText('Limited Participant Data')).toBeVisible({ timeout: 10000 });
-      // Verify it mentions 1 participant
-      await expect(page.getByText(/1 participant/)).toBeVisible();
+      // Verify it mentions 1 participant (use first() to handle multiple matches)
+      await expect(page.getByText(/1 participant/).first()).toBeVisible();
     }
 
     await scenario.cleanup();
