@@ -11,8 +11,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = "0015_add_span_attribute_filter"
-down_revision = "0014_add_discovery_analysis"
+revision = "0016_add_span_attribute_filter"
+down_revision = "0015_merge_analysis_draft_rubric"
 branch_labels = None
 depends_on = None
 
