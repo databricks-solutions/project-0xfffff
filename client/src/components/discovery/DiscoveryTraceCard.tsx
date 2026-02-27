@@ -162,6 +162,26 @@ export const DiscoveryTraceCard: React.FC<DiscoveryTraceCardProps> = ({
                       </div>
                       <p className="text-sm text-slate-800 font-medium">{d.summary}</p>
                       <p className="text-xs text-slate-600 mt-1">Theme: {d.underlying_theme}</p>
+                      {d.followup_questions?.length > 0 && (
+                        <div className="mt-2">
+                          <span className="text-xs font-semibold text-slate-600">Follow-up Questions</span>
+                          <ul className="mt-0.5 space-y-0.5">
+                            {d.followup_questions.map((q, qi) => (
+                              <li key={qi} className="text-xs text-slate-700 pl-3 relative before:content-['•'] before:absolute before:left-0 before:text-slate-400">{q}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {d.facilitator_suggestions?.length > 0 && (
+                        <div className="mt-2">
+                          <span className="text-xs font-semibold text-blue-700">Facilitator Suggestions</span>
+                          <ul className="mt-0.5 space-y-0.5">
+                            {d.facilitator_suggestions.map((s, si) => (
+                              <li key={si} className="text-xs text-blue-800 pl-3 relative before:content-['→'] before:absolute before:left-0 before:text-blue-400">{s}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
                       <Button
                         variant="outline"
                         size="sm"

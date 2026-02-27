@@ -348,7 +348,7 @@ class DiscoveryAnalysisService:
         """Format aggregated feedback for the LLM prompt."""
         parts = []
         for trace_id, data in list(aggregated.items())[:20]:  # Cap at 20 traces
-            parts.append(f"### Trace {trace_id[:8]}")
+            parts.append(f"### Trace {trace_id}")
             parts.append(f"**Input:** {data['input'][:500]}")
             parts.append(f"**Output:** {data['output'][:500]}")
             for entry in data["feedback_entries"][:10]:
@@ -368,7 +368,7 @@ class DiscoveryAnalysisService:
         for tier, label in [("high", "HIGH"), ("medium", "MEDIUM"), ("lower", "LOWER")]:
             trace_ids = disagreements.get(tier, [])
             if trace_ids:
-                parts.append(f"**{label} PRIORITY** ({len(trace_ids)} traces): {', '.join(t[:8] for t in trace_ids)}")
+                parts.append(f"**{label} PRIORITY** ({len(trace_ids)} traces): {', '.join(trace_ids)}")
             else:
                 parts.append(f"**{label} PRIORITY**: None detected")
         return "\n".join(parts)

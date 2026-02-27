@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ChevronDown, ChevronUp, ArrowUpRight, Clock, FileText, Users } from 'lucide-react';
+import { ChevronDown, ChevronUp, ArrowUpRight, Clock, FileText, Users, AlertTriangle } from 'lucide-react';
 import type { DiscoveryAnalysis } from '@/hooks/useWorkshopApi';
 import type { PromotePayload } from './DiscoveryTraceCard';
 
@@ -24,7 +24,12 @@ export const CrossTraceAnalysisSummary: React.FC<CrossTraceAnalysisSummaryProps>
   );
   const traceSpecificCount = analysis.findings.length - crossTraceFindings.length;
 
-  if (crossTraceFindings.length === 0 && !analysis.analysis_data) return null;
+  const highDisagreements = analysis.disagreements?.high ?? [];
+  const mediumDisagreements = analysis.disagreements?.medium ?? [];
+  const lowerDisagreements = analysis.disagreements?.lower ?? [];
+  const totalDisagreements = highDisagreements.length + mediumDisagreements.length + lowerDisagreements.length;
+
+  if (crossTraceFindings.length === 0 && !analysis.analysis_data && totalDisagreements === 0) return null;
 
   return (
     <Card className="border-slate-200">
@@ -92,6 +97,55 @@ export const CrossTraceAnalysisSummary: React.FC<CrossTraceAnalysisSummaryProps>
                     </div>
                   );
                 })}
+              </div>
+            )}
+
+            {totalDisagreements > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-xs font-semibold uppercase text-slate-500">
+                  Disagreements ({totalDisagreements})
+                </h4>
+                {highDisagreements.length > 0 && (
+                  <div className="space-y-1.5">
+                    {highDisagreements.map((d, i) => (
+                      <div key={`high-${i}`} className="flex items-start gap-2 rounded-lg bg-red-50 border border-red-200 p-2.5">
+                        <AlertTriangle className="w-3.5 h-3.5 text-red-600 mt-0.5 shrink-0" />
+                        <div className="min-w-0">
+                          <span className="text-[10px] font-semibold uppercase text-red-700">High</span>
+                          <p className="text-sm text-slate-800">{d.summary}</p>
+                          <p className="text-xs text-slate-500 mt-0.5">Theme: {d.underlying_theme}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {mediumDisagreements.length > 0 && (
+                  <div className="space-y-1.5">
+                    {mediumDisagreements.map((d, i) => (
+                      <div key={`med-${i}`} className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 p-2.5">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600 mt-0.5 shrink-0" />
+                        <div className="min-w-0">
+                          <span className="text-[10px] font-semibold uppercase text-amber-700">Medium</span>
+                          <p className="text-sm text-slate-800">{d.summary}</p>
+                          <p className="text-xs text-slate-500 mt-0.5">Theme: {d.underlying_theme}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {lowerDisagreements.length > 0 && (
+                  <div className="space-y-1.5">
+                    {lowerDisagreements.map((d, i) => (
+                      <div key={`low-${i}`} className="flex items-start gap-2 rounded-lg bg-blue-50 border border-blue-200 p-2.5">
+                        <div className="min-w-0">
+                          <span className="text-[10px] font-semibold uppercase text-blue-700">Lower</span>
+                          <p className="text-sm text-slate-800">{d.summary}</p>
+                          <p className="text-xs text-slate-500 mt-0.5">Theme: {d.underlying_theme}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
