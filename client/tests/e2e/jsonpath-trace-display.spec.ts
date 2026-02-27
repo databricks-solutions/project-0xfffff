@@ -58,8 +58,8 @@ test.describe('JSONPath Trace Display Customization', { tag }, () => {
     // Configure JSONPath for output extraction
     await page.locator('#output-jsonpath').fill('$.response.text');
 
-    // Click Preview to verify extraction
-    await page.getByRole('button', { name: /Preview/i }).click();
+    // Click the JSONPath Preview button (second Preview; first is span filter)
+    await page.getByRole('button', { name: /Preview/i }).last().click();
 
     // Wait for preview results and verify extracted content is shown
     await expect(page.getByText('Preview Results')).toBeVisible();
@@ -221,8 +221,8 @@ test.describe('JSONPath Trace Display Customization', { tag }, () => {
     await page.locator('#input-jsonpath').fill('$.nonexistent.path');
     await page.locator('#output-jsonpath').fill('$.also.nonexistent');
 
-    // Click Preview
-    await page.getByRole('button', { name: /Preview/i }).click();
+    // Click the JSONPath Preview button (second Preview; first is span filter)
+    await page.getByRole('button', { name: /Preview/i }).last().click();
 
     // Wait for preview results
     await expect(page.getByText('Preview Results')).toBeVisible();
@@ -277,8 +277,8 @@ test.describe('JSONPath Trace Display Customization', { tag }, () => {
     await page.locator('#input-jsonpath').fill('$.messages[*].content');
     await page.locator('#output-jsonpath').fill('$.response.text');
 
-    // Click Preview
-    await page.getByRole('button', { name: /Preview/i }).click();
+    // Click the JSONPath Preview button (second Preview; first is span filter)
+    await page.getByRole('button', { name: /Preview/i }).last().click();
 
     // Wait for preview results
     await expect(page.getByText('Preview Results')).toBeVisible();
@@ -336,8 +336,8 @@ test.describe('JSONPath Trace Display Customization', { tag }, () => {
     await page.locator('#input-jsonpath').fill('$.[invalid');
     await page.locator('#output-jsonpath').fill('$.response.text');
 
-    // Click Preview
-    await page.getByRole('button', { name: /Preview/i }).click();
+    // Click the JSONPath Preview button (second Preview; first is span filter)
+    await page.getByRole('button', { name: /Preview/i }).last().click();
 
     // Wait for preview results
     await expect(page.getByText('Preview Results')).toBeVisible();
