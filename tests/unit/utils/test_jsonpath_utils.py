@@ -1,5 +1,8 @@
 """Unit tests for JSONPath utility functions."""
 
+import json
+import time
+
 import pytest
 
 from server.utils.jsonpath_utils import apply_jsonpath, validate_jsonpath
@@ -211,3 +214,54 @@ class TestValidateJsonPath:
         assert is_valid is False
         assert error is not None
         assert "Invalid JSONPath" in error or "parsing error" in error.lower()
+
+
+@pytest.mark.spec("TRACE_DISPLAY_SPEC")
+@pytest.mark.req("JSONPath evaluation does not noticeably slow down trace display")
+class TestJsonPathPerformance:
+    """Performance smoke-tests for JSONPath extraction."""
+
+    def test_large_payload_extraction_completes_within_budget(self):
+        """JSONPath extraction on a ~100KB JSON payload completes within 100ms.
+
+        This is a smoke-test to ensure JSONPath evaluation does not noticeably
+        slow down trace display, not a strict benchmark.
+        """
+        # Build a ~100KB JSON payload with 500 messages
+        messages = [
+            {"role": "user" if i % 2 == 0 else "assistant", "content": f"Message content number {i} " + "x" * 150}
+            for i in range(500)
+        ]
+        large_payload = json.dumps({"messages": messages, "metadata": {"model": "gpt-4", "tokens": 9999}})
+
+        # Verify payload is at least ~100KB
+        assert len(large_payload) > 100_000
+
+        start = time.perf_counter()
+        result, success = apply_jsonpath(large_payload, "$.messages[0].content")
+        elapsed_ms = (time.perf_counter() - start) * 1000
+
+        assert success is True
+        assert result == "Message content number 0 " + "x" * 150
+        assert elapsed_ms < 100, f"JSONPath extraction took {elapsed_ms:.1f}ms, expected < 100ms"
+
+    def test_wildcard_extraction_on_large_array_completes_within_budget(self):
+        """Wildcard JSONPath on a large array completes within 100ms.
+
+        Wildcard queries ($.items[*].field) match every element, so they
+        are the most expensive common pattern.
+        """
+        items = [{"id": i, "value": f"item-{i}"} for i in range(500)]
+        large_payload = json.dumps({"items": items})
+
+        start = time.perf_counter()
+        result, success = apply_jsonpath(large_payload, "$.items[*].value")
+        elapsed_ms = (time.perf_counter() - start) * 1000
+
+        assert success is True
+        # Verify we got all 500 values joined by newlines
+        lines = result.split("\n")
+        assert len(lines) == 500
+        assert lines[0] == "item-0"
+        assert lines[499] == "item-499"
+        assert elapsed_ms < 100, f"Wildcard extraction took {elapsed_ms:.1f}ms, expected < 100ms"

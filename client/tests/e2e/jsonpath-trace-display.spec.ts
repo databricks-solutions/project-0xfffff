@@ -294,6 +294,81 @@ test.describe('JSONPath Trace Display Customization', { tag }, () => {
     await scenario.cleanup();
   });
 
+  test('span filter preview shows match status and filtered inputs/outputs', {
+    tag: ['@spec:TRACE_DISPLAY_SPEC', '@req:Span filter preview shows match status and filtered inputs/outputs against first trace'],
+  }, async ({ page }) => {
+    const runId = `${Date.now()}`;
+
+    // Create trace data with spans in context for span filter to work against
+    const traceInput = 'Root trace input';
+    const traceOutput = 'Root trace output';
+    const spanInput = `Span input content ${runId}`;
+    const spanOutput = `Span output content ${runId}`;
+    const traceContext = {
+      spans: [
+        {
+          name: 'LLMChain',
+          span_type: 'CHAIN',
+          inputs: spanInput,
+          outputs: spanOutput,
+          attributes: { model: 'gpt-4' },
+        },
+        {
+          name: 'Retriever',
+          span_type: 'RETRIEVER',
+          inputs: 'retriever query',
+          outputs: 'retrieved documents',
+          attributes: {},
+        },
+      ],
+    };
+
+    // Build scenario with real API including span data in context
+    const scenario = await TestScenario.create(page)
+      .withWorkshop({ name: `Span Filter Preview Test ${runId}` })
+      .withFacilitator()
+      .withTrace({ input: traceInput, output: traceOutput, context: traceContext })
+      .withRealApi()
+      .build();
+
+    // Login as facilitator
+    await page.goto('/');
+    await scenario.loginAs(scenario.facilitator);
+
+    // Click on the workshop from the list
+    const workshopNamePattern = new RegExp(`Span Filter Preview Test ${runId.toString().slice(0, 8)}`);
+    await page.getByRole('heading', { name: workshopNamePattern }).click();
+    await page.waitForLoadState('networkidle');
+
+    // Click Dashboard to see the general view with JsonPathSettings
+    await page.getByRole('button', { name: /^Dashboard$/i }).click();
+
+    // Verify Trace Display Settings section is visible
+    await expect(page.getByText('Trace Display Settings')).toBeVisible();
+
+    // Configure span filter by span name to match 'LLMChain'
+    await page.locator('#span-name').fill('LLMChain');
+
+    // Click the span filter Preview button (first Preview button on the page)
+    await page.getByRole('button', { name: /Preview/i }).first().click();
+
+    // The Span Filter Preview panel should appear
+    await expect(page.getByText('Span Filter Preview')).toBeVisible();
+
+    // Should show "Span matched" badge indicating a matching span was found
+    await expect(page.getByText('Span matched')).toBeVisible();
+
+    // Should display the matching span's input content
+    await expect(page.getByText('Span Input:')).toBeVisible();
+    await expect(page.getByText(spanInput)).toBeVisible();
+
+    // Should display the matching span's output content
+    await expect(page.getByText('Span Output:')).toBeVisible();
+    await expect(page.getByText(spanOutput)).toBeVisible();
+
+    await scenario.cleanup();
+  });
+
   test('invalid JSONPath shows error message to user', {
     tag: ['@spec:TRACE_DISPLAY_SPEC', '@req:Invalid JSONPath syntax shows helpful error message in preview'],
   }, async ({ page }) => {
