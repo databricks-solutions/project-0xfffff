@@ -156,6 +156,7 @@ class MLflowIntakeService:
                                     "span_type": span.span_type,
                                     "inputs": sanitize_for_json(span.inputs),
                                     "outputs": sanitize_for_json(span.outputs),
+                                    "attributes": sanitize_for_json(dict(span.attributes)) if span.attributes else {},
                                     "start_time_ns": span.start_time_ns,
                                     "end_time_ns": span.end_time_ns,
                                 }

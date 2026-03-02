@@ -347,6 +347,7 @@ async def preview_jsonpath(
     to verify they extract the expected content.
     """
     from server.utils.jsonpath_utils import apply_jsonpath
+    from server.utils.span_filter_utils import apply_span_filter
 
     db_service = DatabaseService(db)
     workshop = db_service.get_workshop(workshop_id)
@@ -360,24 +361,112 @@ async def preview_jsonpath(
 
     first_trace = traces[0]
 
-    # Apply JSONPath to input
+    # Apply span filter first if configured (span filter → JSONPath pipeline)
+    base_input = first_trace.input
+    base_output = first_trace.output
+    span_filter = workshop.span_attribute_filter
+    if span_filter:
+        context = first_trace.context if first_trace.context else None
+        span_input, span_output = apply_span_filter(context, span_filter)
+        if span_input is not None:
+            base_input = span_input
+        if span_output is not None:
+            base_output = span_output
+
+    # Apply JSONPath to (possibly span-filtered) input
     input_result = None
     input_success = False
     if preview_request.input_jsonpath:
-        input_result, input_success = apply_jsonpath(first_trace.input, preview_request.input_jsonpath)
+        input_result, input_success = apply_jsonpath(base_input, preview_request.input_jsonpath)
 
-    # Apply JSONPath to output
+    # Apply JSONPath to (possibly span-filtered) output
     output_result = None
     output_success = False
     if preview_request.output_jsonpath:
-        output_result, output_success = apply_jsonpath(first_trace.output, preview_request.output_jsonpath)
+        output_result, output_success = apply_jsonpath(base_output, preview_request.output_jsonpath)
 
     return {
         "trace_id": first_trace.id,
-        "input_result": input_result if input_success else first_trace.input,
+        "input_result": input_result if input_success else base_input,
         "input_success": input_success,
-        "output_result": output_result if output_success else first_trace.output,
+        "output_result": output_result if output_success else base_output,
         "output_success": output_success,
+    }
+
+
+# Span Attribute Filter Models
+class SpanAttributeFilterUpdate(BaseModel):
+    """Request model for updating span attribute filter."""
+
+    span_attribute_filter: dict | None = None
+
+
+@router.put("/{workshop_id}/span-attribute-filter")
+async def update_span_attribute_filter(
+    workshop_id: str, body: SpanAttributeFilterUpdate, db: Session = Depends(get_db)
+) -> Workshop:
+    """Update the span attribute filter for trace display.
+
+    When configured, the TraceViewer will display a matching span's
+    inputs/outputs instead of the root trace input/output.
+    """
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    updated_workshop = db_service.update_workshop_span_attribute_filter(
+        workshop_id,
+        span_attribute_filter=body.span_attribute_filter,
+    )
+
+    if not updated_workshop:
+        raise HTTPException(status_code=500, detail="Failed to update span attribute filter")
+
+    return updated_workshop
+
+
+@router.post("/{workshop_id}/preview-span-filter")
+async def preview_span_filter(
+    workshop_id: str, body: SpanAttributeFilterUpdate, db: Session = Depends(get_db)
+) -> dict[str, Any]:
+    """Preview span attribute filter against the first trace in the workshop."""
+    from server.utils.jsonpath_utils import apply_jsonpath
+    from server.utils.span_filter_utils import apply_span_filter
+
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    traces = db_service.get_traces(workshop_id)
+    if not traces:
+        return {"error": "No traces available for preview"}
+
+    first_trace = traces[0]
+    context = first_trace.context if first_trace.context else None
+
+    inputs_str, outputs_str = apply_span_filter(context, body.span_attribute_filter)
+
+    # Apply JSONPath on top of span-filtered results if configured
+    final_input = inputs_str
+    final_output = outputs_str
+    if inputs_str is not None and workshop.input_jsonpath:
+        extracted, ok = apply_jsonpath(inputs_str, workshop.input_jsonpath)
+        if ok:
+            final_input = extracted
+    if outputs_str is not None and workshop.output_jsonpath:
+        extracted, ok = apply_jsonpath(outputs_str, workshop.output_jsonpath)
+        if ok:
+            final_output = extracted
+
+    return {
+        "trace_id": first_trace.id,
+        "matched": inputs_str is not None or outputs_str is not None,
+        "input_result": final_input,
+        "output_result": final_output,
+        "original_input": first_trace.input[:400] if first_trace.input else None,
+        "original_output": first_trace.output[:400] if first_trace.output else None,
     }
 
 
@@ -2939,8 +3028,17 @@ async def upload_csv_traces(
                     try:
                         context[field] = json.loads(row[field])
                     except json.JSONDecodeError:
-                        logger.warning(f"Row {row_number}: Invalid JSON in {field} column, storing as string")
-                        context[field] = row[field]
+                        # Python dict notation fallback (common in pandas CSV exports)
+                        if field == "spans":
+                            try:
+                                import ast
+                                context[field] = ast.literal_eval(row[field])
+                            except (ValueError, SyntaxError):
+                                logger.warning(f"Row {row_number}: Invalid JSON/Python in {field} column, storing as string")
+                                context[field] = row[field]
+                        else:
+                            logger.warning(f"Row {row_number}: Invalid JSON in {field} column, storing as string")
+                            context[field] = row[field]
 
             # For raw format, parse the full trace blob for richer context
             if is_raw_format and row.get("trace"):

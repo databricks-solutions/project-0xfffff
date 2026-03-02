@@ -1,5 +1,8 @@
 """Unit tests for JSONPath utility functions."""
 
+import json
+import time
+
 import pytest
 
 from server.utils.jsonpath_utils import apply_jsonpath, validate_jsonpath
@@ -10,6 +13,7 @@ class TestApplyJsonPath:
     """Tests for the apply_jsonpath function."""
 
     @pytest.mark.spec("TRACE_DISPLAY_SPEC")
+    @pytest.mark.req("TraceViewer applies JSONPath when configured")
     def test_simple_extraction(self):
         """Test extracting a simple top-level value."""
         data = '{"message": "hello"}'
@@ -18,6 +22,7 @@ class TestApplyJsonPath:
         assert result == "hello"
 
     @pytest.mark.spec("TRACE_DISPLAY_SPEC")
+    @pytest.mark.req("TraceViewer applies JSONPath when configured")
     def test_nested_extraction(self):
         """Test extracting a nested value."""
         data = '{"response": {"text": "answer"}}'
@@ -26,6 +31,7 @@ class TestApplyJsonPath:
         assert result == "answer"
 
     @pytest.mark.spec("TRACE_DISPLAY_SPEC")
+    @pytest.mark.req("TraceViewer applies JSONPath when configured")
     def test_array_index_extraction(self):
         """Test extracting a value from an array by index."""
         data = '{"messages": [{"content": "first"}, {"content": "second"}]}'
@@ -34,6 +40,7 @@ class TestApplyJsonPath:
         assert result == "first"
 
     @pytest.mark.spec("TRACE_DISPLAY_SPEC")
+    @pytest.mark.req("Multiple JSONPath matches are concatenated with newlines")
     def test_array_extraction_multiple(self):
         """Test extracting multiple values from an array."""
         data = '{"messages": [{"content": "a"}, {"content": "b"}, {"content": "c"}]}'
@@ -42,6 +49,7 @@ class TestApplyJsonPath:
         assert result == "a\nb\nc"
 
     @pytest.mark.spec("TRACE_DISPLAY_SPEC")
+    @pytest.mark.req("System falls back to raw display when JSONPath is not configured, JSON parsing fails, JSONPath query fails, or JSONPath returns null/empty")
     def test_no_match_returns_failure(self):
         """Test that a query with no matches returns failure."""
         data = '{"foo": "bar"}'
@@ -50,6 +58,7 @@ class TestApplyJsonPath:
         assert result is None
 
     @pytest.mark.spec("TRACE_DISPLAY_SPEC")
+    @pytest.mark.req("System falls back to raw display when JSONPath is not configured, JSON parsing fails, JSONPath query fails, or JSONPath returns null/empty")
     def test_invalid_json_returns_failure(self):
         """Test that invalid JSON returns failure."""
         data = "not json"
@@ -58,6 +67,7 @@ class TestApplyJsonPath:
         assert result is None
 
     @pytest.mark.spec("TRACE_DISPLAY_SPEC")
+    @pytest.mark.req("System falls back to raw display when JSONPath is not configured, JSON parsing fails, JSONPath query fails, or JSONPath returns null/empty")
     def test_null_result_returns_failure(self):
         """Test that a null result returns failure."""
         data = '{"value": null}'
@@ -66,6 +76,7 @@ class TestApplyJsonPath:
         assert result is None
 
     @pytest.mark.spec("TRACE_DISPLAY_SPEC")
+    @pytest.mark.req("System falls back to raw display when JSONPath is not configured, JSON parsing fails, JSONPath query fails, or JSONPath returns null/empty")
     def test_empty_jsonpath_returns_failure(self):
         """Test that an empty JSONPath returns failure."""
         data = '{"message": "hello"}'
@@ -83,6 +94,7 @@ class TestApplyJsonPath:
         assert result is None
 
     @pytest.mark.spec("TRACE_DISPLAY_SPEC")
+    @pytest.mark.req("System falls back to raw display when JSONPath is not configured, JSON parsing fails, JSONPath query fails, or JSONPath returns null/empty")
     def test_invalid_jsonpath_syntax_returns_failure(self):
         """Test that invalid JSONPath syntax returns failure."""
         data = '{"message": "hello"}'
@@ -91,6 +103,7 @@ class TestApplyJsonPath:
         assert result is None
 
     @pytest.mark.spec("TRACE_DISPLAY_SPEC")
+    @pytest.mark.req("System falls back to raw display when JSONPath is not configured, JSON parsing fails, JSONPath query fails, or JSONPath returns null/empty")
     def test_empty_string_result_returns_failure(self):
         """Test that an empty string result returns failure."""
         data = '{"message": ""}'
@@ -99,6 +112,7 @@ class TestApplyJsonPath:
         assert result is None
 
     @pytest.mark.spec("TRACE_DISPLAY_SPEC")
+    @pytest.mark.req("TraceViewer applies JSONPath when configured")
     def test_numeric_value_converted_to_string(self):
         """Test that numeric values are converted to strings."""
         data = '{"count": 42}'
@@ -107,6 +121,7 @@ class TestApplyJsonPath:
         assert result == "42"
 
     @pytest.mark.spec("TRACE_DISPLAY_SPEC")
+    @pytest.mark.req("TraceViewer applies JSONPath when configured")
     def test_boolean_value_converted_to_string(self):
         """Test that boolean values are converted to strings."""
         data = '{"active": true}'
@@ -115,6 +130,7 @@ class TestApplyJsonPath:
         assert result == "True"
 
     @pytest.mark.spec("TRACE_DISPLAY_SPEC")
+    @pytest.mark.req("TraceViewer applies JSONPath when configured")
     def test_deeply_nested_extraction(self):
         """Test extracting from deeply nested structures."""
         data = '{"a": {"b": {"c": {"d": "deep"}}}}'
@@ -123,6 +139,7 @@ class TestApplyJsonPath:
         assert result == "deep"
 
     @pytest.mark.spec("TRACE_DISPLAY_SPEC")
+    @pytest.mark.req("Multiple JSONPath matches are concatenated with newlines")
     def test_array_with_mixed_values(self):
         """Test extracting from array with some null values (nulls filtered out)."""
         data = '{"items": ["one", null, "three"]}'
@@ -132,6 +149,7 @@ class TestApplyJsonPath:
         assert result == "one\nthree"
 
     @pytest.mark.spec("TRACE_DISPLAY_SPEC")
+    @pytest.mark.req("TraceViewer applies JSONPath when configured")
     def test_whitespace_in_jsonpath_trimmed(self):
         """Test that whitespace in JSONPath expression is trimmed."""
         data = '{"message": "hello"}'
@@ -145,6 +163,7 @@ class TestValidateJsonPath:
     """Tests for the validate_jsonpath function."""
 
     @pytest.mark.spec("TRACE_DISPLAY_SPEC")
+    @pytest.mark.req("JSONPath fields are optional and clearly labeled as such")
     def test_valid_jsonpath(self):
         """Test that valid JSONPath expressions are accepted."""
         is_valid, error = validate_jsonpath("$.message")
@@ -152,6 +171,7 @@ class TestValidateJsonPath:
         assert error is None
 
     @pytest.mark.spec("TRACE_DISPLAY_SPEC")
+    @pytest.mark.req("JSONPath fields are optional and clearly labeled as such")
     def test_valid_nested_jsonpath(self):
         """Test that valid nested JSONPath expressions are accepted."""
         is_valid, error = validate_jsonpath("$.response.text")
@@ -159,6 +179,7 @@ class TestValidateJsonPath:
         assert error is None
 
     @pytest.mark.spec("TRACE_DISPLAY_SPEC")
+    @pytest.mark.req("JSONPath fields are optional and clearly labeled as such")
     def test_valid_array_jsonpath(self):
         """Test that valid array JSONPath expressions are accepted."""
         is_valid, error = validate_jsonpath("$.messages[0].content")
@@ -166,6 +187,7 @@ class TestValidateJsonPath:
         assert error is None
 
     @pytest.mark.spec("TRACE_DISPLAY_SPEC")
+    @pytest.mark.req("JSONPath fields are optional and clearly labeled as such")
     def test_valid_wildcard_jsonpath(self):
         """Test that valid wildcard JSONPath expressions are accepted."""
         is_valid, error = validate_jsonpath("$.messages[*].content")
@@ -173,6 +195,7 @@ class TestValidateJsonPath:
         assert error is None
 
     @pytest.mark.spec("TRACE_DISPLAY_SPEC")
+    @pytest.mark.req("JSONPath fields are optional and clearly labeled as such")
     def test_empty_jsonpath_is_valid(self):
         """Test that empty JSONPath (meaning 'not configured') is valid."""
         is_valid, error = validate_jsonpath("")
@@ -184,9 +207,61 @@ class TestValidateJsonPath:
         assert error is None
 
     @pytest.mark.spec("TRACE_DISPLAY_SPEC")
+    @pytest.mark.req("Invalid JSONPath syntax shows helpful error message in preview")
     def test_invalid_jsonpath_syntax(self):
         """Test that invalid JSONPath syntax is rejected."""
         is_valid, error = validate_jsonpath("$.[invalid")
         assert is_valid is False
         assert error is not None
         assert "Invalid JSONPath" in error or "parsing error" in error.lower()
+
+
+@pytest.mark.spec("TRACE_DISPLAY_SPEC")
+@pytest.mark.req("JSONPath evaluation does not noticeably slow down trace display")
+class TestJsonPathPerformance:
+    """Performance smoke-tests for JSONPath extraction."""
+
+    def test_large_payload_extraction_completes_within_budget(self):
+        """JSONPath extraction on a ~100KB JSON payload completes within 100ms.
+
+        This is a smoke-test to ensure JSONPath evaluation does not noticeably
+        slow down trace display, not a strict benchmark.
+        """
+        # Build a ~100KB JSON payload with 500 messages
+        messages = [
+            {"role": "user" if i % 2 == 0 else "assistant", "content": f"Message content number {i} " + "x" * 150}
+            for i in range(500)
+        ]
+        large_payload = json.dumps({"messages": messages, "metadata": {"model": "gpt-4", "tokens": 9999}})
+
+        # Verify payload is at least ~100KB
+        assert len(large_payload) > 100_000
+
+        start = time.perf_counter()
+        result, success = apply_jsonpath(large_payload, "$.messages[0].content")
+        elapsed_ms = (time.perf_counter() - start) * 1000
+
+        assert success is True
+        assert result == "Message content number 0 " + "x" * 150
+        assert elapsed_ms < 100, f"JSONPath extraction took {elapsed_ms:.1f}ms, expected < 100ms"
+
+    def test_wildcard_extraction_on_large_array_completes_within_budget(self):
+        """Wildcard JSONPath on a large array completes within 100ms.
+
+        Wildcard queries ($.items[*].field) match every element, so they
+        are the most expensive common pattern.
+        """
+        items = [{"id": i, "value": f"item-{i}"} for i in range(500)]
+        large_payload = json.dumps({"items": items})
+
+        start = time.perf_counter()
+        result, success = apply_jsonpath(large_payload, "$.items[*].value")
+        elapsed_ms = (time.perf_counter() - start) * 1000
+
+        assert success is True
+        # Verify we got all 500 values joined by newlines
+        lines = result.split("\n")
+        assert len(lines) == 500
+        assert lines[0] == "item-0"
+        assert lines[499] == "item-499"
+        assert elapsed_ms < 100, f"Wildcard extraction took {elapsed_ms:.1f}ms, expected < 100ms"

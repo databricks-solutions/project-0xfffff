@@ -33,6 +33,7 @@ import type { RubricCreate } from '../models/RubricCreate';
 import type { RubricGenerationRequest } from '../models/RubricGenerationRequest';
 import type { RubricSuggestion } from '../models/RubricSuggestion';
 import type { SimpleEvaluationRequest } from '../models/SimpleEvaluationRequest';
+import type { SpanAttributeFilterUpdate } from '../models/SpanAttributeFilterUpdate';
 import type { Trace } from '../models/Trace';
 import type { TraceUpload } from '../models/TraceUpload';
 import type { Workshop } from '../models/Workshop';
@@ -188,6 +189,59 @@ export class WorkshopsService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/workshops/{workshop_id}/preview-jsonpath',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Update Span Attribute Filter
+     * Update the span attribute filter for trace display.
+     *
+     * When configured, the TraceViewer will display a matching span's
+     * inputs/outputs instead of the root trace input/output.
+     * @param workshopId
+     * @param requestBody
+     * @returns Workshop Successful Response
+     * @throws ApiError
+     */
+    public static updateSpanAttributeFilterWorkshopsWorkshopIdSpanAttributeFilterPut(
+        workshopId: string,
+        requestBody: SpanAttributeFilterUpdate,
+    ): CancelablePromise<Workshop> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/workshops/{workshop_id}/span-attribute-filter',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Preview Span Filter
+     * Preview span attribute filter against the first trace in the workshop.
+     * @param workshopId
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static previewSpanFilterWorkshopsWorkshopIdPreviewSpanFilterPost(
+        workshopId: string,
+        requestBody: SpanAttributeFilterUpdate,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/preview-span-filter',
             path: {
                 'workshop_id': workshopId,
             },

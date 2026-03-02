@@ -75,6 +75,7 @@ export type { RubricCreate } from './models/RubricCreate';
 export type { RubricGenerationRequest } from './models/RubricGenerationRequest';
 export type { RubricSuggestion } from './models/RubricSuggestion';
 export type { SimpleEvaluationRequest } from './models/SimpleEvaluationRequest';
+export type { SpanAttributeFilterUpdate } from './models/SpanAttributeFilterUpdate';
 export type { SubmitFindingV2Request } from './models/SubmitFindingV2Request';
 export type { SubmitFollowUpAnswerRequest } from './models/SubmitFollowUpAnswerRequest';
 export type { SuggestGroupsResponse } from './models/SuggestGroupsResponse';

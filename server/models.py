@@ -164,6 +164,7 @@ class Workshop(BaseModel):
     auto_evaluation_prompt: str | None = None  # Derived judge prompt used for auto-evaluation
     auto_evaluation_model: str | None = None  # Model used for auto-evaluation
     show_participant_notes: bool = False  # Facilitator toggle: show notepad to SMEs
+    span_attribute_filter: dict | None = None  # Filter config for selecting a span's inputs/outputs
     created_at: datetime = Field(default_factory=datetime.now)
 
 
