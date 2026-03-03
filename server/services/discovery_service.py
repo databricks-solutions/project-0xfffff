@@ -21,6 +21,8 @@ from server.models import (
     DraftRubricItem,
     DraftRubricItemCreate,
     DraftRubricItemUpdate,
+    Rubric,
+    RubricCreate,
     WorkshopPhase,
 )
 from server.services.database_service import DatabaseService
@@ -1600,6 +1602,76 @@ class DiscoveryService:
         """Persist group assignments to draft rubric items."""
         self._get_workshop_or_404(workshop_id)
         self.db_service.apply_draft_rubric_groups(workshop_id, groups)
+
+    def create_rubric_from_draft(
+        self, workshop_id: str, created_by: str
+    ) -> Rubric:
+        """Create a rubric from draft rubric items.
+
+        Groups become single rubric questions (group_name as title, bullet list
+        of item texts as description). Ungrouped items each become their own
+        question (item text as title, empty description).
+
+        Groups appear first (sorted alphabetically by group name), followed by
+        ungrouped items.
+
+        Uses the existing delimiter convention:
+          title: description|||JUDGE_TYPE|||likert
+        separated by |||QUESTION_SEPARATOR|||
+
+        Raises:
+            HTTPException(400): If no draft rubric items exist for the workshop.
+        """
+        QUESTION_DELIMITER = "|||QUESTION_SEPARATOR|||"
+        JUDGE_TYPE_DELIMITER = "|||JUDGE_TYPE|||"
+
+        items = self.db_service.get_draft_rubric_items(workshop_id)
+        if not items:
+            raise HTTPException(
+                status_code=400,
+                detail="No draft rubric items to create rubric from",
+            )
+
+        # Separate grouped and ungrouped items
+        grouped: dict[str, dict[str, Any]] = {}  # group_id -> {name, items}
+        ungrouped: list[DraftRubricItem] = []
+
+        for item in items:
+            if item.group_id:
+                if item.group_id not in grouped:
+                    grouped[item.group_id] = {
+                        "name": item.group_name or item.group_id,
+                        "items": [],
+                    }
+                grouped[item.group_id]["items"].append(item)
+            else:
+                ungrouped.append(item)
+
+        question_parts: list[str] = []
+
+        # Groups first, sorted alphabetically by group name
+        sorted_groups = sorted(grouped.values(), key=lambda g: g["name"])
+        for group in sorted_groups:
+            title = group["name"]
+            bullet_items = [f"- {i.text}" for i in group["items"]]
+            description = "\n".join(bullet_items)
+            question_parts.append(
+                f"{title}: {description}{JUDGE_TYPE_DELIMITER}likert"
+            )
+
+        # Ungrouped items after
+        for item in ungrouped:
+            question_parts.append(
+                f"{item.text}: {JUDGE_TYPE_DELIMITER}likert"
+            )
+
+        question_text = QUESTION_DELIMITER.join(question_parts)
+
+        rubric_data = RubricCreate(
+            question=question_text,
+            created_by=created_by,
+        )
+        return self.db_service.create_rubric(workshop_id, rubric_data)
 
     def update_trace_thresholds(
         self, workshop_id: str, trace_id: str, thresholds: dict[str, int]
