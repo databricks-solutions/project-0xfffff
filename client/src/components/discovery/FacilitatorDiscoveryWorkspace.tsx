@@ -12,6 +12,7 @@ import {
   useWorkshop,
   useMLflowConfig,
   useUpdateDiscoveryModel,
+  useCreateRubricFromDraft,
 } from '@/hooks/useWorkshopApi';
 import { getModelOptions, getBackendModelName, getFrontendModelName } from '@/utils/modelMapping';
 import { toast } from 'sonner';
@@ -44,6 +45,7 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
   const createDraftItem = useCreateDraftRubricItem(workshopId!);
   const updateModelMutation = useUpdateDiscoveryModel(workshopId!);
   const deleteDraftItem = useDeleteDraftRubricItem(workshopId!);
+  const createRubricFromDraft = useCreateRubricFromDraft(workshopId!);
   const [newItemIds, setNewItemIds] = useState<Set<string>>(new Set());
 
   // State
@@ -192,6 +194,15 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
     updateModelMutation.mutate({ model_name: backendName });
   };
 
+  const handleCreateRubric = useCallback(async () => {
+    try {
+      await createRubricFromDraft.mutateAsync(user?.id || '');
+      onNavigate('rubric');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to create rubric from draft');
+    }
+  }, [createRubricFromDraft, user?.id, onNavigate]);
+
   const isPaused = workshop?.completed_phases?.includes('discovery') ?? false;
 
   return (
@@ -246,7 +257,7 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
           items={draftItems}
           workshopId={workshopId!}
           userId={user?.id || ''}
-          onCreateRubric={() => onNavigate('rubric')}
+          onCreateRubric={handleCreateRubric}
           newItemIds={newItemIds}
         />
       </div>

@@ -1054,6 +1054,28 @@ export function useDeleteDraftRubricItem(workshopId: string) {
   });
 }
 
+export function useCreateRubricFromDraft(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (createdBy: string) => {
+      const response = await fetch(`/workshops/${workshopId}/draft-rubric-items/create-rubric`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ created_by: createdBy }),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to create rubric' }));
+        throw new Error(error.detail || 'Failed to create rubric');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.rubric(workshopId) });
+    },
+  });
+}
+
 export function useSuggestGroups(workshopId: string) {
   return useMutation({
     mutationFn: () => DiscoveryService.suggestDraftRubricGroupsWorkshopsWorkshopIdDraftRubricItemsSuggestGroupsPost(workshopId),
