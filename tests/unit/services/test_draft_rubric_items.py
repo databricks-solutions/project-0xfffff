@@ -300,6 +300,10 @@ class TestCreateRubricFromDraft:
         assert "Completeness check" in rubric.question
         assert "Tone is friendly" in rubric.question
         assert "|||QUESTION_SEPARATOR|||" in rubric.question
+        assert "|||JUDGE_TYPE|||likert" in rubric.question
+        # Verify bullet list format for grouped items
+        assert "- Accuracy matters" in rubric.question
+        assert "- Completeness check" in rubric.question
 
     @pytest.mark.req("Ungrouped draft items each become a question")
     def test_ungrouped_items_each_become_question(self, db_service, workshop):

@@ -1625,6 +1625,7 @@ class DiscoveryService:
         QUESTION_DELIMITER = "|||QUESTION_SEPARATOR|||"
         JUDGE_TYPE_DELIMITER = "|||JUDGE_TYPE|||"
 
+        self._get_workshop_or_404(workshop_id)
         items = self.db_service.get_draft_rubric_items(workshop_id)
         if not items:
             raise HTTPException(
