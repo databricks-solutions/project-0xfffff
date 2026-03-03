@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useUser } from '@/context/UserContext';
 import {
@@ -8,6 +8,7 @@ import {
   useRunDiscoveryAnalysis,
   useDraftRubricItems,
   useCreateDraftRubricItem,
+  useDeleteDraftRubricItem,
   useWorkshop,
   useMLflowConfig,
   useUpdateDiscoveryModel,
@@ -42,9 +43,11 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
   const runAnalysis = useRunDiscoveryAnalysis(workshopId!);
   const createDraftItem = useCreateDraftRubricItem(workshopId!);
   const updateModelMutation = useUpdateDiscoveryModel(workshopId!);
+  const deleteDraftItem = useDeleteDraftRubricItem(workshopId!);
+  const undoItemRef = useRef<Map<string, string>>(new Map()); // key → draft item id
 
   // State
-  const [promotedKeys] = useState<Set<string>>(new Set());
+  const [promotedKeys, setPromotedKeys] = useState<Set<string>>(new Set());
 
   const hasMlflowConfig = !!mlflowConfig;
   const modelOptions = getModelOptions(hasMlflowConfig);
@@ -127,7 +130,12 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
     );
   };
 
-  const handlePromote = (payload: PromotePayload) => {
+  const handlePromote = useCallback((payload: PromotePayload) => {
+    const key = (payload as PromotePayload & { key: string }).key;
+    // 1. Add key to promoted set → triggers CSS collapse
+    setPromotedKeys((prev) => new Set(prev).add(key));
+
+    // 2. Create draft item via API
     createDraftItem.mutate(
       {
         text: payload.text,
@@ -136,13 +144,41 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
         promoted_by: user?.id || '',
       },
       {
-        onSuccess: () => {
-          toast.success('Added to draft rubric');
+        onSuccess: (newItem) => {
+          // Track the mapping for undo
+          undoItemRef.current.set(key, newItem.id);
+
+          // 3. Show toast with undo action
+          toast('Added to draft rubric', {
+            action: {
+              label: 'Undo',
+              onClick: () => {
+                // Remove from promoted keys → finding re-expands
+                setPromotedKeys((prev) => {
+                  const next = new Set(prev);
+                  next.delete(key);
+                  return next;
+                });
+                // Delete the draft item
+                deleteDraftItem.mutate(newItem.id);
+                undoItemRef.current.delete(key);
+              },
+            },
+            duration: 5000,
+          });
         },
-        onError: (err) => toast.error(err.message || 'Failed to promote'),
+        onError: (err) => {
+          // Revert on failure — remove from promoted keys
+          setPromotedKeys((prev) => {
+            const next = new Set(prev);
+            next.delete(key);
+            return next;
+          });
+          toast.error(err.message || 'Failed to promote');
+        },
       }
     );
-  };
+  }, [createDraftItem, deleteDraftItem, user?.id]);
 
   const handleModelChange = (value: string) => {
     const backendName = value === 'demo' || value === 'custom' ? value : getBackendModelName(value);
