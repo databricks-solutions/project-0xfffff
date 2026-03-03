@@ -17,6 +17,7 @@ interface DraftRubricSidebarProps {
   workshopId: string;
   userId: string;
   onCreateRubric: () => void;
+  newItemIds?: Set<string>;
 }
 
 const CREATE_GROUP_OPTION = '__create_new_group__';
@@ -26,6 +27,7 @@ export const DraftRubricSidebar: React.FC<DraftRubricSidebarProps> = ({
   workshopId,
   userId,
   onCreateRubric,
+  newItemIds = new Set(),
 }) => {
   const createMutation = useCreateDraftRubricItem(workshopId);
   const updateMutation = useUpdateDraftRubricItem(workshopId);
@@ -203,7 +205,7 @@ export const DraftRubricSidebar: React.FC<DraftRubricSidebarProps> = ({
     return (
       <div
         key={item.id}
-        className="border rounded p-3 bg-white hover:shadow-sm transition-shadow"
+        className={`border rounded p-3 bg-white hover:shadow-sm transition-shadow${newItemIds.has(item.id) ? ' draft-item-new' : ''}`}
       >
         <div className="flex items-start justify-between gap-2 mb-1">
           {isEditing ? (

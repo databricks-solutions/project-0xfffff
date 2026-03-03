@@ -45,6 +45,7 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
   const updateModelMutation = useUpdateDiscoveryModel(workshopId!);
   const deleteDraftItem = useDeleteDraftRubricItem(workshopId!);
   const undoItemRef = useRef<Map<string, string>>(new Map()); // key → draft item id
+  const [newItemIds, setNewItemIds] = useState<Set<string>>(new Set());
 
   // State
   const [promotedKeys, setPromotedKeys] = useState<Set<string>>(new Set());
@@ -148,6 +149,17 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
           // Track the mapping for undo
           undoItemRef.current.set(key, newItem.id);
 
+          // Track as new for sidebar highlight
+          setNewItemIds((prev) => new Set(prev).add(newItem.id));
+          // Clear highlight after animation completes
+          setTimeout(() => {
+            setNewItemIds((prev) => {
+              const next = new Set(prev);
+              next.delete(newItem.id);
+              return next;
+            });
+          }, 1200);
+
           // 3. Show toast with undo action
           toast('Added to draft rubric', {
             action: {
@@ -240,6 +252,7 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
           workshopId={workshopId!}
           userId={user?.id || ''}
           onCreateRubric={() => onNavigate('rubric')}
+          newItemIds={newItemIds}
         />
       </div>
     </div>
