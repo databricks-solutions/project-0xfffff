@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useUser } from '@/context/UserContext';
 import {
@@ -44,7 +44,6 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
   const createDraftItem = useCreateDraftRubricItem(workshopId!);
   const updateModelMutation = useUpdateDiscoveryModel(workshopId!);
   const deleteDraftItem = useDeleteDraftRubricItem(workshopId!);
-  const undoItemRef = useRef<Map<string, string>>(new Map()); // key → draft item id
   const [newItemIds, setNewItemIds] = useState<Set<string>>(new Set());
 
   // State
@@ -132,7 +131,7 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
   };
 
   const handlePromote = useCallback((payload: PromotePayload) => {
-    const key = (payload as PromotePayload & { key: string }).key;
+    const key = payload.key;
     // 1. Add key to promoted set → triggers CSS collapse
     setPromotedKeys((prev) => new Set(prev).add(key));
 
@@ -146,9 +145,6 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
       },
       {
         onSuccess: (newItem) => {
-          // Track the mapping for undo
-          undoItemRef.current.set(key, newItem.id);
-
           // Track as new for sidebar highlight
           setNewItemIds((prev) => new Set(prev).add(newItem.id));
           // Clear highlight after animation completes
@@ -173,7 +169,6 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
                 });
                 // Delete the draft item
                 deleteDraftItem.mutate(newItem.id);
-                undoItemRef.current.delete(key);
               },
             },
             duration: 5000,
