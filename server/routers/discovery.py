@@ -24,6 +24,7 @@ from server.models import (
     DraftRubricItemUpdate,
     GenerateFollowUpRequest,
     ProposedGroup,
+    Rubric,
     SubmitFollowUpAnswerRequest,
     SuggestGroupsResponse,
 )
@@ -503,6 +504,27 @@ async def apply_draft_rubric_groups(
     svc = DiscoveryService(db)
     svc.apply_draft_rubric_groups(workshop_id, request.groups)
     return {"message": "Groups applied successfully"}
+
+
+class CreateRubricFromDraftRequest(BaseModel):
+    """Request to create a rubric from draft items."""
+
+    created_by: str
+
+
+@router.post("/{workshop_id}/draft-rubric-items/create-rubric", response_model=Rubric)
+async def create_rubric_from_draft(
+    workshop_id: str,
+    request: CreateRubricFromDraftRequest,
+    db: Session = Depends(get_db),
+) -> Rubric:
+    """Create a rubric from draft rubric items.
+
+    Groups become rubric questions (group_name -> title, item texts -> description).
+    Ungrouped items each become their own question. All default to LIKERT judge type.
+    """
+    svc = DiscoveryService(db)
+    return svc.create_rubric_from_draft(workshop_id, created_by=request.created_by)
 
 
 @router.put("/{workshop_id}/draft-rubric-items/{item_id}", response_model=DraftRubricItem)
