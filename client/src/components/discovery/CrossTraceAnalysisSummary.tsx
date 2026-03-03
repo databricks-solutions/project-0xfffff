@@ -75,7 +75,7 @@ export const CrossTraceAnalysisSummary: React.FC<CrossTraceAnalysisSummaryProps>
                 {crossTraceFindings.map((f, i) => {
                   const key = `cross-finding-${analysis.id}-${i}`;
                   return (
-                    <div key={key} className="flex items-start justify-between rounded-lg bg-slate-50 p-3">
+                    <div key={key} className={`finding-item flex items-start justify-between rounded-lg bg-slate-50 p-3${promotedKeys.has(key) ? ' promoted-collapsing' : ''}`}>
                       <div>
                         <p className="text-sm text-slate-800 font-medium">{f.text}</p>
                         <span className="text-xs text-slate-500">
@@ -88,7 +88,7 @@ export const CrossTraceAnalysisSummary: React.FC<CrossTraceAnalysisSummaryProps>
                         className="text-xs shrink-0 ml-3"
                         disabled={promotedKeys.has(key)}
                         onClick={() =>
-                          onPromote({ text: f.text, source_type: 'finding', source_trace_ids: f.evidence_trace_ids })
+                          onPromote({ key, text: f.text, source_type: 'finding', source_trace_ids: f.evidence_trace_ids })
                         }
                       >
                         <ArrowUpRight className="w-3 h-3 mr-1" />
