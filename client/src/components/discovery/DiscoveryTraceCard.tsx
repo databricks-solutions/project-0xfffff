@@ -21,6 +21,7 @@ interface Disagreement {
 }
 
 export interface PromotePayload {
+  key: string;
   text: string;
   source_type: 'finding' | 'disagreement';
   source_trace_ids: string[];
@@ -155,7 +156,7 @@ export const DiscoveryTraceCard: React.FC<DiscoveryTraceCardProps> = ({
                 {disagreements?.map((d, i) => {
                   const key = `disagreement-${trace.id}-${i}`;
                   return (
-                    <div key={key} className="rounded-lg border border-red-200 bg-red-50 p-3">
+                    <div key={key} className={`finding-item rounded-lg border border-red-200 bg-red-50 p-3${promotedKeys.has(key) ? ' promoted-collapsing' : ''}`}>
                       <div className="flex items-center gap-2 mb-1">
                         <AlertTriangle className="w-4 h-4 text-red-600" />
                         <span className="text-xs font-semibold uppercase text-red-700">High Disagreement</span>
@@ -187,7 +188,7 @@ export const DiscoveryTraceCard: React.FC<DiscoveryTraceCardProps> = ({
                         size="sm"
                         className="mt-2 text-xs"
                         disabled={promotedKeys.has(key)}
-                        onClick={() => onPromote({ text: d.summary, source_type: 'disagreement', source_trace_ids: [d.trace_id] })}
+                        onClick={() => onPromote({ key, text: d.summary, source_type: 'disagreement', source_trace_ids: [d.trace_id] })}
                       >
                         <ArrowUpRight className="w-3 h-3 mr-1" />
                         {promotedKeys.has(key) ? 'Added' : 'Add to Draft'}
@@ -199,14 +200,14 @@ export const DiscoveryTraceCard: React.FC<DiscoveryTraceCardProps> = ({
                   const key = `finding-${trace.id}-${i}`;
                   const priorityColor = f.priority === 'high' ? 'border-amber-200 bg-amber-50' : 'border-blue-200 bg-blue-50';
                   return (
-                    <div key={key} className={`rounded-lg border ${priorityColor} p-3`}>
+                    <div key={key} className={`finding-item rounded-lg border ${priorityColor} p-3${promotedKeys.has(key) ? ' promoted-collapsing' : ''}`}>
                       <p className="text-sm text-slate-800 font-medium">{f.text}</p>
                       <Button
                         variant="outline"
                         size="sm"
                         className="mt-2 text-xs"
                         disabled={promotedKeys.has(key)}
-                        onClick={() => onPromote({ text: f.text, source_type: 'finding', source_trace_ids: f.evidence_trace_ids })}
+                        onClick={() => onPromote({ key, text: f.text, source_type: 'finding', source_trace_ids: f.evidence_trace_ids })}
                       >
                         <ArrowUpRight className="w-3 h-3 mr-1" />
                         {promotedKeys.has(key) ? 'Added' : 'Add to Draft'}
