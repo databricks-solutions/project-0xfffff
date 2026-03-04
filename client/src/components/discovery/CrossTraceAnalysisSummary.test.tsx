@@ -1,3 +1,5 @@
+// @spec DISCOVERY_SPEC
+// @req Cross-trace analysis findings appear in collapsible summary section above the feed
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
@@ -20,7 +22,6 @@ const mockAnalysis = {
   updated_at: '2026-02-27T00:00:00Z',
 };
 
-// @req DISCOVERY_SPEC.facilitator-workspace.cross-trace-summary
 describe('CrossTraceAnalysisSummary', () => {
   it('renders summary text', () => {
     render(

@@ -1,3 +1,5 @@
+// @spec DISCOVERY_SPEC
+// @req Single two-panel workspace replaces multi-page flow (no FacilitatorDashboard discovery tabs, no FindingsReviewPage)
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { FacilitatorDiscoveryWorkspace } from './FacilitatorDiscoveryWorkspace';
@@ -36,7 +38,6 @@ vi.mock('@/context/UserContext', () => ({
 
 const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
-// @req DISCOVERY_SPEC.facilitator-workspace.layout
 describe('FacilitatorDiscoveryWorkspace', () => {
   it('renders the two-panel layout with trace feed and sidebar', () => {
     render(

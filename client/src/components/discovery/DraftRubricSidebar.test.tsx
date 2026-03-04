@@ -1,3 +1,5 @@
+// @spec DISCOVERY_SPEC
+// @req Draft rubric items do NOT show source-type badges (Finding, Disagreement, etc.)
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
@@ -9,7 +11,6 @@ const wrap = (ui: React.ReactElement) => (
   <QueryClientProvider client={qc}>{ui}</QueryClientProvider>
 );
 
-// @req DISCOVERY_SPEC.facilitator-workspace.draft-rubric-sidebar
 describe('DraftRubricSidebar', () => {
   const mockItems = [
     { id: 'item-1', workshop_id: 'ws-1', text: 'Accuracy matters', source_type: 'finding', source_trace_ids: ['t1'], group_id: 'g1', group_name: 'Response Quality', promoted_by: 'user-1', promoted_at: '2026-02-27T00:00:00Z' },

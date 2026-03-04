@@ -267,7 +267,7 @@ class TestSourceTypeValidation:
 class TestCreateRubricFromDraft:
     """@req DI-S3-RUBRIC-SEED: Draft rubric items seed initial rubric."""
 
-    @pytest.mark.req("Grouped draft items become rubric questions")
+    @pytest.mark.req("\"Create Rubric \u2192\" in sidebar transitions to rubric creation with groups pre-populated as criteria")
     def test_grouped_items_become_questions(self, db_service, workshop):
         """@req DI-S3-GROUP-TO-Q: Each group becomes one rubric question."""
         # Create draft items in two groups

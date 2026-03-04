@@ -1,9 +1,10 @@
+// @spec DISCOVERY_SPEC
+// @req Overview bar shows stats inline + compact controls (Run Analysis, Add Traces, Pause, Model selector)
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { DiscoveryOverviewBar } from './DiscoveryOverviewBar';
 
-// @req DISCOVERY_SPEC.facilitator-workspace.overview-bar
 describe('DiscoveryOverviewBar', () => {
   const defaultProps = {
     participantCount: 4,

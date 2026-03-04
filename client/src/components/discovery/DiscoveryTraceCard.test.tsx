@@ -1,3 +1,5 @@
+// @spec DISCOVERY_SPEC
+// @req Trace feed shows actual trace content (input/output), not trace ID badges
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
@@ -59,7 +61,6 @@ const mockDisagreements = [
   },
 ];
 
-// @req DISCOVERY_SPEC.facilitator-workspace.trace-card
 describe('DiscoveryTraceCard', () => {
   it('renders trace input and output content', () => {
     render(
