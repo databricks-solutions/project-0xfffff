@@ -32,21 +32,65 @@ import { getModelOptions, getBackendModelName, getFrontendModelName, getDisplayN
 import { parseRubricQuestions } from '@/utils/rubricUtils';
 import { Pagination } from '@/components/Pagination';
 import { TraceDataViewer } from '@/components/TraceDataViewer';
+import { convertTraceToTraceData } from '@/utils/traceUtils';
+import { CustomLLMProviderConfig } from '@/components/CustomLLMProviderConfig';
 import { toast } from 'sonner';
 
-import type { 
-  JudgePrompt, 
-  JudgePromptCreate, 
-  JudgeEvaluation, 
+import { JudgeType } from '@/client';
+import type {
+  JudgePrompt,
+  JudgePromptCreate,
+  JudgeEvaluation,
   JudgePerformanceMetrics,
   JudgeEvaluationResult,
   JudgeExportConfig,
-  JudgeType,
   Rubric,
   Annotation,
   Trace
 } from '@/client';
 import { defaultPromptTemplates } from '@/components/JudgeTypeSelector';
+
+/** Shape of model_parameters when accessing judge-specific fields */
+interface JudgeModelParameters {
+  judge_name?: string;
+  aligned?: boolean;
+  alignment_model?: string;
+  temperature?: number;
+  max_tokens?: number;
+}
+
+/** Extended metrics that may include total_evaluations_all from the backend */
+interface JudgePerformanceMetricsExtended extends JudgePerformanceMetrics {
+  total_evaluations_all?: number;
+}
+
+/** Shape of evaluation items returned from auto-evaluation API responses */
+interface AutoEvalEvaluationResponse {
+  trace_id: string;
+  mlflow_trace_id?: string;
+  predicted_rating?: number | null;
+  human_rating?: number | null;
+  confidence?: number | null;
+  reasoning?: string | null;
+  judge_name?: string;
+}
+
+/** Extended evaluation type used in this component's state (includes mlflow_trace_id) */
+interface JudgeEvaluationWithMlflow extends JudgeEvaluation {
+  mlflow_trace_id?: string;
+}
+
+/** Result returned from the alignment job */
+interface AlignmentJobResult {
+  success: boolean;
+  aligned_instructions?: string;
+  saved_prompt_id?: string;
+  judge_name?: string;
+  trace_count?: number;
+  saved_prompt_version?: number;
+  metrics?: JudgePerformanceMetrics;
+  evaluations?: JudgeEvaluation[];
+}
 
 export function JudgeTuningPage() {
   const { workshopId } = useWorkshopContext();
@@ -64,10 +108,10 @@ export function JudgeTuningPage() {
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
   const [selectedEvaluationModel, setSelectedEvaluationModel] = useState<string>('Claude Opus 4.5');
   const [selectedAlignmentModel, setSelectedAlignmentModel] = useState<string>('Claude Opus 4.5');
-  const [evaluations, setEvaluations] = useState<JudgeEvaluation[]>([]);
-  const [metrics, setMetrics] = useState<JudgePerformanceMetrics | null>(null);
+  const [evaluations, setEvaluations] = useState<JudgeEvaluationWithMlflow[]>([]);
+  const [metrics, setMetrics] = useState<JudgePerformanceMetricsExtended | null>(null);
   const [rubric, setRubric] = useState<Rubric | null>(null);
-  const [mlflowConfig, setMlflowConfig] = useState<any>(null);
+  const [mlflowConfig, setMlflowConfig] = useState<Record<string, unknown> | null>(null);
   
   // Selected rubric question index for tuning
   const [selectedQuestionIndex, setSelectedQuestionIndex] = useState<number>(0);
@@ -106,7 +150,7 @@ export function JudgeTuningPage() {
   const [isRunningAlignment, setIsRunningAlignment] = useState(false);
   const [evaluationComplete, setEvaluationComplete] = useState(false);
   const [alignmentLogs, setAlignmentLogs] = useState<string[]>([]);
-  const [alignmentResult, setAlignmentResult] = useState<any>(null);
+  const [alignmentResult, setAlignmentResult] = useState<AlignmentJobResult | null>(null);
   const [showAlignmentLogs, setShowAlignmentLogs] = useState(false);
   
   // Evaluation mode: 'mlflow' or 'simple'
@@ -374,7 +418,7 @@ export function JudgeTuningPage() {
             if (resultsResponse.ok) {
               const resultsData = await resultsResponse.json();
               if (resultsData.evaluations && resultsData.evaluations.length > 0) {
-                const evalResults = resultsData.evaluations.map((e: any) => ({
+                const evalResults = resultsData.evaluations.map((e: AutoEvalEvaluationResponse) => ({
                   id: e.trace_id,
                   trace_id: e.trace_id,
                   mlflow_trace_id: e.mlflow_trace_id,
@@ -643,7 +687,7 @@ export function JudgeTuningPage() {
           }
 
           if (autoEvalData.evaluations && autoEvalData.evaluations.length > 0) {
-            const evalResults = autoEvalData.evaluations.map((e: any) => ({
+            const evalResults = autoEvalData.evaluations.map((e: AutoEvalEvaluationResponse) => ({
               id: e.trace_id,
               trace_id: e.trace_id,
               mlflow_trace_id: e.mlflow_trace_id,
@@ -687,7 +731,7 @@ export function JudgeTuningPage() {
         console.error('[AutoEval] Failed to fetch auto-evaluation results:', autoEvalErr);
       }
 
-    } catch (err: any) {
+    } catch {
       // Don't set error that blocks UI, silent fail
     } finally {
       setIsLoading(false);
@@ -697,15 +741,15 @@ export function JudgeTuningPage() {
   // Helper to detect judge type from prompt content
   const detectPromptJudgeType = (promptText: string): JudgeType => {
     if (promptText.includes('scale of 0-1') || promptText.includes('0 or 1') || promptText.includes('(PASS)') || promptText.includes('(FAIL)')) {
-      return 'binary';
+      return JudgeType.BINARY;
     }
     if (promptText.includes('scale of 1-5') || promptText.includes('1 = Poor') || promptText.includes('5 = Excellent')) {
-      return 'likert';
+      return JudgeType.LIKERT;
     }
     if (promptText.includes('qualitative feedback') || promptText.includes('detailed feedback') || promptText.includes('Key observations')) {
-      return 'freeform';
+      return JudgeType.FREEFORM;
     }
-    return 'likert'; // default
+    return JudgeType.LIKERT; // default
   };
 
   const createDefaultPrompt = (rubricQuestion: string, questionIndex: number = 0) => {
@@ -715,7 +759,7 @@ export function JudgeTuningPage() {
     const questionText = targetQuestion 
       ? `${targetQuestion.title}: ${targetQuestion.description}` 
       : rubricQuestion;
-    const judgeType = targetQuestion?.judgeType || 'likert';
+    const judgeType = targetQuestion?.judgeType || JudgeType.LIKERT;
     
     // Return different prompt templates based on judge type
     // NOTE: Do NOT add custom output format instructions - MLflow InstructionsJudge
@@ -810,8 +854,8 @@ Think step by step about how well the output addresses the criteria, then provid
       const updatedPrompts = await WorkshopsService.getJudgePromptsWorkshopsWorkshopIdJudgePromptsGet(workshopId);
       setPrompts(updatedPrompts);
 
-    } catch (err: any) {
-      setError(err.message || 'Failed to create baseline prompt');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to create baseline prompt');
     } finally {
       setIsLoading(false);
     }
@@ -934,9 +978,10 @@ Think step by step about how well the output addresses the criteria, then provid
       
       toast.success(`Prompt saved as v${newPrompt.version}`);
 
-    } catch (err: any) {
-      setError(err.message || 'Failed to save prompt');
-      toast.error('Failed to save prompt: ' + (err.message || 'Unknown error'));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to save prompt';
+      setError(message);
+      toast.error('Failed to save prompt: ' + message);
     } finally {
       setIsLoading(false);
     }
@@ -1021,8 +1066,8 @@ Think step by step about how well the output addresses the criteria, then provid
       try {
         toast.info('Aggregating SME feedback...');
         await aggregateAllFeedback.mutateAsync();
-      } catch (err: any) {
-        const message = err?.message || 'Failed to aggregate SME feedback';
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Failed to aggregate SME feedback';
         toast.error(message);
         setEvaluationError(message);
         setIsRunningEvaluation(false);
@@ -1157,9 +1202,9 @@ Think step by step about how well the output addresses the criteria, then provid
       // Start polling
       await poll();
       
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[EVAL] Exception caught:', error);
-      const message = error?.message || 'Evaluation failed';
+      const message = error instanceof Error ? error.message : 'Evaluation failed';
       toast.error(`Evaluation failed: ${message}`);
       updateAlignmentLogs(prev => [...prev, `ERROR: ${message}`]);
       setEvaluationError(message);
@@ -1236,9 +1281,9 @@ Think step by step about how well the output addresses the criteria, then provid
       setIsPollingAutoEval(true);
       toast.info('Re-evaluation started. Polling for results...');
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[RE-EVAL] Exception caught:', error);
-      const message = error?.message || 'Re-evaluation failed';
+      const message = error instanceof Error ? error.message : 'Re-evaluation failed';
       toast.error(`Re-evaluation failed: ${message}`);
       updateAlignmentLogs(prev => [...prev, `ERROR: ${message}`]);
       setEvaluationError(message);
@@ -1294,9 +1339,9 @@ Think step by step about how well the output addresses the criteria, then provid
       updateAlignmentLogs(prev => [...prev, `Evaluation job started: ${job_id}`]);
       toast.success(`Started evaluation for ${judgeName}`);
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[RUN-EVAL] Exception caught:', error);
-      const message = error?.message || 'Evaluation failed';
+      const message = error instanceof Error ? error.message : 'Evaluation failed';
       toast.error(`Evaluation failed: ${message}`);
       updateAlignmentLogs(prev => [...prev, `ERROR: ${message}`]);
       setEvaluationError(message);
@@ -1340,7 +1385,7 @@ Think step by step about how well the output addresses the criteria, then provid
             if (resultsResponse.ok) {
               const resultsData = await resultsResponse.json();
               if (resultsData.evaluations && resultsData.evaluations.length > 0) {
-                const evalResults = resultsData.evaluations.map((e: any) => ({
+                const evalResults = resultsData.evaluations.map((e: AutoEvalEvaluationResponse) => ({
                   id: e.trace_id,
                   trace_id: e.trace_id,
                   mlflow_trace_id: e.mlflow_trace_id,
@@ -1409,7 +1454,7 @@ Think step by step about how well the output addresses the criteria, then provid
               if (resultsResponse.ok) {
                 const resultsData = await resultsResponse.json();
                 if (resultsData.evaluations && resultsData.evaluations.length > 0) {
-                  const evalResults = resultsData.evaluations.map((e: any) => ({
+                  const evalResults = resultsData.evaluations.map((e: AutoEvalEvaluationResponse) => ({
                     id: e.trace_id,
                     trace_id: e.trace_id,
                     mlflow_trace_id: e.mlflow_trace_id,
@@ -1434,10 +1479,11 @@ Think step by step about how well the output addresses the criteria, then provid
           throw new Error('Auto-evaluation timed out');
         }
 
-      } catch (autoEvalError: any) {
+      } catch (autoEvalError: unknown) {
         console.error('[ALIGN] Auto-evaluation failed:', autoEvalError);
-        toast.error(`Auto-evaluation failed: ${autoEvalError.message}`);
-        updateAlignmentLogs(prev => [...prev, `ERROR: ${autoEvalError.message}`]);
+        const message = autoEvalError instanceof Error ? autoEvalError.message : 'Auto-evaluation failed';
+        toast.error(`Auto-evaluation failed: ${message}`);
+        updateAlignmentLogs(prev => [...prev, `ERROR: ${message}`]);
         setIsRunningAlignment(false);
         return;
       }
@@ -1543,7 +1589,7 @@ Think step by step about how well the output addresses the criteria, then provid
                       if (evalResponse.ok) {
                         const evalData = await evalResponse.json();
                         if (evalData.evaluations && evalData.evaluations.length > 0) {
-                          const evalResults = evalData.evaluations.map((e: any) => ({
+                          const evalResults = evalData.evaluations.map((e: AutoEvalEvaluationResponse) => ({
                             id: e.trace_id,
                             trace_id: e.trace_id,
                             mlflow_trace_id: e.mlflow_trace_id,
@@ -1612,9 +1658,9 @@ Think step by step about how well the output addresses the criteria, then provid
       // Start polling
       await poll();
       
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[ALIGN] Exception caught:', error);
-      const message = error?.message || 'Alignment failed';
+      const message = error instanceof Error ? error.message : 'Alignment failed';
       toast.error(`Alignment failed: ${message}`);
       updateAlignmentLogs(prev => [...prev, `ERROR: ${message}`]);
       setIsRunningAlignment(false);
@@ -1654,8 +1700,8 @@ Think step by step about how well the output addresses the criteria, then provid
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-    } catch (err: any) {
-      setError(err.message || 'Failed to export judge');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to export judge');
     }
   };
 
@@ -1808,19 +1854,19 @@ Think step by step about how well the output addresses the criteria, then provid
                     <SelectItem key={prompt.id} value={prompt.id}>
                       <div className="flex items-center justify-between w-full">
                         <div className="flex items-center gap-2">
-                          <span className="font-semibold">v{(prompt.model_parameters as any)?.judge_name ? prompt.version : 0}</span>
+                          <span className="font-semibold">v{(prompt.model_parameters as JudgeModelParameters | null)?.judge_name ? prompt.version : 0}</span>
                           <Badge className={`text-xs ${
-                            (prompt.model_parameters as any)?.aligned
+                            (prompt.model_parameters as JudgeModelParameters | null)?.aligned
                               ? 'bg-purple-100 text-purple-700 border-purple-300'
-                              : !(prompt.model_parameters as any)?.judge_name
+                              : !(prompt.model_parameters as JudgeModelParameters | null)?.judge_name
                                 ? 'bg-gray-100 text-gray-700 border-gray-300'
                                 : prompt.model_name === 'demo'
                                   ? 'bg-orange-100 text-orange-700 border-orange-300'
                                   : 'bg-blue-100 text-blue-700 border-blue-300'
                           }`}>
-                            {(prompt.model_parameters as any)?.aligned
+                            {(prompt.model_parameters as JudgeModelParameters | null)?.aligned
                               ? 'Aligned'
-                              : !(prompt.model_parameters as any)?.judge_name
+                              : !(prompt.model_parameters as JudgeModelParameters | null)?.judge_name
                                 ? 'Default'
                                 : prompt.model_name === 'demo'
                                   ? 'Demo'
@@ -1958,6 +2004,16 @@ Think step by step about how well the output addresses the criteria, then provid
             </div>
           )}
 
+          {/* Custom LLM Provider Configuration */}
+          <div className="mb-4">
+            <CustomLLMProviderConfig
+              workshopId={workshopId!}
+              onConfigChange={(config) => {
+                // Track when custom provider is configured for model dropdown
+              }}
+            />
+          </div>
+
           {/* Performance Metrics Bar - Only show after evaluation has been run */}
           {metrics && hasEvaluated && (() => {
             const agreementByRating = metrics.agreement_by_rating || {};
@@ -2011,15 +2067,15 @@ Think step by step about how well the output addresses the criteria, then provid
                     <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total</span>
                     <div className="text-2xl font-bold text-blue-600 mt-1">
                       {metrics.total_evaluations}
-                      {(metrics as any).total_evaluations_all && (metrics as any).total_evaluations_all > metrics.total_evaluations && (
+                      {metrics.total_evaluations_all && metrics.total_evaluations_all > metrics.total_evaluations && (
                         <span className="text-xs text-gray-400 ml-1">
-                          / {(metrics as any).total_evaluations_all}
+                          / {metrics.total_evaluations_all}
                         </span>
                       )}
                     </div>
-                    {(metrics as any).total_evaluations_all && (metrics as any).total_evaluations_all > metrics.total_evaluations && (
+                    {metrics.total_evaluations_all && metrics.total_evaluations_all > metrics.total_evaluations && (
                       <div className="text-xs text-amber-600 mt-1">
-                        {(metrics as any).total_evaluations_all - metrics.total_evaluations} missing ratings
+                        {metrics.total_evaluations_all - metrics.total_evaluations} missing ratings
                       </div>
                     )}
                   </div>
@@ -2061,11 +2117,11 @@ Think step by step about how well the output addresses the criteria, then provid
               )}
 
               {/* Missing ratings warning */}
-              {(metrics as any).total_evaluations_all && (metrics as any).total_evaluations_all > metrics.total_evaluations && (
+              {metrics.total_evaluations_all && metrics.total_evaluations_all > metrics.total_evaluations && (
                 <div className="mt-3 text-xs text-orange-700 bg-orange-50 border-l-2 border-orange-400 px-3 py-2 rounded flex items-start gap-2">
                   <XCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
                   <div>
-                    <strong>Warning:</strong> {(metrics as any).total_evaluations_all - metrics.total_evaluations} out of {(metrics as any).total_evaluations_all} evaluations have missing or invalid judge ratings.
+                    <strong>Warning:</strong> {metrics.total_evaluations_all - metrics.total_evaluations} out of {metrics.total_evaluations_all} evaluations have missing or invalid judge ratings.
                     These may have been rejected due to invalid responses (e.g., MLflow returning 3.0 for binary judges).
                     Only evaluations with both valid human and judge ratings are included in the metrics.
                   </div>
@@ -2119,7 +2175,7 @@ Think step by step about how well the output addresses the criteria, then provid
                         const endIndex = startIndex + itemsPerPage;
                         const paginatedTraces = annotatedTraces.slice(startIndex, endIndex);
                         
-                        return paginatedTraces.map((trace: any, index: number) => {
+                        return paginatedTraces.map((trace: Trace, index: number) => {
                           // Find annotations for this trace and get rating for SELECTED question only
                           const traceAnnotations = annotations.filter(a => a.trace_id === trace.id);
                           
@@ -2188,9 +2244,9 @@ Think step by step about how well the output addresses the criteria, then provid
                           const expectedJudgeName = selectedQuestion?.title
                             ? selectedQuestion.title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') + '_judge'
                             : '';
-                          const hasJudgeLabels = evaluations.some((e: any) => e.predicted_feedback);
+                          const hasJudgeLabels = evaluations.some((e: JudgeEvaluationWithMlflow) => e.predicted_feedback);
 
-                          const matchesTrace = (e: any) => {
+                          const matchesTrace = (e: JudgeEvaluationWithMlflow) => {
                             if (e.trace_id && e.trace_id === trace.id) return true;
                             if (e.mlflow_trace_id && trace.mlflow_trace_id && e.mlflow_trace_id === trace.mlflow_trace_id) return true;
                             if (e.trace_id && trace.mlflow_trace_id && e.trace_id === trace.mlflow_trace_id) return true;
@@ -2198,7 +2254,7 @@ Think step by step about how well the output addresses the criteria, then provid
                           };
                           // If evaluations have judge labels, filter by the selected question
                           // Otherwise fall back to first match (legacy data without labels)
-                          let evaluation = hasJudgeLabels && expectedJudgeName
+                          const evaluation = hasJudgeLabels && expectedJudgeName
                             ? evaluations.find((e: any) => matchesTrace(e) && e.predicted_feedback === expectedJudgeName)
                             : evaluations.find((e: any) => matchesTrace(e));
                           // REMOVED fallback: Don't show other judges' scores when filtering by judge name
@@ -2292,8 +2348,8 @@ Think step by step about how well the output addresses the criteria, then provid
                               <tr>
                                 <td colSpan={6} className="p-0">
                                   <div className="bg-gray-50 border-t">
-                                    <TraceDataViewer 
-                                      trace={trace}
+                                    <TraceDataViewer
+                                      trace={convertTraceToTraceData(trace)}
                                       showContext={true}
                                       className="m-4"
                                     />

@@ -2,8 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { JudgeType } from './JudgePrompt';
-
+import type { JudgeType } from './JudgeType';
 /**
  * Request model for creating a judge prompt.
  */
@@ -13,7 +12,7 @@ export type JudgePromptCreate = {
      */
     prompt_text: string;
     /**
-     * Type of judge: rubric, binary, or freeform
+     * Type of judge: likert, binary, or freeform
      */
     judge_type?: JudgeType;
     /**
@@ -29,12 +28,12 @@ export type JudgePromptCreate = {
      */
     model_parameters?: (Record<string, any> | null);
     /**
-     * Custom labels for binary judge
+     * Custom labels for binary judge, e.g. {"pass": "Pass", "fail": "Fail"}
      */
     binary_labels?: (Record<string, string> | null);
     /**
      * Rating scale for rubric judge (default 5-point)
      */
-    rating_scale?: number;
+    rating_scale?: (number | null);
 };
 

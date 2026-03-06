@@ -7,9 +7,7 @@
 
 import type {
   User,
-  UserRole,
   Workshop,
-  WorkshopPhase,
   Trace,
   Rubric,
   Annotation,
@@ -17,6 +15,7 @@ import type {
   UserPermissions,
   AuthResponse,
 } from '../types';
+import { JudgeType, UserRole, UserStatus, WorkshopPhase, WorkshopStatus } from '../types';
 
 // Counter for generating unique IDs
 let idCounter = 0;
@@ -46,14 +45,14 @@ export function resetIdCounter(): void {
 export class UserBuilder {
   private data: Partial<User> = {};
 
-  constructor(role: UserRole = 'participant') {
+  constructor(role: UserRole = UserRole.PARTICIPANT) {
     this.data = {
       id: generateId(),
       email: `${role}-${idCounter}@test.com`,
       name: `Test ${role.charAt(0).toUpperCase() + role.slice(1)} ${idCounter}`,
       role,
       workshop_id: '',
-      status: 'active',
+      status: UserStatus.ACTIVE,
       created_at: new Date().toISOString(),
     };
   }
@@ -83,7 +82,7 @@ export class UserBuilder {
     return this;
   }
 
-  withStatus(status: 'active' | 'inactive' | 'pending'): this {
+  withStatus(status: UserStatus): this {
     this.data.status = status;
     return this;
   }
@@ -105,8 +104,8 @@ export class WorkshopBuilder {
       id,
       name: `Test Workshop ${idCounter}`,
       facilitator_id: '',
-      status: 'active',
-      current_phase: 'intake',
+      status: WorkshopStatus.ACTIVE,
+      current_phase: WorkshopPhase.INTAKE,
       completed_phases: [],
       discovery_started: false,
       annotation_started: false,
@@ -140,13 +139,13 @@ export class WorkshopBuilder {
     this.data.current_phase = phase;
     // Update completed phases based on target phase
     const phases: WorkshopPhase[] = [
-      'intake',
-      'discovery',
-      'rubric',
-      'annotation',
-      'results',
-      'judge_tuning',
-      'unity_volume',
+      WorkshopPhase.INTAKE,
+      WorkshopPhase.DISCOVERY,
+      WorkshopPhase.RUBRIC,
+      WorkshopPhase.ANNOTATION,
+      WorkshopPhase.RESULTS,
+      WorkshopPhase.JUDGE_TUNING,
+      WorkshopPhase.UNITY_VOLUME,
     ];
     const phaseIndex = phases.indexOf(phase);
     this.data.completed_phases = phases.slice(0, phaseIndex);
@@ -251,7 +250,7 @@ export class RubricBuilder {
       id: generateId(),
       workshop_id: '',
       question: 'How helpful and accurate is this response?',
-      judge_type: 'likert',
+      judge_type: JudgeType.LIKERT,
       rating_scale: 5,
       created_by: '',
       created_at: new Date().toISOString(),
@@ -273,7 +272,7 @@ export class RubricBuilder {
     return this;
   }
 
-  withJudgeType(judgeType: 'likert' | 'binary' | 'freeform'): this {
+  withJudgeType(judgeType: JudgeType): this {
     this.data.judge_type = judgeType;
     return this;
   }
@@ -406,7 +405,7 @@ export class AnnotationBuilder {
  * Build mock UserPermissions based on role
  */
 export function buildPermissions(role: UserRole): UserPermissions {
-  if (role === 'facilitator') {
+  if (role === UserRole.FACILITATOR) {
     return {
       can_view_discovery: true,
       can_create_findings: false,
@@ -419,7 +418,7 @@ export function buildPermissions(role: UserRole): UserPermissions {
       can_manage_workshop: true,
       can_assign_annotations: true,
     };
-  } else if (role === 'sme') {
+  } else if (role === UserRole.SME) {
     return {
       can_view_discovery: true,
       can_create_findings: true,

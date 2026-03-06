@@ -6,8 +6,21 @@
  * Request model for creating/updating custom LLM provider config.
  */
 export type CustomLLMProviderConfigCreate = {
-  provider_name: string;
-  base_url: string;
-  api_key: string;
-  model_name: string;
+    /**
+     * User-friendly provider name
+     */
+    provider_name: string;
+    /**
+     * Base URL for the OpenAI-compatible endpoint
+     */
+    base_url: string;
+    /**
+     * API key for authentication
+     */
+    api_key: string;
+    /**
+     * Model name/identifier
+     */
+    model_name: string;
 };
+

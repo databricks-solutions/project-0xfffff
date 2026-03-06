@@ -2,23 +2,28 @@
  * React Query hooks for workshop API operations
  */
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { WorkshopsService } from '@/client';
+import { useQuery, useMutation, useQueryClient, QueryClient } from '@tanstack/react-query';
+import type { Query } from '@tanstack/react-query';
+import { WorkshopsService, ApiError, DiscoveryService } from '@/client';
 import { useRoleCheck } from '@/context/UserContext';
-import type { 
-  Workshop, 
-  WorkshopCreate, 
-  Trace, 
-  TraceUpload, 
-  DiscoveryFinding, 
+import type { User } from '@/client';
+import type {
+  Workshop,
+  WorkshopCreate,
+  Trace,
+  TraceUpload,
+  DiscoveryFinding,
   DiscoveryFindingCreate,
   Rubric,
   RubricCreate,
   Annotation,
   AnnotationCreate,
   IRRResult,
-  MLflowIntakeConfig
+  MLflowIntakeConfig,
 } from '@/client';
+import type { DraftRubricItem } from '@/client/models/DraftRubricItem';
+import type { CreateDraftRubricItemRequest } from '@/client/models/CreateDraftRubricItemRequest';
+import type { UpdateDraftRubricItemRequest } from '@/client/models/UpdateDraftRubricItemRequest';
 
 // Query keys
 const QUERY_KEYS = {
@@ -31,16 +36,18 @@ const QUERY_KEYS = {
   annotations: (workshopId: string, userId?: string) => ['annotations', workshopId, userId],
   irr: (workshopId: string) => ['irr', workshopId],
   mlflowConfig: (workshopId: string) => ['mlflowConfig', workshopId],
+  draftRubricItems: (workshopId: string) => ['draftRubricItems', workshopId],
+  discoveryAnalyses: (workshopId: string) => ['discovery-analyses', workshopId],
 };
 
 // Helper function to invalidate all workshop-related queries
-export function invalidateAllWorkshopQueries(queryClient: any, workshopId: string) {
+export function invalidateAllWorkshopQueries(queryClient: QueryClient, workshopId: string) {
   // Invalidate all queries that start with the workshop ID
-  queryClient.invalidateQueries({ 
-    predicate: (query: any) => {
+  queryClient.invalidateQueries({
+    predicate: (query: Query) => {
       const queryKey = query.queryKey;
       return queryKey && (
-        queryKey.includes(workshopId) || 
+        queryKey.includes(workshopId) ||
         queryKey.includes('workshop') ||
         queryKey.includes('findings') ||
         queryKey.includes('annotations') ||
@@ -51,13 +58,13 @@ export function invalidateAllWorkshopQueries(queryClient: any, workshopId: strin
 }
 
 // Helper function to force refetch all workshop-related queries
-export function refetchAllWorkshopQueries(queryClient: any, workshopId: string) {
+export function refetchAllWorkshopQueries(queryClient: QueryClient, workshopId: string) {
   // Refetch all queries that start with the workshop ID
-  queryClient.refetchQueries({ 
-    predicate: (query: any) => {
+  queryClient.refetchQueries({
+    predicate: (query: Query) => {
       const queryKey = query.queryKey;
       return queryKey && (
-        queryKey.includes(workshopId) || 
+        queryKey.includes(workshopId) ||
         queryKey.includes('workshop') ||
         queryKey.includes('findings') ||
         queryKey.includes('annotations') ||
@@ -89,9 +96,7 @@ export function useListWorkshops(options?: { userId?: string; facilitatorId?: st
   const { userId, facilitatorId, enabled = true } = options || {};
   
   return useQuery({
-    queryKey: userId 
-      ? QUERY_KEYS.workshopsForUser(userId)
-      : QUERY_KEYS.workshops(),
+    queryKey: ['workshops', userId, facilitatorId],
     queryFn: () => listWorkshopsApi(userId, facilitatorId),
     enabled,
     staleTime: 30000, // Consider data stale after 30 seconds
@@ -106,9 +111,11 @@ export function useWorkshop(workshopId: string) {
     queryFn: () => WorkshopsService.getWorkshopWorkshopsWorkshopIdGet(workshopId),
     enabled: !!workshopId,
     staleTime: 10000, // Consider data stale after 10 seconds
-    refetchInterval: 30000, // Refetch every 30 seconds (was 10s — too aggressive for Databricks Apps)
-    refetchOnMount: true, // Always refetch on component mount to get latest traces
-    refetchIntervalInBackground: false, // Don't refetch when window is not focused
+    // Stop polling when the query is in an error state to avoid triggering
+    // error-recovery side effects repeatedly. Polling resumes on next success.
+    refetchInterval: (query) => query.state.status === 'error' ? false : 30000,
+    refetchOnMount: true,
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
     retry: (failureCount, error) => {
       // Don't retry on 404 errors - workshop doesn't exist
@@ -160,9 +167,9 @@ export function useTraces(workshopId: string, userId: string) {
     gcTime: 5 * 60 * 1000, // Cache for 5 minutes
     retry: 3, // Retry failed requests 3 times
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
-    refetchOnWindowFocus: true, // Refetch when user returns to tab
-    refetchOnMount: true, // Refetch on component mount to get latest traces
-    refetchInterval: 30 * 1000, // Poll every 30 seconds to pick up new traces added by facilitator
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+    refetchInterval: (query) => query.state.status === 'error' ? false : 30_000,
   });
 }
 
@@ -205,20 +212,6 @@ export function useOriginalTraces(workshopId: string) {
   });
 }
 
-export function useUploadTraces(workshopId: string) {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: (traces: TraceUpload[]) => 
-      WorkshopsService.uploadTracesWorkshopsWorkshopIdTracesPost(workshopId, traces),
-    onSuccess: () => {
-      // Invalidate both user-specific traces and all traces queries
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.traces(workshopId) });
-      queryClient.invalidateQueries({ queryKey: ['all-traces', workshopId] });
-    },
-  });
-}
-
 // Utility function to invalidate trace caches
 export function useInvalidateTraces() {
   const queryClient = useQueryClient();
@@ -233,17 +226,17 @@ export function useInvalidateTraces() {
 export function useFindings(workshopId: string, userId?: string) {
   return useQuery({
     queryKey: QUERY_KEYS.findings(workshopId, userId),
-    queryFn: () => WorkshopsService.getFindingsWorkshopsWorkshopIdFindingsGet(workshopId, userId),
+    queryFn: () => DiscoveryService.getFindingsWorkshopsWorkshopIdFindingsGet(workshopId, userId),
     enabled: !!workshopId,
   });
 }
 
 // User-aware findings hook - ALWAYS returns only user's own findings for personal progress
-export function useUserFindings(workshopId: string, user: any) {
+export function useUserFindings(workshopId: string, user: Pick<User, 'id'> | null) {
   return useQuery({
     queryKey: QUERY_KEYS.findings(workshopId, user?.id),
-    queryFn: () => WorkshopsService.getFindingsWorkshopsWorkshopIdFindingsGet(
-      workshopId, 
+    queryFn: () => DiscoveryService.getFindingsWorkshopsWorkshopIdFindingsGet(
+      workshopId,
       user?.id  // EVERYONE (including facilitators) gets only their own findings for personal progress
     ),
     enabled: !!workshopId && !!user?.id, // REQUIRE user to be logged in
@@ -253,43 +246,16 @@ export function useUserFindings(workshopId: string, user: any) {
   });
 }
 
-// Facilitator overview hook - gets ALL findings for workshop management
-export function useFacilitatorFindings(workshopId: string) {
-  const { isFacilitator } = useRoleCheck();
-  
-  return useQuery({
-    queryKey: QUERY_KEYS.findings(workshopId, 'all_findings'),
-    queryFn: () => WorkshopsService.getFindingsWorkshopsWorkshopIdFindingsGet(
-      workshopId, 
-      undefined  // No user filter - gets ALL findings
-    ),
-    enabled: !!workshopId && isFacilitator, // Only for facilitators
-  });
-}
-
-// Facilitator overview hook - gets ALL findings with user details for workshop management
-export function useFacilitatorFindingsWithUserDetails(workshopId: string) {
-  const { isFacilitator } = useRoleCheck();
-  
-  return useQuery({
-    queryKey: [...QUERY_KEYS.findings(workshopId, 'all_findings'), 'with_user_details'],
-    queryFn: () => WorkshopsService.getFindingsWithUserDetailsWorkshopsWorkshopIdFindingsWithUsersGet(
-      workshopId, 
-      undefined  // No user filter - gets ALL findings with user details
-    ),
-    enabled: !!workshopId && isFacilitator, // Only for facilitators
-  });
-}
-
 export function useSubmitFinding(workshopId: string) {
   const queryClient = useQueryClient();
   
-  return useMutation({
+  return useMutation<DiscoveryFinding, Error, DiscoveryFindingCreate, { previousFindings: DiscoveryFinding[] | undefined }>({
     mutationFn: (finding: DiscoveryFindingCreate) =>
-      WorkshopsService.submitFindingWorkshopsWorkshopIdFindingsPost(workshopId, finding),
+      DiscoveryService.submitFindingWorkshopsWorkshopIdFindingsPost(workshopId, finding),
     // Retry on server errors (503 Service Unavailable due to database contention, or 500)
-    retry: (failureCount, error: any) => {
-      if (error?.status === 503 || error?.status === 500) {
+    retry: (failureCount, error: Error) => {
+      const status = error instanceof ApiError ? error.status : undefined;
+      if (status === 503 || status === 500) {
         return failureCount < 5;
       }
       return false;
@@ -304,11 +270,11 @@ export function useSubmitFinding(workshopId: string) {
       await queryClient.cancelQueries({ queryKey: ['findings', workshopId, newFinding.user_id] });
       
       // Snapshot the previous value
-      const previousFindings = queryClient.getQueryData(['findings', workshopId, newFinding.user_id]);
+      const previousFindings = queryClient.getQueryData<DiscoveryFinding[]>(['findings', workshopId, newFinding.user_id]);
       
       // Optimistically update the cache - handle both new and update cases
-      queryClient.setQueryData(['findings', workshopId, newFinding.user_id], (old: any) => {
-        const optimisticFinding = {
+      queryClient.setQueryData<DiscoveryFinding[]>(['findings', workshopId, newFinding.user_id], (old) => {
+        const optimisticFinding: DiscoveryFinding = {
           id: `temp-${Date.now()}`,
           workshop_id: workshopId,
           trace_id: newFinding.trace_id,
@@ -316,18 +282,18 @@ export function useSubmitFinding(workshopId: string) {
           insight: newFinding.insight,
           created_at: new Date().toISOString(),
         };
-        
+
         if (!old) return [optimisticFinding];
-        
+
         // Check if finding for this trace already exists (update case)
-        const existingIndex = old.findIndex((f: any) => f.trace_id === newFinding.trace_id);
+        const existingIndex = old.findIndex((f) => f.trace_id === newFinding.trace_id);
         if (existingIndex >= 0) {
           // Replace existing finding with updated one
           const updated = [...old];
           updated[existingIndex] = { ...updated[existingIndex], insight: newFinding.insight };
           return updated;
         }
-        
+
         // New finding
         return [...old, optimisticFinding];
       });
@@ -342,11 +308,11 @@ export function useSubmitFinding(workshopId: string) {
     },
     onSuccess: (data, finding) => {
       // Update cache with actual server response
-      queryClient.setQueryData(['findings', workshopId, finding.user_id], (old: any) => {
+      queryClient.setQueryData<DiscoveryFinding[]>(['findings', workshopId, finding.user_id], (old) => {
         if (!old) return [data];
-        
+
         // Replace temp or existing finding with actual server data
-        const existingIndex = old.findIndex((f: any) => 
+        const existingIndex = old.findIndex((f) =>
           f.trace_id === finding.trace_id || f.id?.startsWith('temp-')
         );
         if (existingIndex >= 0) {
@@ -365,7 +331,7 @@ export function useSubmitFinding(workshopId: string) {
       queryClient.invalidateQueries({ queryKey: ['findings', workshopId, 'all_findings'] });
       queryClient.invalidateQueries({ queryKey: ['findings', workshopId, 'all_findings', 'with_user_details'] });
       // Also invalidate the direct endpoint query used in FindingsReviewPage
-      queryClient.invalidateQueries({ queryKey: ['facilitator-findings-with-users', workshopId] });
+      queryClient.invalidateQueries({ queryKey: ['facilitator-feedback-with-users', workshopId] });
     },
   });
 }
@@ -377,9 +343,9 @@ export function useRubric(workshopId: string) {
     queryFn: async () => {
       try {
         return await WorkshopsService.getRubricWorkshopsWorkshopIdRubricGet(workshopId);
-      } catch (error: any) {
+      } catch (error) {
         // If rubric doesn't exist (404), return null instead of throwing
-        if (error.status === 404) {
+        if (error instanceof ApiError && error.status === 404) {
           return null;
         }
         throw error;
@@ -415,7 +381,7 @@ export function useUpdateRubric(workshopId: string) {
 
 // Annotation hooks
 // User-aware annotations hook - ALWAYS returns only user's own annotations
-export function useUserAnnotations(workshopId: string, user: any) {
+export function useUserAnnotations(workshopId: string, user: Pick<User, 'id'> | null) {
   return useQuery({
     queryKey: QUERY_KEYS.annotations(workshopId, user?.id),
     queryFn: () => {
@@ -477,9 +443,10 @@ export function useSubmitAnnotation(workshopId: string) {
     mutationFn: (annotation: AnnotationCreate) =>
       WorkshopsService.submitAnnotationWorkshopsWorkshopIdAnnotationsPost(workshopId, annotation),
     // Retry on server errors (503 Service Unavailable due to SQLite lock contention)
-    retry: (failureCount, error: any) => {
+    retry: (failureCount, error: Error) => {
       // Retry up to 5 times on 503 (database busy) or 500 errors
-      if (error?.status === 503 || error?.status === 500) {
+      const status = error instanceof ApiError ? error.status : undefined;
+      if (status === 503 || status === 500) {
         return failureCount < 5;
       }
       // Don't retry on other errors (400, 401, 404, etc.)
@@ -499,8 +466,8 @@ export function useSubmitAnnotation(workshopId: string) {
       const previousAnnotations = queryClient.getQueryData(['annotations', workshopId, newAnnotation.user_id]);
       
       // Optimistically update the cache
-      queryClient.setQueryData(['annotations', workshopId, newAnnotation.user_id], (old: any) => {
-        const optimisticAnnotation = {
+      queryClient.setQueryData<Annotation[]>(['annotations', workshopId, newAnnotation.user_id], (old) => {
+        const optimisticAnnotation: Annotation = {
           id: `temp-${Date.now()}`,
           workshop_id: workshopId,
           trace_id: newAnnotation.trace_id,
@@ -513,7 +480,7 @@ export function useSubmitAnnotation(workshopId: string) {
         if (!old) return [optimisticAnnotation];
         // Update existing annotation for this trace instead of appending a duplicate
         const existingIndex = old.findIndex(
-          (a: any) => a.trace_id === newAnnotation.trace_id && a.user_id === newAnnotation.user_id
+          (a) => a.trace_id === newAnnotation.trace_id && a.user_id === newAnnotation.user_id
         );
         if (existingIndex >= 0) {
           const updated = [...old];
@@ -562,9 +529,9 @@ export function useMLflowConfig(workshopId: string) {
     queryFn: async () => {
       try {
         return await WorkshopsService.getMlflowConfigWorkshopsWorkshopIdMlflowConfigGet(workshopId);
-      } catch (error: any) {
+      } catch (error) {
         // If MLflow config doesn't exist (404), return null instead of throwing
-        if (error.status === 404) {
+        if (error instanceof ApiError && error.status === 404) {
           return null;
         }
         throw error;
@@ -594,20 +561,6 @@ export function useUpdateTraceAlignment(workshopId: string) {
       queryClient.invalidateQueries({ queryKey: ['traces', workshopId] });
       queryClient.invalidateQueries({ queryKey: ['traces-for-alignment', workshopId] });
     },
-  });
-}
-
-export function useTracesForAlignment(workshopId: string) {
-  return useQuery({
-    queryKey: ['traces-for-alignment', workshopId],
-    queryFn: async () => {
-      const response = await fetch(`/workshops/${workshopId}/traces-for-alignment`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch traces for alignment');
-      }
-      return response.json();
-    },
-    enabled: !!workshopId,
   });
 }
 
@@ -689,7 +642,7 @@ export function useParticipantNotes(workshopId: string, userId?: string, phase?:
     },
     enabled: !!workshopId,
     staleTime: 10 * 1000,
-    refetchInterval: 30 * 1000, // Poll for new notes from other participants
+    refetchInterval: (query) => query.state.status === 'error' ? false : 30_000,
   });
 }
 
@@ -709,7 +662,7 @@ export function useAllParticipantNotes(workshopId: string, phase?: string) {
     },
     enabled: !!workshopId,
     staleTime: 5 * 1000,
-    refetchInterval: 15 * 1000, // Poll so facilitator sees notes (was 5s, too aggressive for Databricks Apps)
+    refetchInterval: (query) => query.state.status === 'error' ? false : 15_000,
   });
 }
 
@@ -811,42 +764,367 @@ export function usePreviewJsonPath(workshopId: string) {
   });
 }
 
-// Rubric Generation hooks
+// Span Attribute Filter hooks
 
-export interface RubricSuggestion {
-  title: string;
-  description: string;
-  positive?: string;
-  negative?: string;
-  examples?: string;
-  judgeType: 'likert' | 'binary' | 'freeform';
+interface SpanAttributeFilterUpdate {
+  span_attribute_filter?: Record<string, string> | null;
 }
 
-interface RubricGenerationRequest {
-  endpoint_name?: string;
-  temperature?: number;
-  include_notes?: boolean;
+interface SpanFilterPreviewResult {
+  trace_id?: string;
+  matched?: boolean;
+  input_result?: string | null;
+  output_result?: string | null;
+  original_input?: string | null;
+  original_output?: string | null;
+  error?: string;
 }
 
-export function useGenerateRubricSuggestions(workshopId: string) {
+export function useUpdateSpanAttributeFilter(workshopId: string) {
+  const queryClient = useQueryClient();
+
   return useMutation({
-    mutationFn: async (request?: RubricGenerationRequest): Promise<RubricSuggestion[]> => {
-      const response = await fetch(`/workshops/${workshopId}/generate-rubric-suggestions`, {
+    mutationFn: async (body: SpanAttributeFilterUpdate): Promise<Workshop> => {
+      const response = await fetch(`/workshops/${workshopId}/span-attribute-filter`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to update span filter' }));
+        throw new Error(error.detail || 'Failed to update span filter');
+      }
+      return response.json();
+    },
+    onSuccess: (workshop) => {
+      queryClient.setQueryData(QUERY_KEYS.workshop(workshopId), workshop);
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.workshop(workshopId) });
+    },
+  });
+}
+
+export function usePreviewSpanFilter(workshopId: string) {
+  return useMutation({
+    mutationFn: async (body: SpanAttributeFilterUpdate): Promise<SpanFilterPreviewResult> => {
+      const response = await fetch(`/workshops/${workshopId}/preview-span-filter`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(request || {
-          endpoint_name: 'databricks-claude-sonnet-4-5',
-          temperature: 0.3,
-          include_notes: true
-        }),
+        body: JSON.stringify(body),
       });
-
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ detail: 'Failed to generate suggestions' }));
-        throw new Error(error.detail || 'Failed to generate suggestions');
+        const error = await response.json().catch(() => ({ detail: 'Failed to preview span filter' }));
+        throw new Error(error.detail || 'Failed to preview span filter');
       }
-
       return response.json();
     },
   });
 }
+
+// ---------------------------------------------------------------------------
+// Discovery Feedback hooks (v2 Structured Feedback)
+// ---------------------------------------------------------------------------
+
+export interface DiscoveryFeedbackData {
+  id: string;
+  workshop_id: string;
+  trace_id: string;
+  user_id: string;
+  feedback_label: 'good' | 'bad';
+  comment: string;
+  followup_qna: Array<{ question: string; answer: string }>;
+  created_at: string;
+  updated_at: string;
+}
+
+// Discovery Analysis hooks (Step 2)
+
+export interface DiscoveryAnalysis {
+  id: string;
+  workshop_id: string;
+  template_used: string;
+  analysis_data: string;
+  findings: Array<{ text: string; evidence_trace_ids: string[]; priority: string }>;
+  disagreements: {
+    high: Array<{
+      trace_id: string;
+      summary: string;
+      underlying_theme: string;
+      followup_questions: string[];
+      facilitator_suggestions: string[];
+    }>;
+    medium: Array<{
+      trace_id: string;
+      summary: string;
+      underlying_theme: string;
+      followup_questions: string[];
+      facilitator_suggestions: string[];
+    }>;
+    lower: Array<{
+      trace_id: string;
+      summary: string;
+      underlying_theme: string;
+      followup_questions: string[];
+      facilitator_suggestions: string[];
+    }>;
+  };
+  participant_count: number;
+  model_used: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export function useDiscoveryAnalyses(workshopId: string, template?: string) {
+  return useQuery<DiscoveryAnalysis[]>({
+    queryKey: [...QUERY_KEYS.discoveryAnalyses(workshopId), template],
+    queryFn: async () => {
+      const params = template ? `?template=${encodeURIComponent(template)}` : '';
+      const response = await fetch(`/workshops/${workshopId}/discovery-analysis${params}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch discovery analyses');
+      }
+      return response.json();
+    },
+    enabled: !!workshopId,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useDiscoveryFeedback(workshopId: string, userId?: string) {
+  return useQuery<DiscoveryFeedbackData[]>({
+    queryKey: ['discovery-feedback', workshopId, userId],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (userId) params.append('user_id', userId);
+      const qs = params.toString();
+      const url = `/workshops/${workshopId}/discovery-feedback${qs ? `?${qs}` : ''}`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Failed to fetch discovery feedback');
+      return response.json();
+    },
+    enabled: !!workshopId,
+    staleTime: 10_000,
+  });
+}
+
+/** Extended feedback with user details for facilitator dashboard */
+export interface DiscoveryFeedbackWithUser extends DiscoveryFeedbackData {
+  user_name?: string;
+  user_email?: string;
+  user_role?: string;
+}
+
+/** Fetch all discovery feedback with user details (facilitator-only) */
+export function useFacilitatorDiscoveryFeedback(workshopId: string) {
+  const { isFacilitator } = useRoleCheck();
+
+  return useQuery<DiscoveryFeedbackWithUser[]>({
+    queryKey: ['discovery-feedback-with-users', workshopId],
+    queryFn: () =>
+      DiscoveryService.getDiscoveryFeedbackWithUserDetailsWorkshopsWorkshopIdDiscoveryFeedbackWithUsersGet(
+        workshopId,
+      ) as unknown as Promise<DiscoveryFeedbackWithUser[]>,
+    enabled: !!workshopId && isFacilitator,
+    staleTime: 10_000,
+    refetchInterval: (query) => query.state.status === 'error' ? false : 30_000,
+  });
+}
+
+export function useSubmitDiscoveryFeedback(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    DiscoveryFeedbackData,
+    Error,
+    { trace_id: string; user_id: string; feedback_label: 'good' | 'bad'; comment: string }
+  >({
+    mutationFn: async (data) => {
+      const response = await fetch(`/workshops/${workshopId}/discovery-feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ detail: 'Failed to submit feedback' }));
+        throw new Error(err.detail || 'Failed to submit feedback');
+      }
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['discovery-feedback', workshopId, variables.user_id] });
+      queryClient.invalidateQueries({ queryKey: ['facilitator-feedback-with-users', workshopId] });
+      queryClient.invalidateQueries({ queryKey: ['discovery-feedback-with-users', workshopId] });
+    },
+  });
+}
+
+export function useGenerateFollowUpQuestion(workshopId: string) {
+  return useMutation<
+    { question: string; question_number: number; is_fallback?: boolean },
+    Error,
+    { trace_id: string; user_id: string; question_number: number }
+  >({
+    mutationFn: async ({ trace_id, user_id, question_number }) => {
+      const response = await fetch(
+        `/workshops/${workshopId}/generate-followup-question?question_number=${question_number}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ trace_id, user_id }),
+        },
+      );
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ detail: 'Failed to generate question' }));
+        throw new Error(err.detail || 'Failed to generate question');
+      }
+      return response.json();
+    },
+    retry: (failureCount, error) => {
+      // Retry up to 3 times for server errors
+      return failureCount < 3;
+    },
+    retryDelay: (attemptIndex) => Math.min(1000 * Math.pow(2, attemptIndex), 8000),
+  });
+}
+
+export function useUpdateDiscoveryModel(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    unknown,
+    Error,
+    { model_name: string }
+  >({
+    mutationFn: async (data) => {
+      const response = await fetch(`/workshops/${workshopId}/discovery-questions-model`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ detail: 'Failed to update model' }));
+        throw new Error(err.detail || 'Failed to update model');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.workshop(workshopId) });
+    },
+  });
+}
+
+export function useSubmitFollowUpAnswer(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    { feedback_id: string; qna_count: number; complete: boolean },
+    Error,
+    { trace_id: string; user_id: string; question: string; answer: string }
+  >({
+    mutationFn: async (data) => {
+      const response = await fetch(`/workshops/${workshopId}/submit-followup-answer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ detail: 'Failed to submit answer' }));
+        throw new Error(err.detail || 'Failed to submit answer');
+      }
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['discovery-feedback', workshopId, variables.user_id] });
+      queryClient.invalidateQueries({ queryKey: ['facilitator-feedback-with-users', workshopId] });
+      queryClient.invalidateQueries({ queryKey: ['discovery-feedback-with-users', workshopId] });
+    },
+  });
+}
+
+export function useRunDiscoveryAnalysis(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation<DiscoveryAnalysis, Error, { template: string; model: string }>({
+    mutationFn: async ({ template, model }) => {
+      const response = await fetch(`/workshops/${workshopId}/analyze-discovery`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ template, model }),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Analysis failed' }));
+        throw new Error(error.detail || 'Analysis failed');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.discoveryAnalyses(workshopId) });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Draft Rubric Items hooks (Step 3)
+// ---------------------------------------------------------------------------
+
+export function useDraftRubricItems(workshopId: string) {
+  return useQuery({
+    queryKey: QUERY_KEYS.draftRubricItems(workshopId),
+    queryFn: () => DiscoveryService.getDraftRubricItemsWorkshopsWorkshopIdDraftRubricItemsGet(workshopId),
+    enabled: !!workshopId,
+  });
+}
+
+export function useCreateDraftRubricItem(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data: CreateDraftRubricItemRequest) =>
+      DiscoveryService.createDraftRubricItemWorkshopsWorkshopIdDraftRubricItemsPost(workshopId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.draftRubricItems(workshopId) });
+    },
+  });
+}
+
+export function useUpdateDraftRubricItem(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ itemId, updates }: { itemId: string; updates: UpdateDraftRubricItemRequest }) =>
+      DiscoveryService.updateDraftRubricItemWorkshopsWorkshopIdDraftRubricItemsItemIdPut(workshopId, itemId, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.draftRubricItems(workshopId) });
+    },
+  });
+}
+
+export function useDeleteDraftRubricItem(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (itemId: string) =>
+      DiscoveryService.deleteDraftRubricItemWorkshopsWorkshopIdDraftRubricItemsItemIdDelete(workshopId, itemId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.draftRubricItems(workshopId) });
+    },
+  });
+}
+
+export function useSuggestGroups(workshopId: string) {
+  return useMutation({
+    mutationFn: () => DiscoveryService.suggestDraftRubricGroupsWorkshopsWorkshopIdDraftRubricItemsSuggestGroupsPost(workshopId),
+  });
+}
+
+export function useApplyGroups(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (groups: Array<{ name: string; item_ids: Array<string> }>) =>
+      DiscoveryService.applyDraftRubricGroupsWorkshopsWorkshopIdDraftRubricItemsApplyGroupsPost(workshopId, { groups }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.draftRubricItems(workshopId) });
+    },
+  });
+}
+

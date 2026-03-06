@@ -4,6 +4,7 @@ from server.services.token_storage_service import TokenStorageService
 
 
 @pytest.mark.spec("AUTHENTICATION_SPEC")
+@pytest.mark.req("No page refresh required after login")
 def test_store_and_get_token_roundtrip():
     svc = TokenStorageService()
     svc.store_token("w1", "tok")
@@ -12,6 +13,7 @@ def test_store_and_get_token_roundtrip():
 
 
 @pytest.mark.spec("AUTHENTICATION_SPEC")
+@pytest.mark.req("404 on validation: Session cleared, fresh login allowed")
 def test_get_token_returns_none_when_missing():
     svc = TokenStorageService()
     assert svc.get_token("missing") is None
@@ -19,6 +21,7 @@ def test_get_token_returns_none_when_missing():
 
 
 @pytest.mark.spec("AUTHENTICATION_SPEC")
+@pytest.mark.req("404 on validation: Session cleared, fresh login allowed")
 def test_expired_token_is_removed_on_read():
     svc = TokenStorageService()
     svc.store_token("w1", "tok", expiry_hours=-1)
@@ -27,6 +30,7 @@ def test_expired_token_is_removed_on_read():
 
 
 @pytest.mark.spec("AUTHENTICATION_SPEC")
+@pytest.mark.req("Error recovery: Errors cleared on new login attempt")
 def test_cleanup_expired_tokens_counts_removed():
     svc = TokenStorageService()
     svc.store_token("w1", "tok", expiry_hours=-1)
@@ -38,6 +42,7 @@ def test_cleanup_expired_tokens_counts_removed():
 
 
 @pytest.mark.spec("AUTHENTICATION_SPEC")
+@pytest.mark.req("404 on validation: Session cleared, fresh login allowed")
 def test_remove_token():
     svc = TokenStorageService()
     svc.store_token("w1", "tok")

@@ -1,223 +1,86 @@
 # Spec Test Coverage Map
 
-**Generated**: 2026-02-03 13:25:52
+**Generated**: 2026-03-02 09:25:39
 
-This report shows which tests cover each specification.
-Tests are tagged using framework-specific conventions:
+This report shows test coverage for each specification's success criteria.
 
-- **pytest**: `@pytest.mark.spec("SPEC_NAME")`
-- **Playwright**: `{ tag: ['@spec:SPEC_NAME'] }` or `@spec:SPEC_NAME` in test title
-- **Vitest**: `// @spec SPEC_NAME` comment or `describe('@spec:SPEC_NAME', ...)`
+## Test Pyramid Summary
 
----
+| Type | Count | Description |
+|------|-------|-------------|
+| Unit | 86 | pytest unit tests, Vitest tests |
+| Integration | 0 | pytest with real DB/API |
+| E2E (Mocked) | 0 | Playwright with mocked API |
+| E2E (Real) | 7 | Playwright with real API |
 
 ## Coverage Summary
 
-| Spec | pytest | Playwright | Vitest | Total | Status |
-|------|--------|------------|--------|-------|--------|
-| [ANNOTATION_SPEC](#annotation-spec) | 4 | 1 | 0 | 5 | ✅ Covered |
-| [AUTHENTICATION_SPEC](#authentication-spec) | 8 | 1 | 0 | 9 | ✅ Covered |
-| [BUILD_AND_DEPLOY_SPEC](#build-and-deploy-spec) | 1 | 0 | 0 | 1 | 🟡 Partial |
-| [CUSTOM_LLM_PROVIDER_SPEC](#custom-llm-provider-spec) | 8 | 1 | 0 | 9 | ✅ Covered |
-| [DATASETS_SPEC](#datasets-spec) | 2 | 0 | 1 | 3 | ✅ Covered |
-| [DESIGN_SYSTEM_SPEC](#design-system-spec) | 0 | 0 | 1 | 1 | 🟡 Partial |
-| [DISCOVERY_TRACE_ASSIGNMENT_SPEC](#discovery-trace-assignment-spec) | 3 | 1 | 1 | 5 | ✅ Covered |
-| [JUDGE_EVALUATION_SPEC](#judge-evaluation-spec) | 41 | 4 | 1 | 46 | ✅ Covered |
-| [RUBRIC_SPEC](#rubric-spec) | 10 | 6 | 2 | 18 | ✅ Covered |
-| [TRACE_DISPLAY_SPEC](#trace-display-spec) | 0 | 5 | 0 | 5 | ✅ Covered |
-| [UI_COMPONENTS_SPEC](#ui-components-spec) | 0 | 0 | 0 | 0 | ❌ Uncovered |
+| Spec | Reqs | Covered | Cover% | Unit | Int | E2E-M | E2E-R | BE-only |
+|------|------|---------|--------|------|-----|-------|-------|---------|
+| [TRACE_DISPLAY_SPEC](#trace-display-spec) | 18 | 18 | 100% | 86 | 0 | 0 | 7 | **10** |
 
-**Coverage**: 10/11 specs (90%)
+**Total**: 18/18 requirements covered (100%)
 
 ---
 
-## ANNOTATION_SPEC
-
-### pytest
-
-- `tests/unit/routers/test_annotation_last_trace.py` (test_all_10_annotations_can_be_saved)
-- `tests/unit/routers/test_annotation_last_trace.py` (test_10th_annotation_specifically)
-- `tests/unit/routers/test_annotation_last_trace.py` (test_multiple_annotators_can_save_10th_annotation)
-- `tests/unit/routers/test_annotation_last_trace.py` (test_facilitator_sees_10_completed)
-
-### Playwright (E2E)
-
-- `client/tests/e2e/annotation-last-trace.spec.ts`
-
-## AUTHENTICATION_SPEC
-
-### pytest
-
-- `tests/unit/routers/test_users_router.py` (test_users_login_facilitator_path)
-- `tests/unit/routers/test_users_router.py` (test_users_login_invalid_credentials_returns_401)
-- `tests/unit/routers/test_users_router.py` (test_user_permissions_derived_from_role)
-- `tests/unit/services/test_token_storage_service.py` (test_store_and_get_token_roundtrip)
-- `tests/unit/services/test_token_storage_service.py` (test_get_token_returns_none_when_missing)
-- `tests/unit/services/test_token_storage_service.py` (test_expired_token_is_removed_on_read)
-- `tests/unit/services/test_token_storage_service.py` (test_cleanup_expired_tokens_counts_removed)
-- `tests/unit/services/test_token_storage_service.py` (test_remove_token)
-
-### Playwright (E2E)
-
-- `client/tests/e2e/facilitator-create-workshop.spec.ts`
-
-## BUILD_AND_DEPLOY_SPEC
-
-### pytest
-
-- `tests/unit/test_health_smoke.py` (test_health_endpoint)
-
-## CUSTOM_LLM_PROVIDER_SPEC
-
-### pytest
-
-- `tests/unit/routers/test_custom_llm_provider_router.py` (test_get_custom_llm_provider_not_configured)
-- `tests/unit/routers/test_custom_llm_provider_router.py` (test_get_custom_llm_provider_configured)
-- `tests/unit/routers/test_custom_llm_provider_router.py` (test_create_custom_llm_provider)
-- `tests/unit/routers/test_custom_llm_provider_router.py` (test_delete_custom_llm_provider)
-- `tests/unit/routers/test_custom_llm_provider_router.py` (test_test_custom_llm_provider_success)
-- `tests/unit/routers/test_custom_llm_provider_router.py` (test_test_custom_llm_provider_auth_failure)
-- `tests/unit/routers/test_custom_llm_provider_router.py` (test_test_custom_llm_provider_no_config)
-- `tests/unit/routers/test_custom_llm_provider_router.py` (test_test_custom_llm_provider_no_api_key)
-
-### Playwright (E2E)
-
-- `client/tests/e2e/custom-llm-provider.spec.ts`
-
-## DATASETS_SPEC
-
-### pytest
-
-- `tests/unit/routers/test_dbsql_export_router.py` (test_dbsql_export_success)
-- `tests/unit/routers/test_dbsql_export_router.py` (test_dbsql_export_status_happy_path)
-
-### Vitest (Unit)
-
-- `client/src/utils/traceUtils.test.ts`
-
-## DESIGN_SYSTEM_SPEC
-
-### Vitest (Unit)
-
-- `client/src/lib/utils.test.ts`
-
-## DISCOVERY_TRACE_ASSIGNMENT_SPEC
-
-### pytest
-
-- `tests/unit/routers/test_workshops_router.py` (test_get_workshop_404_when_missing)
-- `tests/unit/routers/test_workshops_router.py` (test_get_traces_requires_user_id)
-- `tests/unit/routers/test_workshops_router.py` (test_get_workshop_success)
-
-### Playwright (E2E)
-
-- `client/tests/e2e/discovery-invite-traces.spec.ts`
-
-### Vitest (Unit)
-
-- `client/src/hooks/useWorkshopApi.test.ts`
-
-## JUDGE_EVALUATION_SPEC
-
-### pytest
-
-- `tests/unit/routers/test_workshops_begin_annotation.py` (test_begin_annotation_with_auto_eval_enabled)
-- `tests/unit/routers/test_workshops_begin_annotation.py` (test_begin_annotation_with_auto_eval_disabled)
-- `tests/unit/routers/test_workshops_begin_annotation.py` (test_begin_annotation_requires_rubric)
-- `tests/unit/routers/test_databricks_router.py` (test_databricks_test_connection_success)
-- `tests/unit/routers/test_databricks_router.py` (test_databricks_call_endpoint_success)
-- `tests/unit/routers/test_databricks_router.py` (test_databricks_chat_endpoint_success)
-- `tests/unit/routers/test_databricks_router.py` (test_databricks_judge_evaluate_without_workshop_id_uses_request_config)
-- `tests/unit/services/test_irr_utils.py` (test_analyze_annotation_structure_empty)
-- `tests/unit/services/test_irr_utils.py` (test_analyze_annotation_structure_recommends_cohens_kappa_when_two_raters_complete)
-- `tests/unit/services/test_irr_utils.py` (test_analyze_annotation_structure_recommends_krippendorff_alpha_when_missing_data)
-- `tests/unit/services/test_irr_utils.py` (test_validate_annotations_for_irr_invalid_cases)
-- `tests/unit/services/test_irr_utils.py` (test_validate_annotations_for_irr_valid_case)
-- `tests/unit/services/test_irr_utils.py` (test_format_irr_result_rounding_and_ready_flag)
-- `tests/unit/services/test_irr_utils.py` (test_detect_problematic_patterns_basic_signals)
-- `tests/unit/services/test_irr_service.py` (test_calculate_irr_for_workshop_returns_error_details_when_invalid)
-- `tests/unit/services/test_irr_service.py` (test_calculate_irr_for_workshop_uses_cohens_kappa_when_two_raters_complete)
-- `tests/unit/services/test_irr_service.py` (test_calculate_irr_for_workshop_uses_krippendorff_when_missing_data)
-- `tests/unit/services/test_database_service_rubric.py` (test_get_judge_type_from_rubric_binary)
-- `tests/unit/services/test_database_service_rubric.py` (test_get_judge_type_from_rubric_likert)
-- `tests/unit/services/test_database_service_rubric.py` (test_get_judge_type_from_rubric_mixed_prefers_binary)
-- `tests/unit/services/test_database_service_rubric.py` (test_get_judge_type_from_rubric_no_rubric_defaults_likert)
-- `tests/unit/services/test_krippendorff_alpha.py` (test_get_unique_question_ids_sorted)
-- `tests/unit/services/test_krippendorff_alpha.py` (test_per_metric_returns_empty_when_no_ratings_dict_present)
-- `tests/unit/services/test_krippendorff_alpha.py` (test_calculate_krippendorff_alpha_returns_zero_when_insufficient)
-- `tests/unit/services/test_krippendorff_alpha.py` (test_calculate_krippendorff_alpha_trivial_agreement_is_one)
-- `tests/unit/services/test_krippendorff_alpha.py` (test_calculate_krippendorff_alpha_handles_missing_data)
-- `tests/unit/services/test_krippendorff_alpha.py` (test_calculate_krippendorff_alpha_specific_question_id_uses_ratings_dict)
-- `tests/unit/services/test_alignment_service.py` (test_normalize_judge_prompt_converts_placeholders_to_mlflow_style)
-- `tests/unit/services/test_alignment_service.py` (test_calculate_eval_metrics_binary_scale)
-- `tests/unit/services/test_alignment_service.py` (test_calculate_eval_metrics_binary_all_pass)
-- `tests/unit/services/test_alignment_service.py` (test_calculate_eval_metrics_binary_all_fail)
-- `tests/unit/services/test_alignment_service.py` (test_calculate_eval_metrics_binary_mixed_ratings)
-- `tests/unit/services/test_alignment_service.py` (test_calculate_eval_metrics_binary_empty)
-- `tests/unit/services/test_alignment_service.py` (test_calculate_eval_metrics_binary_threshold_conversion)
-- `tests/unit/services/test_alignment_service.py` (test_calculate_eval_metrics_likert_default)
-- `tests/unit/services/test_cohens_kappa.py` (test_calculate_cohens_kappa_raises_on_empty)
-- `tests/unit/services/test_cohens_kappa.py` (test_calculate_cohens_kappa_raises_if_not_exactly_two_raters)
-- `tests/unit/services/test_cohens_kappa.py` (test_calculate_cohens_kappa_requires_two_paired_traces)
-- `tests/unit/services/test_cohens_kappa.py` (test_calculate_cohens_kappa_perfect_agreement_is_one)
-- `tests/unit/services/test_cohens_kappa.py` (test_interpret_cohens_kappa_bucket_edges)
-- `tests/unit/services/test_cohens_kappa.py` (test_is_cohens_kappa_acceptable_default_threshold)
-
-### Playwright (E2E)
-
-- `client/tests/e2e/auto-evaluation.spec.ts`
-- `client/tests/e2e/auto-evaluation.spec.ts`
-- `client/tests/e2e/auto-evaluation.spec.ts`
-- `client/tests/e2e/auto-evaluation.spec.ts`
-
-### Vitest (Unit)
-
-- `client/src/utils/modelMapping.test.ts`
-
-## RUBRIC_SPEC
-
-### pytest
-
-- `tests/unit/services/test_database_service_rubric.py` (test_parse_rubric_questions_with_judge_type_binary)
-- `tests/unit/services/test_database_service_rubric.py` (test_parse_rubric_questions_with_judge_type_likert)
-- `tests/unit/services/test_database_service_rubric.py` (test_parse_rubric_questions_default_to_likert)
-- `tests/unit/services/test_database_service_rubric.py` (test_parse_rubric_questions_mixed_types)
-- `tests/unit/services/test_database_service_rubric.py` (test_parse_rubric_questions_with_freeform)
-- `tests/unit/services/test_database_service_rubric.py` (test_parse_rubric_questions_empty_input)
-- `tests/unit/services/test_database_service_rubric.py` (test_parse_rubric_questions_multiline_description)
-- `tests/unit/services/test_database_service_rubric.py` (test_reconstruct_rubric_questions_with_judge_type)
-- `tests/unit/services/test_database_service_rubric.py` (test_reconstruct_rubric_questions_empty)
-- `tests/unit/services/test_database_service_rubric.py` (test_parse_reconstruct_roundtrip)
-
-### Playwright (E2E)
-
-- `client/tests/e2e/rubric-judge-type.spec.ts`
-- `client/tests/e2e/rubric-judge-type.spec.ts`
-- `client/tests/e2e/rubric-judge-type.spec.ts`
-- `client/tests/e2e/rubric-judge-type.spec.ts`
-- `client/tests/e2e/rubric-judge-type.spec.ts`
-- `client/tests/e2e/rubric-creation.spec.ts`
-
-### Vitest (Unit)
-
-- `client/src/utils/rubricUtils.test.ts`
-- `client/src/utils/rubricUtils.test.ts`
-
 ## TRACE_DISPLAY_SPEC
 
-### Playwright (E2E)
+**Coverage**: 18/18 requirements (100%)
 
-- `client/tests/e2e/jsonpath-trace-display.spec.ts`
-- `client/tests/e2e/jsonpath-trace-display.spec.ts`
-- `client/tests/e2e/jsonpath-trace-display.spec.ts`
-- `client/tests/e2e/jsonpath-trace-display.spec.ts`
-- `client/tests/e2e/jsonpath-trace-display.spec.ts`
+### Backend-Only Requirements (no frontend tests)
 
-## UI_COMPONENTS_SPEC
+These requirements are covered by backend tests only. UI regressions won't be caught:
 
-❌ **No tests tagged for this spec**
+- :warning: JSONPath fields are optional and clearly labeled as such (unit)
+- :warning: Multiple JSONPath matches are concatenated with newlines (unit)
+- :warning: Facilitator can configure span attribute filter with span name, span type, attribute key, and attribute value (unit)
+- :warning: Filter criteria are AND-combined and first matching span wins (unit)
+- :warning: Span filter is applied before JSONPath extraction in TraceViewer (unit)
+- :warning: Empty filter config results in no filtering and root trace data is used (unit)
+- :warning: String span inputs and outputs are returned as-is without double-serialization (unit)
+- :warning: All backend services that consume trace input/output apply the same span filter and JSONPath pipeline as the TraceViewer (unit)
+- :warning: JSONPath evaluation does not noticeably slow down trace display (unit)
+- :warning: Preview responds within 500ms (unit)
 
-To add coverage, tag tests with:
-- pytest: `@pytest.mark.spec("UI_COMPONENTS_SPEC")`
-- Playwright: `{ tag: ['@spec:UI_COMPONENTS_SPEC'] }`
-- Vitest: `// @spec UI_COMPONENTS_SPEC`
+### Covered Requirements
+
+- [x] Facilitator can configure input/output JSONPath in settings panel (e2e-real)
+- [x] JSONPath fields are optional and clearly labeled as such (unit) **[BE-only]**
+- [x] Preview shows extraction results against first workshop trace (e2e-real)
+- [x] TraceViewer applies JSONPath when configured (unit)
+- [x] Multiple JSONPath matches are concatenated with newlines (unit) **[BE-only]**
+- [x] System falls back to raw display when JSONPath is not configured, JSON parsing fails, JSONPath query fails, or JSONPath returns null/empty (e2e-real, unit)
+- [x] Settings are persisted per workshop (e2e-real)
+- [x] Facilitator can configure span attribute filter with span name, span type, attribute key, and attribute value (unit) **[BE-only]**
+- [x] Filter criteria are AND-combined and first matching span wins (unit) **[BE-only]**
+- [x] Attribute value input is disabled until attribute key has a value (unit)
+- [x] Span filter preview shows match status and filtered inputs/outputs against first trace (e2e-real)
+- [x] Span filter is applied before JSONPath extraction in TraceViewer (unit) **[BE-only]**
+- [x] Empty filter config results in no filtering and root trace data is used (unit) **[BE-only]**
+- [x] String span inputs and outputs are returned as-is without double-serialization (unit) **[BE-only]**
+- [x] All backend services that consume trace input/output apply the same span filter and JSONPath pipeline as the TraceViewer (unit) **[BE-only]**
+- [x] JSONPath evaluation does not noticeably slow down trace display (unit) **[BE-only]**
+- [x] Preview responds within 500ms (unit) **[BE-only]**
+- [x] Invalid JSONPath syntax shows helpful error message in preview (e2e-real, unit)
+
+---
+
+## How to Tag Tests
+
+### pytest
+```python
+@pytest.mark.spec("SPEC_NAME")
+@pytest.mark.req("Requirement text from success criteria")
+def test_something(): ...
+```
+
+### Playwright
+```typescript
+test.use({ tag: ['@spec:SPEC_NAME', '@req:Requirement text'] });
+```
+
+### Vitest
+```typescript
+// @spec SPEC_NAME
+// @req Requirement text from success criteria
+```

@@ -42,13 +42,14 @@ import {
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useWorkflowContext } from '@/context/WorkflowContext';
 import { useUser, useRoleCheck } from '@/context/UserContext';
-import { useRubric, useCreateRubric, useUpdateRubric, useUserFindings, useFacilitatorFindingsWithUserDetails, useAllTraces, useAllParticipantNotes, useWorkshop, useToggleParticipantNotes } from '@/hooks/useWorkshopApi';
+import { useRubric, useCreateRubric, useUpdateRubric, useDiscoveryFeedback, useFacilitatorDiscoveryFeedback, useAllTraces, useAllParticipantNotes, useWorkshop, useToggleParticipantNotes, type DiscoveryFeedbackData, type DiscoveryFeedbackWithUser } from '@/hooks/useWorkshopApi';
 import { FocusedAnalysisView, ScratchPadEntry } from '@/components/FocusedAnalysisView';
 import { RubricSuggestionPanel, type RubricSuggestion } from '@/components/RubricSuggestionPanel';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useQueryClient } from '@tanstack/react-query';
 import { WorkshopsService } from '@/client';
-import type { Rubric, RubricCreate, JudgeType } from '@/client';
+import { JudgeType } from '@/client';
+import type { Rubric, RubricCreate, Trace } from '@/client';
 import { toast } from 'sonner';
 import { parseRubricQuestions, formatRubricQuestions, QUESTION_DELIMITER, type RubricQuestion } from '@/utils/rubricUtils';
 
@@ -64,58 +65,53 @@ const convertQuestionToApiRubric = (question: RubricQuestion): RubricCreate => (
   created_by: 'facilitator' // In a real app, this would be the actual user
 });
 
-// Get discovery responses from real findings data, enriched with trace information
-const useDiscoveryResponses = (findings: any[] | undefined, traces: any[] | undefined) => {
-  if (!findings || findings.length === 0 || !traces || traces.length === 0) return [];
-  
+// Get discovery responses from feedback data, enriched with trace information
+const useDiscoveryResponses = (feedback: DiscoveryFeedbackData[] | undefined, traces: Trace[] | undefined) => {
+  if (!feedback || feedback.length === 0 || !traces || traces.length === 0) return [];
+
   // Create a map of trace IDs to trace data for quick lookup
   const traceMap = traces.reduce((acc, trace) => {
     acc[trace.id] = trace;
     return acc;
-  }, {} as Record<string, any>);
-  
-  // Group findings by trace_id to organize responses better
-  const groupedByTrace = findings.reduce((acc, finding) => {
-    if (!acc[finding.trace_id]) {
-      acc[finding.trace_id] = [];
+  }, {} as Record<string, Trace>);
+
+  // Group feedback by trace_id
+  const groupedByTrace = feedback.reduce((acc, fb) => {
+    if (!acc[fb.trace_id]) {
+      acc[fb.trace_id] = [];
     }
-    acc[finding.trace_id].push(finding);
+    acc[fb.trace_id].push(fb);
     return acc;
-  }, {} as Record<string, any[]>);
-  
-  return Object.entries(groupedByTrace).map(([traceId, traceFindings]) => {
+  }, {} as Record<string, DiscoveryFeedbackData[]>);
+
+  return Object.entries(groupedByTrace).map(([traceId, traceFeedback]) => {
     const trace = traceMap[traceId];
-    
+
     return {
       traceId,
       trace: trace ? {
         input: trace.input,
         output: trace.output,
-        context: trace.context,
-        mlflow_trace_id: trace.mlflow_trace_id
+        context: trace.context ?? undefined,
+        mlflow_trace_id: trace.mlflow_trace_id ?? undefined
       } : null,
-      responses: traceFindings.map((finding, index) => {
-        // Parse the formatted insight string back into separate questions
-        const insight = finding.insight || '';
-        const parts = insight.split('\n\nImprovement Analysis: ');
-        
-        let question1 = insight;
-        let question2 = null;
-        
-        if (parts.length === 2) {
-          // Remove "Quality Assessment: " prefix if present
-          question1 = parts[0].replace('Quality Assessment: ', '');
-          question2 = parts[1];
-        }
-        
+      responses: traceFeedback.map((fb) => {
+        const label = fb.feedback_label === 'good' ? '[GOOD]' : '[BAD]';
+        const question1 = `${label} ${fb.comment}`;
+
+        // Format follow-up Q&A pairs as question2
+        const question2 = fb.followup_qna && fb.followup_qna.length > 0
+          ? fb.followup_qna.map(qa => `Q: ${qa.question}\nA: ${qa.answer}`).join('\n\n')
+          : '';
+
         return {
-          participant: finding.user_name || finding.user_id,
+          participant: ('user_name' in fb ? (fb as DiscoveryFeedbackWithUser).user_name : fb.user_id) ?? fb.user_id,
           question1,
           question2
         };
       })
     };
-  }).filter(item => item.trace !== null); // Only return items where we found the corresponding trace
+  }).filter(item => item.trace !== null);
 };
 
 // Keep some sample data for demonstration when no real data is available
@@ -185,7 +181,7 @@ export function RubricCreationDemo() {
   const [newQuestion, setNewQuestion] = useState<Omit<RubricQuestion, 'id'>>({
     title: '',
     description: '',
-    judgeType: 'likert'
+    judgeType: JudgeType.LIKERT
   });
   // Structured description fields for the dialog
   const [newDefinition, setNewDefinition] = useState('');
@@ -203,17 +199,20 @@ export function RubricCreationDemo() {
   const [isSavingQuestion, setIsSavingQuestion] = useState(false);
   
   // Judge type selection
-  const [judgeType, setJudgeType] = useState<JudgeType>('likert');
+  const [judgeType, setJudgeType] = useState<JudgeType>(JudgeType.LIKERT);
   const [binaryLabels, setBinaryLabels] = useState<Record<string, string>>({ pass: 'Pass', fail: 'Fail' });
   
   // Fetch data (only if workshopId exists)
   const { data: rubric, isLoading: rubricLoading, error: rubricError } = useRubric(workshopId || '');
   // Use all traces for rubric creation page
   const { data: traces, refetch: refetchTraces } = useAllTraces(workshopId || '');
-  // Facilitators see all findings to create better rubric, others see their own
-  const { data: findings, refetch: refetchFindings, isRefetching: isRefetchingFindings } = isFacilitator
-    ? useFacilitatorFindingsWithUserDetails(workshopId || '')
-    : useUserFindings(workshopId || '', user);
+  // Discovery feedback: facilitators see all with user details, others see their own
+  // Both hooks must be called unconditionally (React rules of hooks)
+  const facilitatorFeedback = useFacilitatorDiscoveryFeedback(workshopId || '');
+  const userFeedback = useDiscoveryFeedback(workshopId || '', user?.id);
+  const { data: feedback, refetch: refetchFeedback, isRefetching: isRefetchingFeedback } = isFacilitator
+    ? facilitatorFeedback
+    : userFeedback;
   const createRubric = useCreateRubric(workshopId || '');
   const updateRubric = useUpdateRubric(workshopId || '');
   // Fetch all participant notes for the scratch pad (facilitator sees all)
@@ -221,8 +220,76 @@ export function RubricCreationDemo() {
   // Workshop data for show_participant_notes toggle
   const { data: workshopData } = useWorkshop(workshopId || '');
   const toggleParticipantNotes = useToggleParticipantNotes(workshopId || '');
-  
-  // SECURITY: Block access if no valid user or workshop
+
+  // Get discovery responses from feedback data, enriched with trace information
+  const discoveryResponses = useDiscoveryResponses(feedback, traces);
+
+  // Helper to save scratch pad immediately to localStorage
+  const saveScratchPadToStorage = useCallback((entries: ScratchPadEntry[]) => {
+    if (!workshopId) return;
+    const storageKey = `scratch-pad-${workshopId}`;
+    if (entries.length > 0) {
+      const dataToSave = {
+        timestamp: Date.now(),
+        scratchPad: entries
+      };
+      localStorage.setItem(storageKey, JSON.stringify(dataToSave));
+    } else {
+      localStorage.removeItem(storageKey);
+    }
+  }, [workshopId]);
+
+  // Wrapper that saves immediately when setting scratch pad
+  const setScratchPad = useCallback((value: ScratchPadEntry[] | ((prev: ScratchPadEntry[]) => ScratchPadEntry[])) => {
+    setScratchPadState(prev => {
+      const newValue = typeof value === 'function' ? value(prev) : value;
+      // Save immediately to localStorage
+      saveScratchPadToStorage(newValue);
+      return newValue;
+    });
+  }, [saveScratchPadToStorage]);
+
+  // Load scratch pad from localStorage on mount
+  useEffect(() => {
+    if (workshopId) {
+      const storageKey = `scratch-pad-${workshopId}`;
+      const storedData = localStorage.getItem(storageKey);
+      if (storedData) {
+        try {
+          const parsed = JSON.parse(storedData);
+          // Only load if data is less than 7 days old (extended from 24 hours)
+          if (Date.now() - parsed.timestamp < 7 * 24 * 60 * 60 * 1000) {
+            // Convert timestamp strings back to Date objects
+            const entriesWithDates = parsed.scratchPad.map((entry: Omit<ScratchPadEntry, 'timestamp'> & { timestamp: string }) => ({
+              ...entry,
+              timestamp: new Date(entry.timestamp)
+            }));
+            setScratchPadState(entriesWithDates);
+          } else {
+            localStorage.removeItem(storageKey);
+          }
+        } catch (error) {
+          localStorage.removeItem(storageKey);
+        }
+      }
+    }
+  }, [workshopId]);
+
+  // Initialize questions and judge type from API data
+  useEffect(() => {
+    if (rubric && !isEditingExisting) {
+      setQuestions(convertApiRubricToQuestions(rubric));
+      // Load judge type from rubric
+      if (rubric.judge_type) {
+        setJudgeType(rubric.judge_type);
+      }
+      if (rubric.binary_labels) {
+        setBinaryLabels(rubric.binary_labels);
+      }
+    }
+  }, [rubric, isEditingExisting]);
+
+  // SECURITY: Block access if no valid user or workshop (after all hooks)
   if (!user || !user.id) {
     return (
       <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
@@ -255,74 +322,6 @@ export function RubricCreationDemo() {
     );
   }
 
-  // Get discovery responses from real findings data, enriched with trace information
-  const discoveryResponses = useDiscoveryResponses(findings, traces);
-  
-  // Helper to save scratch pad immediately to localStorage
-  const saveScratchPadToStorage = useCallback((entries: ScratchPadEntry[]) => {
-    if (!workshopId) return;
-    const storageKey = `scratch-pad-${workshopId}`;
-    if (entries.length > 0) {
-      const dataToSave = {
-        timestamp: Date.now(),
-        scratchPad: entries
-      };
-      localStorage.setItem(storageKey, JSON.stringify(dataToSave));
-    } else {
-      localStorage.removeItem(storageKey);
-    }
-  }, [workshopId]);
-  
-  // Wrapper that saves immediately when setting scratch pad
-  const setScratchPad = useCallback((value: ScratchPadEntry[] | ((prev: ScratchPadEntry[]) => ScratchPadEntry[])) => {
-    setScratchPadState(prev => {
-      const newValue = typeof value === 'function' ? value(prev) : value;
-      // Save immediately to localStorage
-      saveScratchPadToStorage(newValue);
-      return newValue;
-    });
-  }, [saveScratchPadToStorage]);
-
-  // Load scratch pad from localStorage on mount
-  useEffect(() => {
-    if (workshopId) {
-      const storageKey = `scratch-pad-${workshopId}`;
-      const storedData = localStorage.getItem(storageKey);
-      if (storedData) {
-        try {
-          const parsed = JSON.parse(storedData);
-          // Only load if data is less than 7 days old (extended from 24 hours)
-          if (Date.now() - parsed.timestamp < 7 * 24 * 60 * 60 * 1000) {
-            // Convert timestamp strings back to Date objects
-            const entriesWithDates = parsed.scratchPad.map((entry: any) => ({
-              ...entry,
-              timestamp: new Date(entry.timestamp)
-            }));
-            setScratchPadState(entriesWithDates);
-          } else {
-            localStorage.removeItem(storageKey);
-          }
-        } catch (error) {
-          localStorage.removeItem(storageKey);
-        }
-      }
-    }
-  }, [workshopId]);
-  
-  // Initialize questions and judge type from API data
-  useEffect(() => {
-    if (rubric && !isEditingExisting) {
-      setQuestions(convertApiRubricToQuestions(rubric));
-      // Load judge type from rubric
-      if (rubric.judge_type) {
-        setJudgeType(rubric.judge_type);
-      }
-      if (rubric.binary_labels) {
-        setBinaryLabels(rubric.binary_labels);
-      }
-    }
-  }, [rubric, isEditingExisting]);
-
   // Build combined description from structured fields
   const buildDescription = () => {
     const parts: string[] = [];
@@ -334,7 +333,7 @@ export function RubricCreationDemo() {
   };
 
   const resetDialogFields = () => {
-    setNewQuestion({ title: '', description: '', judgeType: 'likert' });
+    setNewQuestion({ title: '', description: '', judgeType: JudgeType.LIKERT });
     setNewDefinition('');
     setNewPositiveDirection('');
     setNewNegativeDirection('');
@@ -553,11 +552,10 @@ export function RubricCreationDemo() {
         };
         await updateRubric.mutateAsync(apiRubric);
       } catch (error) {
-        
+        // Rubric save failed — mutation error is surfaced by react-query
       }
     }
   };
-
 
   if (rubricLoading) {
     return (
@@ -581,8 +579,8 @@ export function RubricCreationDemo() {
               <TabsTrigger value="discovery" className="flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm">
                 <Users className="h-4 w-4" />
                 Discovery Responses
-                {findings && findings.length > 0 && (
-                  <Badge variant="secondary" className="ml-1 bg-blue-100 text-blue-700 text-[10px] px-1.5 py-0 h-5">{findings.length}</Badge>
+                {feedback && feedback.length > 0 && (
+                  <Badge variant="secondary" className="ml-1 bg-blue-100 text-blue-700 text-[10px] px-1.5 py-0 h-5">{feedback.length}</Badge>
                 )}
               </TabsTrigger>
               <TabsTrigger value="rubric" className="flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm">
@@ -641,7 +639,7 @@ export function RubricCreationDemo() {
                   variant="outline"
                   size="sm"
                   onClick={() => setShowSuggestionPanel(true)}
-                  disabled={!findings || findings.length === 0}
+                  disabled={!feedback || feedback.length === 0}
                   className="flex items-center gap-2"
                 >
                   <Sparkles className="h-4 w-4" />
@@ -1111,21 +1109,21 @@ export function RubricCreationDemo() {
                       <Badge 
                         variant={newQuestion.judgeType === 'likert' ? 'default' : 'outline'}
                         className={`cursor-pointer px-4 py-1.5 ${newQuestion.judgeType !== 'likert' ? 'bg-white hover:bg-gray-50' : ''}`}
-                        onClick={() => setNewQuestion({ ...newQuestion, judgeType: 'likert' })}
+                        onClick={() => setNewQuestion({ ...newQuestion, judgeType: JudgeType.LIKERT })}
                       >
                         Likert Scale
                       </Badge>
-                      <Badge 
+                      <Badge
                         variant={newQuestion.judgeType === 'binary' ? 'default' : 'outline'}
                         className={`cursor-pointer px-4 py-1.5 ${newQuestion.judgeType !== 'binary' ? 'bg-white hover:bg-gray-50' : ''}`}
-                        onClick={() => setNewQuestion({ ...newQuestion, judgeType: 'binary' })}
+                        onClick={() => setNewQuestion({ ...newQuestion, judgeType: JudgeType.BINARY })}
                       >
                         Binary
                       </Badge>
-                      <Badge 
+                      <Badge
                         variant={newQuestion.judgeType === 'freeform' ? 'default' : 'outline'}
                         className={`cursor-pointer px-4 py-1.5 ${newQuestion.judgeType !== 'freeform' ? 'bg-white hover:bg-gray-50' : ''}`}
-                        onClick={() => setNewQuestion({ ...newQuestion, judgeType: 'freeform' })}
+                        onClick={() => setNewQuestion({ ...newQuestion, judgeType: JudgeType.FREEFORM })}
                       >
                         Free-form
                       </Badge>

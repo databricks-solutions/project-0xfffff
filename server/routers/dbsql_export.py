@@ -68,8 +68,8 @@ async def export_workshop_to_dbsql(
         )
 
     except Exception as e:
-        logger.error(f"Failed to export workshop {workshop_id} to DBSQL: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to export workshop to DBSQL: {str(e)}")
+        logger.error(f"Failed to export workshop {workshop_id} to DBSQL: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Failed to export workshop to DBSQL: {e!s}") from e
 
 
 @router.get("/{workshop_id}/export-status")
@@ -107,5 +107,5 @@ async def get_dbsql_export_status(workshop_id: str, db: Session = Depends(get_db
         }
 
     except Exception as e:
-        logger.error(f"Failed to get DBSQL export status for workshop {workshop_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to get export status: {str(e)}")
+        logger.error(f"Failed to get DBSQL export status for workshop {workshop_id}: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Failed to get export status: {e!s}") from e

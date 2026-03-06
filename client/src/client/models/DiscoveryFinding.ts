@@ -8,6 +8,7 @@ export type DiscoveryFinding = {
     trace_id: string;
     user_id: string;
     insight: string;
+    category?: (string | null);
     created_at?: string;
 };
 

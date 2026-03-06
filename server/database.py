@@ -61,14 +61,17 @@ engine = create_engine_for_backend(DATABASE_BACKEND)
 # This listener fires after successful commits and notifies the rescue module
 # Only applies to SQLite backend
 if DATABASE_BACKEND == DatabaseBackend.SQLITE:
+
     @event.listens_for(engine, "commit")
     def on_commit(conn):
         """Record write operations for SQLite rescue backup triggering."""
         try:
             from server.sqlite_rescue import record_write_operation
+
             record_write_operation()
         except ImportError:
             pass  # sqlite_rescue not available
+
 
 # Create session factory with better session management
 SessionLocal = sessionmaker(
@@ -152,12 +155,16 @@ class WorkshopDB(Base):
     discovery_randomize_traces = Column(Boolean, default=False)  # Whether to randomize trace order in discovery
     annotation_randomize_traces = Column(Boolean, default=False)  # Whether to randomize trace order in annotation
     judge_name = Column(String, default="workshop_judge")  # Name used for feedback entries
+    discovery_questions_model_name = Column(
+        String, default="demo"
+    )  # LLM model/endpoint for discovery question generation
     input_jsonpath = Column(Text, nullable=True)  # JSONPath query for extracting trace input display
     output_jsonpath = Column(Text, nullable=True)  # JSONPath query for extracting trace output display
     auto_evaluation_job_id = Column(String, nullable=True)  # Job ID for auto-evaluation on annotation start
     auto_evaluation_prompt = Column(Text, nullable=True)  # Derived judge prompt used for auto-evaluation
     auto_evaluation_model = Column(String, nullable=True)  # Model used for auto-evaluation
     show_participant_notes = Column(Boolean, default=False)  # Facilitator toggle: show notepad to SMEs
+    span_attribute_filter = Column(JSON, nullable=True)  # Filter config for selecting a span's inputs/outputs
     created_at = Column(DateTime, default=func.now())
 
     # Relationships
@@ -185,6 +192,14 @@ class WorkshopDB(Base):
     participant_notes = relationship(
         "ParticipantNoteDB", back_populates="workshop", cascade="all, delete-orphan"
     )
+    discovery_summaries = relationship("DiscoverySummaryDB", back_populates="workshop", cascade="all, delete-orphan")
+    classified_findings = relationship("ClassifiedFindingDB", back_populates="workshop", cascade="all, delete-orphan")
+    disagreements = relationship("DisagreementDB", back_populates="workshop", cascade="all, delete-orphan")
+    trace_discovery_questions = relationship("TraceDiscoveryQuestionDB", back_populates="workshop", cascade="all, delete-orphan")
+    trace_discovery_thresholds = relationship("TraceDiscoveryThresholdDB", back_populates="workshop", cascade="all, delete-orphan")
+    discovery_feedback = relationship("DiscoveryFeedbackDB", back_populates="workshop", cascade="all, delete-orphan")
+    draft_rubric_items = relationship("DraftRubricItemDB", back_populates="workshop", cascade="all, delete-orphan")
+    discovery_analyses = relationship("DiscoveryAnalysisDB", back_populates="workshop", cascade="all, delete-orphan")
 
 
 class TraceDB(Base):
@@ -211,6 +226,10 @@ class TraceDB(Base):
     findings = relationship("DiscoveryFindingDB", back_populates="trace")
     annotations = relationship("AnnotationDB", back_populates="trace")
     judge_evaluations = relationship("JudgeEvaluationDB", back_populates="trace")
+    classified_findings = relationship("ClassifiedFindingDB", back_populates="trace", cascade="all, delete-orphan")
+    disagreements = relationship("DisagreementDB", back_populates="trace", cascade="all, delete-orphan")
+    trace_discovery_questions = relationship("TraceDiscoveryQuestionDB", back_populates="trace", cascade="all, delete-orphan")
+    trace_discovery_thresholds = relationship("TraceDiscoveryThresholdDB", back_populates="trace", cascade="all, delete-orphan")
 
 
 class DiscoveryFindingDB(Base):
@@ -223,11 +242,43 @@ class DiscoveryFindingDB(Base):
     trace_id = Column(String, ForeignKey("traces.id"), nullable=False)
     user_id = Column(String, nullable=False)
     insight = Column(Text, nullable=False)
+    category = Column(String, nullable=True)  # Classification category (themes, edge_cases, etc.)
     created_at = Column(DateTime, default=func.now())
 
     # Relationships
     workshop = relationship("WorkshopDB", back_populates="findings")
     trace = relationship("TraceDB", back_populates="findings")
+
+
+class DiscoveryQuestionDB(Base):
+    """Database model for per-user/per-trace generated discovery questions."""
+
+    __tablename__ = "discovery_questions"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    trace_id = Column(String, ForeignKey("traces.id"), nullable=False)
+    user_id = Column(String, nullable=False)
+    question_id = Column(String, nullable=False)  # Stable ID per (user, trace), e.g. "q_1"
+    prompt = Column(Text, nullable=False)
+    placeholder = Column(Text, nullable=True)
+    category = Column(String, nullable=True)  # Coverage category: themes, edge_cases, boundary_conditions, failure_modes, missing_info, disagreements
+    created_at = Column(DateTime, default=func.now())
+
+
+class DiscoverySummaryDB(Base):
+    """Database model for persisted discovery summaries (facilitator-oriented)."""
+
+    __tablename__ = "discovery_summaries"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    model_name = Column(String, nullable=True)
+    payload = Column(JSON, nullable=False)  # {overall, by_user, by_trace}
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    workshop = relationship("WorkshopDB", back_populates="discovery_summaries")
 
 
 class UserDiscoveryCompletionDB(Base):
@@ -243,6 +294,26 @@ class UserDiscoveryCompletionDB(Base):
     # Relationships
     workshop = relationship("WorkshopDB", back_populates="user_discovery_completions")
     user = relationship("UserDB")
+
+
+class DiscoveryAnalysisDB(Base):
+    """Database model for AI-powered discovery analysis results."""
+
+    __tablename__ = "discovery_analysis"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    template_used = Column(String, nullable=False)  # 'evaluation_criteria' | 'themes_patterns'
+    analysis_data = Column(Text, nullable=False)  # Full markdown analysis from LLM
+    findings = Column(JSON, nullable=False)  # [{text, evidence_trace_ids, priority}]
+    disagreements = Column(JSON, nullable=False)  # {high: [...], medium: [...], lower: [...]}
+    participant_count = Column(Integer, nullable=False)
+    model_used = Column(String, nullable=False)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    # Relationships
+    workshop = relationship("WorkshopDB", back_populates="discovery_analyses")
 
 
 class RubricDB(Base):
@@ -433,6 +504,124 @@ class CustomLLMProviderConfigDB(Base):
     workshop = relationship("WorkshopDB", back_populates="custom_llm_provider")
 
 
+# ---------------------------------------------------------------------------
+# Assisted Facilitation v2 Tables
+# ---------------------------------------------------------------------------
+
+
+class ClassifiedFindingDB(Base):
+    """Finding with LLM-assigned category for assisted facilitation v2."""
+
+    __tablename__ = "classified_findings"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    trace_id = Column(String, ForeignKey("traces.id"), nullable=False)
+    user_id = Column(String, nullable=False)
+    text = Column(Text, nullable=False)
+    category = Column(String, nullable=False)  # themes|edge_cases|boundary_conditions|failure_modes|missing_info
+    question_id = Column(String, nullable=False)  # q_1, q_2, etc.
+    promoted = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=func.now())
+
+    # Relationships
+    workshop = relationship("WorkshopDB", back_populates="classified_findings")
+    trace = relationship("TraceDB", back_populates="classified_findings")
+
+
+class DisagreementDB(Base):
+    """Auto-detected disagreement between participants."""
+
+    __tablename__ = "disagreements"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    trace_id = Column(String, ForeignKey("traces.id"), nullable=False)
+    user_ids = Column(JSON, nullable=False)  # List of user IDs
+    finding_ids = Column(JSON, nullable=False)  # List of finding IDs
+    summary = Column(Text, nullable=False)  # LLM-generated
+    created_at = Column(DateTime, default=func.now())
+
+    # Relationships
+    workshop = relationship("WorkshopDB", back_populates="disagreements")
+    trace = relationship("TraceDB", back_populates="disagreements")
+
+
+class TraceDiscoveryQuestionDB(Base):
+    """Trace-level discovery question (broadcast to all participants)."""
+
+    __tablename__ = "trace_discovery_questions"
+
+    id = Column(String, primary_key=True)  # q_1, q_2, etc.
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    trace_id = Column(String, ForeignKey("traces.id"), nullable=False)
+    prompt = Column(Text, nullable=False)
+    placeholder = Column(Text, nullable=True)
+    target_category = Column(String, nullable=True)
+    is_fixed = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=func.now())
+
+    # Relationships
+    workshop = relationship("WorkshopDB", back_populates="trace_discovery_questions")
+    trace = relationship("TraceDB", back_populates="trace_discovery_questions")
+
+
+class TraceDiscoveryThresholdDB(Base):
+    """Per-trace thresholds for category coverage."""
+
+    __tablename__ = "trace_discovery_thresholds"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    trace_id = Column(String, ForeignKey("traces.id"), nullable=False)
+    thresholds = Column(JSON, nullable=False)  # {category: count}
+    created_at = Column(DateTime, default=func.now())
+
+    # Relationships
+    workshop = relationship("WorkshopDB", back_populates="trace_discovery_thresholds")
+    trace = relationship("TraceDB", back_populates="trace_discovery_thresholds")
+
+
+class DiscoveryFeedbackDB(Base):
+    """Structured feedback per (workshop, trace, user) for v2 discovery."""
+
+    __tablename__ = "discovery_feedback"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    trace_id = Column(String, ForeignKey("traces.id"), nullable=False)
+    user_id = Column(String, nullable=False)
+    feedback_label = Column(String, nullable=False)  # 'good' | 'bad'
+    comment = Column(Text, nullable=False)
+    followup_qna = Column(JSON, default=list)  # [{"question": "...", "answer": "..."}, ...]
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    # Relationships
+    workshop = relationship("WorkshopDB", back_populates="discovery_feedback")
+    trace = relationship("TraceDB")
+
+
+class DraftRubricItemDB(Base):
+    """Promoted finding in draft rubric staging area."""
+
+    __tablename__ = "draft_rubric_items"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    text = Column(Text, nullable=False)
+    source_type = Column(String, nullable=False, default="manual")  # 'finding' | 'disagreement' | 'feedback' | 'manual'
+    source_analysis_id = Column(String, nullable=True)
+    source_trace_ids = Column(JSON, default=list)  # list of trace IDs that support this item
+    group_id = Column(String, nullable=True)
+    group_name = Column(String, nullable=True)
+    promoted_by = Column(String, nullable=False)  # Facilitator user_id
+    promoted_at = Column(DateTime, default=func.now())
+
+    # Relationships
+    workshop = relationship("WorkshopDB", back_populates="draft_rubric_items")
+
+
 # Common PostgreSQL serverless connection error markers
 _PG_CONNECTION_ERRORS = (
     "connection is closed",
@@ -468,6 +657,7 @@ def _reset_connection_pool() -> None:
     if DATABASE_BACKEND == DatabaseBackend.POSTGRESQL:
         try:
             from .db_config import get_token_manager
+
             get_token_manager().force_refresh()
             logger.info("Connection pool reset and OAuth token marked for refresh")
         except Exception as e:
@@ -500,6 +690,7 @@ def get_db():
             # Quick connectivity check on PostgreSQL to surface stale connections early
             if DATABASE_BACKEND == DatabaseBackend.POSTGRESQL:
                 from sqlalchemy import text
+
                 db.execute(text("SELECT 1"))
             break  # Connection succeeded
         except Exception as e:
@@ -512,9 +703,11 @@ def get_db():
             if _is_connection_error(e) and attempt < max_attempts - 1:
                 backoff = 0.5 * (attempt + 1)  # 0.5s, 1.0s
                 logger.warning(
-                    "Database connection failed (attempt %d/%d), "
-                    "resetting pool and retrying in %.1fs: %s",
-                    attempt + 1, max_attempts, backoff, e,
+                    "Database connection failed (attempt %d/%d), resetting pool and retrying in %.1fs: %s",
+                    attempt + 1,
+                    max_attempts,
+                    backoff,
+                    e,
                 )
                 _reset_connection_pool()
                 _time.sleep(backoff)
@@ -541,7 +734,7 @@ def create_tables():
     from .db_config import get_schema_name
 
     try:
-        print('🔧 Creating database tables...')
+        print("🔧 Creating database tables...")
 
         # For PostgreSQL/Lakebase, create schema first if needed
         if DATABASE_BACKEND == DatabaseBackend.POSTGRESQL:
@@ -549,16 +742,17 @@ def create_tables():
             pg_user = os.getenv("PGUSER", "")
             if schema_name:
                 from sqlalchemy import text
+
                 with engine.connect() as conn:
                     conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}"'))
                     if pg_user:
                         conn.execute(text(f'GRANT ALL PRIVILEGES ON SCHEMA "{schema_name}" TO "{pg_user}"'))
                     conn.commit()
-                    print(f'✅ Created/verified schema: {schema_name}')
+                    print(f"✅ Created/verified schema: {schema_name}")
 
         # Use checkfirst=True to avoid errors if tables already exist
         Base.metadata.create_all(bind=engine, checkfirst=True)
-        print('✅ Database tables created successfully')
+        print("✅ Database tables created successfully")
 
         # Grant privileges on all tables to PGUSER (PostgreSQL only)
         if DATABASE_BACKEND == DatabaseBackend.POSTGRESQL:
@@ -567,33 +761,39 @@ def create_tables():
             if schema_name and pg_user:
                 try:
                     from sqlalchemy import text
+
                     with engine.connect() as conn:
-                        conn.execute(text(f'GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA "{schema_name}" TO "{pg_user}"'))
-                        conn.execute(text(f'GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA "{schema_name}" TO "{pg_user}"'))
+                        conn.execute(
+                            text(f'GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA "{schema_name}" TO "{pg_user}"')
+                        )
+                        conn.execute(
+                            text(f'GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA "{schema_name}" TO "{pg_user}"')
+                        )
                         conn.commit()
-                        print(f'✅ Privileges granted to {pg_user} on schema {schema_name}')
+                        print(f"✅ Privileges granted to {pg_user} on schema {schema_name}")
                 except Exception as grant_err:
-                    print(f'ℹ️ Privilege grant skipped: {grant_err}')
+                    print(f"ℹ️ Privilege grant skipped: {grant_err}")
     except Exception as e:
         # Handle case where tables already exist (common in production)
         error_msg = str(e).lower()
-        if 'already exists' in error_msg or 'table' in error_msg and 'exists' in error_msg:
-            print('ℹ️ Some tables already exist, continuing with schema updates...')
+        if "already exists" in error_msg or ("table" in error_msg and "exists" in error_msg):
+            print("ℹ️ Some tables already exist, continuing with schema updates...")
         else:
-            print(f'❌ Error creating database tables: {e}')
+            print(f"❌ Error creating database tables: {e}")
             raise e
 
     # Enable WAL mode for better SQLite concurrency (only for SQLite)
     if DATABASE_BACKEND == DatabaseBackend.SQLITE:
         try:
             from sqlalchemy import text
+
             with engine.connect() as conn:
-                conn.execute(text('PRAGMA journal_mode=WAL'))
-                conn.execute(text('PRAGMA busy_timeout=60000'))  # 60 second busy timeout
+                conn.execute(text("PRAGMA journal_mode=WAL"))
+                conn.execute(text("PRAGMA busy_timeout=60000"))  # 60 second busy timeout
                 conn.commit()
-                print('✅ SQLite WAL mode enabled for better concurrency')
+                print("✅ SQLite WAL mode enabled for better concurrency")
         except Exception as e:
-            print(f'ℹ️ Could not enable WAL mode (non-critical): {e}')
+            print(f"ℹ️ Could not enable WAL mode (non-critical): {e}")
 
     # Update schema for existing databases
     _apply_schema_updates()
@@ -614,92 +814,115 @@ def _apply_schema_updates():
             try:
                 # Add new columns to judge_prompts table if they don't exist
                 if is_postgres:
-                    conn.execute(text("ALTER TABLE judge_prompts ADD COLUMN IF NOT EXISTS model_name VARCHAR DEFAULT 'demo'"))
-                    conn.execute(text('ALTER TABLE judge_prompts ADD COLUMN IF NOT EXISTS model_parameters JSON'))
+                    conn.execute(
+                        text("ALTER TABLE judge_prompts ADD COLUMN IF NOT EXISTS model_name VARCHAR DEFAULT 'demo'")
+                    )
+                    conn.execute(text("ALTER TABLE judge_prompts ADD COLUMN IF NOT EXISTS model_parameters JSON"))
                 else:
                     conn.execute(text("ALTER TABLE judge_prompts ADD COLUMN model_name VARCHAR DEFAULT 'demo'"))
-                    conn.execute(text('ALTER TABLE judge_prompts ADD COLUMN model_parameters JSON'))
+                    conn.execute(text("ALTER TABLE judge_prompts ADD COLUMN model_parameters JSON"))
                 conn.commit()
-                print('✅ Database schema updated for judge_prompts')
+                print("✅ Database schema updated for judge_prompts")
             except Exception as e:
                 # Columns already exist or table doesn't exist yet
-                print(f'ℹ️ judge_prompts schema update skipped (columns may already exist): {e}')
+                print(f"ℹ️ judge_prompts schema update skipped (columns may already exist): {e}")
 
             try:
                 # Add ratings column to annotations table for multiple question support
                 if is_postgres:
-                    conn.execute(text('ALTER TABLE annotations ADD COLUMN IF NOT EXISTS ratings JSON'))
+                    conn.execute(text("ALTER TABLE annotations ADD COLUMN IF NOT EXISTS ratings JSON"))
                 else:
-                    conn.execute(text('ALTER TABLE annotations ADD COLUMN ratings JSON'))
+                    conn.execute(text("ALTER TABLE annotations ADD COLUMN ratings JSON"))
                 conn.commit()
-                print('✅ Database schema updated for annotations (added ratings column)')
+                print("✅ Database schema updated for annotations (added ratings column)")
             except Exception as e:
-                print(f'ℹ️ annotations schema update skipped (ratings column may already exist): {e}')
+                print(f"ℹ️ annotations schema update skipped (ratings column may already exist): {e}")
 
             try:
                 # Add include_in_alignment column to traces table for alignment filtering
                 if is_postgres:
-                    conn.execute(text('ALTER TABLE traces ADD COLUMN IF NOT EXISTS include_in_alignment BOOLEAN DEFAULT TRUE'))
+                    conn.execute(
+                        text("ALTER TABLE traces ADD COLUMN IF NOT EXISTS include_in_alignment BOOLEAN DEFAULT TRUE")
+                    )
                 else:
-                    conn.execute(text('ALTER TABLE traces ADD COLUMN include_in_alignment BOOLEAN DEFAULT 1'))
+                    conn.execute(text("ALTER TABLE traces ADD COLUMN include_in_alignment BOOLEAN DEFAULT 1"))
                 conn.commit()
-                print('✅ Database schema updated for traces (added include_in_alignment column)')
+                print("✅ Database schema updated for traces (added include_in_alignment column)")
             except Exception as e:
-                print(f'ℹ️ traces schema update skipped (include_in_alignment column may already exist): {e}')
+                print(f"ℹ️ traces schema update skipped (include_in_alignment column may already exist): {e}")
 
             try:
                 # Add sme_feedback column to traces table for concatenated SME feedback
                 if is_postgres:
-                    conn.execute(text('ALTER TABLE traces ADD COLUMN IF NOT EXISTS sme_feedback TEXT'))
+                    conn.execute(text("ALTER TABLE traces ADD COLUMN IF NOT EXISTS sme_feedback TEXT"))
                 else:
-                    conn.execute(text('ALTER TABLE traces ADD COLUMN sme_feedback TEXT'))
+                    conn.execute(text("ALTER TABLE traces ADD COLUMN sme_feedback TEXT"))
                 conn.commit()
-                print('✅ Database schema updated for traces (added sme_feedback column)')
+                print("✅ Database schema updated for traces (added sme_feedback column)")
             except Exception as e:
-                print(f'ℹ️ traces schema update skipped (sme_feedback column may already exist): {e}')
+                print(f"ℹ️ traces schema update skipped (sme_feedback column may already exist): {e}")
 
             try:
                 # Add unique constraint to discovery_findings to prevent duplicate entries
                 if is_postgres:
-                    conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS idx_discovery_findings_unique ON discovery_findings (workshop_id, trace_id, user_id)'))
+                    conn.execute(
+                        text(
+                            "CREATE UNIQUE INDEX IF NOT EXISTS idx_discovery_findings_unique ON discovery_findings (workshop_id, trace_id, user_id)"
+                        )
+                    )
                 else:
-                    conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS idx_discovery_findings_unique ON discovery_findings (workshop_id, trace_id, user_id)'))
+                    conn.execute(
+                        text(
+                            "CREATE UNIQUE INDEX IF NOT EXISTS idx_discovery_findings_unique ON discovery_findings (workshop_id, trace_id, user_id)"
+                        )
+                    )
                 conn.commit()
-                print('✅ Database schema updated: added unique constraint to discovery_findings')
+                print("✅ Database schema updated: added unique constraint to discovery_findings")
             except Exception as e:
-                print(f'ℹ️ discovery_findings unique constraint skipped (may already exist): {e}')
+                print(f"ℹ️ discovery_findings unique constraint skipped (may already exist): {e}")
 
             try:
                 # Add unique constraint to annotations to prevent duplicate entries (user_id + trace_id)
-                conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS idx_annotations_unique ON annotations (user_id, trace_id)'))
+                conn.execute(
+                    text("CREATE UNIQUE INDEX IF NOT EXISTS idx_annotations_unique ON annotations (user_id, trace_id)")
+                )
                 conn.commit()
-                print('✅ Database schema updated: added unique constraint to annotations')
+                print("✅ Database schema updated: added unique constraint to annotations")
             except Exception as e:
-                print(f'ℹ️ annotations unique constraint skipped (may already exist): {e}')
+                print(f"ℹ️ annotations unique constraint skipped (may already exist): {e}")
 
             try:
                 # Add unique constraint to judge_evaluations to prevent duplicate entries (prompt_id + trace_id)
-                conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS idx_judge_evaluations_unique ON judge_evaluations (prompt_id, trace_id)'))
+                conn.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS idx_judge_evaluations_unique ON judge_evaluations (prompt_id, trace_id)"
+                    )
+                )
                 conn.commit()
-                print('✅ Database schema updated: added unique constraint to judge_evaluations')
+                print("✅ Database schema updated: added unique constraint to judge_evaluations")
             except Exception as e:
-                print(f'ℹ️ judge_evaluations unique constraint skipped (may already exist): {e}')
+                print(f"ℹ️ judge_evaluations unique constraint skipped (may already exist): {e}")
 
             try:
                 # Add show_participant_notes column to workshops table
                 if is_postgres:
-                    conn.execute(text('ALTER TABLE workshops ADD COLUMN IF NOT EXISTS show_participant_notes BOOLEAN DEFAULT FALSE'))
+                    conn.execute(
+                        text(
+                            "ALTER TABLE workshops ADD COLUMN IF NOT EXISTS show_participant_notes BOOLEAN DEFAULT FALSE"
+                        )
+                    )
                 else:
-                    conn.execute(text('ALTER TABLE workshops ADD COLUMN show_participant_notes BOOLEAN DEFAULT 0'))
+                    conn.execute(text("ALTER TABLE workshops ADD COLUMN show_participant_notes BOOLEAN DEFAULT 0"))
                 conn.commit()
-                print('✅ Database schema updated for workshops (added show_participant_notes column)')
+                print("✅ Database schema updated for workshops (added show_participant_notes column)")
             except Exception as e:
-                print(f'ℹ️ workshops show_participant_notes column skipped (may already exist): {e}')
+                print(f"ℹ️ workshops show_participant_notes column skipped (may already exist): {e}")
 
             try:
                 # Create participant_notes table if it doesn't exist
                 if is_postgres:
-                    conn.execute(text('''
+                    conn.execute(
+                        text("""
                         CREATE TABLE IF NOT EXISTS participant_notes (
                             id VARCHAR PRIMARY KEY,
                             workshop_id VARCHAR NOT NULL REFERENCES workshops(id) ON DELETE CASCADE,
@@ -710,9 +933,11 @@ def _apply_schema_updates():
                             created_at TIMESTAMP DEFAULT NOW(),
                             updated_at TIMESTAMP DEFAULT NOW()
                         )
-                    '''))
+                    """)
+                    )
                 else:
-                    conn.execute(text('''
+                    conn.execute(
+                        text("""
                         CREATE TABLE IF NOT EXISTS participant_notes (
                             id VARCHAR PRIMARY KEY,
                             workshop_id VARCHAR NOT NULL REFERENCES workshops(id) ON DELETE CASCADE,
@@ -723,27 +948,51 @@ def _apply_schema_updates():
                             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                         )
-                    '''))
-                conn.execute(text('CREATE INDEX IF NOT EXISTS ix_participant_notes_workshop_user ON participant_notes (workshop_id, user_id)'))
+                    """)
+                    )
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_participant_notes_workshop_user ON participant_notes (workshop_id, user_id)"
+                    )
+                )
                 conn.commit()
-                print('✅ Database schema updated: created participant_notes table')
+                print("✅ Database schema updated: created participant_notes table")
             except Exception as e:
-                print(f'ℹ️ participant_notes table creation skipped (may already exist): {e}')
+                print(f"ℹ️ participant_notes table creation skipped (may already exist): {e}")
 
             try:
                 # Add phase column to participant_notes table
                 if is_postgres:
-                    conn.execute(text("ALTER TABLE participant_notes ADD COLUMN IF NOT EXISTS phase VARCHAR DEFAULT 'discovery' NOT NULL"))
+                    conn.execute(
+                        text(
+                            "ALTER TABLE participant_notes ADD COLUMN IF NOT EXISTS phase VARCHAR DEFAULT 'discovery' NOT NULL"
+                        )
+                    )
                 else:
-                    conn.execute(text("ALTER TABLE participant_notes ADD COLUMN phase VARCHAR DEFAULT 'discovery' NOT NULL"))
+                    conn.execute(
+                        text("ALTER TABLE participant_notes ADD COLUMN phase VARCHAR DEFAULT 'discovery' NOT NULL")
+                    )
                 conn.commit()
-                print('✅ Database schema updated for participant_notes (added phase column)')
+                print("✅ Database schema updated for participant_notes (added phase column)")
             except Exception as e:
-                print(f'ℹ️ participant_notes phase column skipped (may already exist): {e}')
+                print(f"ℹ️ participant_notes phase column skipped (may already exist): {e}")
+
+            try:
+                # Add span_attribute_filter column to workshops table
+                if is_postgres:
+                    conn.execute(
+                        text("ALTER TABLE workshops ADD COLUMN IF NOT EXISTS span_attribute_filter JSON")
+                    )
+                else:
+                    conn.execute(text("ALTER TABLE workshops ADD COLUMN span_attribute_filter JSON"))
+                conn.commit()
+                print("✅ Database schema updated for workshops (added span_attribute_filter column)")
+            except Exception as e:
+                print(f"ℹ️ workshops span_attribute_filter column skipped (may already exist): {e}")
 
     except Exception as e:
         # Schema updates are optional, don't fail if they error
-        print(f'ℹ️ Schema update error (non-critical): {e}')
+        print(f"ℹ️ Schema update error (non-critical): {e}")
 
 
 def drop_tables():
