@@ -505,19 +505,22 @@ export function AnnotationDemo() {
       if (isFreshStart) return; // Don't overwrite if fresh start will handle it
 
       const validTraceIds = new Set(traceData.map((t: any) => t.id));
+      // Only count annotations belonging to the current user
       const completedTraceIds = new Set(
         existingAnnotations
-          .filter(a => validTraceIds.has(a.trace_id))
+          .filter(a => validTraceIds.has(a.trace_id) && a.user_id === currentUserId)
           .map(a => a.trace_id)
       );
       setSubmittedAnnotations(prev => {
-        // Merge server-known completions with any locally-tracked ones
-        const merged = new Set([...prev, ...completedTraceIds]);
-        if (merged.size === prev.size) return prev; // No change, avoid re-render
-        return merged;
+        // Replace with server-known completions for THIS user only
+        // (not merge — merge can retain stale entries from a previous user session)
+        if (completedTraceIds.size === prev.size && [...completedTraceIds].every(id => prev.has(id))) {
+          return prev; // No change, avoid re-render
+        }
+        return completedTraceIds;
       });
     }
-  }, [existingAnnotations, traceData, workshopId]);
+  }, [existingAnnotations, traceData, workshopId, currentUserId]);
 
   // Navigate to first incomplete trace on initial load
   const hasInitialized = useRef(false);
@@ -540,11 +543,11 @@ export function AnnotationDemo() {
         return;
       }
 
-      // Only count annotations for traces that currently exist in traceData
+      // Only count annotations for traces that currently exist in traceData AND belong to this user
       const validTraceIds = new Set(traceData.map((t: any) => t.id));
       const completedTraceIds = new Set(
         existingAnnotations
-          .filter(a => validTraceIds.has(a.trace_id))
+          .filter(a => validTraceIds.has(a.trace_id) && a.user_id === currentUserId)
           .map(a => a.trace_id)
       );
 

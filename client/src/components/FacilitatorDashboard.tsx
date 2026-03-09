@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useFacilitatorFindings, useFacilitatorFindingsWithUserDetails, useTraces, useAllTraces, useRubric, useFacilitatorAnnotations, useFacilitatorAnnotationsWithUserDetails, useWorkshop } from '@/hooks/useWorkshopApi';
+import { UsersService } from '@/client';
 import { Settings, Users, FileText, CheckCircle, Clock, AlertCircle, ChevronRight, Play, Eye, Plus, RotateCcw, Target, TrendingUp, Activity } from 'lucide-react';
 import {
   AlertDialog,
@@ -22,7 +23,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { PhaseControlButton } from './PhaseControlButton';
 import { JsonPathSettings } from './JsonPathSettings';
 import { toast } from 'sonner';
@@ -49,6 +50,13 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
   const { data: rubric } = useRubric(workshopId!);
   const { data: annotations } = useFacilitatorAnnotations(workshopId!);
   const { data: annotationsWithUserDetails } = useFacilitatorAnnotationsWithUserDetails(workshopId!);
+
+  // Fetch all registered workshop users (needed to show users who haven't annotated yet)
+  const { data: workshopUsersData } = useQuery({
+    queryKey: ['workshop-users', workshopId],
+    queryFn: () => UsersService.listWorkshopUsersUsersWorkshopsWorkshopIdUsersGet(workshopId!),
+    enabled: !!workshopId && isFacilitator,
+  });
 
   // Redirect non-facilitators
   if (!isFacilitator) {
@@ -92,10 +100,31 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
   // Calculate user contributions based on phase
   const userContributions = React.useMemo(() => {
     if (focusPhase === 'annotation') {
-      // Use annotations with user details
-      return annotationsWithUserDetails ? 
-        Object.entries(
-          annotationsWithUserDetails.reduce((acc, annotation) => {
+      // Build annotation counts per user from actual annotation data
+      const annotationCountsByUser: Record<string, number> = {};
+      if (annotationsWithUserDetails) {
+        annotationsWithUserDetails.forEach((annotation: any) => {
+          const userId = annotation.user_id;
+          annotationCountsByUser[userId] = (annotationCountsByUser[userId] || 0) + 1;
+        });
+      }
+
+      // Show ALL registered non-facilitator users, including those who haven't annotated yet
+      const allUsers = workshopUsersData?.users || [];
+      const nonFacilitatorUsers = allUsers.filter((u: any) => u.role !== 'facilitator');
+
+      if (nonFacilitatorUsers.length > 0) {
+        return nonFacilitatorUsers.map((u: any) => ({
+          userId: u.id,
+          userName: u.name || u.email || u.id,
+          count: annotationCountsByUser[u.id] || 0,
+        }));
+      }
+
+      // Fallback: if no registered users yet, show users from annotation data only
+      if (annotationsWithUserDetails && annotationsWithUserDetails.length > 0) {
+        return Object.entries(
+          annotationsWithUserDetails.reduce((acc: any, annotation: any) => {
             const userId = annotation.user_id;
             if (!acc[userId]) {
               acc[userId] = { count: 0, userName: annotation.user_name || userId };
@@ -103,11 +132,13 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
             acc[userId].count += 1;
             return acc;
           }, {} as Record<string, { count: number; userName: string }>)
-        ).map(([userId, data]) => ({ userId, userName: data.userName, count: data.count }))
-        : [];
+        ).map(([userId, data]: [string, any]) => ({ userId, userName: data.userName, count: data.count }));
+      }
+
+      return [];
     } else {
       // Use discovery findings with user details (default)
-      return allFindingsWithUserDetails ? 
+      return allFindingsWithUserDetails ?
         Object.entries(
           allFindingsWithUserDetails.reduce((acc, finding) => {
             const userId = finding.user_id;
@@ -120,7 +151,7 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
         ).map(([userId, data]) => ({ userId, userName: data.userName, count: data.count }))
         : [];
     }
-  }, [focusPhase, allFindingsWithUserDetails, annotationsWithUserDetails]);
+  }, [focusPhase, allFindingsWithUserDetails, annotationsWithUserDetails, workshopUsersData]);
 
   // Calculate trace coverage details
   const traceCoverageDetails = React.useMemo(() => {
@@ -895,6 +926,31 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                   <div className="space-y-3">
                     {userContributions.map(({ userId, userName, count }) => {
                       const userTraces = traceCoverageDetails.filter((t: any) => t.reviewers.includes(userId)).length;
+                      const isAnnotationPhase = focusPhase === 'annotation';
+                      const itemLabel = isAnnotationPhase ? 'annotation' : 'finding';
+                      const itemLabelPlural = isAnnotationPhase ? 'annotations' : 'findings';
+                      // In annotation phase: show progress out of total traces
+                      const progressLabel = isAnnotationPhase
+                        ? `${count}/${annotationTraceCount} traces rated`
+                        : `${count} ${count !== 1 ? itemLabelPlural : itemLabel}`;
+                      // Badge logic: in annotation phase, "Done" if all traces rated, "In Progress" if some, "Not Started" if none
+                      let badgeText: string;
+                      let badgeClass: string;
+                      if (isAnnotationPhase) {
+                        if (count >= annotationTraceCount && annotationTraceCount > 0) {
+                          badgeText = 'Done';
+                          badgeClass = 'bg-green-100 text-green-700 border-green-200';
+                        } else if (count > 0) {
+                          badgeText = 'In Progress';
+                          badgeClass = 'bg-blue-100 text-blue-700 border-blue-200';
+                        } else {
+                          badgeText = 'Not Started';
+                          badgeClass = 'bg-slate-100 text-slate-700 border-slate-200';
+                        }
+                      } else {
+                        badgeText = count >= 3 ? 'Active' : 'Participating';
+                        badgeClass = count >= 3 ? 'bg-green-100 text-green-700 border-green-200' : 'bg-slate-100 text-slate-700 border-slate-200';
+                      }
                       return (
                         <div key={userId} className="flex items-center justify-between p-4 bg-gradient-to-r from-slate-50 to-white border border-slate-200 rounded-lg hover:shadow-sm transition-shadow">
                           <div className="flex items-center gap-3">
@@ -908,22 +964,26 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                               <div className="text-xs text-slate-600 flex items-center gap-2">
                                 <span className="flex items-center gap-1">
                                   <FileText className="w-3 h-3" />
-                                  {count} finding{count !== 1 ? 's' : ''}
+                                  {progressLabel}
                                 </span>
-                                <span className="text-slate-400">•</span>
-                                <span className="flex items-center gap-1">
-                                  <Activity className="w-3 h-3" />
-                                  {userTraces} trace{userTraces !== 1 ? 's' : ''}
-                                </span>
+                                {!isAnnotationPhase && (
+                                  <>
+                                    <span className="text-slate-400">•</span>
+                                    <span className="flex items-center gap-1">
+                                      <Activity className="w-3 h-3" />
+                                      {userTraces} trace{userTraces !== 1 ? 's' : ''}
+                                    </span>
+                                  </>
+                                )}
                               </div>
                             </div>
                           </div>
                           <div className="text-right">
                             <Badge
-                              variant={count >= 3 ? 'default' : 'secondary'}
-                              className={count >= 3 ? 'bg-green-100 text-green-700 border-green-200' : 'bg-slate-100 text-slate-700 border-slate-200'}
+                              variant={badgeText === 'Done' || badgeText === 'Active' ? 'default' : 'secondary'}
+                              className={badgeClass}
                             >
-                              {count >= 3 ? 'Active' : 'Participating'}
+                              {badgeText}
                             </Badge>
                           </div>
                         </div>

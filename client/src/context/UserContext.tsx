@@ -231,6 +231,10 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
     setPermissions(null);
 
     localStorage.removeItem('workshop_user');
+
+    // Clear ALL cached query data to prevent cross-user data leakage
+    // This ensures the next user gets a completely fresh state
+    queryClient.clear();
   };
 
   return (
