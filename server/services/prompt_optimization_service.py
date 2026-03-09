@@ -695,19 +695,31 @@ class PromptOptimizationService:
 
             def _optimization_worker():
                 nonlocal optimization_error
-                try:
-                    optimized = mlflow.genai.optimize_prompts(
-                        predict_fn=predict_fn,
-                        train_data=train_data,
-                        prompt_uris=[_prompt_uri],
-                        optimizer=optimizer,
-                        scorers=scorers,
-                        aggregation=aggregation_fn,
-                    )
-                    result_container["result"] = optimized
-                except Exception as exc:
-                    optimization_error = exc
-                    logger.exception("GEPA optimization failed: %s", exc)
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        optimized = mlflow.genai.optimize_prompts(
+                            predict_fn=predict_fn,
+                            train_data=train_data,
+                            prompt_uris=[_prompt_uri],
+                            optimizer=optimizer,
+                            scorers=scorers,
+                            aggregation=aggregation_fn,
+                        )
+                        result_container["result"] = optimized
+                        return  # Success
+                    except Exception as exc:
+                        exc_str = str(exc)
+                        is_rate_limit = "RateLimitError" in exc_str or "REQUEST_LIMIT_EXCEEDED" in exc_str or "rate limit" in exc_str.lower()
+                        if is_rate_limit and attempt < max_retries - 1:
+                            wait_time = 30 * (attempt + 1)  # 30s, 60s backoff
+                            logger.warning("Rate limit hit (attempt %d/%d), retrying in %ds: %s", attempt + 1, max_retries, wait_time, exc)
+                            import time
+                            time.sleep(wait_time)
+                            continue
+                        optimization_error = exc
+                        logger.exception("GEPA optimization failed: %s", exc)
+                        return
 
             # Drain any stdout captured during setup (import noise from DSPy, etc.)
             for _setup_msg in stdout_capture.get_new_messages():
@@ -758,7 +770,16 @@ class PromptOptimizationService:
                         pass
 
             if optimization_error:
-                error_msg = f"GEPA optimization failed: {optimization_error}"
+                exc_str = str(optimization_error)
+                is_rate_limit = "RateLimitError" in exc_str or "REQUEST_LIMIT_EXCEEDED" in exc_str or "rate limit" in exc_str.lower()
+                if is_rate_limit:
+                    error_msg = (
+                        f"Rate limit exceeded for the judge/scorer model. "
+                        f"The scorers use the model configured during Judge Tuning (not the Optimizer Model). "
+                        f"Try again later or request a higher rate limit tier. Details: {optimization_error}"
+                    )
+                else:
+                    error_msg = f"GEPA optimization failed: {optimization_error}"
                 yield f"ERROR: {error_msg}"
                 yield {"error": error_msg, "success": False,
                        "original_prompt": original_prompt_text}
