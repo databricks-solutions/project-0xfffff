@@ -13,6 +13,7 @@ import type { Body_call_serving_endpoint_databricks_call_post } from '../models/
 import type { Body_upload_csv_and_log_to_mlflow_workshops__workshop_id__csv_upload_to_mlflow_post } from '../models/Body_upload_csv_and_log_to_mlflow_workshops__workshop_id__csv_upload_to_mlflow_post';
 import type { Body_upload_csv_traces_workshops__workshop_id__csv_upload_post } from '../models/Body_upload_csv_traces_workshops__workshop_id__csv_upload_post';
 import type { CreateDraftRubricItemRequest } from '../models/CreateDraftRubricItemRequest';
+import type { CreateRubricFromDraftRequest } from '../models/CreateRubricFromDraftRequest';
 import type { CustomLLMProviderConfigCreate } from '../models/CustomLLMProviderConfigCreate';
 import type { CustomLLMProviderStatus } from '../models/CustomLLMProviderStatus';
 import type { CustomLLMProviderTestResult } from '../models/CustomLLMProviderTestResult';
@@ -3086,6 +3087,34 @@ export class ApiService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/workshops/{workshop_id}/draft-rubric-items/apply-groups',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Create Rubric From Draft
+     * Create a rubric from draft rubric items.
+     *
+     * Groups become rubric questions (group_name -> title, item texts -> description).
+     * Ungrouped items each become their own question. All default to LIKERT judge type.
+     * @param workshopId
+     * @param requestBody
+     * @returns Rubric Successful Response
+     * @throws ApiError
+     */
+    public static createRubricFromDraftWorkshopsWorkshopIdDraftRubricItemsCreateRubricPost(
+        workshopId: string,
+        requestBody: CreateRubricFromDraftRequest,
+    ): CancelablePromise<Rubric> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/draft-rubric-items/create-rubric',
             path: {
                 'workshop_id': workshopId,
             },

@@ -4,6 +4,7 @@
 /* eslint-disable */
 import type { ApplyGroupsRequest } from '../models/ApplyGroupsRequest';
 import type { CreateDraftRubricItemRequest } from '../models/CreateDraftRubricItemRequest';
+import type { CreateRubricFromDraftRequest } from '../models/CreateRubricFromDraftRequest';
 import type { DiscoveryFeedback } from '../models/DiscoveryFeedback';
 import type { DiscoveryFeedbackCreate } from '../models/DiscoveryFeedbackCreate';
 import type { DiscoveryFeedbackWithUser } from '../models/DiscoveryFeedbackWithUser';
@@ -16,6 +17,7 @@ import type { DiscoverySummariesResponse } from '../models/DiscoverySummariesRes
 import type { DraftRubricItem } from '../models/DraftRubricItem';
 import type { GenerateFollowUpRequest } from '../models/GenerateFollowUpRequest';
 import type { PromoteFindingRequest } from '../models/PromoteFindingRequest';
+import type { Rubric } from '../models/Rubric';
 import type { SubmitFindingV2Request } from '../models/SubmitFindingV2Request';
 import type { SubmitFollowUpAnswerRequest } from '../models/SubmitFollowUpAnswerRequest';
 import type { SuggestGroupsResponse } from '../models/SuggestGroupsResponse';
@@ -707,6 +709,34 @@ export class DiscoveryService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/workshops/{workshop_id}/draft-rubric-items/apply-groups',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Create Rubric From Draft
+     * Create a rubric from draft rubric items.
+     *
+     * Groups become rubric questions (group_name -> title, item texts -> description).
+     * Ungrouped items each become their own question. All default to LIKERT judge type.
+     * @param workshopId
+     * @param requestBody
+     * @returns Rubric Successful Response
+     * @throws ApiError
+     */
+    public static createRubricFromDraftWorkshopsWorkshopIdDraftRubricItemsCreateRubricPost(
+        workshopId: string,
+        requestBody: CreateRubricFromDraftRequest,
+    ): CancelablePromise<Rubric> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/draft-rubric-items/create-rubric',
             path: {
                 'workshop_id': workshopId,
             },

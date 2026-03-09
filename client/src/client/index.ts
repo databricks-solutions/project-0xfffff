@@ -20,6 +20,7 @@ export type { Body_upload_csv_and_log_to_mlflow_workshops__workshop_id__csv_uplo
 export type { Body_upload_csv_traces_workshops__workshop_id__csv_upload_post } from './models/Body_upload_csv_traces_workshops__workshop_id__csv_upload_post';
 export type { ConvergenceMetricsResponse } from './models/ConvergenceMetricsResponse';
 export type { CreateDraftRubricItemRequest } from './models/CreateDraftRubricItemRequest';
+export type { CreateRubricFromDraftRequest } from './models/CreateRubricFromDraftRequest';
 export type { CustomLLMProviderConfigCreate } from './models/CustomLLMProviderConfigCreate';
 export type { CustomLLMProviderStatus } from './models/CustomLLMProviderStatus';
 export type { CustomLLMProviderTestResult } from './models/CustomLLMProviderTestResult';

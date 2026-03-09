@@ -1,6 +1,6 @@
 # Spec Test Coverage Map
 
-**Generated**: 2026-02-25 09:52:34
+**Generated**: 2026-03-04 11:06:12
 
 This report shows test coverage for each specification's success criteria.
 
@@ -8,9 +8,9 @@ This report shows test coverage for each specification's success criteria.
 
 | Type | Count | Description |
 |------|-------|-------------|
-| Unit | 736 | pytest unit tests, Vitest tests |
+| Unit | 832 | pytest unit tests, Vitest tests |
 | Integration | 50 | pytest with real DB/API |
-| E2E (Mocked) | 17 | Playwright with mocked API |
+| E2E (Mocked) | 22 | Playwright with mocked API |
 | E2E (Real) | 99 | Playwright with real API |
 
 ## Coverage Summary
@@ -24,16 +24,16 @@ This report shows test coverage for each specification's success criteria.
 | [CUSTOM_LLM_PROVIDER_SPEC](#custom-llm-provider-spec) | 15 | 0 | 0% | 13 | 0 | 7 | 0 | 0 |
 | [DATASETS_SPEC](#datasets-spec) | 9 | 9 | 100% | 33 | 0 | 0 | 2 | **7** |
 | [DESIGN_SYSTEM_SPEC](#design-system-spec) | 7 | 0 | 0% | 40 | 0 | 0 | 0 | 0 |
-| [DISCOVERY_SPEC](#discovery-spec) | 50 | 50 | 100% | 155 | 4 | 3 | 19 | **28** |
-| [DISCOVERY_TRACE_ASSIGNMENT_SPEC](#discovery-trace-assignment-spec) | 13 | 13 | 100% | 21 | 0 | 2 | 3 | **10** |
-| [JUDGE_EVALUATION_SPEC](#judge-evaluation-spec) | 25 | 25 | 100% | 87 | 0 | 0 | 9 | **19** |
+| [DISCOVERY_SPEC](#discovery-spec) | 59 | 59 | 100% | 251 | 4 | 8 | 19 | **23** |
+| [DISCOVERY_TRACE_ASSIGNMENT_SPEC](#discovery-trace-assignment-spec) | 13 | 13 | 100% | 21 | 0 | 2 | 3 | **9** |
+| [JUDGE_EVALUATION_SPEC](#judge-evaluation-spec) | 25 | 25 | 100% | 87 | 0 | 0 | 9 | **18** |
 | [ROLE_PERMISSIONS_SPEC](#role-permissions-spec) | 16 | 16 | 100% | 24 | 0 | 0 | 0 | **16** |
 | [RUBRIC_SPEC](#rubric-spec) | 25 | 25 | 100% | 83 | 0 | 2 | 6 | **17** |
 | [TESTING_SPEC](#testing-spec) | 30 | 0 | 0% | 35 | 46 | 0 | 0 | 0 |
 | [TRACE_DISPLAY_SPEC](#trace-display-spec) | 0 | 0 | 100% | 43 | 0 | 0 | 6 | 0 |
 | [UI_COMPONENTS_SPEC](#ui-components-spec) | 16 | 0 | 0% | 57 | 0 | 0 | 2 | 0 |
 
-**Total**: 177/256 requirements covered (69%)
+**Total**: 186/265 requirements covered (70%)
 
 ---
 
@@ -412,7 +412,7 @@ These tests are tagged with the spec but don't link to specific requirements:
 
 ## DISCOVERY_SPEC
 
-**Coverage**: 50/50 requirements (100%)
+**Coverage**: 59/59 requirements (100%)
 
 ### Backend-Only Requirements (no frontend tests)
 
@@ -425,27 +425,22 @@ These requirements are covered by backend tests only. UI regressions won't be ca
 - :warning: All 3 questions required before moving to next trace (unit)
 - :warning: Error handling with retry for LLM failures (unit)
 - :warning: Completion status shows % of participants finished (integration, unit)
-- :warning: Facilitator can trigger analysis at any time (even partial feedback) (unit)
-- :warning: Facilitator selects analysis template (Evaluation Criteria or Themes & Patterns) before running (unit)
 - :warning: System aggregates feedback by trace (unit)
 - :warning: Disagreements detected at 3 priority levels (deterministic, no LLM) (unit)
 - :warning: LLM distills evaluation criteria with evidence from trace IDs (unit)
 - :warning: LLM analyzes disagreements with follow-up questions and suggestions (unit)
 - :warning: Analysis record stores which template was used (unit)
-- :warning: Each analysis run creates a new record (history preserved) (unit)
 - :warning: Re-runnable — new analysis as more feedback comes in, prior analyses retained (unit)
-- :warning: Warning if < 2 participants (not an error) (unit)
-- :warning: Data freshness banner (participant count, last run timestamp) (unit)
-- :warning: Results organized by priority (HIGH → MEDIUM → LOWER) (unit)
 - :warning: One feedback record per (workshop, trace, user) — upsert behavior (integration, unit)
-- :warning: Q&A pairs appended in order to JSON array (unit)
+- :warning: Q&A pairs appended in order to JSON array (integration, unit)
 - :warning: Multiple analysis records per workshop allowed (history preserved) (unit)
 - :warning: Draft rubric items track promotion source and promoter (unit)
 - :warning: Fallback question if LLM unavailable after retries (unit)
-- :warning: Analysis shows warning (not error) if < 2 participants (unit)
 - :warning: Form validation prevents empty submissions (unit)
-- :warning: Disagreements color-coded by priority (red/yellow/blue) (unit)
-- :warning: Criteria show evidence (supporting trace IDs) (unit)
+- :warning: Trace-specific analysis findings appear on the trace card, pinned above feedback (collapsible) (unit)
+- :warning: Promote action visibly moves items from trace feed/summary into the sidebar (unit)
+- :warning: Draft rubric items show trace reference badges (interactive: hover for preview, click to scroll) (unit)
+- :warning: "Create Rubric →" in sidebar transitions to rubric creation with groups pre-populated as criteria (unit)
 
 ### Covered Requirements
 
@@ -458,21 +453,21 @@ These requirements are covered by backend tests only. UI regressions won't be ca
 - [x] Previous Q&A visible while answering new questions (unit)
 - [x] Loading spinner during LLM generation (1-3s) (unit)
 - [x] Error handling with retry for LLM failures (unit) **[BE-only]**
-- [x] Feedback saved incrementally (no data loss on failure) (e2e-real, integration, unit)
+- [x] Feedback saved incrementally (no data loss on failure) (e2e-real, unit)
 - [x] Completion status shows % of participants finished (integration, unit) **[BE-only]**
 - [x] Facilitator can view participant feedback details (label, comment, follow-up Q&A) (e2e-real, integration, unit)
-- [x] Facilitator can trigger analysis at any time (even partial feedback) (unit) **[BE-only]**
-- [x] Facilitator selects analysis template (Evaluation Criteria or Themes & Patterns) before running (unit) **[BE-only]**
+- [x] Facilitator can trigger analysis at any time (even partial feedback) (e2e-mocked, unit)
+- [x] Facilitator selects analysis template (Evaluation Criteria or Themes & Patterns) before running (e2e-mocked, unit)
 - [x] System aggregates feedback by trace (unit) **[BE-only]**
 - [x] Disagreements detected at 3 priority levels (deterministic, no LLM) (unit) **[BE-only]**
 - [x] LLM distills evaluation criteria with evidence from trace IDs (unit) **[BE-only]**
 - [x] LLM analyzes disagreements with follow-up questions and suggestions (unit) **[BE-only]**
 - [x] Analysis record stores which template was used (unit) **[BE-only]**
-- [x] Each analysis run creates a new record (history preserved) (unit) **[BE-only]**
+- [x] Each analysis run creates a new record (history preserved) (e2e-mocked, unit)
 - [x] Re-runnable — new analysis as more feedback comes in, prior analyses retained (unit) **[BE-only]**
-- [x] Warning if < 2 participants (not an error) (unit) **[BE-only]**
-- [x] Data freshness banner (participant count, last run timestamp) (unit) **[BE-only]**
-- [x] Results organized by priority (HIGH → MEDIUM → LOWER) (unit) **[BE-only]**
+- [x] Warning if < 2 participants (not an error) (e2e-mocked, unit)
+- [x] Data freshness banner (participant count, last run timestamp) (unit)
+- [x] Results organized by priority (HIGH → MEDIUM → LOWER) (unit)
 - [x] Facilitator can promote distilled criteria to draft rubric (e2e-real, unit)
 - [x] Facilitator can promote disagreement insights to draft rubric (e2e-real, unit)
 - [x] Facilitator can promote raw participant feedback to draft rubric (e2e-real, unit)
@@ -485,29 +480,46 @@ These requirements are covered by backend tests only. UI regressions won't be ca
 - [x] Draft rubric items available during Rubric Creation phase (e2e-real, unit)
 - [x] Source traceability maintained (which traces support each item) (e2e-real, unit)
 - [x] One feedback record per (workshop, trace, user) — upsert behavior (integration, unit) **[BE-only]**
-- [x] Q&A pairs appended in order to JSON array (unit) **[BE-only]**
+- [x] Q&A pairs appended in order to JSON array (integration, unit) **[BE-only]**
 - [x] Multiple analysis records per workshop allowed (history preserved) (unit) **[BE-only]**
 - [x] Draft rubric items track promotion source and promoter (unit) **[BE-only]**
 - [x] LLM failures show error toast with retry (unit)
 - [x] Fallback question if LLM unavailable after retries (unit) **[BE-only]**
 - [x] Fallback warning banner shown only to facilitators, never to participants/SMEs (unit)
-- [x] Analysis shows warning (not error) if < 2 participants (unit) **[BE-only]**
+- [x] Analysis shows warning (not error) if < 2 participants (unit)
 - [x] Form validation prevents empty submissions (unit) **[BE-only]**
 - [x] Progressive disclosure (one question at a time) (e2e-real, unit)
 - [x] Submit buttons disabled until required fields filled (unit)
 - [x] Clear progress indication (X of Y traces completed) (e2e-real)
 - [x] Smooth transitions between feedback states (unit)
-- [x] Disagreements color-coded by priority (red/yellow/blue) (unit) **[BE-only]**
-- [x] Criteria show evidence (supporting trace IDs) (unit) **[BE-only]**
+- [x] Single two-panel workspace replaces multi-page flow (no FacilitatorDashboard discovery tabs, no FindingsReviewPage) (unit)
+- [x] Trace feed shows actual trace content (input/output), not trace ID badges (unit)
+- [x] Trace-specific analysis findings appear on the trace card, pinned above feedback (collapsible) (unit) **[BE-only]**
+- [x] Cross-trace analysis findings appear in collapsible summary section above the feed (unit)
+- [x] Overview bar shows stats inline + compact controls (Run Analysis, Add Traces, Pause, Model selector) (unit)
+- [x] Draft rubric sidebar is always visible while browsing traces (e2e-mocked)
+- [x] Promote action visibly moves items from trace feed/summary into the sidebar (unit) **[BE-only]**
+- [x] Draft rubric items show trace reference badges (interactive: hover for preview, click to scroll) (unit) **[BE-only]**
+- [x] Draft rubric items do NOT show source-type badges (Finding, Disagreement, etc.) (unit)
+- [x] Disagreements color-coded by priority (red/yellow/blue) on trace cards (unit)
+- [x] "Create Rubric →" in sidebar transitions to rubric creation with groups pre-populated as criteria (unit) **[BE-only]**
 
 ### Tests Without Requirement Links
 
 These tests are tagged with the spec but don't link to specific requirements:
 
+- `tests/unit/services/test_discovery_analysis_service.py` (test_draft_items_expose_source_trace_ids_for_display) [unit]
+- `tests/unit/services/test_draft_rubric_items.py` (test_ungrouped_items_each_become_question) [unit]
+- `tests/unit/services/test_draft_rubric_items.py` (test_no_items_raises_400) [unit]
+- `tests/unit/services/test_draft_rubric_items.py` (test_mixed_grouped_and_ungrouped) [unit]
+- `client/src/components/DiscoveryAnalysisTab.evidence.test.tsx` (renders evidence trace IDs for findings (truncated to 8 chars)) [unit]
+- `client/src/components/DiscoveryAnalysisTab.evidence.test.tsx` (shows trace ID badge for each disagreement item) [unit]
 - `client/src/components/DraftRubricPanel.test.tsx` (renders trace ID badges for items with source_trace_ids) [unit]
 - `client/src/components/DraftRubricPanel.test.tsx` (does not render trace badges for manual items with no trace IDs) [unit]
 - `client/src/components/DraftRubricPanel.test.tsx` (renders source type badges for each item) [unit]
 - `client/src/components/DraftRubricPanel.test.tsx` (shows item count in header) [unit]
+- `client/src/components/DraftRubricPanel.test.tsx` (creates a new manual group from item controls) [unit]
+- `client/src/components/DraftRubricPanel.test.tsx` (moves an item into an existing group from item controls) [unit]
 
 ## DISCOVERY_TRACE_ASSIGNMENT_SPEC
 
@@ -525,7 +537,6 @@ These requirements are covered by backend tests only. UI regressions won't be ca
 - :warning: Randomization context includes phase and round info (unit)
 - :warning: Dataset operations (union, subtract) work correctly and maintain audit trail (unit)
 - :warning: Multiple participants can see same trace with different orders (unit)
-- :warning: Assignment metadata properly tracks all context (unit)
 - :warning: Inter-rater reliability (IRR) can be measured (same traces, different orders) (unit)
 
 ### Covered Requirements
@@ -541,7 +552,7 @@ These requirements are covered by backend tests only. UI regressions won't be ca
 - [x] Randomization context includes phase and round info (unit) **[BE-only]**
 - [x] Dataset operations (union, subtract) work correctly and maintain audit trail (unit) **[BE-only]**
 - [x] Multiple participants can see same trace with different orders (unit) **[BE-only]**
-- [x] Assignment metadata properly tracks all context (unit) **[BE-only]**
+- [x] Assignment metadata properly tracks all context (unit)
 - [x] Inter-rater reliability (IRR) can be measured (same traces, different orders) (unit) **[BE-only]**
 
 ### Tests Without Requirement Links
@@ -550,8 +561,6 @@ These tests are tagged with the spec but don't link to specific requirements:
 
 - `client/tests/e2e/discovery-invite-traces.spec.ts` (discovery blocks until multiple participants complete; facilitator-driven phase with trace-based discovery) [e2e-mocked]
 - `client/tests/e2e/facilitator-create-workshop.spec.ts` (facilitator can log in and create a workshop) [e2e-mocked]
-- `client/src/hooks/useWorkshopApi.test.ts` (invalidateAllWorkshopQueries passes a predicate that matches workshop-related keys) [unit]
-- `client/src/hooks/useWorkshopApi.test.ts` (refetchAllWorkshopQueries passes a predicate that matches workshop-related keys) [unit]
 
 ## JUDGE_EVALUATION_SPEC
 
@@ -561,7 +570,6 @@ These tests are tagged with the spec but don't link to specific requirements:
 
 These requirements are covered by backend tests only. UI regressions won't be caught:
 
-- :warning: Likert judges return values 1-5 (unit)
 - :warning: Fallback conversion handles Likert-style returns for binary (unit)
 - :warning: Evaluation results persisted to database (unit)
 - :warning: Results reload correctly in UI (unit)
@@ -583,7 +591,7 @@ These requirements are covered by backend tests only. UI regressions won't be ca
 
 ### Covered Requirements
 
-- [x] Likert judges return values 1-5 (unit) **[BE-only]**
+- [x] Likert judges return values 1-5 (unit)
 - [x] Binary judges return values 0 or 1 (unit)
 - [x] Fallback conversion handles Likert-style returns for binary (unit) **[BE-only]**
 - [x] Evaluation results persisted to database (unit) **[BE-only]**
@@ -625,10 +633,6 @@ These tests are tagged with the spec but don't link to specific requirements:
 - `client/tests/e2e/evaluation-tagging.spec.ts` (re-evaluate endpoint tags traces before searching MLflow) [e2e-real]
 - `client/tests/e2e/evaluation-tagging.spec.ts` (begin-annotation auto-eval creates job and attempts tagging) [e2e-real]
 - `client/tests/e2e/evaluation-tagging.spec.ts` (begin-annotation without eval model skips auto-eval) [e2e-real]
-- `client/src/utils/modelMapping.test.ts` (maps known frontend names to backend names and back) [unit]
-- `client/src/utils/modelMapping.test.ts` (passes through unknown names) [unit]
-- `client/src/utils/modelMapping.test.ts` (requiresDatabricks is true for mapped options) [unit]
-- `client/src/utils/modelMapping.test.ts` (getModelOptions disables options when config missing) [unit]
 
 ## ROLE_PERMISSIONS_SPEC
 
