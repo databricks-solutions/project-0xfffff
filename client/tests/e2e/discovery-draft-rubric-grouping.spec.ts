@@ -94,25 +94,25 @@ test.describe('Discovery Step 3: Draft Rubric Grouping', () => {
     );
     expect(items.length).toBe(3);
 
-    // Navigate to Draft Rubric tab
-    await scenario.goToTab('Draft Rubric');
+    // Open fresh page to pick up items created via API (sidebar is always visible)
+    const page = await scenario.newPageAs(scenario.facilitator);
 
-    // Wait for items to load
+    // Wait for items to load in the sidebar
     await expect(
-      scenario.page.getByText('Draft Rubric Items (3)')
+      page.getByText('3 items')
     ).toBeVisible({ timeout: 10000 });
 
     // Click "Suggest Groups" and wait for the proposal card
     // In demo mode the LLM returns almost instantly so the "Suggesting..." loading
     // state may flash too briefly to assert on.
-    await scenario.page.getByRole('button', { name: /Suggest Groups/i }).click();
+    await page.getByRole('button', { name: /Suggest Groups/i }).click();
 
     await expect(
-      scenario.page.getByText('Suggested Grouping')
+      page.getByText('Suggested Grouping')
     ).toBeVisible({ timeout: 45000 });
 
     // The proposal card should be visible with Apply Groups and Dismiss buttons
-    const proposalCard = scenario.page.locator('.border-blue-200.bg-blue-50');
+    const proposalCard = page.locator('.border-blue-200.bg-blue-50');
     await expect(proposalCard).toBeVisible();
     await expect(proposalCard.getByRole('button', { name: /Apply Groups/i })).toBeVisible();
     await expect(proposalCard.getByRole('button', { name: /Dismiss/i })).toBeVisible();
@@ -126,7 +126,7 @@ test.describe('Discovery Step 3: Draft Rubric Grouping', () => {
 
     // Dismiss the proposal
     await proposalCard.getByRole('button', { name: /Dismiss/i }).click();
-    await expect(scenario.page.getByText('Suggested Grouping')).not.toBeVisible({ timeout: 5000 });
+    await expect(page.getByText('Suggested Grouping')).not.toBeVisible({ timeout: 5000 });
 
     await scenario.cleanup();
   });
@@ -176,15 +176,15 @@ test.describe('Discovery Step 3: Draft Rubric Grouping', () => {
     expect(qualityItems.length).toBe(2);
     expect(safetyItems.length).toBe(1);
 
-    // Navigate to Draft Rubric tab and verify UI shows group headers
-    await scenario.goToTab('Draft Rubric');
+    // Open fresh page to pick up groups applied via API (sidebar is always visible)
+    const page = await scenario.newPageAs(scenario.facilitator);
 
-    await expect(scenario.page.getByText('Response Quality (2)')).toBeVisible({ timeout: 10000 });
-    await expect(scenario.page.getByText('Safety (1)')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('Response Quality (2)')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('Safety (1)')).toBeVisible({ timeout: 10000 });
 
     // Verify the item texts are visible under their groups
-    await expect(scenario.page.getByText('Responses must include transaction IDs')).toBeVisible();
-    await expect(scenario.page.getByText('Security protocols must be followed')).toBeVisible();
+    await expect(page.getByText('Responses must include transaction IDs')).toBeVisible();
+    await expect(page.getByText('Security protocols must be followed')).toBeVisible();
 
     await scenario.cleanup();
   });
@@ -230,12 +230,12 @@ test.describe('Discovery Step 3: Draft Rubric Grouping', () => {
       expect(updated.group_name).toBe('Communication Clarity');
     }
 
-    // Navigate to Draft Rubric tab and verify UI shows the group header
-    await scenario.goToTab('Draft Rubric');
+    // Open fresh page to pick up groups assigned via API (sidebar is always visible)
+    const page = await scenario.newPageAs(scenario.facilitator);
 
-    await expect(scenario.page.getByText('Communication Clarity (2)')).toBeVisible({ timeout: 10000 });
-    await expect(scenario.page.getByText('Response completeness and detail level')).toBeVisible();
-    await expect(scenario.page.getByText('Appropriate use of technical jargon')).toBeVisible();
+    await expect(page.getByText('Communication Clarity (2)')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('Response completeness and detail level')).toBeVisible();
+    await expect(page.getByText('Appropriate use of technical jargon')).toBeVisible();
 
     // Move one item to a different group (demonstrates moving between groups)
     const movedItem = await api.updateItem(items[1].id, { group_id: 'manual-group-2', group_name: 'Terminology' });
@@ -291,17 +291,17 @@ test.describe('Discovery Step 3: Draft Rubric Grouping', () => {
       { name: 'Helpfulness', item_ids: [items[2].id] },
     ]);
 
-    // Navigate to Draft Rubric tab
-    await scenario.goToTab('Draft Rubric');
+    // Open fresh page to pick up groups applied via API (sidebar is always visible)
+    const page = await scenario.newPageAs(scenario.facilitator);
 
     // Verify group headers match the group names (these become rubric question titles)
-    await expect(scenario.page.getByText('Accuracy (2)')).toBeVisible({ timeout: 10000 });
-    await expect(scenario.page.getByText('Helpfulness (1)')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('Accuracy (2)')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('Helpfulness (1)')).toBeVisible({ timeout: 10000 });
 
     // Verify items are organized under their respective groups
-    await expect(scenario.page.getByText('Facts should be verifiable against known data')).toBeVisible();
-    await expect(scenario.page.getByText('Numbers and statistics must be accurate')).toBeVisible();
-    await expect(scenario.page.getByText('Response should be warm and encouraging')).toBeVisible();
+    await expect(page.getByText('Facts should be verifiable against known data')).toBeVisible();
+    await expect(page.getByText('Numbers and statistics must be accurate')).toBeVisible();
+    await expect(page.getByText('Response should be warm and encouraging')).toBeVisible();
 
     // Cross-check: API group_name values match what is displayed as section headers
     const allItems = await api.getItems();

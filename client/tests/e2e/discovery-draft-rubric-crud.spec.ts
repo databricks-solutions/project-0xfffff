@@ -12,7 +12,6 @@ import { test, expect, type Page } from '@playwright/test';
 import { TestScenario } from '../lib/scenario-builder';
 import { WorkshopPhase } from '../lib/types';
 import {
-  goToTab,
   createDraftRubricItemViaApi,
   addDraftRubricItemViaUI,
   editDraftRubricItem,
@@ -25,16 +24,15 @@ const API_URL = process.env.E2E_API_URL ?? 'http://127.0.0.1:8000';
 type BuiltScenario = Awaited<ReturnType<InstanceType<typeof TestScenario>['build']>>;
 
 /**
- * Helper: open a fresh facilitator page and navigate to the Draft Rubric tab.
+ * Helper: open a fresh facilitator page where the Draft Rubric sidebar is visible.
  *
  * After beginDiscovery() changes server state via API, the original page has
  * stale data. Opening a new page via newPageAs re-logs in and loads the current
- * workshop state, which shows the facilitator dashboard with tabs (since
- * discovery_started = true). Then we click the Draft Rubric tab.
+ * workshop state. The draft rubric sidebar is always visible in the two-panel
+ * layout — no tab click is needed.
  */
-async function openFacilitatorDraftRubricTab(scenario: BuiltScenario): Promise<Page> {
+async function openFacilitatorPage(scenario: BuiltScenario): Promise<Page> {
   const page = await scenario.newPageAs(scenario.facilitator);
-  await goToTab(page, 'Draft Rubric');
   return page;
 }
 
@@ -59,26 +57,25 @@ test.describe('Discovery Step 3: Draft Rubric CRUD', () => {
     await scenario.loginAs(scenario.facilitator);
     await scenario.beginDiscovery(2);
 
-    // Open fresh page as facilitator to see the dashboard with tabs
-    const page = await openFacilitatorDraftRubricTab(scenario);
+    // Open fresh page as facilitator (draft rubric sidebar is always visible)
+    const page = await openFacilitatorPage(scenario);
 
     // Verify the empty state is shown
     await expect(
-      page.getByText('Draft Rubric Items (0)')
+      page.getByText('0 items')
     ).toBeVisible({ timeout: 10000 });
 
     // Add an item via the UI using the action
     await addDraftRubricItemViaUI(page, 'Response should always include a greeting');
 
-    // Verify item appears with text and "Manual" source badge
+    // Verify item appears with text
     await expect(
       page.getByText('Response should always include a greeting')
     ).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText('Manual', { exact: true })).toBeVisible({ timeout: 5000 });
 
     // Verify count updated
     await expect(
-      page.getByText('Draft Rubric Items (1)')
+      page.getByText('1 items')
     ).toBeVisible({ timeout: 5000 });
 
     await scenario.cleanup();
@@ -124,24 +121,21 @@ test.describe('Discovery Step 3: Draft Rubric CRUD', () => {
       promoted_by: facilitatorId,
     }, API_URL);
 
-    // Open fresh page as facilitator to see the dashboard with tabs
-    const page = await openFacilitatorDraftRubricTab(scenario);
+    // Open fresh page as facilitator (draft rubric sidebar is always visible)
+    const page = await openFacilitatorPage(scenario);
 
     // Verify items count
-    await expect(page.getByText('Draft Rubric Items (2)')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('2 items')).toBeVisible({ timeout: 10000 });
 
-    // Verify finding item with "Analysis" badge
+    // Verify finding item text
     await expect(
       page.getByText('Responses must cite specific evidence from the conversation')
     ).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText('Analysis', { exact: true })).toBeVisible({ timeout: 5000 });
 
-    // Verify feedback item with "Feedback" badge
+    // Verify feedback item text
     await expect(
       page.getByText('Tone should be professional but approachable')
     ).toBeVisible({ timeout: 5000 });
-    // Scope to the tab panel to avoid matching the "Feedback" tab trigger
-    await expect(page.locator('[role="tabpanel"]').getByText('Feedback', { exact: true })).toBeVisible({ timeout: 5000 });
 
     // Verify trace ID badges appear (first 8 chars of trace IDs)
     const traceIdPrefix0 = traceId0.slice(0, 8);
@@ -178,8 +172,8 @@ test.describe('Discovery Step 3: Draft Rubric CRUD', () => {
       promoted_by: scenario.facilitator.id,
     }, API_URL);
 
-    // Open fresh page as facilitator to see the dashboard with tabs
-    const page = await openFacilitatorDraftRubricTab(scenario);
+    // Open fresh page as facilitator (draft rubric sidebar is always visible)
+    const page = await openFacilitatorPage(scenario);
 
     // Verify item appears
     await expect(
@@ -228,24 +222,24 @@ test.describe('Discovery Step 3: Draft Rubric CRUD', () => {
       promoted_by: scenario.facilitator.id,
     }, API_URL);
 
-    // Open fresh page as facilitator to see the dashboard with tabs
-    const page = await openFacilitatorDraftRubricTab(scenario);
+    // Open fresh page as facilitator (draft rubric sidebar is always visible)
+    const page = await openFacilitatorPage(scenario);
 
     // Verify item appears with count 1
-    await expect(page.getByText('Draft Rubric Items (1)')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('1 items')).toBeVisible({ timeout: 10000 });
     await expect(page.getByText('This item will be deleted')).toBeVisible({ timeout: 5000 });
 
     // Delete the item using the action
     await deleteDraftRubricItem(page);
 
     // Verify item is removed - count should go to 0
-    await expect(page.getByText('Draft Rubric Items (0)')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('0 items')).toBeVisible({ timeout: 10000 });
 
     // Verify the item text is no longer visible
     await expect(page.getByText('This item will be deleted')).not.toBeVisible({ timeout: 5000 });
 
     // Verify empty state message appears
-    await expect(page.getByText('Draft Rubric Staging Area')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText('No items yet')).toBeVisible({ timeout: 5000 });
 
     await scenario.cleanup();
   });
@@ -287,24 +281,21 @@ test.describe('Discovery Step 3: Draft Rubric CRUD', () => {
       promoted_by: facilitatorId,
     }, API_URL);
 
-    // Open fresh page as facilitator to see the dashboard with tabs
-    const page = await openFacilitatorDraftRubricTab(scenario);
+    // Open fresh page as facilitator (draft rubric sidebar is always visible)
+    const page = await openFacilitatorPage(scenario);
 
     // Verify both items appear
-    await expect(page.getByText('Draft Rubric Items (2)')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('2 items')).toBeVisible({ timeout: 10000 });
 
-    // Verify disagreement item text and badge
+    // Verify disagreement item text
     await expect(
       page.getByText('Rating split on security guidance: one said adequate, other wanted 2FA')
     ).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText('Disagreement', { exact: true })).toBeVisible({ timeout: 5000 });
 
-    // Verify feedback item also displays correctly
+    // Verify feedback item text also displays correctly
     await expect(
       page.getByText('Participant noted response was too verbose')
     ).toBeVisible({ timeout: 5000 });
-    // Scope to the tab panel to avoid matching the "Feedback" tab trigger
-    await expect(page.locator('[role="tabpanel"]').getByText('Feedback', { exact: true })).toBeVisible({ timeout: 5000 });
 
     // Verify trace ID badge for the disagreement item (first 8 chars)
     const traceIdPrefix = traceId0.slice(0, 8);

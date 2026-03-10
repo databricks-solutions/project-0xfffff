@@ -415,17 +415,15 @@ export async function addDraftRubricItemViaUI(
   page: Page,
   text: string
 ): Promise<void> {
-  await page.getByRole('button', { name: /Add Item/i }).click();
+  // The sidebar header has an "Add" button (with Plus icon) to show the add form
+  await page.locator('.border-b').getByRole('button', { name: /Add/i }).click();
 
-  const addForm = page.locator('.bg-slate-50').filter({
-    has: page.getByPlaceholder('Enter draft rubric item text...'),
-  });
-  const textarea = addForm.getByPlaceholder('Enter draft rubric item text...');
+  const textarea = page.getByPlaceholder('Enter draft rubric item text...');
   await expect(textarea).toBeVisible({ timeout: 5000 });
   await textarea.fill(text);
 
-  // Click the "Add" button inside the add form (not the "Add" button in Quick Actions)
-  await addForm.getByRole('button', { name: /^Add$/i }).click();
+  // Click the "Add" submit button (the one next to "Cancel" in the add form)
+  await textarea.locator('..').locator('..').getByRole('button', { name: /^Add$/i }).click();
 }
 
 /**

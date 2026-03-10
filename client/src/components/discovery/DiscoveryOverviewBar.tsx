@@ -88,10 +88,11 @@ export const DiscoveryOverviewBar: React.FC<DiscoveryOverviewBarProps> = ({
         </Button>
 
         <Select value={currentModel} onValueChange={onModelChange}>
-          <SelectTrigger className="w-44 h-8 text-xs">
+          <SelectTrigger className="w-44 h-8 text-xs" data-testid="model-selector">
             <SelectValue placeholder="Model" />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value="demo">Demo (static questions)</SelectItem>
             {modelOptions.map((opt) => (
               <SelectItem key={opt.value} value={opt.value} disabled={opt.disabled}>
                 {opt.label}
