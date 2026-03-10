@@ -22,6 +22,7 @@ vi.mock('@/hooks/useWorkshopApi', () => ({
   useDeleteDraftRubricItem: () => ({ mutate: vi.fn(), isPending: false }),
   useSuggestGroups: () => ({ mutate: vi.fn(), isPending: false }),
   useApplyGroups: () => ({ mutate: vi.fn(), isPending: false }),
+  useCreateRubricFromDraft: () => ({ mutate: vi.fn(), isPending: false }),
   useWorkshop: () => ({ data: { id: 'ws-1', current_phase: 'discovery', discovery_started: true, active_discovery_trace_ids: ['t1', 't2'] } }),
   useMLflowConfig: () => ({ data: null }),
   useUpdateDiscoveryModel: () => ({ mutate: vi.fn() }),
