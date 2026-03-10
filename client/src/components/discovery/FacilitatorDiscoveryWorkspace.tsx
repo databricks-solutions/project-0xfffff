@@ -13,7 +13,9 @@ import {
   useMLflowConfig,
   useUpdateDiscoveryModel,
   useCreateRubricFromDraft,
+  type DiscoveryAnalysis,
 } from '@/hooks/useWorkshopApi';
+import type { Trace } from '@/client';
 import { getModelOptions, getBackendModelName, getFrontendModelName } from '@/utils/modelMapping';
 import { toast } from 'sonner';
 
@@ -34,7 +36,7 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
 
   // Data
   const { data: workshop } = useWorkshop(workshopId!);
-  const { data: traces } = useAllTraces(workshopId!);
+  const { data: traces } = useAllTraces(workshopId!) as { data: Trace[] | undefined };
   const { data: allFeedback } = useFacilitatorDiscoveryFeedback(workshopId!);
   const { data: analyses } = useDiscoveryAnalyses(workshopId!);
   const { data: draftItems = [] } = useDraftRubricItems(workshopId!);
@@ -84,8 +86,8 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
 
   // Split analysis findings: trace-specific vs cross-trace
   const findingsByTrace = useMemo(() => {
-    if (!currentAnalysis) return new Map<string, typeof currentAnalysis.findings>();
-    const map = new Map<string, typeof currentAnalysis.findings>();
+    if (!currentAnalysis) return new Map<string, DiscoveryAnalysis['findings']>();
+    const map = new Map<string, DiscoveryAnalysis['findings']>();
     for (const f of currentAnalysis.findings) {
       if (f.evidence_trace_ids.length === 1) {
         const tid = f.evidence_trace_ids[0];

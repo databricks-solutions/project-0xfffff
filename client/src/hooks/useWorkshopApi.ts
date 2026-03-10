@@ -21,6 +21,7 @@ import type {
   IRRResult,
   MLflowIntakeConfig,
 } from '@/client';
+import { FeedbackLabel } from '@/client/models/FeedbackLabel';
 import type { DraftRubricItem } from '@/client/models/DraftRubricItem';
 import type { CreateDraftRubricItemRequest } from '@/client/models/CreateDraftRubricItemRequest';
 import type { UpdateDraftRubricItemRequest } from '@/client/models/UpdateDraftRubricItemRequest';
@@ -829,7 +830,7 @@ export interface DiscoveryFeedbackData {
   workshop_id: string;
   trace_id: string;
   user_id: string;
-  feedback_label: 'good' | 'bad';
+  feedback_label: FeedbackLabel;
   comment: string;
   followup_qna: Array<{ question: string; answer: string }>;
   created_at: string;
@@ -908,9 +909,9 @@ export function useDiscoveryFeedback(workshopId: string, userId?: string) {
 
 /** Extended feedback with user details for facilitator dashboard */
 export interface DiscoveryFeedbackWithUser extends DiscoveryFeedbackData {
-  user_name?: string;
-  user_email?: string;
-  user_role?: string;
+  user_name: string;
+  user_email: string;
+  user_role: string;
 }
 
 /** Fetch all discovery feedback with user details (facilitator-only) */
