@@ -20,7 +20,7 @@ import { IRRResultsDemo } from './IRRResultsDemo';
 import { JudgeTuningPage } from './JudgeTuningPage';
 import { DBSQLExportPage } from './DBSQLExportPage';
 import { UnityVolumePage } from './UnityVolumePage';
-import { FindingsReviewPage } from './FindingsReviewPage';
+
 import { IntakePage } from './IntakePage';
 import { AppSidebar } from '@/components/AppSidebar';
 import { AnnotationAssignmentManager } from '@/components/AnnotationAssignmentManager';
@@ -42,6 +42,7 @@ import { FacilitatorScreenShare } from '@/components/FacilitatorScreenShare';
 import { PhasePausedView } from '@/components/PhasePausedView';
 import { GeneralDashboard } from '@/components/GeneralDashboard';
 import { ErrorBoundary, PageErrorFallback } from '@/components/ErrorBoundary';
+import { FacilitatorDiscoveryWorkspace } from '@/components/discovery/FacilitatorDiscoveryWorkspace';
 
 
 
@@ -84,7 +85,7 @@ export function WorkshopDemoLanding() {
       switch(requestedPhase) {
         case 'intake': return 'intake';
         case 'user-management': return 'user-management';
-        case 'view-all-findings': return 'findings-review';
+        case 'view-all-findings': return 'discovery-monitor';
         case 'discovery': 
           // Show start page ONLY if discovery has never been started
           if (!state.discovery_started) {
@@ -504,7 +505,7 @@ export function WorkshopDemoLanding() {
       case 'discovery-pending':
         return <DiscoveryPendingPage />;
       case 'discovery-monitor':
-        return <FacilitatorDashboard onNavigate={handleNavigation} focusPhase={'discovery'} />;
+        return <FacilitatorDiscoveryWorkspace onNavigate={handleNavigation} />;
       case 'discovery-participate':
         return <TraceViewerDemo />;
       case 'discovery-complete':
@@ -543,7 +544,7 @@ export function WorkshopDemoLanding() {
       case 'unity-volume':
         return <UnityVolumePage />;
       case 'findings-review':
-        return <FindingsReviewPage onBack={() => setCurrentView('discovery-monitor')} />;
+        return <FacilitatorDiscoveryWorkspace onNavigate={handleNavigation} />;
       case 'assign-annotations':
         return <AnnotationAssignmentManager />;
       case 'user-management':

@@ -7,6 +7,7 @@ Uses real in-memory SQLite (same pattern as test_database_service_feedback.py).
 """
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -22,6 +23,7 @@ from server.models import (
     DraftRubricItemUpdate,
 )
 from server.services.database_service import DatabaseService
+from server.services.discovery_service import DiscoveryService
 
 
 # ---------------------------------------------------------------------------
@@ -259,3 +261,97 @@ class TestSourceTypeValidation:
         )
         item = db_service.add_draft_rubric_item("ws-1", data, promoted_by="f-1")
         assert item.source_analysis_id == "analysis-123"
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+class TestCreateRubricFromDraft:
+    """@req DI-S3-RUBRIC-SEED: Draft rubric items seed initial rubric."""
+
+    @pytest.mark.req("\"Create Rubric \u2192\" in sidebar transitions to rubric creation with groups pre-populated as criteria")
+    def test_grouped_items_become_questions(self, db_service, workshop):
+        """@req DI-S3-GROUP-TO-Q: Each group becomes one rubric question."""
+        # Create draft items in two groups
+        item1 = db_service.add_draft_rubric_item(
+            workshop.id,
+            DraftRubricItemCreate(text="Accuracy matters", source_type="finding"),
+            promoted_by="facilitator",
+        )
+        db_service.update_draft_rubric_item(item1.id, DraftRubricItemUpdate(group_id="g1", group_name="Response Quality"))
+        item2 = db_service.add_draft_rubric_item(
+            workshop.id,
+            DraftRubricItemCreate(text="Completeness check", source_type="finding"),
+            promoted_by="facilitator",
+        )
+        db_service.update_draft_rubric_item(item2.id, DraftRubricItemUpdate(group_id="g1", group_name="Response Quality"))
+        item3 = db_service.add_draft_rubric_item(
+            workshop.id,
+            DraftRubricItemCreate(text="Tone is friendly", source_type="disagreement"),
+            promoted_by="facilitator",
+        )
+        db_service.update_draft_rubric_item(item3.id, DraftRubricItemUpdate(group_id="g2", group_name="Tone"))
+
+        svc = DiscoveryService(db_service.db)
+        rubric = svc.create_rubric_from_draft(workshop.id, created_by="facilitator")
+
+        assert rubric is not None
+        assert "Response Quality" in rubric.question
+        assert "Tone" in rubric.question
+        assert "Accuracy matters" in rubric.question
+        assert "Completeness check" in rubric.question
+        assert "Tone is friendly" in rubric.question
+        assert "|||QUESTION_SEPARATOR|||" in rubric.question
+        assert "|||JUDGE_TYPE|||likert" in rubric.question
+        # Verify bullet list format for grouped items
+        assert "- Accuracy matters" in rubric.question
+        assert "- Completeness check" in rubric.question
+
+    @pytest.mark.req("Ungrouped draft items each become a question")
+    def test_ungrouped_items_each_become_question(self, db_service, workshop):
+        """@req DI-S3-UNGROUPED-Q: Ungrouped items become individual questions."""
+        db_service.add_draft_rubric_item(
+            workshop.id,
+            DraftRubricItemCreate(text="Factual accuracy", source_type="finding"),
+            promoted_by="facilitator",
+        )
+        db_service.add_draft_rubric_item(
+            workshop.id,
+            DraftRubricItemCreate(text="Code quality", source_type="finding"),
+            promoted_by="facilitator",
+        )
+
+        svc = DiscoveryService(db_service.db)
+        rubric = svc.create_rubric_from_draft(workshop.id, created_by="facilitator")
+
+        assert "Factual accuracy" in rubric.question
+        assert "Code quality" in rubric.question
+        assert rubric.question.count("|||QUESTION_SEPARATOR|||") >= 1
+
+    @pytest.mark.req("Empty draft items raises error")
+    def test_no_items_raises_400(self, db_service, workshop):
+        """@req DI-S3-EMPTY-GUARD: Cannot create rubric from empty draft."""
+        svc = DiscoveryService(db_service.db)
+        with pytest.raises(HTTPException) as exc_info:
+            svc.create_rubric_from_draft(workshop.id, created_by="facilitator")
+        assert exc_info.value.status_code == 400
+
+    @pytest.mark.req("Mixed grouped and ungrouped items")
+    def test_mixed_grouped_and_ungrouped(self, db_service, workshop):
+        """@req DI-S3-MIXED: Groups appear first, ungrouped items after."""
+        item1 = db_service.add_draft_rubric_item(
+            workshop.id,
+            DraftRubricItemCreate(text="Grouped item", source_type="finding"),
+            promoted_by="facilitator",
+        )
+        db_service.update_draft_rubric_item(item1.id, DraftRubricItemUpdate(group_id="g1", group_name="Quality"))
+        db_service.add_draft_rubric_item(
+            workshop.id,
+            DraftRubricItemCreate(text="Solo item", source_type="finding"),
+            promoted_by="facilitator",
+        )
+
+        svc = DiscoveryService(db_service.db)
+        rubric = svc.create_rubric_from_draft(workshop.id, created_by="facilitator")
+
+        quality_pos = rubric.question.index("Quality")
+        solo_pos = rubric.question.index("Solo item")
+        assert quality_pos < solo_pos

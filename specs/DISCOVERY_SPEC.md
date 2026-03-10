@@ -207,44 +207,16 @@ Both templates include disagreement analysis (HIGH/MEDIUM/LOWER). The difference
 
 See [System Prompts](#system-prompts) section for full prompt text of each template.
 
-### Analysis Results UI
+### Analysis Results Display
 
-**Analysis Tab** in facilitator dashboard:
+Analysis results are **co-located with traces**, not shown in a separate tab. After analysis runs:
 
-```
-[Analysis Controls]
-  Template selector: "Evaluation Criteria" / "Themes & Patterns"
-  "Run Analysis" button
-  Analysis history dropdown (select previous runs to view)
-  Loading spinner during analysis (10-30s)
+- **Trace-specific findings** (findings with `evidence_trace_ids` referencing a single trace, and disagreements with a `trace_id`) appear directly on that trace's card in the feed, pinned above the raw participant feedback.
+- **Cross-trace findings** (findings referencing multiple traces or no specific trace) appear in a collapsible summary section above the trace feed.
 
-[Data Freshness Banner]
-  "Analysis based on X participants (last run: timestamp, template: Y)"
-  Warning if < 2 participants
+This eliminates the need for a separate "Analysis" tab and keeps findings in context with the traces that produced them.
 
-[Summary Card]
-  Findings identified: N
-  Disagreements: X HIGH / Y MEDIUM / Z LOWER
-
-[Findings Section]
-  List of findings (criteria or themes, depending on template) with:
-  - Description
-  - Evidence (trace references — clickable to view trace)
-  - Priority badge (High/Medium/Low)
-  - "Promote to Rubric" button (→ Step 3)
-
-[Disagreement Analysis — by priority]
-  HIGH (red badge): Rating disagreements
-  MEDIUM (yellow badge): Both BAD, different issues
-  LOWER (blue badge): Both GOOD, different strengths
-
-  Each disagreement shows:
-  - Trace reference (clickable)
-  - What they disagreed about
-  - Underlying theme
-  - Follow-up questions for facilitator
-  - Calibration suggestions
-```
+See [Facilitator Discovery Workspace](#facilitator-discovery-workspace) for the full UI layout.
 
 ## Step 3: Structured Feedback & Promotion (Issue #13)
 
@@ -263,24 +235,35 @@ Everything from Discovery is promotable to the draft rubric. The facilitator can
 | **Raw participant feedback** | A specific GOOD/BAD comment or follow-up answer | Click "Promote" → copies text, facilitator refines |
 | **Manual entry** | Facilitator's own observation from discussion | Click "+ Add Item" → free-form text |
 
-### Draft Rubric Panel
+### Draft Rubric Sidebar
 
-Visible as a persistent sidebar or collapsible panel within the Discovery facilitator view:
+The draft rubric is a **persistent right sidebar** within the Facilitator Discovery Workspace (see [Facilitator Discovery Workspace](#facilitator-discovery-workspace)). It is always visible while the facilitator browses traces and analysis results, making the "promote" action tangible — items visibly move from the trace feed into the sidebar.
 
 ```
-[Draft Rubric Panel]
-  "X items staged for rubric"
+[Draft Rubric Sidebar]
+  "5 items · 2 groups"
 
-  List of promoted items:
-  - Text (editable inline)
-  - Source: "Analysis finding" / "Disagreement" / "Feedback" / "Manual"
-  - Evidence traces (clickable, if from analysis)
-  - Group badge (if grouped)
-  - Actions: Edit, Remove
+  -- Response Quality --
+    · Accuracy matters           [trace ref]
+    · Completeness gap           [trace ref]
+    · Context needed             [trace ref]
 
-  [+ Add Item] button (manual entry)
-  [Suggest Groups] button (LLM clusters items into rubric questions)
+  -- Tone & Style --
+    · Brevity tolerance          [trace ref]
+    · Formality level            [trace ref]
+
+  [Suggest Groups]
+  [+ Add manually]
+
+  ---
+  [Create Rubric →]
+  Groups become criteria
 ```
+
+**Display rules:**
+- Item text is editable inline. Actions: Edit, Remove.
+- **Trace reference badges are kept** on each item — they serve as example anchors when building rubric criteria in the next step. Badges are compact and interactive (hover for trace content preview, click to scroll to trace in feed).
+- **Source-type badges are removed** (Finding, Disagreement, Feedback, Manual) — the facilitator does not need to know _where_ an item came from, only what it says.
 
 ### Grouping: Draft Items → Rubric Questions
 
@@ -313,6 +296,133 @@ The draft rubric feeds into the Rubric Creation phase (see `RUBRIC_SPEC`):
 - **Draft items as starting points**: Grouped draft items appear as pre-populated rubric question suggestions. The facilitator can accept, edit, or discard each one.
 - **AI Rubric Generation** (existing `rubric_generation_service.py`): Remains available as a complementary option. The facilitator can trigger AI rubric suggestions at any time — the service uses discovery feedback and analysis results as input. AI suggestions appear alongside draft items, not replacing them.
 - **Traceability preserved**: Each rubric question can trace back to the discovery evidence that motivated it (via `source_trace_ids` on the draft items)
+
+## Facilitator Discovery Workspace
+
+The facilitator's discovery experience is a **single two-panel workspace** that replaces the previous multi-page flow (FacilitatorDashboard discovery mode + FindingsReviewPage + separate DiscoveryAnalysisTab). All three discovery steps (feedback monitoring, analysis, draft rubric) are accessible from one screen.
+
+### Layout
+
+```
++-----------------------------------------------------+----------------------+
+|  MAIN CONTENT (scrollable, ~70%)                     |  DRAFT RUBRIC        |
+|                                                      |  SIDEBAR (~30%)      |
+|  [Overview Bar]                                      |  (persistent)        |
+|  [Cross-Trace Analysis Summary] (collapsible)        |                      |
+|  [Trace Feed — cards with feedback + findings]       |                      |
+|                                                      |                      |
++-----------------------------------------------------+----------------------+
+```
+
+### Overview Bar
+
+Compact bar at the top of the main content area. Replaces the previous "quick actions" card.
+
+```
+Discovery  ·  4 participants  ·  10 traces  ·  28 findings
+[Run Analysis ▾]  [Add Traces]  [⏸ Pause]  [Model: ▾]
+```
+
+- Stats are inline text, not stat cards
+- "Run Analysis" is a dropdown that includes template selection (Evaluation Criteria / Themes & Patterns) and analysis history
+- Model selector is a compact inline dropdown
+- Pause/Resume is a toggle button
+- "Add Traces" opens trace addition flow
+
+### Cross-Trace Analysis Summary
+
+Collapsible section between the overview bar and the trace feed. Only appears after analysis has been run.
+
+- AI-generated summary text from the analysis
+- Cross-trace findings (findings that reference multiple traces or no specific trace) with `[+ Add to Draft]` promote buttons
+- "Linked to N traces" references on each finding (clickable to highlight those traces in the feed)
+- Metadata: when analysis was run, which template, which model
+- Note indicating how many trace-specific findings are shown on trace cards below
+- Collapsible — facilitator can minimize after reviewing
+
+### Trace Card (Standard Data Display)
+
+The core building block of the workspace. Every trace is displayed consistently using a **standard trace card** format:
+
+```
++----------------------------------------------------------+
+| Trace                                                     |
+| USER: "What is the capital of France?"                    |
+| ASSISTANT: "The capital of France is Paris. Paris is      |
+|  the largest city..." [more]                              |
+|                                                           |
+| ANALYSIS FINDINGS (collapsible, pinned above feedback)    |
+| ⚠ HIGH DISAGREEMENT                                      |
+| Opposite ratings on accuracy vs. completeness             |
+| Theme: "Brevity tolerance varies"        [+ Add to Draft] |
+|                                                           |
+| FEEDBACK (3)                                              |
+| Alice · GOOD · "Clear and accurate"                       |
+|   ▸ 3 follow-up Q&A (collapsible)                         |
+| Bob · BAD · "Too terse, lacks context"                    |
+|   ▸ 3 follow-up Q&A (collapsible)                         |
+| Carol · GOOD · "Correct but could mention history"        |
+|   ▸ 3 follow-up Q&A (collapsible)                         |
++----------------------------------------------------------+
+```
+
+**Information hierarchy within a trace card:**
+1. **Trace content** — User input + assistant output, truncated with `[more]` expand
+2. **Analysis findings** — Trace-specific findings and disagreements from the most recent analysis run. Collapsible, pinned above feedback. Only appears after analysis has been run. Each finding has a `[+ Add to Draft]` promote button.
+3. **Participant feedback** — All feedback for this trace with reviewer name, colored label (GOOD/BAD), comment, and collapsible follow-up Q&A.
+
+**Standard display rules:**
+- Always show actual conversation content (input/output), not trace IDs
+- Feedback shows: reviewer name + colored label (GOOD/BAD) + comment + collapsible Q&A
+- Analysis findings include priority level, summary, theme, and promote button
+- Trace IDs are never the primary identifier shown to users — the content is the identifier
+
+### Promotion Flow
+
+When the facilitator clicks `[+ Add to Draft]` on any finding (trace-specific or cross-trace):
+
+1. Item appears in the draft rubric sidebar with a subtle arrival animation
+2. Item text is pre-filled from the finding/disagreement summary
+3. Item retains trace reference badges linking back to source traces
+4. Facilitator can immediately edit the text in the sidebar
+
+### Navigation Changes
+
+| Old Flow | New Flow |
+|----------|----------|
+| Sidebar → "Discovery" → FacilitatorDashboard (discovery mode) | Sidebar → "Discovery" → FacilitatorDiscoveryWorkspace |
+| Dashboard → "View All Findings" → FindingsReviewPage | Eliminated — findings are on the trace cards |
+| FindingsReviewPage → "Analysis" tab → DiscoveryAnalysisTab | Eliminated — analysis results are co-located on trace cards and summary |
+| Dashboard → "Draft Rubric" tab → DraftRubricPanel | Eliminated — draft rubric is the persistent sidebar |
+| FindingsReviewPage → "Move to Rubric Creation" button | Sidebar → "Create Rubric →" button in draft rubric sidebar |
+
+### Components
+
+| Component | Purpose |
+|-----------|---------|
+| **FacilitatorDiscoveryWorkspace** | Top-level page component, two-panel layout |
+| **DiscoveryOverviewBar** | Compact stats + controls bar |
+| **CrossTraceAnalysisSummary** | Collapsible global findings section |
+| **DiscoveryTraceCard** | Standard trace display with feedback and findings |
+| **DraftRubricSidebar** | Persistent right panel for draft rubric items |
+| **TraceReferenceBadge** | Interactive compact trace reference (hover for content preview, click to scroll to trace in feed) |
+
+### What Gets Removed
+
+- "Quick actions" card from FacilitatorDashboard (replaced by overview bar)
+- Source-type badges (Finding, Disagreement, Feedback, Manual) from draft items
+- Tabs in FindingsReviewPage (All Findings, By Trace, By User, Analysis) — replaced by the trace feed
+- Dashboard tabs for Feedback and Draft Rubric — these become the main content and sidebar
+- Trace ID-only badges used as primary display — replaced by actual trace content
+
+### What Gets Kept
+
+- FacilitatorDashboard for annotation mode (unchanged)
+- RubricCreationDemo page (receives pre-populated data from draft groups)
+- Suggest Groups / Apply Groups AI functionality
+- Phase control (pause/resume) functionality
+- Analysis run API and history
+- All backend services and API endpoints (unchanged)
 
 ## Data Model
 
@@ -729,13 +839,24 @@ Discovery uses the same model selection as judge evaluation: **Databricks founda
 - [ ] Analysis shows warning (not error) if < 2 participants
 - [ ] Form validation prevents empty submissions
 
-### UX
+### UX — Participant
 - [ ] Progressive disclosure (one question at a time)
 - [ ] Submit buttons disabled until required fields filled
 - [ ] Clear progress indication (X of Y traces completed)
 - [ ] Smooth transitions between feedback states
-- [ ] Disagreements color-coded by priority (red/yellow/blue)
-- [ ] Criteria show evidence (supporting trace IDs)
+
+### UX — Facilitator Discovery Workspace
+- [ ] Single two-panel workspace replaces multi-page flow (no FacilitatorDashboard discovery tabs, no FindingsReviewPage)
+- [ ] Trace feed shows actual trace content (input/output), not trace ID badges
+- [ ] Trace-specific analysis findings appear on the trace card, pinned above feedback (collapsible)
+- [ ] Cross-trace analysis findings appear in collapsible summary section above the feed
+- [ ] Overview bar shows stats inline + compact controls (Run Analysis, Add Traces, Pause, Model selector)
+- [ ] Draft rubric sidebar is always visible while browsing traces
+- [ ] Promote action visibly moves items from trace feed/summary into the sidebar
+- [ ] Draft rubric items show trace reference badges (interactive: hover for preview, click to scroll)
+- [ ] Draft rubric items do NOT show source-type badges (Finding, Disagreement, etc.)
+- [ ] Disagreements color-coded by priority (red/yellow/blue) on trace cards
+- [ ] "Create Rubric →" in sidebar transitions to rubric creation with groups pre-populated as criteria
 
 ## Existing Code Reference
 
@@ -775,7 +896,8 @@ if (phase === 'discovery') {
     if (!workshop.discovery_started) {
       return <DiscoveryStartPage />;
     } else {
-      return <DiscoveryDashboard />;  // Tabs: Feedback Monitor (Step 1), Analysis (Step 2), Draft Rubric (Step 3)
+      // Single workspace: trace feed + analysis + draft rubric sidebar
+      return <FacilitatorDiscoveryWorkspace />;
     }
   } else {
     if (!workshop.discovery_started) {
