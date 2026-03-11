@@ -403,44 +403,6 @@ def aggregate_feedback(annotations: List[Annotation]) -> float:
         return 1.0 if sum(ratings) > len(ratings) / 2 else 0.0
 ```
 
-## Inter-Rater Reliability (IRR)
-
-### Metrics
-
-| Metric | Use Case | Range |
-|--------|----------|-------|
-| **Krippendorff's Alpha** | Multiple raters, any scale | -1 to 1 |
-| **Cohen's Kappa** | Two raters, categorical | -1 to 1 |
-
-### Interpretation
-
-| Value | Interpretation |
-|-------|----------------|
-| < 0 | Less than chance agreement |
-| 0.0 - 0.20 | Slight agreement |
-| 0.21 - 0.40 | Fair agreement |
-| 0.41 - 0.60 | Moderate agreement |
-| 0.61 - 0.80 | Substantial agreement |
-| 0.81 - 1.00 | Almost perfect agreement |
-
-### Calculation
-
-```python
-from server.services.krippendorff_alpha import calculate_krippendorff_alpha
-from server.services.cohens_kappa import calculate_cohens_kappa
-
-# Krippendorff's Alpha (multiple raters)
-alpha = calculate_krippendorff_alpha(
-    annotations=all_annotations,
-    scale='ordinal'  # or 'nominal' for binary
-)
-
-# Cohen's Kappa (two raters)
-kappa = calculate_cohens_kappa(
-    rater1_annotations=user_a_annotations,
-    rater2_annotations=user_b_annotations
-)
-```
 
 ## Data Model
 
@@ -518,6 +480,185 @@ Response:
   ]
 }
 ```
+## Cohen's Kappa Metrics Panel
+
+### Overview
+
+After evaluation completes on the Judge Tuning page, a **Performance Metrics Panel** is displayed showing Cohen's Kappa and related agreement metrics between the LLM judge's ratings and human annotations. This provides immediate feedback on judge quality so facilitators can iterate on the prompt.
+
+### When Displayed
+
+The metrics panel renders **only** when both conditions are met:
+1. `metrics` object is non-null (evaluation returned results)
+2. `hasEvaluated` is true (at least one evaluation has been run in this session)
+
+The panel is hidden before the first evaluation and if no valid evaluations were produced.
+
+### Metrics Computed
+
+#### 1. Cohen's Kappa (κ)
+
+Measures agreement between the LLM judge and human annotators, corrected for chance agreement.
+
+**Formula**: `κ = (p_o - p_e) / (1 - p_e)`
+- `p_o` = observed agreement (proportion of exact matches)
+- `p_e` = expected agreement by chance (based on marginal distributions)
+
+**Implementation**: `sklearn.metrics.cohen_kappa_score(human_ratings, predicted_ratings)`
+
+**Stored as**: `JudgePerformanceMetrics.correlation` (float, 0.0–1.0)
+
+**Edge cases**:
+- If κ is `NaN` (e.g., all ratings identical), falls back to simple agreement ratio: `matches / total`
+- If `cohen_kappa_score` raises an exception, falls back to simple agreement ratio
+- If κ is `NaN` after fallback, stored as `0.0`
+
+**Display**: Shown as percentage (e.g., `85.3%`) with label "Cohen's κ"
+
+#### 2. Accuracy (Exact Match)
+
+Proportion of evaluations where the judge's rating exactly matches the human rating.
+
+**Formula**: `accuracy = count(human == predicted) / total`
+
+**Implementation**: `sklearn.metrics.accuracy_score(human_ratings, predicted_ratings)`
+
+**Stored as**: `JudgePerformanceMetrics.accuracy` (float, 0.0–1.0)
+
+**Display**: Shown as percentage (e.g., `72.0%`) with label "Accuracy"
+
+#### 3. Total Evaluations
+
+Count of evaluations with **both** valid human and judge ratings.
+
+**Stored as**: `JudgePerformanceMetrics.total_evaluations` (int)
+
+**Display**: Shown as integer. If some evaluations had invalid/missing judge ratings, shows `valid / total` with a count of missing ratings below.
+
+#### 4. Agreement by Rating
+
+Per-rating-level accuracy showing how well the judge performs when the human gave each specific rating.
+
+**Formula** (for each rating level r in 1–5):
+```
+agreement[r] = accuracy_score(
+    [h for h, p in pairs if h == r],
+    [p for h, p in pairs if h == r]
+)
+```
+
+If no human annotations exist for a rating level, agreement is `0.0`.
+
+**Stored as**: `JudgePerformanceMetrics.agreement_by_rating` (Dict[str, float], keys "1"–"5")
+
+**Display**: Five pill-shaped cards labeled `1★` through `5★`, each showing agreement percentage.
+
+#### 5. Confusion Matrix
+
+Full 5×5 confusion matrix of human (rows) vs. predicted (columns) ratings.
+
+**Implementation**: `sklearn.metrics.confusion_matrix(human_ratings, predicted_ratings, labels=[1, 2, 3, 4, 5])`
+
+**Stored as**: `JudgePerformanceMetrics.confusion_matrix` (List[List[int]])
+
+**Display**: Not directly rendered in the metrics panel; available in the data model for downstream analysis and export.
+
+### Color Thresholds
+
+Both Cohen's κ and Accuracy use the same color scale:
+
+| Value | Color | Meaning |
+|-------|-------|---------|
+| ≥ 80% | Green (`text-green-600`) | Strong agreement |
+| 60%–79% | Amber (`text-yellow-600`) | Moderate agreement |
+| < 60% | Red (`text-red-600`) | Weak agreement |
+
+Agreement by Rating pills use the same thresholds with left-border color indicators:
+
+| Value | Border Color |
+|-------|-------------|
+| ≥ 80% | Green (`border-green-500`) |
+| 60%–79% | Amber (`border-amber-500`) |
+| < 60% | Red (`border-red-500`) |
+
+### Warnings
+
+#### Small Sample Warning (< 3 evaluations)
+
+When `total_evaluations < 3`:
+- Cohen's κ label shows "(limited data)" suffix
+- κ value shows asterisk (`*`) suffix
+- Warning banner displayed:
+  > "Cohen's kappa with fewer than 3 evaluations shows simple agreement rate instead of statistical kappa. Get more annotation data for reliable inter-rater agreement metrics."
+
+**Rationale**: With fewer than 3 data points, kappa is statistically unreliable and may produce misleading values.
+
+#### Missing Ratings Warning
+
+When `total_evaluations_all > total_evaluations` (some evaluations had invalid judge responses):
+- Total count shows `valid / total`
+- Warning banner displayed with count of missing evaluations
+- Explains that invalid responses (e.g., binary judge returning 3.0) are excluded from metrics
+
+### Data Model
+
+```
+JudgePerformanceMetrics:
+  - prompt_id: string               # ID of the evaluated prompt version
+  - correlation: float               # Cohen's Kappa (0.0–1.0)
+  - accuracy: float                  # Exact match rate (0.0–1.0)
+  - mean_absolute_error: float       # Deprecated (always 0.0)
+  - agreement_by_rating: Dict[str, float]  # Per-rating accuracy {"1": 0.8, ...}
+  - confusion_matrix: List[List[int]]      # 5×5 matrix
+  - total_evaluations: int           # Count of valid evaluations
+```
+
+### Computation Flow
+
+```
+1. Evaluation completes (POST /evaluate-judge or /evaluate-judge-direct)
+2. Backend collects List[JudgeEvaluation] with human_rating and predicted_rating
+3. Filter to evaluations with valid ratings only
+4. Calculate: cohen_kappa_score(human_ratings, predicted_ratings)
+5. Calculate: accuracy_score(human_ratings, predicted_ratings)
+6. Calculate: per-rating accuracy for each rating level 1–5
+7. Calculate: confusion_matrix with labels [1, 2, 3, 4, 5]
+8. Return JudgePerformanceMetrics to frontend
+9. Frontend renders metrics panel with color-coded values and warnings
+```
+
+### Binary Scale Adaptation
+
+For binary judges (0/1 scale), the same metrics computation applies but:
+- Ratings are `0` (Fail) and `1` (Pass) instead of 1–5
+- Agreement by Rating shows only keys `"0"` and `"1"` with values
+- Confusion matrix is effectively 2×2 (other entries are zero)
+- The 1★–5★ pills may show 0% for unused rating levels
+
+### Persistence
+
+Metrics are persisted in two ways:
+1. **Backend**: Stored via `POST /workshops/{workshop_id}/evaluation-metrics` for the active prompt version
+2. **Frontend**: Cached in `localStorage` with 24-hour TTL for session continuity
+
+Metrics are re-fetched on page load if a prior evaluation exists for the current prompt.
+
+### Success Criteria
+
+- [ ] Metrics panel displays only after evaluation has been run
+- [ ] Cohen's κ computed via `sklearn.metrics.cohen_kappa_score`
+- [ ] κ falls back to simple agreement ratio when NaN or exception
+- [ ] Accuracy computed as exact match rate
+- [ ] Agreement by Rating shows per-level accuracy for each rating 1–5
+- [ ] Confusion matrix computed with labels [1, 2, 3, 4, 5]
+- [ ] Color thresholds: green ≥ 80%, amber 60–79%, red < 60%
+- [ ] Small sample warning shown when total_evaluations < 3
+- [ ] Missing ratings warning shown when some evaluations have invalid judge responses
+- [ ] Total count displays `valid / total` when missing ratings exist
+- [ ] Metrics persisted to backend for the active prompt version
+- [ ] Binary judges produce valid metrics with 0/1 scale
+- [ ] Panel hidden when no evaluation has been run
+
 
 ### Run Alignment
 
@@ -534,22 +675,6 @@ Response:
 }
 ```
 
-### Calculate IRR
-
-```
-GET /workshops/{workshop_id}/irr
-
-Response:
-{
-  "krippendorff_alpha": 0.72,
-  "cohens_kappa": {
-    "user_a_vs_user_b": 0.68,
-    "user_a_vs_user_c": 0.71
-  },
-  "annotation_count": 150,
-  "annotator_count": 3
-}
-```
 
 ## UI Components
 
@@ -562,7 +687,6 @@ Features:
 - Prompt editor
 - Evaluation results table with pagination
 - Alignment trigger and status
-- IRR display
 
 ### Mode Indicator
 
@@ -603,11 +727,6 @@ Features:
 - [ ] Metrics reported (guideline count, example count)
 - [ ] Works for both Likert and Binary scales
 
-### IRR
-- [ ] Krippendorff's Alpha calculated correctly
-- [ ] Cohen's Kappa calculated for rater pairs
-- [ ] Handles edge cases (no variation, single rater)
-- [ ] Updates when new annotations added
 
 ## Troubleshooting
 
@@ -618,12 +737,7 @@ Check that:
 2. `feedback_value_type=float` (not bool)
 3. Fallback conversion enabled
 
-### IRR Shows NaN
 
-Causes:
-- Only one rater
-- No overlapping traces between raters
-- All ratings identical (no variation)
 
 ### Alignment Fails
 
