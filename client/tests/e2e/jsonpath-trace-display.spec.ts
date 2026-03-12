@@ -325,7 +325,7 @@ test.describe('JSONPath Trace Display Customization', { tag }, () => {
 
     // Build scenario with real API including span data in context
     const scenario = await TestScenario.create(page)
-      .withWorkshop({ name: `Span Filter Preview Test ${runId}` })
+      .withWorkshop({ name: `SpanAttr Preview ${runId}` })
       .withFacilitator()
       .withTrace({ input: traceInput, output: traceOutput, context: traceContext })
       .withRealApi()
@@ -336,7 +336,7 @@ test.describe('JSONPath Trace Display Customization', { tag }, () => {
     await scenario.loginAs(scenario.facilitator);
 
     // Click on the workshop from the list
-    const workshopNamePattern = new RegExp(`Span Filter Preview Test ${runId.toString().slice(0, 8)}`);
+    const workshopNamePattern = new RegExp(`SpanAttr Preview ${runId.toString().slice(0, 8)}`);
     await page.getByRole('heading', { name: workshopNamePattern }).click();
     await page.waitForLoadState('networkidle');
 
@@ -344,16 +344,20 @@ test.describe('JSONPath Trace Display Customization', { tag }, () => {
     await page.getByRole('button', { name: /^Dashboard$/i }).click();
 
     // Verify Trace Display Settings section is visible
-    await expect(page.getByText('Trace Display Settings')).toBeVisible();
+    await expect(page.getByText('Trace Display Settings')).toBeVisible({ timeout: 10000 });
 
     // Configure span filter by span name to match 'LLMChain'
     await page.locator('#span-name').fill('LLMChain');
 
-    // Click the span filter Preview button (first Preview button on the page)
-    await page.getByRole('button', { name: /Preview/i }).first().click();
+    // Click the span filter Preview button and wait for API response
+    const previewButton = page.getByRole('button', { name: /Preview/i }).first();
+    await Promise.all([
+      page.waitForResponse((resp) => resp.url().includes('preview-span-filter') && resp.status() === 200),
+      previewButton.click(),
+    ]);
 
     // The Span Filter Preview panel should appear
-    await expect(page.getByText('Span Filter Preview')).toBeVisible();
+    await expect(page.getByText('Span Filter Preview')).toBeVisible({ timeout: 10000 });
 
     // Should show "Span matched" badge indicating a matching span was found
     await expect(page.getByText('Span matched')).toBeVisible();
