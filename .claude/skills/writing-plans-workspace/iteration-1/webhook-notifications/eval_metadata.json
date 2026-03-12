@@ -1,0 +1,16 @@
+{
+  "eval_id": 1,
+  "eval_name": "webhook-notifications",
+  "prompt": "Write an implementation plan for webhook notifications on workshop phase change. This is a new feature — the brainstorm produced a draft WEBHOOK_NOTIFICATIONS_SPEC with success criteria covering configuration (PUT/GET/DELETE endpoints), delivery (async HTTP POST via BackgroundTasks), and edge cases (all 6 phase transitions). New files: server/services/webhook_service.py, modified: server/models.py, server/database.py, server/routers/workshops.py. Needs httpx dependency and an Alembic migration.",
+  "assertions": [
+    "Plan header references WEBHOOK_NOTIFICATIONS_SPEC by name and lists specific success criteria",
+    "Plan includes a file map table with new and modified files",
+    "Tasks follow TDD pattern: write failing test -> run to verify fail -> implement -> run to verify pass -> commit",
+    "Test code blocks include @pytest.mark.spec or @spec and @pytest.mark.req or @req tags",
+    "Steps reference exact file paths (not vague descriptions like 'the test file')",
+    "Steps include exact verification commands using 'just test-' or 'just spec-coverage'",
+    "Final task verifies spec coverage with just spec-coverage and just spec-validate",
+    "Plan includes an Implementation Log entry for the spec",
+    "Tasks are ordered correctly: migration before models before service before endpoints before tests"
+  ]
+}

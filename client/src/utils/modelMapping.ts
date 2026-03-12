@@ -29,7 +29,7 @@ export const MODEL_MAPPING: Record<string, string> = {
 /**
  * Reverse mapping from backend model names to frontend display names
  */
-export const REVERSE_MODEL_MAPPING: Record<string, string> = Object.fromEntries(
+const REVERSE_MODEL_MAPPING: Record<string, string> = Object.fromEntries(
   Object.entries(MODEL_MAPPING).map(([key, value]) => [value, key])
 );
 
@@ -124,16 +124,8 @@ export function getModelOptions(hasMlflowConfig: boolean = false): ModelOption[]
 /**
  * Get model option by value
  */
-export function getModelOptionByValue(value: string, hasMlflowConfig: boolean = false): ModelOption | undefined {
+function getModelOptionByValue(value: string, hasMlflowConfig: boolean = false): ModelOption | undefined {
   return getModelOptions(hasMlflowConfig).find(option => option.value === value);
-}
-
-/**
- * Get model option by backend name
- */
-export function getModelOptionByBackendName(backendName: string, hasMlflowConfig: boolean = false): ModelOption | undefined {
-  const frontendName = getFrontendModelName(backendName);
-  return getModelOptionByValue(frontendName, hasMlflowConfig);
 }
 
 /**

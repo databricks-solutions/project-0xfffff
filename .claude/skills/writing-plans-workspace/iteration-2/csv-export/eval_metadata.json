@@ -1,0 +1,16 @@
+{
+  "eval_id": 0,
+  "eval_name": "csv-export",
+  "prompt": "Plan the implementation for adding a CSV export button for annotations...",
+  "assertions": [
+    "Plan header references spec and lists success criteria",
+    "Plan includes a file map table",
+    "Tasks follow TDD pattern",
+    "Tests include @spec and @req tags",
+    "Steps reference exact file paths",
+    "Uses just commands (not npx directly)",
+    "Final task includes lint + coverage verification",
+    "Plan includes Implementation Log entry",
+    "@req text appears to be verbatim spec criteria"
+  ]
+}

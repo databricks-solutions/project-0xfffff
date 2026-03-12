@@ -95,8 +95,7 @@ export const AnnotationStartPage: React.FC<AnnotationStartPageProps> = ({ onStar
         onStartAnnotation();
       }
 
-    } catch (error: any) {
-
+    } catch {
       toast.error('Could not start annotation', { description: 'Please try again.' });
     } finally {
       setIsStarting(false);

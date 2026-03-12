@@ -12,6 +12,7 @@ from server.services.database_service import DatabaseService
 
 
 @pytest.mark.spec("RUBRIC_SPEC")
+@pytest.mark.req("Per-question judge_type parsed from `[JUDGE_TYPE:xxx]` format")
 def test_parse_rubric_questions_with_judge_type_binary():
     """Parses [JUDGE_TYPE:binary] delimiter format (older format).
 
@@ -31,6 +32,7 @@ def test_parse_rubric_questions_with_judge_type_binary():
 
 
 @pytest.mark.spec("RUBRIC_SPEC")
+@pytest.mark.req("Per-question judge_type parsed from `[JUDGE_TYPE:xxx]` format")
 def test_parse_rubric_questions_with_judge_type_likert():
     """Parses [JUDGE_TYPE:likert] explicitly.
 
@@ -47,6 +49,7 @@ def test_parse_rubric_questions_with_judge_type_likert():
 
 
 @pytest.mark.spec("RUBRIC_SPEC")
+@pytest.mark.req("Per-question judge_type parsed from `[JUDGE_TYPE:xxx]` format")
 def test_parse_rubric_questions_default_to_likert():
     """Defaults to 'likert' when no judge type specified.
 
@@ -65,6 +68,7 @@ def test_parse_rubric_questions_default_to_likert():
 
 
 @pytest.mark.spec("RUBRIC_SPEC")
+@pytest.mark.req("Mixed rubrics support different scales per question")
 def test_parse_rubric_questions_mixed_types():
     """Handles mixed rubric with different judge types per question.
 
@@ -93,6 +97,7 @@ def test_parse_rubric_questions_mixed_types():
 
 
 @pytest.mark.spec("RUBRIC_SPEC")
+@pytest.mark.req("Per-question judge_type parsed from `[JUDGE_TYPE:xxx]` format")
 def test_parse_rubric_questions_with_freeform():
     """Parses freeform judge type.
 
@@ -108,6 +113,7 @@ def test_parse_rubric_questions_with_freeform():
 
 
 @pytest.mark.spec("RUBRIC_SPEC")
+@pytest.mark.req("Empty/whitespace-only parts filtered out")
 def test_parse_rubric_questions_empty_input():
     """Handles empty input gracefully.
 
@@ -122,6 +128,7 @@ def test_parse_rubric_questions_empty_input():
 
 
 @pytest.mark.spec("RUBRIC_SPEC")
+@pytest.mark.req("Questions with multi-line descriptions parse correctly")
 def test_parse_rubric_questions_multiline_description():
     """Handles multi-line descriptions correctly.
 
@@ -143,6 +150,7 @@ def test_parse_rubric_questions_multiline_description():
 
 
 @pytest.mark.spec("RUBRIC_SPEC")
+@pytest.mark.req("Per-question judge_type parsed from `[JUDGE_TYPE:xxx]` format")
 def test_reconstruct_rubric_questions_with_judge_type():
     """Reconstructs questions with judge type delimiter.
 
@@ -163,6 +171,7 @@ def test_reconstruct_rubric_questions_with_judge_type():
 
 
 @pytest.mark.spec("RUBRIC_SPEC")
+@pytest.mark.req("Empty/whitespace-only parts filtered out")
 def test_reconstruct_rubric_questions_empty():
     """Handles empty questions list.
 
@@ -178,6 +187,7 @@ def test_reconstruct_rubric_questions_empty():
 
 
 @pytest.mark.spec("RUBRIC_SPEC")
+@pytest.mark.req("Questions with multi-line descriptions parse correctly")
 def test_parse_reconstruct_roundtrip():
     """Parse and reconstruct should be reversible.
 
@@ -204,6 +214,7 @@ def test_parse_reconstruct_roundtrip():
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Per-question judge_type parsed from rubric (`[JUDGE_TYPE:xxx]`)")
 def test_get_judge_type_from_rubric_binary(monkeypatch):
     """Binary rubric returns 'binary' judge type.
 
@@ -227,6 +238,7 @@ def test_get_judge_type_from_rubric_binary(monkeypatch):
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Per-question judge_type parsed from rubric (`[JUDGE_TYPE:xxx]`)")
 def test_get_judge_type_from_rubric_likert(monkeypatch):
     """Likert rubric returns 'likert' judge type.
 
@@ -250,6 +262,7 @@ def test_get_judge_type_from_rubric_likert(monkeypatch):
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Per-question judge_type parsed from rubric (`[JUDGE_TYPE:xxx]`)")
 def test_get_judge_type_from_rubric_mixed_prefers_binary(monkeypatch):
     """Mixed rubric with binary questions returns 'binary'.
 
@@ -277,6 +290,7 @@ def test_get_judge_type_from_rubric_mixed_prefers_binary(monkeypatch):
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Per-question judge_type parsed from rubric (`[JUDGE_TYPE:xxx]`)")
 def test_get_judge_type_from_rubric_no_rubric_defaults_likert():
     """No rubric defaults to 'likert'.
 

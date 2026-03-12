@@ -1,0 +1,13 @@
+{
+  "eval_id": 0,
+  "eval_name": "export-csv-annotations",
+  "prompt": "Add a button to export annotations as CSV",
+  "assertions": [
+    {"text": "Searched specs/README.md and identified ANNOTATION_SPEC as the governing spec", "type": "content_check"},
+    {"text": "Read the ANNOTATION_SPEC success criteria before proposing a design", "type": "content_check"},
+    {"text": "Did NOT propose new success criteria (existing spec covers the domain)", "type": "content_check"},
+    {"text": "Presented 2-3 design approaches with trade-offs", "type": "content_check"},
+    {"text": "Did not write or propose actual implementation code", "type": "content_check"},
+    {"text": "Terminal state mentions invoking writing-plans skill", "type": "content_check"}
+  ]
+}

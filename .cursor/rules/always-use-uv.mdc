@@ -1,0 +1,4 @@
+---
+description: when running python commands or python executables like pytest use  `uv run python ...` or `uv run <cmd>`
+alwaysApply: false
+---

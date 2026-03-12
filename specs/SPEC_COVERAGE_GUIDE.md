@@ -49,12 +49,14 @@ Use these exact spec names (case-sensitive):
 | Spec Name | Domain |
 |-----------|--------|
 | `ANNOTATION_SPEC` | Annotation system |
+| `ASSISTED_FACILITATION_SPEC` | Assisted facilitation & discovery |
 | `AUTHENTICATION_SPEC` | Auth & sessions |
 | `BUILD_AND_DEPLOY_SPEC` | Build & deployment |
 | `DATASETS_SPEC` | Trace datasets |
 | `DESIGN_SYSTEM_SPEC` | Design system |
 | `DISCOVERY_TRACE_ASSIGNMENT_SPEC` | Trace assignment |
 | `JUDGE_EVALUATION_SPEC` | Judge & alignment |
+| `ROLE_PERMISSIONS_SPEC` | Roles & permissions |
 | `RUBRIC_SPEC` | Rubric management |
 | `UI_COMPONENTS_SPEC` | UI components |
 

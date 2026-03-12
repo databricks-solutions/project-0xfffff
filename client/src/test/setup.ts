@@ -27,7 +27,6 @@ class ResizeObserverMock {
   disconnect() {}
 }
 
-// @ts-expect-error - jsdom doesn't define ResizeObserver by default
 window.ResizeObserver = window.ResizeObserver || ResizeObserverMock;
 
 

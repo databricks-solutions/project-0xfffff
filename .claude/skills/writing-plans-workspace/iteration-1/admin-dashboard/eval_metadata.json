@@ -1,0 +1,16 @@
+{
+  "eval_id": 2,
+  "eval_name": "admin-dashboard",
+  "prompt": "Create an implementation plan for the admin dashboard feature. The brainstorm designed three backend endpoints (GET /api/admin/infrastructure, GET /api/admin/workshops/summary, GET /api/admin/workshops/{id}/progress) gated by facilitator role, and a React page at /admin with three independent panels (InfrastructurePanel, WorkshopSummaryPanel, WorkshopDetailTable). Each panel auto-refreshes every 30 seconds. No new database tables — all data derived from existing tables. The draft ADMIN_DASHBOARD_SPEC has 16 success criteria across 6 categories.",
+  "assertions": [
+    "Plan header references ADMIN_DASHBOARD_SPEC by name and lists specific success criteria",
+    "Plan includes a file map table with new and modified files",
+    "Tasks follow TDD pattern: write failing test -> run to verify fail -> implement -> run to verify pass -> commit",
+    "Test code blocks include @pytest.mark.spec or @spec and @pytest.mark.req or @req tags",
+    "Steps reference exact file paths (not vague descriptions like 'the test file')",
+    "Steps include exact verification commands using 'just test-' or 'just spec-coverage'",
+    "Final task verifies spec coverage with just spec-coverage and just spec-validate",
+    "Plan includes an Implementation Log entry for the spec",
+    "Tasks are ordered correctly: backend endpoints before frontend components before routing/wiring"
+  ]
+}

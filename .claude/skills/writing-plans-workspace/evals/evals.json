@@ -1,0 +1,23 @@
+{
+  "skill_name": "writing-plans",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "Plan the implementation for adding a CSV export button for annotations. The ANNOTATION_SPEC governs this domain. The brainstorm decided on client-side CSV generation with rubric-aware column headers, a new buildAnnotationCSV utility, and a useExportAnnotationsCSV hook. Facilitator-only access.",
+      "expected_output": "A plan saved to .claude/plans/ with: spec header referencing ANNOTATION_SPEC, file map, TDD tasks with @pytest.mark.spec and @req tags, exact file paths, verification commands, coverage check final task, and a log entry for the spec's Implementation Log.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "prompt": "Write an implementation plan for webhook notifications on workshop phase change. This is a new feature — the brainstorm produced a draft WEBHOOK_NOTIFICATIONS_SPEC with success criteria covering configuration (PUT/GET/DELETE endpoints), delivery (async HTTP POST via BackgroundTasks), and edge cases (all 6 phase transitions). New files: server/services/webhook_service.py, modified: server/models.py, server/database.py, server/routers/workshops.py. Needs httpx dependency and an Alembic migration.",
+      "expected_output": "A plan with: spec header referencing WEBHOOK_NOTIFICATIONS_SPEC, file map covering new and modified files, tasks ordered correctly (migration first, then models, then service, then endpoints, then tests), TDD steps with spec tags, exact verification commands, and coverage final task.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Create an implementation plan for the admin dashboard feature. The brainstorm designed three backend endpoints (GET /api/admin/infrastructure, GET /api/admin/workshops/summary, GET /api/admin/workshops/{id}/progress) gated by facilitator role, and a React page at /admin with three independent panels (InfrastructurePanel, WorkshopSummaryPanel, WorkshopDetailTable). Each panel auto-refreshes every 30 seconds. No new database tables — all data derived from existing tables. The draft ADMIN_DASHBOARD_SPEC has 16 success criteria across 6 categories.",
+      "expected_output": "A comprehensive plan with: spec header listing all 16 criteria, file map for 4+ new files and 3+ modified files, tasks decomposed by component (backend endpoints, frontend panels, routing/nav, tests), TDD steps with spec tags for each criterion, and coverage verification final task.",
+      "files": []
+    }
+  ]
+}
