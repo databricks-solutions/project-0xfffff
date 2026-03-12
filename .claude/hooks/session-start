@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# SessionStart hook — injects spec-driven workflow rules into every conversation.
+# Modeled after obra/superpowers session-start hook.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
+# Build the context injection from the core workflow rules.
+# This is intentionally concise — CLAUDE.md has the full details,
+# but agents skip reading it. This forces the rules into context.
+
+read -r -d '' WORKFLOW_RULES << 'RULES' || true
+<SPEC-DRIVEN-WORKFLOW>
+You are working in a spec-driven development repository. These rules are NON-NEGOTIABLE.
+
+## The Iron Rules
+
+1. **Read the spec before coding.** Search `/specs/README.md` for keywords, then read the governing spec. No exceptions.
+2. **Tag all tests to specs.** Every test gets `@pytest.mark.spec("SPEC_NAME")` or equivalent. Untagged tests are incomplete.
+3. **Verify before claiming done.** Run the relevant `just test-*` commands. Fresh output required — not "it should pass."
+4. **Ask if the spec is unclear.** Do not guess at undefined behavior. Stop and ask.
+
+## Before ANY Implementation
+
+```
+1. Which spec governs this work?  → Search /specs/README.md
+2. What are the success criteria? → Read the spec's "Success Criteria" section
+3. What's already covered?        → Check /specs/SPEC_COVERAGE_MAP.md
+```
+
+If you skip these steps, you WILL build the wrong thing.
+
+## Red Flags — You Are Rationalizing If You Think:
+
+| Thought | Reality |
+|---------|---------|
+| "This is too simple to need a spec" | Simple changes still have governing specs. Find it. |
+| "I'll read the spec after I code it" | You'll build assumptions, not requirements. Read first. |
+| "The tests pass so I'm done" | Are they tagged? Did you check coverage? Verify properly. |
+| "I know how this should work" | The spec defines how it works, not your intuition. |
+| "Let me just make this quick fix" | Quick fixes without spec context cause regressions. |
+| "I'll add the test tags later" | You won't. Tag them now. |
+
+## Protected Operations (STOP and ask the user)
+
+- Modifying files in `/specs/`
+- Creating database migrations
+- Changing auth logic
+- Deleting files
+
+## Verification Commands
+
+| Command | When |
+|---------|------|
+| `just test-server` | After backend changes |
+| `just ui-test-unit` | After frontend changes |
+| `just ui-lint` | Before committing |
+| `just e2e` | After feature changes |
+| `just spec-coverage` | After adding/changing tests |
+| `just test-affected` | Quick check during development |
+
+## Skill Triggers
+
+Before acting, check if a skill applies. If there's even a 1% chance, invoke it:
+
+- **Building something new?** → Use brainstorming skill first
+- **Writing tests?** → Use verification-testing skill
+- **Auditing coverage?** → Use spec-audit skill
+- **Working with MLflow eval?** → Use mlflow-evaluation skill
+
+Do NOT rationalize skipping skills. "This is simple" is not a valid reason.
+</SPEC-DRIVEN-WORKFLOW>
+RULES
+
+# Escape for JSON embedding
+escape_for_json() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\t'/\\t}"
+    printf '%s' "$s"
+}
+
+escaped_rules=$(escape_for_json "$WORKFLOW_RULES")
+
+cat <<EOF
+{
+  "hookSpecificOutput": {
+    "hookEventName": "SessionStart",
+    "additionalContext": "${escaped_rules}"
+  }
+}
+EOF
+
+exit 0

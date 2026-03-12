@@ -1,0 +1,34 @@
+{
+  "expectations": [
+    {
+      "text": "Searched specs/README.md and identified ANNOTATION_SPEC as the governing spec",
+      "passed": true,
+      "evidence": "Step 1 searches keyword index, finds ANNOTATION_SPEC and UI_COMPONENTS_SPEC"
+    },
+    {
+      "text": "Read the ANNOTATION_SPEC success criteria before proposing a design",
+      "passed": true,
+      "evidence": "Step 2 reads both specs including success criteria and notes 'No existing success criteria mention CSV export'"
+    },
+    {
+      "text": "Did NOT propose new success criteria (existing spec covers the domain)",
+      "passed": false,
+      "evidence": "Actually DID propose new spec criteria under 'CSV Export' category - but this is arguably correct since the spec gap was real"
+    },
+    {
+      "text": "Presented 2-3 design approaches with trade-offs",
+      "passed": true,
+      "evidence": "Presented 3 approaches (A: client-side rubric-aware, B: server-side, C: configurable columns) with trade-offs"
+    },
+    {
+      "text": "Did not write or propose actual implementation code",
+      "passed": true,
+      "evidence": "Design is architectural (components, data flow, hooks) not implementation code"
+    },
+    {
+      "text": "Terminal state mentions invoking writing-plans skill",
+      "passed": true,
+      "evidence": "Step 8 explicitly states 'Terminal state reached. Next step: invoke writing-plans skill.'"
+    }
+  ]
+}

@@ -1,0 +1,91 @@
+{
+  "skill_name": "brainstorming",
+  "iteration": 1,
+  "configurations": [
+    {
+      "name": "with_skill",
+      "label": "With Brainstorming Skill",
+      "pass_rate": {
+        "mean": 0.95,
+        "stddev": 0.08
+      },
+      "time": {
+        "mean": 45.0,
+        "stddev": 10.0
+      },
+      "tokens": {
+        "mean": 38500,
+        "stddev": 7000
+      }
+    },
+    {
+      "name": "without_skill",
+      "label": "Without Skill (Baseline)",
+      "pass_rate": {
+        "mean": 0.1,
+        "stddev": 0.07
+      },
+      "time": {
+        "mean": 35.0,
+        "stddev": 8.0
+      },
+      "tokens": {
+        "mean": 28500,
+        "stddev": 5000
+      }
+    }
+  ],
+  "delta": {
+    "pass_rate": "+85%",
+    "time": "+10s (skill adds spec research overhead)",
+    "tokens": "+10k (spec reading + structured output)"
+  },
+  "per_eval": [
+    {
+      "eval_name": "export-csv-annotations",
+      "with_skill": {
+        "pass_rate": 0.83,
+        "passed": 5,
+        "total": 6
+      },
+      "without_skill": {
+        "pass_rate": 0.17,
+        "passed": 1,
+        "total": 6
+      }
+    },
+    {
+      "eval_name": "webhook-phase-notifications",
+      "with_skill": {
+        "pass_rate": 1.0,
+        "passed": 6,
+        "total": 6
+      },
+      "without_skill": {
+        "pass_rate": 0.0,
+        "passed": 0,
+        "total": 6
+      }
+    },
+    {
+      "eval_name": "admin-dashboard",
+      "with_skill": {
+        "pass_rate": 1.0,
+        "passed": 8,
+        "total": 8
+      },
+      "without_skill": {
+        "pass_rate": 0.12,
+        "passed": 1,
+        "total": 8
+      }
+    }
+  ],
+  "analyst_observations": [
+    "The skill's primary value is enforcing spec-first workflow: searching specs/README.md, reading success criteria, and producing spec-formatted output. Without the skill, agents skip specs entirely.",
+    "The one failed assertion (eval 0 with_skill) was borderline: the agent correctly identified a spec gap and proposed additions, which is actually the right behavior per the skill's decision tree. The assertion 'Did NOT propose new success criteria' was too strict.",
+    "Without the skill, agents consistently jump to implementation code. All 3 baseline runs included Python/TSX code. All 3 skill runs stayed at the design level.",
+    "The spec index keyword additions (a key requirement) were produced by all 3 skill runs and zero baseline runs.",
+    "The writing-plans chaining worked perfectly: all 3 skill runs terminated with explicit writing-plans invocation. No baseline run mentioned any skill chain."
+  ]
+}

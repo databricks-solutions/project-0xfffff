@@ -1,0 +1,15 @@
+{
+  "eval_id": 2,
+  "eval_name": "admin-dashboard",
+  "prompt": "Build an admin dashboard for monitoring system health",
+  "assertions": [
+    {"text": "Searched specs/README.md keyword index and found no governing spec", "type": "content_check"},
+    {"text": "Conducted Socratic exploration with clarifying questions", "type": "content_check"},
+    {"text": "Drafted a new spec following project format (Overview, Core Concepts, Behavior, Data Model, Implementation, Success Criteria, Future Work)", "type": "content_check"},
+    {"text": "Success criteria formatted as - [ ] checkbox items", "type": "content_check"},
+    {"text": "Proposed keyword additions for specs/README.md", "type": "content_check"},
+    {"text": "Stopped to present draft spec as protected operation before creating files", "type": "content_check"},
+    {"text": "Did not write or propose actual implementation code", "type": "content_check"},
+    {"text": "Terminal state mentions invoking writing-plans skill", "type": "content_check"}
+  ]
+}

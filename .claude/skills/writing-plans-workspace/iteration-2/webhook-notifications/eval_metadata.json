@@ -1,0 +1,16 @@
+{
+  "eval_id": 1,
+  "eval_name": "webhook-notifications",
+  "prompt": "Write an implementation plan for webhook notifications on workshop phase change...",
+  "assertions": [
+    "Plan header references spec and lists success criteria",
+    "Plan includes a file map table",
+    "Tasks follow TDD pattern",
+    "Tests include @spec and @req tags",
+    "Steps reference exact file paths",
+    "Uses just commands (not npx directly)",
+    "Final task includes lint + coverage verification",
+    "Plan includes Implementation Log entry",
+    "@req text appears to be verbatim spec criteria"
+  ]
+}
