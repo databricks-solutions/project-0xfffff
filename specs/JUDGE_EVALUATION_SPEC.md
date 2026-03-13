@@ -653,3 +653,9 @@ Databricks models may not support the JSON schema format required for guideline 
 1. Use OpenAI model (gpt-4o-mini) for `reflection_lm`
 2. Alignment will still work using episodic memory only
 3. Set `OPENAI_API_KEY` environment variable for automatic fallback
+
+## Implementation Log
+
+| Date | Plan | Status | Summary |
+|------|------|--------|---------|
+| 2026-03-13 | [Trace Tag Key Separation](../.claude/plans/2026-03-13-trace-tag-key-separation.md) | complete | Fix eval/align tag mutual destruction by using dedicated MLflow tag keys |
