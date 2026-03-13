@@ -1550,7 +1550,7 @@ async def begin_annotation_phase(workshop_id: str, request: dict | None = None, 
                                     _os.environ["DATABRICKS_TOKEN"] = mlflow_config.databricks_token
                                 _mlflow.set_tracking_uri("databricks")
 
-                                filter_str = f"tags.label = 'eval' AND tags.workshop_id = '{workshop_id}'"
+                                filter_str = f"tags.eval = 'true' AND tags.workshop_id = '{workshop_id}'"
                                 job.add_log(f"Polling MLflow for tagged traces: {filter_str}")
                                 job.add_log(f"Experiment ID: {mlflow_config.experiment_id}")
                                 tag_verified = False
@@ -5174,9 +5174,9 @@ async def re_evaluate(
 
     mlflow_config.databricks_token = databricks_token
 
-    # Re-tag traces with 'eval' label before evaluation.
-    # Annotation sync may have overwritten tags.label to 'align', so we must
-    # re-apply 'eval' to ensure _search_tagged_traces finds them.
+    # Re-tag traces with 'eval' before evaluation (belt-and-suspenders).
+    # With dedicated tag keys (eval/align), this is no longer strictly necessary
+    # since annotation sync no longer overwrites eval tags, but kept for safety.
     trace_ids = workshop.active_annotation_trace_ids or []
     if not trace_ids:
         all_traces = db_service.get_traces(workshop_id)
