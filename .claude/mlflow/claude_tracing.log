@@ -331,3 +331,200 @@
 2026-02-09 13:58:35,547 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=c289f5e9-1661-412b-bae1-a46133be4f95, transcript=/Users/wenwen.xie/.claude/projects/-Users-wenwen-xie-project-0xfffff/c289f5e9-1661-412b-bae1-a46133be4f95.jsonl
 2026-02-09 13:58:35,561 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: c289f5e9-1661-412b-bae1-a46133be4f95
 2026-02-09 13:58:37,801 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-d0a18d0fbd9f99e648fd5682302fa211
+2026-02-18 16:19:48,528 - mlflow.claude_code.tracing - WARNING - Failed to set experiment: 401: Credential was not sent or was of an unsupported type for this API. [ReqId: 613a6c12-b634-4481-aef6-103e89c71294]
+2026-02-18 16:19:48,529 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=bf921e8c-9a0a-43f5-aa4d-adb6a4f69974, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/bf921e8c-9a0a-43f5-aa4d-adb6a4f69974.jsonl
+2026-02-18 16:19:48,537 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: bf921e8c-9a0a-43f5-aa4d-adb6a4f69974
+2026-02-18 16:19:49,501 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-88f1a95f5ef2e8bda090cbaf8482c523
+2026-02-20 08:23:54,406 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=a14cd4f7-5dfc-46db-b820-a7c5d8163560, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/a14cd4f7-5dfc-46db-b820-a7c5d8163560.jsonl
+2026-02-20 08:23:54,409 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: a14cd4f7-5dfc-46db-b820-a7c5d8163560
+2026-02-20 08:23:56,554 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-acbe1932a79e41d64b0b9f5571e7ce6c
+2026-02-20 08:26:54,534 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=a14cd4f7-5dfc-46db-b820-a7c5d8163560, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/a14cd4f7-5dfc-46db-b820-a7c5d8163560.jsonl
+2026-02-20 08:26:54,548 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: a14cd4f7-5dfc-46db-b820-a7c5d8163560
+2026-02-20 08:26:56,798 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-42cdd9978f884ad11c7663e45d9dce5e
+2026-03-10 11:01:30,825 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=f5c40555-bfee-4d2f-bca0-0f19964825b6, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/f5c40555-bfee-4d2f-bca0-0f19964825b6.jsonl
+2026-03-10 11:01:30,826 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: f5c40555-bfee-4d2f-bca0-0f19964825b6
+2026-03-10 11:01:31,431 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-feb56f464223a404e3b44feb65063911
+2026-03-10 11:02:04,451 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=f5c40555-bfee-4d2f-bca0-0f19964825b6, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/f5c40555-bfee-4d2f-bca0-0f19964825b6.jsonl
+2026-03-10 11:02:04,452 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: f5c40555-bfee-4d2f-bca0-0f19964825b6
+2026-03-10 11:02:04,954 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-8623554c2478e1a57ffc405dfe65f3a3
+2026-03-10 11:11:43,422 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=dd68160a-58fa-4d4d-987d-eba8608b4312, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/dd68160a-58fa-4d4d-987d-eba8608b4312.jsonl
+2026-03-10 11:11:43,423 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: dd68160a-58fa-4d4d-987d-eba8608b4312
+2026-03-10 11:11:45,158 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-57b14f5ba0a6fdb9d27df3635a643c5d
+2026-03-10 11:12:16,373 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=dd68160a-58fa-4d4d-987d-eba8608b4312, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/dd68160a-58fa-4d4d-987d-eba8608b4312.jsonl
+2026-03-10 11:12:16,376 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: dd68160a-58fa-4d4d-987d-eba8608b4312
+2026-03-10 11:12:20,883 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-cfe8f14dad10a620af3278abc6d80a0c
+2026-03-10 11:13:56,862 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=dd68160a-58fa-4d4d-987d-eba8608b4312, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/dd68160a-58fa-4d4d-987d-eba8608b4312.jsonl
+2026-03-10 11:13:56,863 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: dd68160a-58fa-4d4d-987d-eba8608b4312
+2026-03-10 11:14:00,394 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-8e7b1c3ab7285f9ce8108674d411d333
+2026-03-10 11:17:27,265 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=dd68160a-58fa-4d4d-987d-eba8608b4312, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/dd68160a-58fa-4d4d-987d-eba8608b4312.jsonl
+2026-03-10 11:17:27,269 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: dd68160a-58fa-4d4d-987d-eba8608b4312
+2026-03-10 11:17:29,965 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-ceab6101219f99fe4e827bcfeb614a9f
+2026-03-10 11:21:19,271 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=dd68160a-58fa-4d4d-987d-eba8608b4312, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/dd68160a-58fa-4d4d-987d-eba8608b4312.jsonl
+2026-03-10 11:21:19,276 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: dd68160a-58fa-4d4d-987d-eba8608b4312
+2026-03-10 11:21:21,351 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-49ea5759dc8a2bc3e685214f0eda71b2
+2026-03-10 11:31:18,108 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=c89aa5aa-b4e9-4664-9765-ef4a80acc7c0, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/c89aa5aa-b4e9-4664-9765-ef4a80acc7c0.jsonl
+2026-03-10 11:31:18,111 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: c89aa5aa-b4e9-4664-9765-ef4a80acc7c0
+2026-03-10 11:31:20,766 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-84f276237ab4f63d32e79f741b71b5a0
+2026-03-10 11:34:22,860 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=c89aa5aa-b4e9-4664-9765-ef4a80acc7c0, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/c89aa5aa-b4e9-4664-9765-ef4a80acc7c0.jsonl
+2026-03-10 11:34:22,864 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: c89aa5aa-b4e9-4664-9765-ef4a80acc7c0
+2026-03-10 11:34:24,982 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-55b1c5dc1ca3cf6fbc9e56f7f3dab9aa
+2026-03-10 11:35:47,459 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=c89aa5aa-b4e9-4664-9765-ef4a80acc7c0, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/c89aa5aa-b4e9-4664-9765-ef4a80acc7c0.jsonl
+2026-03-10 11:35:47,464 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: c89aa5aa-b4e9-4664-9765-ef4a80acc7c0
+2026-03-10 11:35:49,519 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-271ad1ce69d38a5eda94acb74c103c9b
+2026-03-10 11:51:32,605 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=c89aa5aa-b4e9-4664-9765-ef4a80acc7c0, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/c89aa5aa-b4e9-4664-9765-ef4a80acc7c0.jsonl
+2026-03-10 11:51:32,612 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: c89aa5aa-b4e9-4664-9765-ef4a80acc7c0
+2026-03-10 11:51:35,284 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-d5d8e99b12c0a400ba8de755a9af7878
+2026-03-10 11:52:33,112 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=c89aa5aa-b4e9-4664-9765-ef4a80acc7c0, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/c89aa5aa-b4e9-4664-9765-ef4a80acc7c0.jsonl
+2026-03-10 11:52:33,122 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: c89aa5aa-b4e9-4664-9765-ef4a80acc7c0
+2026-03-10 11:52:35,285 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-d64bb56ea59d6c6785a510f877fdbd08
+2026-03-10 11:53:10,016 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=c89aa5aa-b4e9-4664-9765-ef4a80acc7c0, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/c89aa5aa-b4e9-4664-9765-ef4a80acc7c0.jsonl
+2026-03-10 11:53:10,020 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: c89aa5aa-b4e9-4664-9765-ef4a80acc7c0
+2026-03-10 11:53:12,647 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-c6294e9821fe0443b33d16df573dc34c
+2026-03-10 12:17:03,884 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=c89aa5aa-b4e9-4664-9765-ef4a80acc7c0, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/c89aa5aa-b4e9-4664-9765-ef4a80acc7c0.jsonl
+2026-03-10 12:17:03,895 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: c89aa5aa-b4e9-4664-9765-ef4a80acc7c0
+2026-03-10 12:17:08,545 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-61575e2e2646b5f5832af63df18da77e
+2026-03-10 15:11:16,394 - mlflow.claude_code.tracing - WARNING - Failed to set experiment: 401: Credential was not sent or was of an unsupported type for this API. [ReqId: c01acc82-1892-4d0c-bf26-e47659aa18c2]
+2026-03-10 15:11:16,396 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=c89aa5aa-b4e9-4664-9765-ef4a80acc7c0, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/c89aa5aa-b4e9-4664-9765-ef4a80acc7c0.jsonl
+2026-03-10 15:11:16,408 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: c89aa5aa-b4e9-4664-9765-ef4a80acc7c0
+2026-03-10 15:11:17,278 - mlflow.claude_code.tracing - WARNING - Failed to update trace metadata and previews: 'NoneType' object has no attribute 'info'
+2026-03-10 15:11:17,278 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: MLFLOW_NO_OP_SPAN_TRACE_ID
+2026-03-10 15:18:00,243 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=c89aa5aa-b4e9-4664-9765-ef4a80acc7c0, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/c89aa5aa-b4e9-4664-9765-ef4a80acc7c0.jsonl
+2026-03-10 15:18:00,256 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: c89aa5aa-b4e9-4664-9765-ef4a80acc7c0
+2026-03-10 15:18:01,755 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-c34b9c78910e7791dfc404a4ff7e9b38
+2026-03-11 06:12:47,704 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=d1b505f0-3a14-4683-9a90-5d9fd99ee620, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/d1b505f0-3a14-4683-9a90-5d9fd99ee620.jsonl
+2026-03-11 06:12:47,709 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: d1b505f0-3a14-4683-9a90-5d9fd99ee620
+2026-03-11 06:12:50,212 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-1c9ba761e8882c9de00eda1110f3f5ad
+2026-03-11 06:12:58,305 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=d1b505f0-3a14-4683-9a90-5d9fd99ee620, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/d1b505f0-3a14-4683-9a90-5d9fd99ee620.jsonl
+2026-03-11 06:12:58,309 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: d1b505f0-3a14-4683-9a90-5d9fd99ee620
+2026-03-11 06:13:00,205 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-61dd10243da0123c7e72963ab57fb16f
+2026-03-11 06:40:24,903 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=d1b505f0-3a14-4683-9a90-5d9fd99ee620, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/d1b505f0-3a14-4683-9a90-5d9fd99ee620.jsonl
+2026-03-11 06:40:24,908 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: d1b505f0-3a14-4683-9a90-5d9fd99ee620
+2026-03-11 06:40:27,251 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-3c12315825c474f9d47353aad4be2945
+2026-03-11 07:37:05,495 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=d1b505f0-3a14-4683-9a90-5d9fd99ee620, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/d1b505f0-3a14-4683-9a90-5d9fd99ee620.jsonl
+2026-03-11 07:37:05,502 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: d1b505f0-3a14-4683-9a90-5d9fd99ee620
+2026-03-11 07:37:07,817 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-088f9786994c6df1365bb23d22c5c37d
+2026-03-11 07:37:52,608 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=d1b505f0-3a14-4683-9a90-5d9fd99ee620, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/d1b505f0-3a14-4683-9a90-5d9fd99ee620.jsonl
+2026-03-11 07:37:52,611 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: d1b505f0-3a14-4683-9a90-5d9fd99ee620
+2026-03-11 07:37:56,019 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-c687b0ad0f4cbb6550ea25c9e0e801f8
+2026-03-11 07:52:42,883 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=d1b505f0-3a14-4683-9a90-5d9fd99ee620, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/d1b505f0-3a14-4683-9a90-5d9fd99ee620.jsonl
+2026-03-11 07:52:42,891 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: d1b505f0-3a14-4683-9a90-5d9fd99ee620
+2026-03-11 07:52:55,882 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-aafa35664fde9684277213cc610fe44e
+2026-03-11 08:14:41,616 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=839f4b9b-9223-4c52-b262-25fd9de49ce3, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/839f4b9b-9223-4c52-b262-25fd9de49ce3.jsonl
+2026-03-11 08:14:41,625 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 839f4b9b-9223-4c52-b262-25fd9de49ce3
+2026-03-11 08:14:45,006 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-1feabb038bb5750ef9d1d9edffe5a0cc
+2026-03-11 08:19:19,673 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=839f4b9b-9223-4c52-b262-25fd9de49ce3, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/839f4b9b-9223-4c52-b262-25fd9de49ce3.jsonl
+2026-03-11 08:19:19,681 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 839f4b9b-9223-4c52-b262-25fd9de49ce3
+2026-03-11 08:19:21,774 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-778a37167f3f8f49f9e2e425931b52f5
+2026-03-11 08:23:31,642 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=839f4b9b-9223-4c52-b262-25fd9de49ce3, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/839f4b9b-9223-4c52-b262-25fd9de49ce3.jsonl
+2026-03-11 08:23:31,648 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 839f4b9b-9223-4c52-b262-25fd9de49ce3
+2026-03-11 08:23:35,290 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-aab2099346acad40d24075ce19b840de
+2026-03-11 11:23:18,145 - mlflow.claude_code.tracing - WARNING - Failed to set experiment: 403: Source IP address: 69.251.218.194 is blocked by Databricks IP ACL for workspace: 1444828305810485 [ReqId: df8289b8-7d19-44a9-a6d5-901f8caa6d69]. Config: host=https://e2-demo-field-eng.cloud.databricks.com, profile=field-eng, auth_type=databricks-cli, retry_timeout_seconds=500. Env: DATABRICKS_CONFIG_PROFILE
+2026-03-11 11:23:18,145 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=839f4b9b-9223-4c52-b262-25fd9de49ce3, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/839f4b9b-9223-4c52-b262-25fd9de49ce3.jsonl
+2026-03-11 11:23:18,150 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 839f4b9b-9223-4c52-b262-25fd9de49ce3
+2026-03-11 11:23:18,488 - mlflow.claude_code.tracing - WARNING - Failed to update trace metadata and previews: 'NoneType' object has no attribute 'info'
+2026-03-11 11:23:18,488 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: MLFLOW_NO_OP_SPAN_TRACE_ID
+2026-03-11 12:35:48,653 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=839f4b9b-9223-4c52-b262-25fd9de49ce3, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/839f4b9b-9223-4c52-b262-25fd9de49ce3.jsonl
+2026-03-11 12:35:48,659 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 839f4b9b-9223-4c52-b262-25fd9de49ce3
+2026-03-11 12:35:50,326 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-6d23abc1724d2f22efac8f8eae17bf4c
+2026-03-11 12:36:22,545 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=839f4b9b-9223-4c52-b262-25fd9de49ce3, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/839f4b9b-9223-4c52-b262-25fd9de49ce3.jsonl
+2026-03-11 12:36:22,550 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 839f4b9b-9223-4c52-b262-25fd9de49ce3
+2026-03-11 12:36:24,573 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-ec9d19b75a347efbc793443f673c6767
+2026-03-12 05:33:09,553 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=839f4b9b-9223-4c52-b262-25fd9de49ce3, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/839f4b9b-9223-4c52-b262-25fd9de49ce3.jsonl
+2026-03-12 05:33:09,566 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 839f4b9b-9223-4c52-b262-25fd9de49ce3
+2026-03-12 05:33:11,568 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-ae436d96d77ccaa8664ed484eb629abc
+2026-03-12 05:33:21,291 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=839f4b9b-9223-4c52-b262-25fd9de49ce3, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/839f4b9b-9223-4c52-b262-25fd9de49ce3.jsonl
+2026-03-12 05:33:21,303 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 839f4b9b-9223-4c52-b262-25fd9de49ce3
+2026-03-12 05:33:22,985 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-3a12572b63dbd4802f00f070b7414345
+2026-03-12 09:33:13,076 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=839f4b9b-9223-4c52-b262-25fd9de49ce3, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/839f4b9b-9223-4c52-b262-25fd9de49ce3.jsonl
+2026-03-12 09:33:13,092 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 839f4b9b-9223-4c52-b262-25fd9de49ce3
+2026-03-12 09:33:15,008 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-97cb5d427d54ceb873ea948fce70789f
+2026-03-12 09:45:41,113 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=839f4b9b-9223-4c52-b262-25fd9de49ce3, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/839f4b9b-9223-4c52-b262-25fd9de49ce3.jsonl
+2026-03-12 09:45:41,122 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 839f4b9b-9223-4c52-b262-25fd9de49ce3
+2026-03-12 09:45:42,980 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-82dc5e2f834342dd2e27f528b64992ce
+2026-03-12 10:02:09,640 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=839f4b9b-9223-4c52-b262-25fd9de49ce3, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/839f4b9b-9223-4c52-b262-25fd9de49ce3.jsonl
+2026-03-12 10:02:09,653 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 839f4b9b-9223-4c52-b262-25fd9de49ce3
+2026-03-12 10:02:11,348 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-74c520575834b41d105ac11939f79461
+2026-03-12 10:05:37,155 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=839f4b9b-9223-4c52-b262-25fd9de49ce3, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/839f4b9b-9223-4c52-b262-25fd9de49ce3.jsonl
+2026-03-12 10:05:37,166 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 839f4b9b-9223-4c52-b262-25fd9de49ce3
+2026-03-12 10:05:38,710 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-1cd6b1f5601bcb3796f5f8fd4900b029
+2026-03-12 10:08:03,440 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=839f4b9b-9223-4c52-b262-25fd9de49ce3, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/839f4b9b-9223-4c52-b262-25fd9de49ce3.jsonl
+2026-03-12 10:08:03,459 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 839f4b9b-9223-4c52-b262-25fd9de49ce3
+2026-03-12 10:08:05,231 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-15fc0656a7346f8a2820748a8ea3566b
+2026-03-12 10:09:15,017 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=839f4b9b-9223-4c52-b262-25fd9de49ce3, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/839f4b9b-9223-4c52-b262-25fd9de49ce3.jsonl
+2026-03-12 10:09:15,032 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 839f4b9b-9223-4c52-b262-25fd9de49ce3
+2026-03-12 10:09:16,645 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-95e3b9cf258402849e327ed1a3b7823e
+2026-03-12 10:10:01,487 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=839f4b9b-9223-4c52-b262-25fd9de49ce3, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/839f4b9b-9223-4c52-b262-25fd9de49ce3.jsonl
+2026-03-12 10:10:01,503 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 839f4b9b-9223-4c52-b262-25fd9de49ce3
+2026-03-12 10:10:03,164 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-3567d8991c2d817edaaa9125aeae2af5
+2026-03-12 10:32:14,324 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=acbfc548-4c00-4e08-a96d-e8b50fe09abf, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/acbfc548-4c00-4e08-a96d-e8b50fe09abf.jsonl
+2026-03-12 10:32:14,330 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: acbfc548-4c00-4e08-a96d-e8b50fe09abf
+2026-03-12 10:32:16,504 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-185c45e87be34d6b3a26bf8a0cfc9777
+2026-03-12 10:40:03,219 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=acbfc548-4c00-4e08-a96d-e8b50fe09abf, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/acbfc548-4c00-4e08-a96d-e8b50fe09abf.jsonl
+2026-03-12 10:40:03,227 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: acbfc548-4c00-4e08-a96d-e8b50fe09abf
+2026-03-12 10:40:04,865 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-052c90cae0f4dea33f869de4ac5983e8
+2026-03-12 12:00:17,041 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=fc132290-93c7-43be-9525-b289dbf0f37a, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/fc132290-93c7-43be-9525-b289dbf0f37a.jsonl
+2026-03-12 12:00:17,047 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: fc132290-93c7-43be-9525-b289dbf0f37a
+2026-03-12 12:00:18,862 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-f91d18c1ce22675e8e93e7a3275c7cc7
+2026-03-12 13:31:14,379 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=e79e4606-5f64-4594-8a85-eb737a67fdc3, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/e79e4606-5f64-4594-8a85-eb737a67fdc3.jsonl
+2026-03-12 13:31:14,393 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: e79e4606-5f64-4594-8a85-eb737a67fdc3
+2026-03-12 13:31:16,206 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-dc1e3d276bd82e5706f8902b696d2021
+2026-03-12 13:42:08,096 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=e79e4606-5f64-4594-8a85-eb737a67fdc3, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/e79e4606-5f64-4594-8a85-eb737a67fdc3.jsonl
+2026-03-12 13:42:08,110 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: e79e4606-5f64-4594-8a85-eb737a67fdc3
+2026-03-12 13:42:09,646 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-984538edca589e4aef2f4cbc17c80723
+2026-03-12 13:44:31,004 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=e79e4606-5f64-4594-8a85-eb737a67fdc3, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/e79e4606-5f64-4594-8a85-eb737a67fdc3.jsonl
+2026-03-12 13:44:31,015 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: e79e4606-5f64-4594-8a85-eb737a67fdc3
+2026-03-12 13:44:32,660 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-35102a95b2a1a19cb1b963a2a579cdcb
+2026-03-12 13:47:08,264 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=e79e4606-5f64-4594-8a85-eb737a67fdc3, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/e79e4606-5f64-4594-8a85-eb737a67fdc3.jsonl
+2026-03-12 13:47:08,275 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: e79e4606-5f64-4594-8a85-eb737a67fdc3
+2026-03-12 13:47:11,429 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-3c76c53e6895c967e726f487ca26e656
+2026-03-12 13:58:40,637 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=e79e4606-5f64-4594-8a85-eb737a67fdc3, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/e79e4606-5f64-4594-8a85-eb737a67fdc3.jsonl
+2026-03-12 13:58:40,651 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: e79e4606-5f64-4594-8a85-eb737a67fdc3
+2026-03-12 13:58:42,463 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-86951292c96590799bea1b06058cb9e9
+2026-03-13 09:20:17,650 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=e79e4606-5f64-4594-8a85-eb737a67fdc3, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/e79e4606-5f64-4594-8a85-eb737a67fdc3.jsonl
+2026-03-13 09:20:17,663 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: e79e4606-5f64-4594-8a85-eb737a67fdc3
+2026-03-13 09:20:19,302 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-a92054c3844696f82ca0fea6923182fc
+2026-03-13 10:13:26,556 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=331a6a49-85c1-45c1-bd92-c0bd327a374d, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/331a6a49-85c1-45c1-bd92-c0bd327a374d.jsonl
+2026-03-13 10:13:26,565 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 331a6a49-85c1-45c1-bd92-c0bd327a374d
+2026-03-13 10:13:28,898 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-6346c1a98bea56c995e25057527812e2
+2026-03-13 10:31:43,614 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=e79e4606-5f64-4594-8a85-eb737a67fdc3, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/e79e4606-5f64-4594-8a85-eb737a67fdc3.jsonl
+2026-03-13 10:31:43,632 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: e79e4606-5f64-4594-8a85-eb737a67fdc3
+2026-03-13 10:31:45,574 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-5377203e0bd737ab189b1d1c1e91470a
+2026-03-13 10:35:40,747 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=e79e4606-5f64-4594-8a85-eb737a67fdc3, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/e79e4606-5f64-4594-8a85-eb737a67fdc3.jsonl
+2026-03-13 10:35:40,763 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: e79e4606-5f64-4594-8a85-eb737a67fdc3
+2026-03-13 10:35:42,784 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-c090ecfe92a25b36714865f5c252abd4
+2026-03-13 10:35:50,390 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=331a6a49-85c1-45c1-bd92-c0bd327a374d, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/331a6a49-85c1-45c1-bd92-c0bd327a374d.jsonl
+2026-03-13 10:35:50,403 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 331a6a49-85c1-45c1-bd92-c0bd327a374d
+2026-03-13 10:35:52,409 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-5f725a2d742e8d599754a8e216bd7788
+2026-03-13 10:38:21,019 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=e79e4606-5f64-4594-8a85-eb737a67fdc3, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/e79e4606-5f64-4594-8a85-eb737a67fdc3.jsonl
+2026-03-13 10:38:21,040 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: e79e4606-5f64-4594-8a85-eb737a67fdc3
+2026-03-13 10:38:22,725 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-fefeca571bf6f42262e492a0001c69b3
+2026-03-13 10:41:27,656 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=e79e4606-5f64-4594-8a85-eb737a67fdc3, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/e79e4606-5f64-4594-8a85-eb737a67fdc3.jsonl
+2026-03-13 10:41:27,671 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: e79e4606-5f64-4594-8a85-eb737a67fdc3
+2026-03-13 10:41:29,528 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-2dfe296abfa66ae6ae846d91f11b85b2
+2026-03-13 10:41:43,169 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=e79e4606-5f64-4594-8a85-eb737a67fdc3, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/e79e4606-5f64-4594-8a85-eb737a67fdc3.jsonl
+2026-03-13 10:41:43,188 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: e79e4606-5f64-4594-8a85-eb737a67fdc3
+2026-03-13 10:41:44,943 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-0b0efcb4eae406830f985a23a29b77af
+2026-03-13 10:42:31,456 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=331a6a49-85c1-45c1-bd92-c0bd327a374d, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/331a6a49-85c1-45c1-bd92-c0bd327a374d.jsonl
+2026-03-13 10:42:31,466 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 331a6a49-85c1-45c1-bd92-c0bd327a374d
+2026-03-13 10:42:34,677 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-472598dd808a0242899593646efd5fc1
+2026-03-13 11:16:15,138 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=331a6a49-85c1-45c1-bd92-c0bd327a374d, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/331a6a49-85c1-45c1-bd92-c0bd327a374d.jsonl
+2026-03-13 11:16:15,150 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 331a6a49-85c1-45c1-bd92-c0bd327a374d
+2026-03-13 11:16:17,502 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-be3c136bed828a1b6c5e3970930a30fb
+2026-03-13 11:19:07,042 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=e79e4606-5f64-4594-8a85-eb737a67fdc3, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/e79e4606-5f64-4594-8a85-eb737a67fdc3.jsonl
+2026-03-13 11:19:07,067 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: e79e4606-5f64-4594-8a85-eb737a67fdc3
+2026-03-13 11:19:08,802 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-adde43b185e3c007b58fc89e90972b9d
+2026-03-13 11:19:28,380 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=331a6a49-85c1-45c1-bd92-c0bd327a374d, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/331a6a49-85c1-45c1-bd92-c0bd327a374d.jsonl
+2026-03-13 11:19:28,395 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 331a6a49-85c1-45c1-bd92-c0bd327a374d
+2026-03-13 11:19:30,340 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-e83854f7e0d662be6c95bfe148f011d4
+2026-03-13 11:52:31,736 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=331a6a49-85c1-45c1-bd92-c0bd327a374d, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/331a6a49-85c1-45c1-bd92-c0bd327a374d.jsonl
+2026-03-13 11:52:31,749 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 331a6a49-85c1-45c1-bd92-c0bd327a374d
+2026-03-13 11:52:33,321 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-97e60ae790e4316925bf8206485ea344
+2026-03-13 11:56:28,904 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=e79e4606-5f64-4594-8a85-eb737a67fdc3, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/e79e4606-5f64-4594-8a85-eb737a67fdc3.jsonl
+2026-03-13 11:56:28,920 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: e79e4606-5f64-4594-8a85-eb737a67fdc3
+2026-03-13 11:56:33,772 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-84e4558c44d83511509823db6838bc4a
+2026-03-13 12:00:16,438 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=331a6a49-85c1-45c1-bd92-c0bd327a374d, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/331a6a49-85c1-45c1-bd92-c0bd327a374d.jsonl
+2026-03-13 12:00:16,451 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 331a6a49-85c1-45c1-bd92-c0bd327a374d
+2026-03-13 12:00:18,278 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-15a04ba2c4e6f90c1b7051b3fae7cd3a
+2026-03-13 12:03:34,915 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=331a6a49-85c1-45c1-bd92-c0bd327a374d, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/331a6a49-85c1-45c1-bd92-c0bd327a374d.jsonl
+2026-03-13 12:03:34,927 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 331a6a49-85c1-45c1-bd92-c0bd327a374d
+2026-03-13 12:03:36,795 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: tr-139e7e7d7d0d393924ddcb8fd4ae49c7

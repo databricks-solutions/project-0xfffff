@@ -1,223 +1,203 @@
 # Spec Test Coverage Map
 
-**Generated**: 2026-02-03 13:25:52
+**Generated**: 2026-03-13 10:35:28
 
-This report shows which tests cover each specification.
-Tests are tagged using framework-specific conventions:
+This report shows test coverage for each specification's success criteria.
 
-- **pytest**: `@pytest.mark.spec("SPEC_NAME")`
-- **Playwright**: `{ tag: ['@spec:SPEC_NAME'] }` or `@spec:SPEC_NAME` in test title
-- **Vitest**: `// @spec SPEC_NAME` comment or `describe('@spec:SPEC_NAME', ...)`
+## Test Pyramid Summary
 
----
+| Type | Count | Description |
+|------|-------|-------------|
+| Unit | 136 | pytest unit tests, Vitest tests |
+| Integration | 0 | pytest with real DB/API |
+| E2E (Mocked) | 0 | Playwright with mocked API |
+| E2E (Real) | 19 | Playwright with real API |
 
 ## Coverage Summary
 
-| Spec | pytest | Playwright | Vitest | Total | Status |
-|------|--------|------------|--------|-------|--------|
-| [ANNOTATION_SPEC](#annotation-spec) | 4 | 1 | 0 | 5 | ✅ Covered |
-| [AUTHENTICATION_SPEC](#authentication-spec) | 8 | 1 | 0 | 9 | ✅ Covered |
-| [BUILD_AND_DEPLOY_SPEC](#build-and-deploy-spec) | 1 | 0 | 0 | 1 | 🟡 Partial |
-| [CUSTOM_LLM_PROVIDER_SPEC](#custom-llm-provider-spec) | 8 | 1 | 0 | 9 | ✅ Covered |
-| [DATASETS_SPEC](#datasets-spec) | 2 | 0 | 1 | 3 | ✅ Covered |
-| [DESIGN_SYSTEM_SPEC](#design-system-spec) | 0 | 0 | 1 | 1 | 🟡 Partial |
-| [DISCOVERY_TRACE_ASSIGNMENT_SPEC](#discovery-trace-assignment-spec) | 3 | 1 | 1 | 5 | ✅ Covered |
-| [JUDGE_EVALUATION_SPEC](#judge-evaluation-spec) | 41 | 4 | 1 | 46 | ✅ Covered |
-| [RUBRIC_SPEC](#rubric-spec) | 10 | 6 | 2 | 18 | ✅ Covered |
-| [TRACE_DISPLAY_SPEC](#trace-display-spec) | 0 | 5 | 0 | 5 | ✅ Covered |
-| [UI_COMPONENTS_SPEC](#ui-components-spec) | 0 | 0 | 0 | 0 | ❌ Uncovered |
+| Spec | Reqs | Covered | Cover% | Unit | Int | E2E-M | E2E-R | BE-only |
+|------|------|---------|--------|------|-----|-------|-------|---------|
+| [ANNOTATION_SPEC](#annotation-spec) | 21 | 13 | 61% | 47 | 0 | 0 | 10 | **7** |
+| [JUDGE_EVALUATION_SPEC](#judge-evaluation-spec) | 25 | 25 | 100% | 89 | 0 | 0 | 9 | **18** |
 
-**Coverage**: 10/11 specs (90%)
+**Total**: 38/46 requirements covered (82%)
 
 ---
 
 ## ANNOTATION_SPEC
 
-### pytest
+**Coverage**: 13/21 requirements (61%)
 
-- `tests/unit/routers/test_annotation_last_trace.py` (test_all_10_annotations_can_be_saved)
-- `tests/unit/routers/test_annotation_last_trace.py` (test_10th_annotation_specifically)
-- `tests/unit/routers/test_annotation_last_trace.py` (test_multiple_annotators_can_save_10th_annotation)
-- `tests/unit/routers/test_annotation_last_trace.py` (test_facilitator_sees_10_completed)
+### Uncovered Requirements
 
-### Playwright (E2E)
+- [ ] No toast when navigating without changes
+- [ ] Comments display with proper line breaks
+- [ ] Bulk resync re-exports all annotations when rubric titles change
+- [ ] Failed saves are queued and retried automatically with exponential backoff
+- [ ] Navigation is optimistic (UI advances immediately, save completes in background)
+- [ ] Navigation debounced at 300ms to prevent duplicate saves
+- [ ] Freeform question responses are optional (not required for navigation)
+- [ ] Freeform responses are encoded in the comment field as JSON
 
-- `client/tests/e2e/annotation-last-trace.spec.ts`
+### Backend-Only Requirements (no frontend tests)
 
-## AUTHENTICATION_SPEC
+These requirements are covered by backend tests only. UI regressions won't be caught:
 
-### pytest
+- :warning: Users can edit previously submitted annotations (unit)
+- :warning: Annotations sync to MLflow as feedback on save (one entry per rubric question) (unit)
+- :warning: MLflow trace tagged with `label: "align"` and `workshop_id` on annotation (unit)
+- :warning: Feedback source is HUMAN with annotator's user_id (unit)
+- :warning: Annotation comment maps to MLflow feedback rationale (unit)
+- :warning: Duplicate feedback entries are detected and skipped (unit)
+- :warning: Legacy single-rating format loads correctly alongside multi-rating format (unit)
 
-- `tests/unit/routers/test_users_router.py` (test_users_login_facilitator_path)
-- `tests/unit/routers/test_users_router.py` (test_users_login_invalid_credentials_returns_401)
-- `tests/unit/routers/test_users_router.py` (test_user_permissions_derived_from_role)
-- `tests/unit/services/test_token_storage_service.py` (test_store_and_get_token_roundtrip)
-- `tests/unit/services/test_token_storage_service.py` (test_get_token_returns_none_when_missing)
-- `tests/unit/services/test_token_storage_service.py` (test_expired_token_is_removed_on_read)
-- `tests/unit/services/test_token_storage_service.py` (test_cleanup_expired_tokens_counts_removed)
-- `tests/unit/services/test_token_storage_service.py` (test_remove_token)
+### Covered Requirements
 
-### Playwright (E2E)
+- [x] Users can edit previously submitted annotations (unit) **[BE-only]**
+- [x] Changes automatically save on navigation (Next/Previous) (e2e-real, unit)
+- [x] Toast shows "Annotation saved!" for new submissions (e2e-real)
+- [x] Toast shows "Annotation updated!" only when changes detected (e2e-real)
+- [x] Multi-line comments preserved throughout the stack (e2e-real)
+- [x] Next button enabled for annotated traces (allows re-navigation) (e2e-real)
+- [x] Annotation count reflects unique submissions (not re-submissions) (e2e-real, unit)
+- [x] Annotations sync to MLflow as feedback on save (one entry per rubric question) (unit) **[BE-only]**
+- [x] MLflow trace tagged with `label: "align"` and `workshop_id` on annotation (unit) **[BE-only]**
+- [x] Feedback source is HUMAN with annotator's user_id (unit) **[BE-only]**
+- [x] Annotation comment maps to MLflow feedback rationale (unit) **[BE-only]**
+- [x] Duplicate feedback entries are detected and skipped (unit) **[BE-only]**
+- [x] Legacy single-rating format loads correctly alongside multi-rating format (unit) **[BE-only]**
 
-- `client/tests/e2e/facilitator-create-workshop.spec.ts`
+### Tests Without Requirement Links
 
-## BUILD_AND_DEPLOY_SPEC
+These tests are tagged with the spec but don't link to specific requirements:
 
-### pytest
-
-- `tests/unit/test_health_smoke.py` (test_health_endpoint)
-
-## CUSTOM_LLM_PROVIDER_SPEC
-
-### pytest
-
-- `tests/unit/routers/test_custom_llm_provider_router.py` (test_get_custom_llm_provider_not_configured)
-- `tests/unit/routers/test_custom_llm_provider_router.py` (test_get_custom_llm_provider_configured)
-- `tests/unit/routers/test_custom_llm_provider_router.py` (test_create_custom_llm_provider)
-- `tests/unit/routers/test_custom_llm_provider_router.py` (test_delete_custom_llm_provider)
-- `tests/unit/routers/test_custom_llm_provider_router.py` (test_test_custom_llm_provider_success)
-- `tests/unit/routers/test_custom_llm_provider_router.py` (test_test_custom_llm_provider_auth_failure)
-- `tests/unit/routers/test_custom_llm_provider_router.py` (test_test_custom_llm_provider_no_config)
-- `tests/unit/routers/test_custom_llm_provider_router.py` (test_test_custom_llm_provider_no_api_key)
-
-### Playwright (E2E)
-
-- `client/tests/e2e/custom-llm-provider.spec.ts`
-
-## DATASETS_SPEC
-
-### pytest
-
-- `tests/unit/routers/test_dbsql_export_router.py` (test_dbsql_export_success)
-- `tests/unit/routers/test_dbsql_export_router.py` (test_dbsql_export_status_happy_path)
-
-### Vitest (Unit)
-
-- `client/src/utils/traceUtils.test.ts`
-
-## DESIGN_SYSTEM_SPEC
-
-### Vitest (Unit)
-
-- `client/src/lib/utils.test.ts`
-
-## DISCOVERY_TRACE_ASSIGNMENT_SPEC
-
-### pytest
-
-- `tests/unit/routers/test_workshops_router.py` (test_get_workshop_404_when_missing)
-- `tests/unit/routers/test_workshops_router.py` (test_get_traces_requires_user_id)
-- `tests/unit/routers/test_workshops_router.py` (test_get_workshop_success)
-
-### Playwright (E2E)
-
-- `client/tests/e2e/discovery-invite-traces.spec.ts`
-
-### Vitest (Unit)
-
-- `client/src/hooks/useWorkshopApi.test.ts`
+- `tests/unit/routers/test_annotation_crud.py` (test_upsert_creates_new_annotation) [unit]
+- `tests/unit/routers/test_participant_notes.py` (test_create_discovery_note) [unit]
+- `tests/unit/routers/test_participant_notes.py` (test_create_annotation_note) [unit]
+- `tests/unit/routers/test_participant_notes.py` (test_create_note_defaults_to_discovery_phase) [unit]
+- `tests/unit/routers/test_participant_notes.py` (test_create_note_without_trace_id) [unit]
+- `tests/unit/routers/test_participant_notes.py` (test_create_note_missing_workshop_returns_404) [unit]
+- `tests/unit/routers/test_participant_notes.py` (test_create_note_service_error_returns_500) [unit]
+- `tests/unit/routers/test_participant_notes.py` (test_get_all_notes) [unit]
+- `tests/unit/routers/test_participant_notes.py` (test_get_notes_filtered_by_user) [unit]
+- `tests/unit/routers/test_participant_notes.py` (test_get_notes_filtered_by_discovery_phase) [unit]
+- `tests/unit/routers/test_participant_notes.py` (test_get_notes_filtered_by_annotation_phase) [unit]
+- `tests/unit/routers/test_participant_notes.py` (test_get_notes_filtered_by_user_and_phase) [unit]
+- `tests/unit/routers/test_participant_notes.py` (test_get_notes_missing_workshop_returns_404) [unit]
+- `tests/unit/routers/test_participant_notes.py` (test_delete_note_success) [unit]
+- `tests/unit/routers/test_participant_notes.py` (test_delete_nonexistent_note_returns_404) [unit]
+- `tests/unit/routers/test_participant_notes.py` (test_delete_note_missing_workshop_returns_404) [unit]
+- `tests/unit/routers/test_participant_notes.py` (test_multiple_notes_same_user_same_trace_append) [unit]
+- `tests/unit/routers/test_participant_notes.py` (test_notes_from_both_phases_coexist) [unit]
+- `tests/unit/routers/test_participant_notes.py` (test_toggle_participant_notes_enables) [unit]
+- `tests/unit/routers/test_participant_notes.py` (test_toggle_participant_notes_disables) [unit]
+- `tests/unit/routers/test_participant_notes.py` (test_toggle_missing_workshop_returns_404) [unit]
+- `tests/unit/routers/test_participant_notes.py` (test_multiple_annotators_notes_during_annotation) [unit]
+- `tests/unit/routers/test_participant_notes.py` (test_participant_note_create_model_defaults) [unit]
+- `tests/unit/routers/test_participant_notes.py` (test_participant_note_create_model_with_annotation_phase) [unit]
+- `tests/unit/routers/test_participant_notes.py` (test_participant_note_model_serialization) [unit]
+- `tests/unit/services/test_database_service_participant_notes.py` (test_add_participant_note_discovery) [unit]
+- `tests/unit/services/test_database_service_participant_notes.py` (test_add_participant_note_annotation) [unit]
+- `tests/unit/services/test_database_service_participant_notes.py` (test_add_participant_note_without_trace) [unit]
+- `tests/unit/services/test_database_service_participant_notes.py` (test_add_participant_note_always_creates_new) [unit]
+- `tests/unit/services/test_database_service_participant_notes.py` (test_get_participant_notes_no_filters) [unit]
+- `tests/unit/services/test_database_service_participant_notes.py` (test_get_participant_notes_filtered_by_user) [unit]
+- `tests/unit/services/test_database_service_participant_notes.py` (test_get_participant_notes_filtered_by_phase) [unit]
+- `tests/unit/services/test_database_service_participant_notes.py` (test_get_participant_notes_filtered_by_user_and_phase) [unit]
+- `tests/unit/services/test_database_service_participant_notes.py` (test_get_participant_notes_empty_result) [unit]
+- `tests/unit/services/test_database_service_participant_notes.py` (test_delete_participant_note_success) [unit]
+- `tests/unit/services/test_database_service_participant_notes.py` (test_delete_participant_note_not_found) [unit]
 
 ## JUDGE_EVALUATION_SPEC
 
+**Coverage**: 25/25 requirements (100%)
+
+### Backend-Only Requirements (no frontend tests)
+
+These requirements are covered by backend tests only. UI regressions won't be caught:
+
+- :warning: Fallback conversion handles Likert-style returns for binary (unit)
+- :warning: Evaluation results persisted to database (unit)
+- :warning: Results reload correctly in UI (unit)
+- :warning: Judge prompt auto-derived from rubric questions (unit)
+- :warning: Per-question judge_type parsed from rubric (`[JUDGE_TYPE:xxx]`) (unit)
+- :warning: Binary rubrics evaluated with 0/1 scale (not 1-5) (unit)
+- :warning: Re-evaluate loads registered judge with aligned instructions (unit)
+- :warning: Uses same model as initial auto-evaluation (unit)
+- :warning: Results stored against correct prompt version (unit)
+- :warning: Alignment jobs run asynchronously (unit)
+- :warning: MemAlign distills semantic memory (guidelines) (unit)
+- :warning: Aligned judge registered to MLflow (unit)
+- :warning: Metrics reported (guideline count, example count) (unit)
+- :warning: Works for both Likert and Binary scales (unit)
+- :warning: Krippendorff's Alpha calculated correctly (unit)
+- :warning: Cohen's Kappa calculated for rater pairs (unit)
+- :warning: Handles edge cases (no variation, single rater) (unit)
+- :warning: Updates when new annotations added (unit)
+
+### Covered Requirements
+
+- [x] Likert judges return values 1-5 (unit)
+- [x] Binary judges return values 0 or 1 (unit)
+- [x] Fallback conversion handles Likert-style returns for binary (unit) **[BE-only]**
+- [x] Evaluation results persisted to database (unit) **[BE-only]**
+- [x] Results reload correctly in UI (unit) **[BE-only]**
+- [x] Auto-evaluation runs in background when annotation phase starts (e2e-real, unit)
+- [x] Judge prompt auto-derived from rubric questions (unit) **[BE-only]**
+- [x] Per-question judge_type parsed from rubric (`[JUDGE_TYPE:xxx]`) (unit) **[BE-only]**
+- [x] Binary rubrics evaluated with 0/1 scale (not 1-5) (unit) **[BE-only]**
+- [x] Auto-evaluation model stored for re-evaluation consistency (e2e-real)
+- [x] Results appear in Judge Tuning page (e2e-real)
+- [x] Re-evaluate loads registered judge with aligned instructions (unit) **[BE-only]**
+- [x] Uses same model as initial auto-evaluation (unit) **[BE-only]**
+- [x] Spinner stops when re-evaluation completes (e2e-real)
+- [x] Results stored against correct prompt version (unit) **[BE-only]**
+- [x] Pre-align and post-align scores directly comparable (e2e-real)
+- [x] Alignment jobs run asynchronously (unit) **[BE-only]**
+- [x] MemAlign distills semantic memory (guidelines) (unit) **[BE-only]**
+- [x] Aligned judge registered to MLflow (unit) **[BE-only]**
+- [x] Metrics reported (guideline count, example count) (unit) **[BE-only]**
+- [x] Works for both Likert and Binary scales (unit) **[BE-only]**
+- [x] Krippendorff's Alpha calculated correctly (unit) **[BE-only]**
+- [x] Cohen's Kappa calculated for rater pairs (unit) **[BE-only]**
+- [x] Handles edge cases (no variation, single rater) (unit) **[BE-only]**
+- [x] Updates when new annotations added (unit) **[BE-only]**
+
+### Tests Without Requirement Links
+
+These tests are tagged with the spec but don't link to specific requirements:
+
+- `tests/unit/routers/test_workshops_begin_annotation.py` (test_begin_annotation_requires_rubric) [unit]
+- `tests/unit/routers/test_workshops_re_evaluate.py` (test_re_evaluate_tags_traces_before_evaluation) [unit]
+- `tests/unit/routers/test_workshops_re_evaluate.py` (test_re_evaluate_tags_traces_fallback_when_no_active_annotation_ids) [unit]
+- `tests/unit/services/test_alignment_service.py` (test_likert_agreement_metric_from_store_is_one_when_equal) [unit]
+- `tests/unit/services/test_cohens_kappa.py` (test_interpret_cohens_kappa_bucket_edges) [unit]
+- `tests/unit/services/test_cohens_kappa.py` (test_is_cohens_kappa_acceptable_default_threshold) [unit]
+- `tests/unit/services/test_evaluation_tag_overwrite.py` (test_search_tagged_traces_uses_dedicated_align_key) [unit]
+- `tests/unit/services/test_evaluation_tag_overwrite.py` (test_run_evaluation_yields_error_when_no_eval_tagged_traces) [unit]
+- `tests/unit/services/test_irr_utils.py` (test_format_irr_result_rounding_and_ready_flag) [unit]
+- `client/tests/e2e/evaluation-tagging.spec.ts` (re-evaluate endpoint tags traces before searching MLflow) [e2e-real]
+- `client/tests/e2e/evaluation-tagging.spec.ts` (begin-annotation auto-eval creates job and attempts tagging) [e2e-real]
+- `client/tests/e2e/evaluation-tagging.spec.ts` (begin-annotation without eval model skips auto-eval) [e2e-real]
+
+---
+
+## How to Tag Tests
+
 ### pytest
+```python
+@pytest.mark.spec("SPEC_NAME")
+@pytest.mark.req("Requirement text from success criteria")
+def test_something(): ...
+```
 
-- `tests/unit/routers/test_workshops_begin_annotation.py` (test_begin_annotation_with_auto_eval_enabled)
-- `tests/unit/routers/test_workshops_begin_annotation.py` (test_begin_annotation_with_auto_eval_disabled)
-- `tests/unit/routers/test_workshops_begin_annotation.py` (test_begin_annotation_requires_rubric)
-- `tests/unit/routers/test_databricks_router.py` (test_databricks_test_connection_success)
-- `tests/unit/routers/test_databricks_router.py` (test_databricks_call_endpoint_success)
-- `tests/unit/routers/test_databricks_router.py` (test_databricks_chat_endpoint_success)
-- `tests/unit/routers/test_databricks_router.py` (test_databricks_judge_evaluate_without_workshop_id_uses_request_config)
-- `tests/unit/services/test_irr_utils.py` (test_analyze_annotation_structure_empty)
-- `tests/unit/services/test_irr_utils.py` (test_analyze_annotation_structure_recommends_cohens_kappa_when_two_raters_complete)
-- `tests/unit/services/test_irr_utils.py` (test_analyze_annotation_structure_recommends_krippendorff_alpha_when_missing_data)
-- `tests/unit/services/test_irr_utils.py` (test_validate_annotations_for_irr_invalid_cases)
-- `tests/unit/services/test_irr_utils.py` (test_validate_annotations_for_irr_valid_case)
-- `tests/unit/services/test_irr_utils.py` (test_format_irr_result_rounding_and_ready_flag)
-- `tests/unit/services/test_irr_utils.py` (test_detect_problematic_patterns_basic_signals)
-- `tests/unit/services/test_irr_service.py` (test_calculate_irr_for_workshop_returns_error_details_when_invalid)
-- `tests/unit/services/test_irr_service.py` (test_calculate_irr_for_workshop_uses_cohens_kappa_when_two_raters_complete)
-- `tests/unit/services/test_irr_service.py` (test_calculate_irr_for_workshop_uses_krippendorff_when_missing_data)
-- `tests/unit/services/test_database_service_rubric.py` (test_get_judge_type_from_rubric_binary)
-- `tests/unit/services/test_database_service_rubric.py` (test_get_judge_type_from_rubric_likert)
-- `tests/unit/services/test_database_service_rubric.py` (test_get_judge_type_from_rubric_mixed_prefers_binary)
-- `tests/unit/services/test_database_service_rubric.py` (test_get_judge_type_from_rubric_no_rubric_defaults_likert)
-- `tests/unit/services/test_krippendorff_alpha.py` (test_get_unique_question_ids_sorted)
-- `tests/unit/services/test_krippendorff_alpha.py` (test_per_metric_returns_empty_when_no_ratings_dict_present)
-- `tests/unit/services/test_krippendorff_alpha.py` (test_calculate_krippendorff_alpha_returns_zero_when_insufficient)
-- `tests/unit/services/test_krippendorff_alpha.py` (test_calculate_krippendorff_alpha_trivial_agreement_is_one)
-- `tests/unit/services/test_krippendorff_alpha.py` (test_calculate_krippendorff_alpha_handles_missing_data)
-- `tests/unit/services/test_krippendorff_alpha.py` (test_calculate_krippendorff_alpha_specific_question_id_uses_ratings_dict)
-- `tests/unit/services/test_alignment_service.py` (test_normalize_judge_prompt_converts_placeholders_to_mlflow_style)
-- `tests/unit/services/test_alignment_service.py` (test_calculate_eval_metrics_binary_scale)
-- `tests/unit/services/test_alignment_service.py` (test_calculate_eval_metrics_binary_all_pass)
-- `tests/unit/services/test_alignment_service.py` (test_calculate_eval_metrics_binary_all_fail)
-- `tests/unit/services/test_alignment_service.py` (test_calculate_eval_metrics_binary_mixed_ratings)
-- `tests/unit/services/test_alignment_service.py` (test_calculate_eval_metrics_binary_empty)
-- `tests/unit/services/test_alignment_service.py` (test_calculate_eval_metrics_binary_threshold_conversion)
-- `tests/unit/services/test_alignment_service.py` (test_calculate_eval_metrics_likert_default)
-- `tests/unit/services/test_cohens_kappa.py` (test_calculate_cohens_kappa_raises_on_empty)
-- `tests/unit/services/test_cohens_kappa.py` (test_calculate_cohens_kappa_raises_if_not_exactly_two_raters)
-- `tests/unit/services/test_cohens_kappa.py` (test_calculate_cohens_kappa_requires_two_paired_traces)
-- `tests/unit/services/test_cohens_kappa.py` (test_calculate_cohens_kappa_perfect_agreement_is_one)
-- `tests/unit/services/test_cohens_kappa.py` (test_interpret_cohens_kappa_bucket_edges)
-- `tests/unit/services/test_cohens_kappa.py` (test_is_cohens_kappa_acceptable_default_threshold)
+### Playwright
+```typescript
+test.use({ tag: ['@spec:SPEC_NAME', '@req:Requirement text'] });
+```
 
-### Playwright (E2E)
-
-- `client/tests/e2e/auto-evaluation.spec.ts`
-- `client/tests/e2e/auto-evaluation.spec.ts`
-- `client/tests/e2e/auto-evaluation.spec.ts`
-- `client/tests/e2e/auto-evaluation.spec.ts`
-
-### Vitest (Unit)
-
-- `client/src/utils/modelMapping.test.ts`
-
-## RUBRIC_SPEC
-
-### pytest
-
-- `tests/unit/services/test_database_service_rubric.py` (test_parse_rubric_questions_with_judge_type_binary)
-- `tests/unit/services/test_database_service_rubric.py` (test_parse_rubric_questions_with_judge_type_likert)
-- `tests/unit/services/test_database_service_rubric.py` (test_parse_rubric_questions_default_to_likert)
-- `tests/unit/services/test_database_service_rubric.py` (test_parse_rubric_questions_mixed_types)
-- `tests/unit/services/test_database_service_rubric.py` (test_parse_rubric_questions_with_freeform)
-- `tests/unit/services/test_database_service_rubric.py` (test_parse_rubric_questions_empty_input)
-- `tests/unit/services/test_database_service_rubric.py` (test_parse_rubric_questions_multiline_description)
-- `tests/unit/services/test_database_service_rubric.py` (test_reconstruct_rubric_questions_with_judge_type)
-- `tests/unit/services/test_database_service_rubric.py` (test_reconstruct_rubric_questions_empty)
-- `tests/unit/services/test_database_service_rubric.py` (test_parse_reconstruct_roundtrip)
-
-### Playwright (E2E)
-
-- `client/tests/e2e/rubric-judge-type.spec.ts`
-- `client/tests/e2e/rubric-judge-type.spec.ts`
-- `client/tests/e2e/rubric-judge-type.spec.ts`
-- `client/tests/e2e/rubric-judge-type.spec.ts`
-- `client/tests/e2e/rubric-judge-type.spec.ts`
-- `client/tests/e2e/rubric-creation.spec.ts`
-
-### Vitest (Unit)
-
-- `client/src/utils/rubricUtils.test.ts`
-- `client/src/utils/rubricUtils.test.ts`
-
-## TRACE_DISPLAY_SPEC
-
-### Playwright (E2E)
-
-- `client/tests/e2e/jsonpath-trace-display.spec.ts`
-- `client/tests/e2e/jsonpath-trace-display.spec.ts`
-- `client/tests/e2e/jsonpath-trace-display.spec.ts`
-- `client/tests/e2e/jsonpath-trace-display.spec.ts`
-- `client/tests/e2e/jsonpath-trace-display.spec.ts`
-
-## UI_COMPONENTS_SPEC
-
-❌ **No tests tagged for this spec**
-
-To add coverage, tag tests with:
-- pytest: `@pytest.mark.spec("UI_COMPONENTS_SPEC")`
-- Playwright: `{ tag: ['@spec:UI_COMPONENTS_SPEC'] }`
-- Vitest: `// @spec UI_COMPONENTS_SPEC`
+### Vitest
+```typescript
+// @spec SPEC_NAME
+// @req Requirement text from success criteria
+```

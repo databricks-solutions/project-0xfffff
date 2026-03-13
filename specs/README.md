@@ -18,6 +18,7 @@ This directory contains declarative specifications for the Human Evaluation Work
 | [TESTING_SPEC](./TESTING_SPEC.md) | Testing | unit test, e2e, pytest, vitest, playwright, coverage |
 | [DESIGN_SYSTEM_SPEC](./DESIGN_SYSTEM_SPEC.md) | Design System | color, theme, purple, indigo, dark mode, accessibility |
 | [TRACE_DISPLAY_SPEC](./TRACE_DISPLAY_SPEC.md) | Trace Display | JSONPath, input extraction, output extraction, preview, facilitator settings |
+| [TRACE_INGESTION_SPEC](./TRACE_INGESTION_SPEC.md) | Trace Ingestion | ingest, intake, CSV upload, content extraction, deduplication, mlflow_trace_id, upsert |
 
 ---
 
@@ -202,6 +203,21 @@ Use this index to find relevant specs by keyword.
 - **trace display** → [TRACE_DISPLAY_SPEC](./TRACE_DISPLAY_SPEC.md)
 - **preview** → [TRACE_DISPLAY_SPEC](./TRACE_DISPLAY_SPEC.md)
 - **facilitator settings** → [TRACE_DISPLAY_SPEC](./TRACE_DISPLAY_SPEC.md)
+
+### Trace Ingestion & Identity
+- **ingest** → [TRACE_INGESTION_SPEC](./TRACE_INGESTION_SPEC.md)
+- **intake** → [TRACE_INGESTION_SPEC](./TRACE_INGESTION_SPEC.md)
+- **CSV upload** → [TRACE_INGESTION_SPEC](./TRACE_INGESTION_SPEC.md)
+- **mlflow_trace_id** → [TRACE_INGESTION_SPEC](./TRACE_INGESTION_SPEC.md)
+- **content extraction** → [TRACE_INGESTION_SPEC](./TRACE_INGESTION_SPEC.md)
+- **role_hint** → [TRACE_INGESTION_SPEC](./TRACE_INGESTION_SPEC.md)
+- **deduplication** → [TRACE_INGESTION_SPEC](./TRACE_INGESTION_SPEC.md)
+- **upsert** → [TRACE_INGESTION_SPEC](./TRACE_INGESTION_SPEC.md)
+- **re-ingest** → [TRACE_INGESTION_SPEC](./TRACE_INGESTION_SPEC.md)
+- **mlflow_url** → [TRACE_INGESTION_SPEC](./TRACE_INGESTION_SPEC.md)
+- **TraceUpload** → [TRACE_INGESTION_SPEC](./TRACE_INGESTION_SPEC.md)
+- **add_traces** → [TRACE_INGESTION_SPEC](./TRACE_INGESTION_SPEC.md)
+- **_extract_content_from_json** → [TRACE_INGESTION_SPEC](./TRACE_INGESTION_SPEC.md)
 
 ### Build and Deployment
 - **SQLite rescue** → [BUILD_AND_DEPLOY_SPEC](./BUILD_AND_DEPLOY_SPEC.md)
