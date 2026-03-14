@@ -8,9 +8,9 @@ command:
   - "--timeout"
   - "1800"
 # Uncomment this to use PostgreSQL (Lakebase) for persistence across container restarts.
-# env:
-#   - name: DATABASE_ENV
-#     value: postgres
+env:
+  - name: DATABASE_ENV
+    value: postgres
   
 # SQLite Rescue: Backup/restore DB to Unity Catalog Volume for persistence
 # across container restarts.
