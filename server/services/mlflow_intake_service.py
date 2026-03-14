@@ -223,8 +223,8 @@ class MLflowIntakeService:
         if isinstance(request_data, dict) and 'input' in request_data:
           input_list = request_data['input']
           if isinstance(input_list, list) and input_list:
-            # Extract content from the first user message
-            for item in input_list:
+            # Extract the last user message (current turn's input, matching MLflow UI)
+            for item in reversed(input_list):
               if isinstance(item, dict) and item.get('role') == 'user' and 'content' in item:
                 content = item['content']
                 # Replace escaped newlines with actual newlines
@@ -254,8 +254,8 @@ class MLflowIntakeService:
               content = content.replace('\\n', '\n')
             return content
 
-        # If no assistant message found, return the first user message (for input)
-        for message in messages:
+        # If no assistant message found, return the last user message (current turn's input)
+        for message in reversed(messages):
           if isinstance(message, dict) and message.get('role') == 'user' and 'content' in message:
             content = message['content']
             # Replace escaped newlines with actual newlines
