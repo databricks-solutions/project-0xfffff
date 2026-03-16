@@ -59,10 +59,12 @@ class MLflowIntakeService:
             # Extract content from JSON for previews
             # Safely handle traces with missing or incomplete data
             input_content = self._extract_content_from_json(
-              getattr(trace.data, 'request', None) if hasattr(trace, 'data') else None
+              getattr(trace.data, 'request', None) if hasattr(trace, 'data') else None,
+              role_hint="input",
             )
             output_content = self._extract_content_from_json(
-              getattr(trace.data, 'response', None) if hasattr(trace, 'data') else None
+              getattr(trace.data, 'response', None) if hasattr(trace, 'data') else None,
+              role_hint="output",
             )
 
             trace_info = MLflowTraceInfo(
@@ -117,10 +119,12 @@ class MLflowIntakeService:
           # Extract content from JSON input/output
           # Safely handle traces with missing or incomplete data
           input_content = self._extract_content_from_json(
-            getattr(full_trace.data, 'request', None) if hasattr(full_trace, 'data') else None
+            getattr(full_trace.data, 'request', None) if hasattr(full_trace, 'data') else None,
+            role_hint="input",
           )
           output_content = self._extract_content_from_json(
-            getattr(full_trace.data, 'response', None) if hasattr(full_trace, 'data') else None
+            getattr(full_trace.data, 'response', None) if hasattr(full_trace, 'data') else None,
+            role_hint="output",
           )
 
           trace_upload = TraceUpload(
@@ -206,8 +210,13 @@ class MLflowIntakeService:
     text = text.replace('\\n', '\n')
     return text
 
-  def _extract_content_from_json(self, json_text: str) -> str:
-    """Extract content from JSON input/output format."""
+  def _extract_content_from_json(self, json_text: str, role_hint: str = "output") -> str:
+    """Extract content from JSON input/output format.
+
+    Args:
+      json_text: Raw JSON string from MLflow trace data.
+      role_hint: "input" to prefer user messages, "output" to prefer assistant messages.
+    """
     try:
       import json
 
@@ -245,31 +254,35 @@ class MLflowIntakeService:
         if not messages:
           return json_text
 
-        # First, try to find an assistant message (for output)
-        for message in reversed(messages):
-          if isinstance(message, dict) and message.get('role') == 'assistant' and 'content' in message:
-            content = message['content']
-            # Replace escaped newlines with actual newlines
+        if role_hint == "input":
+          # Input extraction: prefer last user message
+          for message in reversed(messages):
+            if isinstance(message, dict) and message.get('role') == 'user' and 'content' in message:
+              content = message['content']
+              if isinstance(content, str):
+                content = content.replace('\\n', '\n')
+              return content
+          # Fallback: first message with content
+          for message in messages:
+            if isinstance(message, dict) and 'content' in message:
+              content = message['content']
+              if isinstance(content, str):
+                content = content.replace('\\n', '\n')
+              return content
+        else:
+          # Output extraction: prefer last assistant message
+          for message in reversed(messages):
+            if isinstance(message, dict) and message.get('role') == 'assistant' and 'content' in message:
+              content = message['content']
+              if isinstance(content, str):
+                content = content.replace('\\n', '\n')
+              return content
+          # Fallback: last message with content
+          if messages and isinstance(messages[-1], dict) and 'content' in messages[-1]:
+            content = messages[-1]['content']
             if isinstance(content, str):
               content = content.replace('\\n', '\n')
             return content
-
-        # If no assistant message found, return the first user message (for input)
-        for message in messages:
-          if isinstance(message, dict) and message.get('role') == 'user' and 'content' in message:
-            content = message['content']
-            # Replace escaped newlines with actual newlines
-            if isinstance(content, str):
-              content = content.replace('\\n', '\n')
-            return content
-
-        # If no specific role found, return the last message content
-        if messages and isinstance(messages[-1], dict) and 'content' in messages[-1]:
-          content = messages[-1]['content']
-          # Replace escaped newlines with actual newlines
-          if isinstance(content, str):
-            content = content.replace('\\n', '\n')
-          return content
 
       # Handle output format that is a list of items
       if isinstance(data, list):
