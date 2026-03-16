@@ -11,8 +11,15 @@ from sqlalchemy.orm import Session
 
 from server.database import (
   AnnotationDB,
+  ClassifiedFindingDB,
   DatabricksTokenDB,
+  DisagreementDB,
+  DiscoveryAnalysisDB,
+  DiscoveryFeedbackDB,
   DiscoveryFindingDB,
+  DiscoveryQuestionDB,
+  DiscoverySummaryDB,
+  DraftRubricItemDB,
   FacilitatorConfigDB,
   JudgeEvaluationDB,
   JudgePromptDB,
@@ -20,6 +27,7 @@ from server.database import (
   ParticipantNoteDB,
   RubricDB,
   TraceDB,
+  TraceDiscoveryThresholdDB,
   UserDB,
   UserDiscoveryCompletionDB,
   UserTraceOrderDB,
@@ -29,8 +37,13 @@ from server.database import (
 from server.models import (
   Annotation,
   AnnotationCreate,
+  DiscoveryFeedback,
+  DiscoveryFeedbackCreate,
   DiscoveryFinding,
   DiscoveryFindingCreate,
+  DraftRubricItem,
+  DraftRubricItemCreate,
+  DraftRubricItemUpdate,
   FacilitatorConfig,
   FacilitatorConfigCreate,
   JudgeEvaluation,
@@ -77,12 +90,10 @@ def _retry_mlflow_operation(operation, max_retries: int = 3, base_delay: float =
   """
   import time
 
-  last_error = None
   for attempt in range(max_retries):
     try:
       return operation()
     except Exception as e:
-      last_error = e
       error_str = str(e).lower()
 
       # Don't retry on certain errors
@@ -108,35 +119,10 @@ def _retry_mlflow_operation(operation, max_retries: int = 3, base_delay: float =
 
 
 class DatabaseService:
-  """Service layer for database operations with caching support."""
+  """Service layer for database operations."""
 
   def __init__(self, db: Session):
     self.db = db
-    # Simple in-memory cache for frequently accessed data
-    self._cache = {}
-    self._cache_ttl = 30  # 30 seconds TTL
-
-  def _get_cache_key(self, prefix: str, *args) -> str:
-    """Generate a cache key from prefix and arguments."""
-    return f'{prefix}:{":".join(str(arg) for arg in args)}'
-
-  def _get_from_cache(self, key: str):
-    """Get value from cache if not expired."""
-    import time
-
-    if key in self._cache:
-      value, timestamp = self._cache[key]
-      if time.time() - timestamp < self._cache_ttl:
-        return value
-      else:
-        del self._cache[key]
-    return None
-
-  def _set_cache(self, key: str, value):
-    """Set value in cache with timestamp."""
-    import time
-
-    self._cache[key] = (value, time.time())
 
   # Workshop operations
   def create_workshop(self, workshop_data: WorkshopCreate) -> Workshop:
@@ -172,30 +158,24 @@ class DatabaseService:
       discovery_randomize_traces=getattr(db_workshop, 'discovery_randomize_traces', False) or False,
       annotation_randomize_traces=getattr(db_workshop, 'annotation_randomize_traces', False) or False,
       judge_name=db_workshop.judge_name or 'workshop_judge',
+      discovery_questions_model_name=getattr(db_workshop, 'discovery_questions_model_name', 'demo') or 'demo',
       input_jsonpath=getattr(db_workshop, 'input_jsonpath', None),
       output_jsonpath=getattr(db_workshop, 'output_jsonpath', None),
       auto_evaluation_job_id=getattr(db_workshop, 'auto_evaluation_job_id', None),
       auto_evaluation_prompt=getattr(db_workshop, 'auto_evaluation_prompt', None),
       auto_evaluation_model=getattr(db_workshop, 'auto_evaluation_model', None),
       show_participant_notes=getattr(db_workshop, 'show_participant_notes', False) or False,
+      span_attribute_filter=getattr(db_workshop, 'span_attribute_filter', None),
       created_at=db_workshop.created_at,
     )
 
   def get_workshop(self, workshop_id: str) -> Optional[Workshop]:
-    """Get a workshop by ID with caching."""
-    cache_key = self._get_cache_key('workshop', workshop_id)
-    cached_workshop = self._get_from_cache(cache_key)
-    if cached_workshop is not None:
-      return cached_workshop
-
+    """Get a workshop by ID."""
     db_workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
     if not db_workshop:
       return None
 
-    workshop = self._workshop_from_db(db_workshop)
-
-    self._set_cache(cache_key, workshop)
-    return workshop
+    return self._workshop_from_db(db_workshop)
 
   def list_workshops(self, facilitator_id: Optional[str] = None) -> List[Workshop]:
     """List all workshops, optionally filtered by facilitator.
@@ -274,10 +254,17 @@ class DatabaseService:
     self.db.commit()
     self.db.refresh(db_workshop)
 
-    # Clear cache for this workshop
-    cache_key = self._get_cache_key('workshop', workshop_id)
-    if cache_key in self._cache:
-      del self._cache[cache_key]
+    return self.get_workshop(workshop_id)
+
+  def update_discovery_questions_model_name(self, workshop_id: str, model_name: str) -> Optional[Workshop]:
+    """Update the discovery questions model name for a workshop."""
+    db_workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if not db_workshop:
+      return None
+
+    db_workshop.discovery_questions_model_name = model_name
+    self.db.commit()
+    self.db.refresh(db_workshop)
 
     return self.get_workshop(workshop_id)
 
@@ -308,10 +295,29 @@ class DatabaseService:
     self.db.commit()
     self.db.refresh(db_workshop)
 
-    # Clear cache for this workshop
-    cache_key = self._get_cache_key('workshop', workshop_id)
-    if cache_key in self._cache:
-      del self._cache[cache_key]
+    return self.get_workshop(workshop_id)
+
+  def update_workshop_span_attribute_filter(
+    self,
+    workshop_id: str,
+    span_attribute_filter: dict | None = None,
+  ) -> Optional[Workshop]:
+    """Update the span attribute filter for a workshop.
+
+    Args:
+      workshop_id: The workshop ID
+      span_attribute_filter: Filter config dict (or None to clear)
+
+    Returns:
+      Updated Workshop model or None if workshop not found
+    """
+    db_workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if not db_workshop:
+      return None
+
+    db_workshop.span_attribute_filter = span_attribute_filter
+    self.db.commit()
+    self.db.refresh(db_workshop)
 
     return self.get_workshop(workshop_id)
 
@@ -800,6 +806,8 @@ class DatabaseService:
           # Update existing finding
           logger.info(f"🔄 Updating existing finding: id={existing_finding.id}")
           existing_finding.insight = finding_data.insight
+          if finding_data.category is not None:
+            existing_finding.category = finding_data.category
           self.db.commit()
           self.db.refresh(existing_finding)
           db_finding = existing_finding
@@ -813,6 +821,7 @@ class DatabaseService:
             trace_id=finding_data.trace_id,
             user_id=finding_data.user_id,
             insight=finding_data.insight,
+            category=finding_data.category,
           )
           self.db.add(db_finding)
           self.db.commit()
@@ -825,9 +834,10 @@ class DatabaseService:
           trace_id=db_finding.trace_id,
           user_id=db_finding.user_id,
           insight=db_finding.insight,
+          category=db_finding.category,
           created_at=db_finding.created_at,
         )
-        
+
       except IntegrityError as e:
         # Handle race condition - another request inserted the same record
         last_error = e
@@ -849,6 +859,8 @@ class DatabaseService:
             ).first()
             if existing:
               existing.insight = finding_data.insight
+              if finding_data.category is not None:
+                existing.category = finding_data.category
               self.db.commit()
               self.db.refresh(existing)
               logger.info(f"✅ Finding updated after conflict: id={existing.id}")
@@ -858,6 +870,7 @@ class DatabaseService:
                 trace_id=existing.trace_id,
                 user_id=existing.user_id,
                 insight=existing.insight,
+                category=existing.category,
                 created_at=existing.created_at,
               )
           except Exception as final_error:
@@ -913,10 +926,213 @@ class DatabaseService:
         trace_id=db_finding.trace_id,
         user_id=db_finding.user_id,
         insight=db_finding.insight,
+        category=db_finding.category,
         created_at=db_finding.created_at,
       )
       for db_finding in db_findings
     ]
+
+  def add_classified_finding(self, workshop_id: str, finding: dict) -> dict:
+    """Add a classified finding with category to the ClassifiedFindingDB table.
+
+    Unlike the legacy add_finding (which upserts per user/trace), this method
+    allows multiple findings per user per trace, which is needed for v2 assisted
+    facilitation where participants submit multiple observations.
+
+    Args:
+        workshop_id: The workshop ID
+        finding: Dict containing trace_id, user_id, text, and category
+
+    Returns:
+        The persisted finding dict with id and created_at
+    """
+    finding_id = str(uuid.uuid4())
+    db_finding = ClassifiedFindingDB(
+      id=finding_id,
+      workshop_id=workshop_id,
+      trace_id=finding["trace_id"],
+      user_id=finding["user_id"],
+      text=finding.get("text") or finding.get("insight", ""),
+      category=finding.get("category", "themes"),
+      question_id=finding.get("question_id", "q_1"),
+      promoted=finding.get("promoted", False),
+    )
+    self.db.add(db_finding)
+    self.db.commit()
+    self.db.refresh(db_finding)
+
+    return {
+      "id": db_finding.id,
+      "trace_id": db_finding.trace_id,
+      "user_id": db_finding.user_id,
+      "text": db_finding.text,
+      "category": db_finding.category,
+      "question_id": db_finding.question_id,
+      "promoted": db_finding.promoted,
+      "created_at": db_finding.created_at.isoformat() if db_finding.created_at else None,
+    }
+
+  def get_classified_findings_by_trace(self, workshop_id: str, trace_id: str) -> List[Dict[str, Any]]:
+    """Get all classified findings for a specific trace from ClassifiedFindingDB.
+
+    Args:
+        workshop_id: The workshop ID
+        trace_id: The trace ID to filter by
+
+    Returns:
+        List of finding dicts with id, trace_id, user_id, text, category, created_at
+    """
+    db_findings = (
+      self.db.query(ClassifiedFindingDB)
+      .filter(
+        ClassifiedFindingDB.workshop_id == workshop_id,
+        ClassifiedFindingDB.trace_id == trace_id,
+      )
+      .all()
+    )
+    return [
+      {
+        "id": f.id,
+        "trace_id": f.trace_id,
+        "user_id": f.user_id,
+        "text": f.text,
+        "category": f.category,
+        "question_id": f.question_id,
+        "promoted": f.promoted,
+        "created_at": f.created_at.isoformat() if f.created_at else None,
+      }
+      for f in db_findings
+    ]
+
+  def get_disagreements_by_trace(self, workshop_id: str, trace_id: str) -> List[Dict[str, Any]]:
+    """Get all disagreements for a specific trace.
+
+    Args:
+        workshop_id: The workshop ID
+        trace_id: The trace ID to filter by
+
+    Returns:
+        List of disagreement dicts with id, trace_id, user_ids, finding_ids, summary, created_at
+    """
+    db_disagreements = (
+      self.db.query(DisagreementDB)
+      .filter(
+        DisagreementDB.workshop_id == workshop_id,
+        DisagreementDB.trace_id == trace_id,
+      )
+      .all()
+    )
+    return [
+      {
+        "id": d.id,
+        "trace_id": d.trace_id,
+        "user_ids": d.user_ids,
+        "finding_ids": d.finding_ids,
+        "summary": d.summary,
+        "created_at": d.created_at.isoformat() if d.created_at else None,
+      }
+      for d in db_disagreements
+    ]
+
+  def save_disagreement(self, workshop_id: str, trace_id: str, user_ids: List[str], finding_ids: List[str], summary: str) -> Dict[str, Any]:
+    """Save a detected disagreement.
+
+    Args:
+        workshop_id: The workshop ID
+        trace_id: The trace ID
+        user_ids: List of user IDs involved in the disagreement
+        finding_ids: List of finding IDs that conflict
+        summary: LLM-generated summary of the conflict
+
+    Returns:
+        The saved disagreement as a dict
+    """
+    disagreement = DisagreementDB(
+      id=str(uuid.uuid4()),
+      workshop_id=workshop_id,
+      trace_id=trace_id,
+      user_ids=user_ids,
+      finding_ids=finding_ids,
+      summary=summary,
+    )
+    self.db.add(disagreement)
+    self.db.commit()
+    self.db.refresh(disagreement)
+    return {
+      "id": disagreement.id,
+      "trace_id": disagreement.trace_id,
+      "user_ids": disagreement.user_ids,
+      "finding_ids": disagreement.finding_ids,
+      "summary": disagreement.summary,
+      "created_at": disagreement.created_at.isoformat() if disagreement.created_at else None,
+    }
+
+  def save_thresholds(self, workshop_id: str, trace_id: str, thresholds: Dict[str, int]) -> Dict[str, Any]:
+    """Save or update per-trace thresholds.
+
+    Args:
+        workshop_id: The workshop ID
+        trace_id: The trace ID
+        thresholds: Dict mapping category names to threshold counts
+
+    Returns:
+        The saved threshold record as a dict
+    """
+    existing = (
+      self.db.query(TraceDiscoveryThresholdDB)
+      .filter(
+        TraceDiscoveryThresholdDB.workshop_id == workshop_id,
+        TraceDiscoveryThresholdDB.trace_id == trace_id,
+      )
+      .first()
+    )
+
+    if existing:
+      existing.thresholds = thresholds
+      self.db.commit()
+      self.db.refresh(existing)
+      return {
+        "id": existing.id,
+        "workshop_id": existing.workshop_id,
+        "trace_id": existing.trace_id,
+        "thresholds": existing.thresholds,
+      }
+
+    threshold_record = TraceDiscoveryThresholdDB(
+      id=str(uuid.uuid4()),
+      workshop_id=workshop_id,
+      trace_id=trace_id,
+      thresholds=thresholds,
+    )
+    self.db.add(threshold_record)
+    self.db.commit()
+    self.db.refresh(threshold_record)
+    return {
+      "id": threshold_record.id,
+      "workshop_id": threshold_record.workshop_id,
+      "trace_id": threshold_record.trace_id,
+      "thresholds": threshold_record.thresholds,
+    }
+
+  def get_thresholds(self, workshop_id: str, trace_id: str) -> Optional[Dict[str, int]]:
+    """Get per-trace thresholds.
+
+    Args:
+        workshop_id: The workshop ID
+        trace_id: The trace ID
+
+    Returns:
+        Dict of thresholds or None if not set
+    """
+    record = (
+      self.db.query(TraceDiscoveryThresholdDB)
+      .filter(
+        TraceDiscoveryThresholdDB.workshop_id == workshop_id,
+        TraceDiscoveryThresholdDB.trace_id == trace_id,
+      )
+      .first()
+    )
+    return record.thresholds if record else None
 
   def get_findings_with_user_details(self, workshop_id: str, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """Get discovery findings with user details for facilitator view."""
@@ -1067,10 +1283,6 @@ class DatabaseService:
         workshop_db.judge_name = derived_judge_name
         self.db.commit()
         logger.info("Auto-derived judge_name '%s' from rubric title '%s'", derived_judge_name, title)
-        # Clear workshop cache
-        cache_key = self._get_cache_key('workshop', workshop_id)
-        if cache_key in self._cache:
-          del self._cache[cache_key]
 
     return Rubric(
       id=db_rubric.id,
@@ -1557,7 +1769,7 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
             # However, if we received ratings but got empty dict, log a warning
             if len(validated_ratings) == 0 and len(annotation_data.ratings) > 0:
               logger.warning(f"⚠️ All ratings failed validation! Received: {annotation_data.ratings}, but validated_ratings is empty")
-              logger.warning(f"⚠️ Not updating ratings to avoid clearing existing data")
+              logger.warning("⚠️ Not updating ratings to avoid clearing existing data")
             else:
               existing_annotation.ratings = validated_ratings
               logger.info(f"  → Updated ratings: {existing_annotation.ratings}")
@@ -1723,10 +1935,10 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
     if judge_type == 'binary':
       # Binary: only 0 or 1 are valid
       if rating_int == 0:
-        logger.debug(f"  → Binary rating 0 (Fail) - returning 0")
+        logger.debug("  → Binary rating 0 (Fail) - returning 0")
         return 0
       elif rating_int == 1:
-        logger.debug(f"  → Binary rating 1 (Pass) - returning 1")
+        logger.debug("  → Binary rating 1 (Pass) - returning 1")
         return 1
       else:
         # Normalize: any non-zero becomes 1, but log a warning
@@ -2770,19 +2982,6 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
     self.db.commit()
     return True
 
-    # TODO: this was ostensibly here for a reason, but I don't know what it is.
-    # if not db_participant:
-    #   raise ValueError(
-    #     f'Participant {participant.user_id} not found in workshop {participant.workshop_id}'
-    #   )
-
-    # db_participant.assigned_traces = participant.assigned_traces
-    # db_participant.annotation_quota = participant.annotation_quota
-
-    # self.db.commit()
-    # self.db.refresh(db_participant)
-    # return participant
-
   def update_user_role_in_workshop(self, workshop_id: str, user_id: str, new_role: str) -> Optional[User]:
     """Update a user's role in a workshop (SME <-> Participant)."""
     from server.models import UserRole
@@ -2886,6 +3085,237 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
   def get_traces_by_workshop(self, workshop_id: str) -> List[Trace]:
     """Get all traces for a workshop (alias for get_traces)."""
     return self.get_traces(workshop_id)
+
+  # -----------------------------------------------------------------
+  # Discovery Feedback (v2 structured feedback)
+  # -----------------------------------------------------------------
+
+  def add_discovery_feedback(self, workshop_id: str, data: DiscoveryFeedbackCreate) -> DiscoveryFeedback:
+    """Upsert discovery feedback by (workshop_id, trace_id, user_id).
+
+    If a record already exists for this (workshop, trace, user) combo,
+    update it. Otherwise create a new one. This ensures DI-1.
+    """
+    existing = (
+      self.db.query(DiscoveryFeedbackDB)
+      .filter(
+        and_(
+          DiscoveryFeedbackDB.workshop_id == workshop_id,
+          DiscoveryFeedbackDB.trace_id == data.trace_id,
+          DiscoveryFeedbackDB.user_id == data.user_id,
+        )
+      )
+      .first()
+    )
+
+    if existing:
+      existing.feedback_label = data.feedback_label.value
+      existing.comment = data.comment
+      existing.updated_at = datetime.utcnow()
+      self.db.commit()
+      self.db.refresh(existing)
+      row = existing
+    else:
+      row = DiscoveryFeedbackDB(
+        id=str(uuid.uuid4()),
+        workshop_id=workshop_id,
+        trace_id=data.trace_id,
+        user_id=data.user_id,
+        feedback_label=data.feedback_label.value,
+        comment=data.comment,
+        followup_qna=[],
+      )
+      self.db.add(row)
+      self.db.commit()
+      self.db.refresh(row)
+
+    return DiscoveryFeedback(
+      id=row.id,
+      workshop_id=row.workshop_id,
+      trace_id=row.trace_id,
+      user_id=row.user_id,
+      feedback_label=row.feedback_label,
+      comment=row.comment,
+      followup_qna=row.followup_qna or [],
+      created_at=row.created_at,
+      updated_at=row.updated_at,
+    )
+
+  def append_followup_qna(
+    self,
+    workshop_id: str,
+    trace_id: str,
+    user_id: str,
+    qna: Dict[str, str],
+  ) -> DiscoveryFeedback:
+    """Append a Q&A pair to an existing feedback record (DI-2)."""
+    row = (
+      self.db.query(DiscoveryFeedbackDB)
+      .filter(
+        and_(
+          DiscoveryFeedbackDB.workshop_id == workshop_id,
+          DiscoveryFeedbackDB.trace_id == trace_id,
+          DiscoveryFeedbackDB.user_id == user_id,
+        )
+      )
+      .first()
+    )
+    if not row:
+      raise ValueError(f"No feedback found for workshop={workshop_id}, trace={trace_id}, user={user_id}")
+
+    current_qna = list(row.followup_qna or [])
+    current_qna.append(qna)
+    row.followup_qna = current_qna
+    row.updated_at = datetime.utcnow()
+    self.db.commit()
+    self.db.refresh(row)
+
+    return DiscoveryFeedback(
+      id=row.id,
+      workshop_id=row.workshop_id,
+      trace_id=row.trace_id,
+      user_id=row.user_id,
+      feedback_label=row.feedback_label,
+      comment=row.comment,
+      followup_qna=row.followup_qna or [],
+      created_at=row.created_at,
+      updated_at=row.updated_at,
+    )
+
+  def get_discovery_feedback(
+    self,
+    workshop_id: str,
+    user_id: Optional[str] = None,
+    trace_id: Optional[str] = None,
+  ) -> List[DiscoveryFeedback]:
+    """Query discovery feedback with optional user_id and trace_id filters."""
+    query = self.db.query(DiscoveryFeedbackDB).filter(
+      DiscoveryFeedbackDB.workshop_id == workshop_id
+    )
+    if user_id:
+      query = query.filter(DiscoveryFeedbackDB.user_id == user_id)
+    if trace_id:
+      query = query.filter(DiscoveryFeedbackDB.trace_id == trace_id)
+
+    rows = query.order_by(DiscoveryFeedbackDB.created_at).all()
+    return [
+      DiscoveryFeedback(
+        id=r.id,
+        workshop_id=r.workshop_id,
+        trace_id=r.trace_id,
+        user_id=r.user_id,
+        feedback_label=r.feedback_label,
+        comment=r.comment,
+        followup_qna=r.followup_qna or [],
+        created_at=r.created_at,
+        updated_at=r.updated_at,
+      )
+      for r in rows
+    ]
+
+  def get_discovery_feedback_with_user_details(
+    self, workshop_id: str, user_id: Optional[str] = None
+  ) -> List[Dict[str, Any]]:
+    """Get discovery feedback joined with user name/role for facilitator view."""
+    query = (
+      self.db.query(DiscoveryFeedbackDB, UserDB)
+      .join(UserDB, DiscoveryFeedbackDB.user_id == UserDB.id)
+      .filter(DiscoveryFeedbackDB.workshop_id == workshop_id)
+    )
+    if user_id:
+      query = query.filter(DiscoveryFeedbackDB.user_id == user_id)
+
+    rows = query.order_by(DiscoveryFeedbackDB.created_at).all()
+
+    # Look up roles from participants table
+    participant_roles: Dict[str, str] = {}
+    participants = (
+      self.db.query(WorkshopParticipantDB)
+      .filter(WorkshopParticipantDB.workshop_id == workshop_id)
+      .all()
+    )
+    for p in participants:
+      participant_roles[p.user_id] = p.role
+
+    return [
+      {
+        "id": fb.id,
+        "workshop_id": fb.workshop_id,
+        "trace_id": fb.trace_id,
+        "user_id": fb.user_id,
+        "user_name": usr.name,
+        "user_email": usr.email,
+        "user_role": participant_roles.get(fb.user_id, "participant"),
+        "feedback_label": fb.feedback_label,
+        "comment": fb.comment,
+        "followup_qna": fb.followup_qna or [],
+        "created_at": fb.created_at.isoformat() if fb.created_at else None,
+        "updated_at": fb.updated_at.isoformat() if fb.updated_at else None,
+      }
+      for fb, usr in rows
+    ]
+
+  def get_discovery_feedback_completion_status(self, workshop_id: str) -> Dict[str, Any]:
+    """Get feedback-based discovery completion status.
+
+    A participant is considered "complete" for a trace when they have
+    submitted feedback AND answered all 3 follow-up questions.
+    """
+    workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if not workshop:
+      return {"total_participants": 0, "completed_participants": 0, "completion_percentage": 0, "all_completed": False}
+
+    active_trace_ids = workshop.active_discovery_trace_ids or []
+    total_traces = len(active_trace_ids)
+    if total_traces == 0:
+      return {"total_participants": 0, "completed_participants": 0, "completion_percentage": 0, "all_completed": False}
+
+    # Get all non-facilitator participants
+    participants = (
+      self.db.query(WorkshopParticipantDB)
+      .filter(
+        and_(
+          WorkshopParticipantDB.workshop_id == workshop_id,
+          WorkshopParticipantDB.role.in_(["sme", "participant"]),
+        )
+      )
+      .all()
+    )
+    total_participants = len(participants)
+    if total_participants == 0:
+      return {"total_participants": 0, "completed_participants": 0, "completion_percentage": 0, "all_completed": False}
+
+    # Get all feedback for this workshop
+    all_feedback = (
+      self.db.query(DiscoveryFeedbackDB)
+      .filter(DiscoveryFeedbackDB.workshop_id == workshop_id)
+      .all()
+    )
+
+    completed_participants = 0
+    participant_status = {}
+    for p in participants:
+      user_feedback = [f for f in all_feedback if f.user_id == p.user_id and f.trace_id in active_trace_ids]
+      completed_traces = sum(
+        1 for f in user_feedback if len(f.followup_qna or []) >= 3
+      )
+      is_complete = completed_traces >= total_traces
+      if is_complete:
+        completed_participants += 1
+      participant_status[p.user_id] = {
+        "user_id": p.user_id,
+        "completed_traces": completed_traces,
+        "total_traces": total_traces,
+        "completed": is_complete,
+      }
+
+    return {
+      "total_participants": total_participants,
+      "completed_participants": completed_participants,
+      "completion_percentage": (completed_participants / total_participants * 100) if total_participants > 0 else 0,
+      "all_completed": completed_participants == total_participants and total_participants > 0,
+      "participant_status": participant_status,
+    }
 
   # Testing/debugging operations
   def clear_findings(self, workshop_id: str) -> None:
@@ -3601,7 +4031,7 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
     # Keep completed phases up to discovery (annotation not yet complete)
     completed = workshop.completed_phases or []
     workshop.completed_phases = [p for p in completed if p in ['intake', 'discovery']]
-    
+
     # Clear active annotation trace list so new selection can be made
     workshop.active_annotation_trace_ids = None
 
@@ -3724,3 +4154,372 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       self.db.refresh(config)
 
     return config
+
+  # Discovery Question operations (per-user question storage)
+  def get_discovery_questions(
+    self, workshop_id: str, trace_id: str, user_id: str
+  ) -> List[Dict[str, Any]]:
+    """Retrieve all generated questions for a specific user on a specific trace.
+
+    Returns questions ordered by creation time. The fixed Q1 question is not stored
+    in the database; only generated questions (Q2+) are returned.
+
+    Args:
+      workshop_id: The workshop ID
+      trace_id: The trace ID
+      user_id: The user ID
+
+    Returns:
+      List of question dictionaries with id, prompt, placeholder, and category fields.
+    """
+    db_questions = (
+      self.db.query(DiscoveryQuestionDB)
+      .filter(
+        and_(
+          DiscoveryQuestionDB.workshop_id == workshop_id,
+          DiscoveryQuestionDB.trace_id == trace_id,
+          DiscoveryQuestionDB.user_id == user_id,
+        )
+      )
+      .order_by(DiscoveryQuestionDB.created_at)
+      .all()
+    )
+
+    return [
+      {
+        'id': q.question_id,
+        'prompt': q.prompt,
+        'placeholder': q.placeholder,
+        'category': q.category,
+      }
+      for q in db_questions
+    ]
+
+  def add_discovery_question(
+    self,
+    workshop_id: str,
+    trace_id: str,
+    user_id: str,
+    prompt: str,
+    placeholder: Optional[str] = None,
+    category: Optional[str] = None,
+  ) -> Dict[str, Any]:
+    """Create a new question for a user on a trace with auto-generated question_id.
+
+    Question IDs start at q_2 (since q_1 is the fixed baseline question) and
+    increment for each new question for this user/trace combination.
+
+    Args:
+      workshop_id: The workshop ID
+      trace_id: The trace ID
+      user_id: The user ID
+      prompt: The question prompt text
+      placeholder: Optional placeholder text for the input field
+      category: Optional category this question targets (themes, edge_cases, etc.)
+
+    Returns:
+      Dictionary with the created question's id, prompt, placeholder, and category.
+    """
+    # Get existing questions for this user/trace to determine next question_id
+    existing_questions = (
+      self.db.query(DiscoveryQuestionDB)
+      .filter(
+        and_(
+          DiscoveryQuestionDB.workshop_id == workshop_id,
+          DiscoveryQuestionDB.trace_id == trace_id,
+          DiscoveryQuestionDB.user_id == user_id,
+        )
+      )
+      .all()
+    )
+
+    # Calculate next question number (start at 2 since q_1 is the fixed baseline)
+    if existing_questions:
+      # Extract numbers from existing question_ids (e.g., "q_2" -> 2)
+      existing_numbers = []
+      for q in existing_questions:
+        try:
+          num = int(q.question_id.split('_')[1])
+          existing_numbers.append(num)
+        except (IndexError, ValueError):
+          continue
+      next_number = max(existing_numbers, default=1) + 1
+    else:
+      next_number = 2  # First generated question is q_2
+
+    question_id = f'q_{next_number}'
+
+    # Create new question record
+    db_question = DiscoveryQuestionDB(
+      workshop_id=workshop_id,
+      trace_id=trace_id,
+      user_id=user_id,
+      question_id=question_id,
+      prompt=prompt,
+      placeholder=placeholder,
+      category=category,
+    )
+
+    self.db.add(db_question)
+    self.db.commit()
+    self.db.refresh(db_question)
+
+    return {
+      'id': db_question.question_id,
+      'prompt': db_question.prompt,
+      'placeholder': db_question.placeholder,
+      'category': db_question.category,
+    }
+
+  # Discovery Summary operations
+  def get_latest_discovery_summary(self, workshop_id: str) -> Optional[Dict[str, Any]]:
+    """Get the most recent discovery summary for a workshop.
+
+    Args:
+        workshop_id: The workshop ID
+
+    Returns:
+        Dict with 'payload' key containing the summary data, or None if not found
+    """
+    summary = (
+      self.db.query(DiscoverySummaryDB)
+      .filter(DiscoverySummaryDB.workshop_id == workshop_id)
+      .order_by(DiscoverySummaryDB.created_at.desc())
+      .first()
+    )
+
+    if not summary:
+      return None
+
+    return {
+      'id': summary.id,
+      'workshop_id': summary.workshop_id,
+      'model_name': summary.model_name,
+      'payload': summary.payload,
+      'created_at': summary.created_at,
+      'updated_at': summary.updated_at,
+    }
+
+  def save_discovery_summary(self, workshop_id: str, payload: Dict[str, Any], model_name: Optional[str] = None) -> Dict[str, Any]:
+    """Save a discovery summary for a workshop.
+
+    Args:
+        workshop_id: The workshop ID
+        payload: The summary payload (overall, by_user, by_trace)
+        model_name: Optional model name used for classification
+
+    Returns:
+        Dict with the saved summary data
+    """
+    summary = DiscoverySummaryDB(
+      workshop_id=workshop_id,
+      model_name=model_name,
+      payload=payload,
+    )
+
+    self.db.add(summary)
+    self.db.commit()
+    self.db.refresh(summary)
+
+    return {
+      'id': summary.id,
+      'workshop_id': summary.workshop_id,
+      'model_name': summary.model_name,
+      'payload': summary.payload,
+      'created_at': summary.created_at,
+      'updated_at': summary.updated_at,
+    }
+
+  # -----------------------------------------------------------------
+  # Draft Rubric Items (Step 3 — Structured Feedback & Promotion)
+  # -----------------------------------------------------------------
+
+  def add_draft_rubric_item(
+      self, workshop_id: str, data: DraftRubricItemCreate, promoted_by: str
+  ) -> DraftRubricItem:
+      """Create a new draft rubric item."""
+      row = DraftRubricItemDB(
+          id=str(uuid.uuid4()),
+          workshop_id=workshop_id,
+          text=data.text,
+          source_type=data.source_type,
+          source_analysis_id=data.source_analysis_id,
+          source_trace_ids=data.source_trace_ids or [],
+          promoted_by=promoted_by,
+      )
+      self.db.add(row)
+      self.db.commit()
+      self.db.refresh(row)
+      return DraftRubricItem(
+          id=row.id,
+          workshop_id=row.workshop_id,
+          text=row.text,
+          source_type=row.source_type,
+          source_analysis_id=row.source_analysis_id,
+          source_trace_ids=row.source_trace_ids or [],
+          group_id=row.group_id,
+          group_name=row.group_name,
+          promoted_by=row.promoted_by,
+          promoted_at=row.promoted_at,
+      )
+
+  def get_draft_rubric_items(self, workshop_id: str) -> list[DraftRubricItem]:
+      """Get all draft rubric items for a workshop."""
+      rows = (
+          self.db.query(DraftRubricItemDB)
+          .filter(DraftRubricItemDB.workshop_id == workshop_id)
+          .order_by(DraftRubricItemDB.promoted_at)
+          .all()
+      )
+      return [
+          DraftRubricItem(
+              id=r.id,
+              workshop_id=r.workshop_id,
+              text=r.text,
+              source_type=r.source_type,
+              source_analysis_id=r.source_analysis_id,
+              source_trace_ids=r.source_trace_ids or [],
+              group_id=r.group_id,
+              group_name=r.group_name,
+              promoted_by=r.promoted_by,
+              promoted_at=r.promoted_at,
+          )
+          for r in rows
+      ]
+
+  def update_draft_rubric_item(
+      self, item_id: str, updates: DraftRubricItemUpdate
+  ) -> DraftRubricItem | None:
+      """Update a draft rubric item (text, group_id, group_name)."""
+      row = self.db.query(DraftRubricItemDB).filter(DraftRubricItemDB.id == item_id).first()
+      if not row:
+          return None
+      if updates.text is not None:
+          row.text = updates.text
+      if updates.group_id is not None:
+          row.group_id = updates.group_id
+      if updates.group_name is not None:
+          row.group_name = updates.group_name
+      self.db.commit()
+      self.db.refresh(row)
+      return DraftRubricItem(
+          id=row.id,
+          workshop_id=row.workshop_id,
+          text=row.text,
+          source_type=row.source_type,
+          source_analysis_id=row.source_analysis_id,
+          source_trace_ids=row.source_trace_ids or [],
+          group_id=row.group_id,
+          group_name=row.group_name,
+          promoted_by=row.promoted_by,
+          promoted_at=row.promoted_at,
+      )
+
+  def delete_draft_rubric_item(self, item_id: str) -> bool:
+      """Delete a draft rubric item. Returns True if deleted."""
+      row = self.db.query(DraftRubricItemDB).filter(DraftRubricItemDB.id == item_id).first()
+      if not row:
+          return False
+      self.db.delete(row)
+      self.db.commit()
+      return True
+
+  def apply_draft_rubric_groups(
+      self, workshop_id: str, groups: list[dict[str, Any]]
+  ) -> None:
+      """Persist group assignments to draft rubric items.
+
+      Each entry in *groups* has ``name`` (str) and ``item_ids`` (list[str]).
+      Items not in any group have their group cleared.
+      """
+      # First clear all groups for this workshop
+      rows = (
+          self.db.query(DraftRubricItemDB)
+          .filter(DraftRubricItemDB.workshop_id == workshop_id)
+          .all()
+      )
+      for r in rows:
+          r.group_id = None
+          r.group_name = None
+
+      # Apply new groups
+      for group in groups:
+          group_id = str(uuid.uuid4())
+          group_name = group.get("name", "")
+          for item_id in group.get("item_ids", []):
+              row = self.db.query(DraftRubricItemDB).filter(
+                  DraftRubricItemDB.id == item_id,
+                  DraftRubricItemDB.workshop_id == workshop_id,
+              ).first()
+              if row:
+                  row.group_id = group_id
+                  row.group_name = group_name
+
+      self.db.commit()
+
+  # =========================================================================
+  # Discovery Analysis operations (Step 2 - Findings Synthesis)
+  # =========================================================================
+
+  def save_discovery_analysis(
+    self,
+    workshop_id: str,
+    template_used: str,
+    analysis_data: str,
+    findings: list,
+    disagreements: dict,
+    participant_count: int,
+    model_used: str,
+  ) -> DiscoveryAnalysisDB:
+    """Save a new discovery analysis record.
+
+    Each analysis run creates a new record (history preserved).
+
+    Returns:
+        The created DiscoveryAnalysisDB record
+    """
+    analysis = DiscoveryAnalysisDB(
+      id=str(uuid.uuid4()),
+      workshop_id=workshop_id,
+      template_used=template_used,
+      analysis_data=analysis_data,
+      findings=findings,
+      disagreements=disagreements,
+      participant_count=participant_count,
+      model_used=model_used,
+    )
+    self.db.add(analysis)
+    self.db.commit()
+    self.db.refresh(analysis)
+    return analysis
+
+  def get_discovery_analyses(
+    self,
+    workshop_id: str,
+    template: Optional[str] = None,
+  ) -> List[DiscoveryAnalysisDB]:
+    """List analyses for a workshop, newest first.
+
+    Args:
+        workshop_id: Workshop ID
+        template: Optional filter by template_used
+
+    Returns:
+        List of DiscoveryAnalysisDB records ordered by created_at desc
+    """
+    query = self.db.query(DiscoveryAnalysisDB).filter(
+      DiscoveryAnalysisDB.workshop_id == workshop_id
+    )
+    if template:
+      query = query.filter(DiscoveryAnalysisDB.template_used == template)
+    return query.order_by(DiscoveryAnalysisDB.created_at.desc()).all()
+
+  def get_discovery_analysis(self, analysis_id: str) -> Optional[DiscoveryAnalysisDB]:
+    """Get a single discovery analysis by ID.
+
+    Returns:
+        DiscoveryAnalysisDB or None
+    """
+    return self.db.query(DiscoveryAnalysisDB).filter(
+      DiscoveryAnalysisDB.id == analysis_id
+    ).first()

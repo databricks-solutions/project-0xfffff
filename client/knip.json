@@ -1,6 +1,32 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "tags": [
-    "-lintignore"
+  "tags": ["-lintignore"],
+  "ignore": [
+    "build/**",
+    "*.timestamp-*",
+    "src/assets.d.ts",
+    "src/components/ui/sheet.tsx",
+    "src/components/ui/skeleton.tsx",
+    "src/components/AnnotationReviewPage.tsx",
+    "src/components/DiscoveryCompletePage.tsx",
+    "src/components/DraftRubricPanel.tsx",
+    "src/components/FacilitatorInvitationManager.tsx",
+    "src/components/TraceDiscoveryPanel.tsx",
+    "src/components/WorkflowProgress.tsx",
+    "src/hooks/useDatabricksApi.ts",
+    "src/pages/AnnotationReviewPage.tsx"
+  ],
+  "entry": [
+    "src/main.tsx!",
+    "src/test/render.tsx!",
+    "src/client/**/*.ts!",
+    "src/components/ui/**/*.tsx!",
+    "src/context/UserContext.tsx!",
+    "tests/**/*.ts!"
+  ],
+  "ignoreDependencies": [
+    "@typescript-eslint/eslint-plugin",
+    "@typescript-eslint/parser",
+    "concurrently"
   ]
 }

@@ -1,0 +1,52 @@
+{
+  "eval_name": "webhook-notifications",
+  "variant": "with_skill",
+  "expectations": [
+    {
+      "text": "Plan header references WEBHOOK_NOTIFICATIONS_SPEC by name and lists specific success criteria",
+      "passed": true,
+      "evidence": "Spec ref: True, Criteria listed: True"
+    },
+    {
+      "text": "Plan includes a file map table with new and modified files",
+      "passed": true,
+      "evidence": "File map table found: True"
+    },
+    {
+      "text": "Tasks follow TDD pattern: write failing test -> run to verify fail -> implement -> run to verify pass -> commit",
+      "passed": true,
+      "evidence": "Failing test: True, Verify fail: True, Implement: True, Verify pass: True, Commit: True"
+    },
+    {
+      "text": "Test code blocks include @pytest.mark.spec or @spec and @pytest.mark.req or @req tags",
+      "passed": true,
+      "evidence": "@spec tag: True, @req tag: True"
+    },
+    {
+      "text": "Steps reference exact file paths (not vague descriptions)",
+      "passed": true,
+      "evidence": "Found 34 file paths: ['server/routers/workshops.py', 'server/services/webhook_service.py', 'tests/unit/services/test_webhook_service.py', 'tests/unit/routers/test_workshops_webhook.py', 'server/database.py']"
+    },
+    {
+      "text": "Steps include exact verification commands using 'just test-' or 'just spec-coverage'",
+      "passed": true,
+      "evidence": "'just test-*': True, 'just spec-coverage': True"
+    },
+    {
+      "text": "Final task verifies spec coverage with just spec-coverage and just spec-validate",
+      "passed": true,
+      "evidence": "Coverage in final third: True, Validate in final third: True"
+    },
+    {
+      "text": "Plan includes an Implementation Log entry for the spec",
+      "passed": true,
+      "evidence": "Implementation Log mentioned: True"
+    },
+    {
+      "text": "Tasks are ordered correctly for this feature type",
+      "passed": false,
+      "evidence": "Checked keyword ordering patterns"
+    }
+  ],
+  "pass_rate": 0.8888888888888888
+}

@@ -1,0 +1,16 @@
+{
+  "eval_id": 0,
+  "eval_name": "csv-export",
+  "prompt": "Plan the implementation for adding a CSV export button for annotations. The ANNOTATION_SPEC governs this domain. The brainstorm decided on client-side CSV generation with rubric-aware column headers, a new buildAnnotationCSV utility, and a useExportAnnotationsCSV hook. Facilitator-only access.",
+  "assertions": [
+    "Plan header references ANNOTATION_SPEC by name and lists specific success criteria",
+    "Plan includes a file map table with new and modified files",
+    "Tasks follow TDD pattern: write failing test -> run to verify fail -> implement -> run to verify pass -> commit",
+    "Test code blocks include @pytest.mark.spec or @spec and @pytest.mark.req or @req tags",
+    "Steps reference exact file paths (not vague descriptions like 'the test file')",
+    "Steps include exact verification commands using 'just test-' or 'just spec-coverage'",
+    "Final task verifies spec coverage with just spec-coverage and just spec-validate",
+    "Plan includes an Implementation Log entry for the spec",
+    "Tasks are ordered correctly: utilities before hooks before UI components before wiring"
+  ]
+}

@@ -328,25 +328,35 @@ jsonpath-plus  # Full-featured, ~15KB gzipped
 
 ## Success Criteria
 
-### Functional
+### Functional — JSONPath
 
-1. [ ] Facilitator can configure input/output JSONPath in settings panel
-2. [ ] JSONPath fields are optional and clearly labeled as such
-3. [ ] Preview shows extraction results against first workshop trace
-4. [ ] TraceViewer applies JSONPath when configured
-5. [ ] Multiple JSONPath matches are concatenated with newlines
-6. [ ] System falls back to raw display when:
-   - JSONPath is not configured
-   - JSON parsing fails
-   - JSONPath query fails
-   - JSONPath returns null/empty
-7. [ ] Settings are persisted per workshop
+- [ ] Facilitator can configure input/output JSONPath in settings panel
+- [ ] JSONPath fields are optional and clearly labeled as such
+- [ ] Preview shows extraction results against first workshop trace
+- [ ] TraceViewer applies JSONPath when configured
+- [ ] Multiple JSONPath matches are concatenated with newlines
+- [ ] System falls back to raw display when JSONPath is not configured, JSON parsing fails, JSONPath query fails, or JSONPath returns null/empty
+- [ ] Settings are persisted per workshop
+
+### Functional — Span Attribute Filter
+
+- [ ] Facilitator can configure span attribute filter with span name, span type, attribute key, and attribute value
+- [ ] Filter criteria are AND-combined and first matching span wins
+- [ ] Attribute value input is disabled until attribute key has a value
+- [ ] Span filter preview shows match status and filtered inputs/outputs against first trace
+- [ ] Span filter is applied before JSONPath extraction in TraceViewer
+- [ ] Empty filter config results in no filtering and root trace data is used
+- [ ] String span inputs and outputs are returned as-is without double-serialization
+
+### Functional — Consistency
+
+- [ ] All backend services that consume trace input/output apply the same span filter and JSONPath pipeline as the TraceViewer
 
 ### Non-Functional
 
-1. [ ] JSONPath evaluation does not noticeably slow down trace display
-2. [ ] Preview responds within 500ms
-3. [ ] Invalid JSONPath syntax shows helpful error message in preview
+- [ ] JSONPath evaluation does not noticeably slow down trace display
+- [ ] Preview responds within 500ms
+- [ ] Invalid JSONPath syntax shows helpful error message in preview
 
 ---
 

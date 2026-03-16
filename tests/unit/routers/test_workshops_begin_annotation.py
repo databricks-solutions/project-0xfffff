@@ -12,6 +12,7 @@ from server.models import Rubric, Trace, Workshop, WorkshopPhase, WorkshopStatus
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Auto-evaluation runs in background when annotation phase starts")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_begin_annotation_with_auto_eval_enabled(async_client, override_get_db, monkeypatch):
@@ -149,6 +150,7 @@ async def test_begin_annotation_with_auto_eval_enabled(async_client, override_ge
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Auto-evaluation runs in background when annotation phase starts")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_begin_annotation_with_auto_eval_disabled(async_client, override_get_db, monkeypatch):

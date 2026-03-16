@@ -410,6 +410,34 @@ export class UsersService {
         });
     }
     /**
+     * Update User Role In Workshop
+     * Update a user's role in a workshop (SME <-> Participant).
+     * @param workshopId
+     * @param userId
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static updateUserRoleInWorkshopUsersWorkshopsWorkshopIdUsersUserIdRolePut(
+        workshopId: string,
+        userId: string,
+        requestBody: Record<string, any>,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/users/workshops/{workshop_id}/users/{user_id}/role',
+            path: {
+                'workshop_id': workshopId,
+                'user_id': userId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * Auto Assign Annotations
      * Automatically balance annotation assignments across SMEs and participants.
      * @param workshopId

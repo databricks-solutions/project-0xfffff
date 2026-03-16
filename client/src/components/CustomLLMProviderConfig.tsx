@@ -135,8 +135,9 @@ export function CustomLLMProviderConfig({ workshopId, onConfigChange }: CustomLL
       } else {
         toast.error(result.message);
       }
-    } catch (error: any) {
-      const message = error?.body?.detail || 'Connection test failed';
+    } catch (error: unknown) {
+      const apiErr = typeof error === 'object' && error !== null && 'body' in error ? error as { body?: { detail?: string } } : null;
+      const message = apiErr?.body?.detail || 'Connection test failed';
       setTestResult({
         success: false,
         message,
@@ -314,7 +315,7 @@ export function CustomLLMProviderConfig({ workshopId, onConfigChange }: CustomLL
             )}
 
             {status?.is_configured && (
-              <Button variant="destructive" size="icon" onClick={handleDelete} disabled={isDeleting}>
+              <Button variant="destructive" size="icon" aria-label="Delete configuration" onClick={handleDelete} disabled={isDeleting}>
                 {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
               </Button>
             )}

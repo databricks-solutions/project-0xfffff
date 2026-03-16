@@ -1,0 +1,52 @@
+{
+  "eval_name": "csv-export",
+  "variant": "without_skill",
+  "expectations": [
+    {
+      "text": "Plan header references ANNOTATION_SPEC by name and lists specific success criteria",
+      "passed": false,
+      "evidence": "Spec ref: True, Criteria listed: False"
+    },
+    {
+      "text": "Plan includes a file map table with new and modified files",
+      "passed": false,
+      "evidence": "File map table found: False"
+    },
+    {
+      "text": "Tasks follow TDD pattern: write failing test -> run to verify fail -> implement -> run to verify pass -> commit",
+      "passed": false,
+      "evidence": "Failing test: False, Verify fail: False, Implement: True, Verify pass: False, Commit: False"
+    },
+    {
+      "text": "Test code blocks include @pytest.mark.spec or @spec and @pytest.mark.req or @req tags",
+      "passed": false,
+      "evidence": "@spec tag: True, @req tag: False"
+    },
+    {
+      "text": "Steps reference exact file paths (not vague descriptions)",
+      "passed": true,
+      "evidence": "Found 10 file paths: ['client/src/utils/csvExportUtils.ts', 'client/src/hooks/useExportAnnotationsCSV.ts', 'client/src/utils/csvExportUtils.test', 'client/src/hooks/useExportAnnotationsCSV.test', 'client/src/utils/csvExportUtils.ts']"
+    },
+    {
+      "text": "Steps include exact verification commands using 'just test-' or 'just spec-coverage'",
+      "passed": false,
+      "evidence": "'just test-*': False, 'just spec-coverage': False"
+    },
+    {
+      "text": "Final task verifies spec coverage with just spec-coverage and just spec-validate",
+      "passed": false,
+      "evidence": "Coverage in final third: False, Validate in final third: False"
+    },
+    {
+      "text": "Plan includes an Implementation Log entry for the spec",
+      "passed": false,
+      "evidence": "Implementation Log mentioned: False"
+    },
+    {
+      "text": "Tasks are ordered correctly for this feature type",
+      "passed": true,
+      "evidence": "Checked keyword ordering patterns"
+    }
+  ],
+  "pass_rate": 0.2222222222222222
+}

@@ -1,0 +1,703 @@
+{
+  "generated": "2026-02-11T16:37:40.089530",
+  "summary": {
+    "total_requirements": 133,
+    "covered_requirements": 20,
+    "coverage_percent": 15
+  },
+  "pyramid": {
+    "unit": 420,
+    "integration": 0,
+    "e2e-mocked": 13,
+    "e2e-real": 37
+  },
+  "specs": {
+    "ANNOTATION_SPEC": {
+      "total_requirements": 9,
+      "covered_requirements": 2,
+      "coverage_percent": 22,
+      "by_type": {
+        "unit": 41,
+        "integration": 0,
+        "e2e-mocked": 0,
+        "e2e-real": 12
+      },
+      "requirements": [
+        {
+          "text": "Users can edit previously submitted annotations",
+          "covered": false
+        },
+        {
+          "text": "Changes automatically save on navigation (Next/Previous)",
+          "covered": true
+        },
+        {
+          "text": "Toast shows \"Annotation saved!\" for new submissions",
+          "covered": false
+        },
+        {
+          "text": "Toast shows \"Annotation updated!\" only when changes detected",
+          "covered": false
+        },
+        {
+          "text": "No toast when navigating without changes",
+          "covered": false
+        },
+        {
+          "text": "Multi-line comments preserved throughout the stack",
+          "covered": false
+        },
+        {
+          "text": "Comments display with proper line breaks",
+          "covered": false
+        },
+        {
+          "text": "Next button enabled for annotated traces (allows re-navigation)",
+          "covered": false
+        },
+        {
+          "text": "Annotation count reflects unique submissions (not re-submissions)",
+          "covered": true
+        }
+      ]
+    },
+    "AUTHENTICATION_SPEC": {
+      "total_requirements": 7,
+      "covered_requirements": 5,
+      "coverage_percent": 71,
+      "by_type": {
+        "unit": 11,
+        "integration": 0,
+        "e2e-mocked": 3,
+        "e2e-real": 0
+      },
+      "requirements": [
+        {
+          "text": "No \"permission denied\" errors on normal login",
+          "covered": true
+        },
+        {
+          "text": "No page refresh required after login",
+          "covered": true
+        },
+        {
+          "text": "Slow network: Loading indicator shown until ready",
+          "covered": true
+        },
+        {
+          "text": "Permission API failure: User can log in with defaults",
+          "covered": false
+        },
+        {
+          "text": "404 on validation: Session cleared, fresh login allowed",
+          "covered": true
+        },
+        {
+          "text": "Rapid navigation: Components wait for `isLoading = false`",
+          "covered": false
+        },
+        {
+          "text": "Error recovery: Errors cleared on new login attempt",
+          "covered": true
+        }
+      ]
+    },
+    "BUILD_AND_DEPLOY_SPEC": {
+      "total_requirements": 15,
+      "covered_requirements": 1,
+      "coverage_percent": 6,
+      "by_type": {
+        "unit": 43,
+        "integration": 0,
+        "e2e-mocked": 0,
+        "e2e-real": 0
+      },
+      "requirements": [
+        {
+          "text": "Production build completes without errors",
+          "covered": false
+        },
+        {
+          "text": "Console statements removed in production",
+          "covered": false
+        },
+        {
+          "text": "Assets minified and hashed",
+          "covered": false
+        },
+        {
+          "text": "Build directory contains all required files",
+          "covered": false
+        },
+        {
+          "text": "`just db-bootstrap` creates database if missing",
+          "covered": false
+        },
+        {
+          "text": "Migrations apply without errors",
+          "covered": false
+        },
+        {
+          "text": "Batch mode works for SQLite ALTER TABLE",
+          "covered": false
+        },
+        {
+          "text": "File lock prevents race conditions with multiple workers",
+          "covered": false
+        },
+        {
+          "text": "Full deployment completes successfully",
+          "covered": false
+        },
+        {
+          "text": "Server starts and serves frontend",
+          "covered": true
+        },
+        {
+          "text": "API endpoints respond correctly",
+          "covered": false
+        },
+        {
+          "text": "Database connection established",
+          "covered": false
+        },
+        {
+          "text": "Release workflow creates zip artifact",
+          "covered": false
+        },
+        {
+          "text": "Pre-built client included in release",
+          "covered": false
+        },
+        {
+          "text": "No sensitive files in artifact",
+          "covered": false
+        }
+      ]
+    },
+    "CUSTOM_LLM_PROVIDER_SPEC": {
+      "total_requirements": 15,
+      "covered_requirements": 0,
+      "coverage_percent": 0,
+      "by_type": {
+        "unit": 13,
+        "integration": 0,
+        "e2e-mocked": 7,
+        "e2e-real": 0
+      },
+      "requirements": [
+        {
+          "text": "Users can configure custom LLM provider via UI",
+          "covered": false
+        },
+        {
+          "text": "Base URL, API key, and model name are captured",
+          "covered": false
+        },
+        {
+          "text": "API key is stored securely in memory (not database)",
+          "covered": false
+        },
+        {
+          "text": "Configuration persists across page refreshes (except API key which requires re-entry after 24h)",
+          "covered": false
+        },
+        {
+          "text": "\"Test Connection\" button verifies endpoint is reachable",
+          "covered": false
+        },
+        {
+          "text": "Clear error messages for common failures (auth, timeout, invalid URL)",
+          "covered": false
+        },
+        {
+          "text": "Response time is displayed on success",
+          "covered": false
+        },
+        {
+          "text": "When custom provider is enabled, judge evaluation uses the custom endpoint",
+          "covered": false
+        },
+        {
+          "text": "`proxy_url` parameter is correctly passed to MLflow",
+          "covered": false
+        },
+        {
+          "text": "Evaluation results are identical in format to Databricks FMAPI results",
+          "covered": false
+        },
+        {
+          "text": "Errors from custom provider are properly surfaced to UI",
+          "covered": false
+        },
+        {
+          "text": "Custom provider option appears in model selector when configured",
+          "covered": false
+        },
+        {
+          "text": "Clear indication of which provider is being used",
+          "covered": false
+        },
+        {
+          "text": "Easy to switch between Databricks and custom provider",
+          "covered": false
+        },
+        {
+          "text": "Configuration can be updated without losing other workshop data",
+          "covered": false
+        }
+      ]
+    },
+    "DATASETS_SPEC": {
+      "total_requirements": 9,
+      "covered_requirements": 2,
+      "coverage_percent": 22,
+      "by_type": {
+        "unit": 19,
+        "integration": 0,
+        "e2e-mocked": 0,
+        "e2e-real": 2
+      },
+      "requirements": [
+        {
+          "text": "Datasets can be created with arbitrary trace lists",
+          "covered": true
+        },
+        {
+          "text": "Union operation combines traces from multiple datasets",
+          "covered": false
+        },
+        {
+          "text": "Subtract operation removes specified traces",
+          "covered": false
+        },
+        {
+          "text": "Same user sees same order for same dataset (deterministic)",
+          "covered": false
+        },
+        {
+          "text": "Different users see different orders (per-user randomization)",
+          "covered": false
+        },
+        {
+          "text": "Adding traces preserves existing order (incremental)",
+          "covered": false
+        },
+        {
+          "text": "New round triggers fresh randomization",
+          "covered": false
+        },
+        {
+          "text": "Dataset lineage tracked (source datasets, operations)",
+          "covered": true
+        },
+        {
+          "text": "Facilitators see chronological order (no randomization)",
+          "covered": false
+        }
+      ]
+    },
+    "DESIGN_SYSTEM_SPEC": {
+      "total_requirements": 7,
+      "covered_requirements": 0,
+      "coverage_percent": 0,
+      "by_type": {
+        "unit": 40,
+        "integration": 0,
+        "e2e-mocked": 0,
+        "e2e-real": 0
+      },
+      "requirements": [
+        {
+          "text": "Primary purple consistent across all components",
+          "covered": false
+        },
+        {
+          "text": "Dark mode fully functional",
+          "covered": false
+        },
+        {
+          "text": "All text meets WCAG AA contrast",
+          "covered": false
+        },
+        {
+          "text": "Focus indicators visible",
+          "covered": false
+        },
+        {
+          "text": "No hardcoded colors in components",
+          "covered": false
+        },
+        {
+          "text": "Badges use secondary color scheme",
+          "covered": false
+        },
+        {
+          "text": "Buttons use appropriate variants",
+          "covered": false
+        }
+      ]
+    },
+    "DISCOVERY_TRACE_ASSIGNMENT_SPEC": {
+      "total_requirements": 13,
+      "covered_requirements": 3,
+      "coverage_percent": 23,
+      "by_type": {
+        "unit": 14,
+        "integration": 0,
+        "e2e-mocked": 2,
+        "e2e-real": 3
+      },
+      "requirements": [
+        {
+          "text": "Participants only see traces in current active discovery dataset",
+          "covered": false
+        },
+        {
+          "text": "When new discovery round starts, old traces hidden (not deleted)",
+          "covered": false
+        },
+        {
+          "text": "Switching between discovery rounds hides/shows appropriate traces",
+          "covered": true
+        },
+        {
+          "text": "Phase/round context properly scoped in database",
+          "covered": true
+        },
+        {
+          "text": "Annotation traces randomized per (user_id, trace_set) pair",
+          "covered": true
+        },
+        {
+          "text": "Randomization persistent across page reloads for same trace set",
+          "covered": false
+        },
+        {
+          "text": "When annotation dataset changes mid-round, new traces appended",
+          "covered": false
+        },
+        {
+          "text": "When annotation round changes, full re-randomization applied",
+          "covered": false
+        },
+        {
+          "text": "Randomization context includes phase and round info",
+          "covered": false
+        },
+        {
+          "text": "Dataset operations (union, subtract) work correctly and maintain audit trail",
+          "covered": false
+        },
+        {
+          "text": "Multiple participants can see same trace with different orders",
+          "covered": false
+        },
+        {
+          "text": "Assignment metadata properly tracks all context",
+          "covered": false
+        },
+        {
+          "text": "Inter-rater reliability (IRR) can be measured (same traces, different orders)",
+          "covered": false
+        }
+      ]
+    },
+    "JUDGE_EVALUATION_SPEC": {
+      "total_requirements": 25,
+      "covered_requirements": 7,
+      "coverage_percent": 28,
+      "by_type": {
+        "unit": 76,
+        "integration": 0,
+        "e2e-mocked": 0,
+        "e2e-real": 6
+      },
+      "requirements": [
+        {
+          "text": "Likert judges return values 1-5",
+          "covered": false
+        },
+        {
+          "text": "Binary judges return values 0 or 1",
+          "covered": false
+        },
+        {
+          "text": "Fallback conversion handles Likert-style returns for binary",
+          "covered": false
+        },
+        {
+          "text": "Evaluation results persisted to database",
+          "covered": true
+        },
+        {
+          "text": "Results reload correctly in UI",
+          "covered": false
+        },
+        {
+          "text": "Auto-evaluation runs in background when annotation phase starts",
+          "covered": false
+        },
+        {
+          "text": "Judge prompt auto-derived from rubric questions",
+          "covered": false
+        },
+        {
+          "text": "Per-question judge_type parsed from rubric (`[JUDGE_TYPE:xxx]`)",
+          "covered": false
+        },
+        {
+          "text": "Binary rubrics evaluated with 0/1 scale (not 1-5)",
+          "covered": false
+        },
+        {
+          "text": "Auto-evaluation model stored for re-evaluation consistency",
+          "covered": false
+        },
+        {
+          "text": "Results appear in Judge Tuning page",
+          "covered": false
+        },
+        {
+          "text": "Re-evaluate loads registered judge with aligned instructions",
+          "covered": false
+        },
+        {
+          "text": "Uses same model as initial auto-evaluation",
+          "covered": false
+        },
+        {
+          "text": "Spinner stops when re-evaluation completes",
+          "covered": false
+        },
+        {
+          "text": "Results stored against correct prompt version",
+          "covered": false
+        },
+        {
+          "text": "Pre-align and post-align scores directly comparable",
+          "covered": false
+        },
+        {
+          "text": "Alignment jobs run asynchronously",
+          "covered": true
+        },
+        {
+          "text": "MemAlign distills semantic memory (guidelines)",
+          "covered": false
+        },
+        {
+          "text": "Aligned judge registered to MLflow",
+          "covered": false
+        },
+        {
+          "text": "Metrics reported (guideline count, example count)",
+          "covered": false
+        },
+        {
+          "text": "Works for both Likert and Binary scales",
+          "covered": true
+        },
+        {
+          "text": "Krippendorff's Alpha calculated correctly",
+          "covered": true
+        },
+        {
+          "text": "Cohen's Kappa calculated for rater pairs",
+          "covered": true
+        },
+        {
+          "text": "Handles edge cases (no variation, single rater)",
+          "covered": true
+        },
+        {
+          "text": "Updates when new annotations added",
+          "covered": true
+        }
+      ]
+    },
+    "RUBRIC_SPEC": {
+      "total_requirements": 10,
+      "covered_requirements": 0,
+      "coverage_percent": 0,
+      "by_type": {
+        "unit": 51,
+        "integration": 0,
+        "e2e-mocked": 1,
+        "e2e-real": 6
+      },
+      "requirements": [
+        {
+          "text": "Questions with multi-line descriptions parse correctly",
+          "covered": false
+        },
+        {
+          "text": "Delimiter never appears in user input (by design)",
+          "covered": false
+        },
+        {
+          "text": "Frontend and backend use same delimiter constant",
+          "covered": false
+        },
+        {
+          "text": "Likert scale shows 1-5 rating options",
+          "covered": false
+        },
+        {
+          "text": "Binary scale shows Pass/Fail buttons (not star ratings)",
+          "covered": false
+        },
+        {
+          "text": "Binary feedback logged as 0/1 to MLflow (not 3)",
+          "covered": false
+        },
+        {
+          "text": "Per-question judge_type parsed from `[JUDGE_TYPE:xxx]` format",
+          "covered": false
+        },
+        {
+          "text": "Mixed rubrics support different scales per question",
+          "covered": false
+        },
+        {
+          "text": "Parsed questions have stable UUIDs within session",
+          "covered": false
+        },
+        {
+          "text": "Empty/whitespace-only parts filtered out",
+          "covered": false
+        }
+      ]
+    },
+    "TESTING_SPEC": {
+      "total_requirements": 7,
+      "covered_requirements": 0,
+      "coverage_percent": 0,
+      "by_type": {
+        "unit": 12,
+        "integration": 0,
+        "e2e-mocked": 0,
+        "e2e-real": 0
+      },
+      "requirements": [
+        {
+          "text": "Server unit tests pass with >20% coverage",
+          "covered": false
+        },
+        {
+          "text": "Client unit tests pass with >20% coverage",
+          "covered": false
+        },
+        {
+          "text": "E2E tests pass for critical flows",
+          "covered": false
+        },
+        {
+          "text": "Tests run in CI on every PR",
+          "covered": false
+        },
+        {
+          "text": "Coverage reports generated and accessible",
+          "covered": false
+        },
+        {
+          "text": "No flaky tests (consistent pass/fail)",
+          "covered": false
+        },
+        {
+          "text": "Test isolation (no shared state between tests)",
+          "covered": false
+        }
+      ]
+    },
+    "TRACE_DISPLAY_SPEC": {
+      "total_requirements": 0,
+      "covered_requirements": 0,
+      "coverage_percent": 100,
+      "by_type": {
+        "unit": 43,
+        "integration": 0,
+        "e2e-mocked": 0,
+        "e2e-real": 6
+      },
+      "requirements": []
+    },
+    "UI_COMPONENTS_SPEC": {
+      "total_requirements": 16,
+      "covered_requirements": 0,
+      "coverage_percent": 0,
+      "by_type": {
+        "unit": 57,
+        "integration": 0,
+        "e2e-mocked": 0,
+        "e2e-real": 2
+      },
+      "requirements": [
+        {
+          "text": "Page navigation works correctly (first, prev, next, last)",
+          "covered": false
+        },
+        {
+          "text": "Items per page selector updates page size",
+          "covered": false
+        },
+        {
+          "text": "Quick jump navigates to valid pages",
+          "covered": false
+        },
+        {
+          "text": "Keyboard shortcuts work when enabled",
+          "covered": false
+        },
+        {
+          "text": "Disabled states shown for unavailable actions",
+          "covered": false
+        },
+        {
+          "text": "Page info accurately reflects data",
+          "covered": false
+        },
+        {
+          "text": "JSON arrays render as tables",
+          "covered": false
+        },
+        {
+          "text": "SQL queries formatted with line breaks",
+          "covered": false
+        },
+        {
+          "text": "CSV export includes all table data",
+          "covered": false
+        },
+        {
+          "text": "Copy to clipboard works for all content",
+          "covered": false
+        },
+        {
+          "text": "Invalid JSON shows error + fallback",
+          "covered": false
+        },
+        {
+          "text": "Responsive layout on different screens",
+          "covered": false
+        },
+        {
+          "text": "Keyboard navigation works throughout",
+          "covered": false
+        },
+        {
+          "text": "Screen reader announces state changes",
+          "covered": false
+        },
+        {
+          "text": "Focus visible and managed correctly",
+          "covered": false
+        },
+        {
+          "text": "Color contrast meets WCAG AA",
+          "covered": false
+        }
+      ]
+    }
+  }
+}

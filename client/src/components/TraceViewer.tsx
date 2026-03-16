@@ -40,6 +40,27 @@ import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useJsonPathExtraction } from '@/hooks/useJsonPathExtraction';
 
 // ============================================================================
+// LOCAL TYPE DEFINITIONS — minimal interfaces to eliminate `any`
+// ============================================================================
+
+/** A single content block inside an LLM message (OpenAI / Anthropic / Databricks). */
+interface ContentBlock {
+  type: string;
+  text?: string;
+}
+
+/** A message inside a chat-completion response (choices[].message or messages[]). */
+interface LLMMessage {
+  role: string;
+  type?: string;
+  content?: ContentBlock[] | string | Record<string, unknown> | null;
+  rationale?: string;
+  result?: number;
+  text?: string;
+  finish_reason?: string;
+}
+
+// ============================================================================
 // SMART JSON RENDERER - Handles arbitrary JSON schemas
 // ============================================================================
 
@@ -243,13 +264,13 @@ const extractJudgeResultFromMalformed = (str: string): { result?: number; ration
  * Try to parse a string as JSON
  * Also handles some common non-JSON formats like Python dict notation
  */
-const tryParseJson = (str: string): { success: boolean; data: any } => {
+const tryParseJson = (str: string): { success: boolean; data: unknown } => {
   if (!str || typeof str !== 'string') {
     return { success: false, data: null };
   }
 
   // Clean the string - remove BOM and trim
-  let cleanStr = str.replace(/^\uFEFF/, '').trim();
+  const cleanStr = str.replace(/^\uFEFF/, '').trim();
 
   // First, try direct JSON parse
   try {
@@ -309,7 +330,7 @@ const tryParseJson = (str: string): { success: boolean; data: any } => {
     try {
       // Split on patterns like "}\nkey:" or "} key:"
       const sections = trimmed.split(/\}\s*(?=[a-zA-Z_][a-zA-Z0-9_]*\s*:\s*\{)/);
-      const parsed: Record<string, any> = {};
+      const parsed: Record<string, unknown> = {};
 
       for (const section of sections) {
         const match = section.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(\{[\s\S]*)/);
@@ -440,7 +461,7 @@ const formatFieldName = (name: string): string => {
 /**
  * Check if a value looks like a broken/partial JSON fragment
  */
-const isBrokenValue = (value: any): boolean => {
+const isBrokenValue = (value: unknown): boolean => {
   if (typeof value !== 'string') return false;
   const trimmed = value.trim();
   // Check for partial JSON fragments
@@ -491,7 +512,7 @@ const CollapsibleSection: React.FC<{
  * Smart renderer for any value - recursively handles objects, arrays, strings
  */
 const SmartValueRenderer: React.FC<{
-  value: any;
+  value: unknown;
   fieldName?: string;
   depth?: number;
   defaultExpanded?: boolean;
@@ -666,9 +687,12 @@ const SmartValueRenderer: React.FC<{
  */
 const SmartObjectField: React.FC<{
   fieldKey: string;
-  value: any;
+  value: unknown;
   depth: number;
 }> = ({ fieldKey, value, depth }) => {
+  // Top-level fields (depth 0-1) start expanded so users see content immediately
+  const [expanded, setExpanded] = useState(depth <= 1);
+
   // Skip rendering broken/partial values entirely
   if (isBrokenValue(value)) {
     return null;
@@ -683,9 +707,6 @@ const SmartObjectField: React.FC<{
   const isComplexValue = typeof value === 'object' && value !== null;
   const isLongString = typeof value === 'string' && value.length > 200;
   const shouldCollapse = isComplexValue || isLongString;
-
-  // Top-level fields (depth 0-1) start expanded so users see content immediately
-  const [expanded, setExpanded] = useState(depth <= 1);
 
   // Get count for display
   const itemCount = Array.isArray(value)
@@ -765,10 +786,13 @@ const extractContentFromJsonLike = (str: string): { success: boolean; data: Reco
  * Extract actual content from LLM response formats (OpenAI/ChatCompletion, Anthropic, etc.)
  * Returns the extracted content if found, null otherwise
  */
-const extractLLMResponseContent = (output: any): { content: string | null; metadata: Record<string, any> | null } => {
+const extractLLMResponseContent = (output: unknown): { content: string | null; metadata: Record<string, unknown> | null } => {
   if (!output || typeof output !== 'object') {
     return { content: null, metadata: null };
   }
+
+  // After the type guard above, narrow to a record for property access.
+  const out = output as Record<string, unknown>;
 
   // Helper to extract content from a string that might be JSON-encoded
   const extractContentFromString = (str: string): string => {
@@ -777,7 +801,7 @@ const extractLLMResponseContent = (output: any): { content: string | null; metad
       try {
         const parsed = JSON.parse(trimmed);
         if (parsed.rationale && typeof parsed.rationale === 'string') {
-          const resultLabel = parsed.result !== undefined ? `**Rating: ${parsed.result}**\n\n` : '';
+          const resultLabel = parsed.result !== undefined ? `**Rating: ${String(parsed.result)}**\n\n` : '';
           return resultLabel + parsed.rationale;
         }
         if (parsed.content && typeof parsed.content === 'string') {
@@ -793,37 +817,39 @@ const extractLLMResponseContent = (output: any): { content: string | null; metad
   // Handle FLATTENED format where choices have been unwrapped:
   // { id, model, object, finish_reason, role, content }
   // This happens when the ChatCompletion response gets flattened during storage
-  if (output.object === 'chat.completion' && output.role === 'assistant' && !output.choices) {
+  if (out.object === 'chat.completion' && out.role === 'assistant' && !out.choices) {
     // Look for content in various places
     let content: string | null = null;
 
-    if (typeof output.content === 'string') {
-      content = extractContentFromString(output.content);
-    } else if (output.message?.content) {
-      if (typeof output.message.content === 'string') {
-        content = extractContentFromString(output.message.content);
+    if (typeof out.content === 'string') {
+      content = extractContentFromString(out.content);
+    } else if (typeof out.message === 'object' && out.message !== null) {
+      const msg = out.message as Record<string, unknown>;
+      if (typeof msg.content === 'string') {
+        content = extractContentFromString(msg.content);
       }
     }
 
     if (content) {
-      const metadata: Record<string, any> = {};
-      if (output.id) metadata.id = output.id;
-      if (output.model) metadata.model = output.model;
-      if (output.object) metadata.object = output.object;
-      if (output.finish_reason) metadata.finish_reason = output.finish_reason;
-      if (output.usage) metadata.usage = output.usage;
+      const metadata: Record<string, unknown> = {};
+      if (out.id) metadata.id = out.id;
+      if (out.model) metadata.model = out.model;
+      if (out.object) metadata.object = out.object;
+      if (out.finish_reason) metadata.finish_reason = out.finish_reason;
+      if (out.usage) metadata.usage = out.usage;
       return { content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
     }
   }
 
   // Handle OpenAI/ChatCompletion format: { choices: [{ message: { content: "..." } }] }
-  if (output.choices && Array.isArray(output.choices) && output.choices.length > 0) {
-    const firstChoice = output.choices[0];
+  if (out.choices && Array.isArray(out.choices) && (out.choices as unknown[]).length > 0) {
+    const firstChoice = (out.choices as LLMMessage[])[0];
     let content: string | null = null;
 
     // Check message.content - handle both string and array formats
-    if (firstChoice.message?.content !== undefined && firstChoice.message?.content !== null) {
-      const msgContent = firstChoice.message.content;
+    const msgObj = (firstChoice as unknown as Record<string, unknown>).message as LLMMessage | undefined;
+    if (msgObj?.content !== undefined && msgObj?.content !== null) {
+      const msgContent = msgObj.content;
 
       if (typeof msgContent === 'string') {
         const trimmedContent = msgContent.trim();
@@ -832,7 +858,7 @@ const extractLLMResponseContent = (output: any): { content: string | null; metad
           try {
             const parsed = JSON.parse(trimmedContent);
             if (parsed.rationale && typeof parsed.rationale === 'string') {
-              const resultLabel = parsed.result !== undefined ? `**Rating: ${parsed.result}**\n\n` : '';
+              const resultLabel = parsed.result !== undefined ? `**Rating: ${String(parsed.result)}**\n\n` : '';
               content = resultLabel + parsed.rationale;
             } else if (parsed.content && typeof parsed.content === 'string') {
               // Handle nested content field
@@ -851,14 +877,15 @@ const extractLLMResponseContent = (output: any): { content: string | null; metad
         }
       } else if (typeof msgContent === 'object' && msgContent !== null) {
         // Handle content that's already parsed as an object (e.g., judge result)
-        if (msgContent.rationale && typeof msgContent.rationale === 'string') {
-          const resultLabel = msgContent.result !== undefined ? `**Rating: ${msgContent.result}**\n\n` : '';
-          content = resultLabel + msgContent.rationale;
+        const contentRec = msgContent as Record<string, unknown>;
+        if (contentRec.rationale && typeof contentRec.rationale === 'string') {
+          const resultLabel = contentRec.result !== undefined ? `**Rating: ${String(contentRec.result)}**\n\n` : '';
+          content = resultLabel + contentRec.rationale;
         } else if (Array.isArray(msgContent)) {
           // Handle content as array of blocks (Anthropic/Databricks style)
-          const textParts = msgContent
-            .filter((c: any) => c.type === 'text' || c.type === 'output_text')
-            .map((c: any) => c.text)
+          const textParts = (msgContent as ContentBlock[])
+            .filter((c: ContentBlock) => c.type === 'text' || c.type === 'output_text')
+            .map((c: ContentBlock) => c.text)
             .filter(Boolean);
           if (textParts.length > 0) {
             content = textParts.join('\n');
@@ -869,7 +896,7 @@ const extractLLMResponseContent = (output: any): { content: string | null; metad
     // Handle judge output format: { choices: [{ result: ..., rationale: "..." }] }
     else if (firstChoice.rationale && typeof firstChoice.rationale === 'string') {
       // This is a judge evaluation output - show rationale as main content
-      const resultLabel = firstChoice.result !== undefined ? `**Rating: ${firstChoice.result}**\n\n` : '';
+      const resultLabel = firstChoice.result !== undefined ? `**Rating: ${String(firstChoice.result)}**\n\n` : '';
       content = resultLabel + firstChoice.rationale;
     }
     // Alternative format with direct content on choice
@@ -883,104 +910,105 @@ const extractLLMResponseContent = (output: any): { content: string | null; metad
 
     if (content) {
       // Extract metadata (everything except the actual content)
-      const metadata: Record<string, any> = {};
-      if (output.id) metadata.id = output.id;
-      if (output.model) metadata.model = output.model;
-      if (output.object) metadata.object = output.object;
-      if (output.usage) metadata.usage = output.usage;
+      const metadata: Record<string, unknown> = {};
+      if (out.id) metadata.id = out.id;
+      if (out.model) metadata.model = out.model;
+      if (out.object) metadata.object = out.object;
+      if (out.usage) metadata.usage = out.usage;
       if (firstChoice.finish_reason) metadata.finish_reason = firstChoice.finish_reason;
-      if (output.finish_reason) metadata.finish_reason = output.finish_reason;
+      if (out.finish_reason) metadata.finish_reason = out.finish_reason;
 
       return { content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
     }
   }
 
   // Handle Anthropic/Claude format: { content: [{ type: "text", text: "..." }] }
-  if (output.content && Array.isArray(output.content)) {
+  if (out.content && Array.isArray(out.content)) {
+    const contentBlocks = out.content as ContentBlock[];
     // Try type: "text" format
-    let textContent = output.content
-      .filter((c: any) => c.type === 'text' && c.text)
-      .map((c: any) => c.text)
+    let textContent = contentBlocks
+      .filter((c: ContentBlock) => c.type === 'text' && c.text)
+      .map((c: ContentBlock) => c.text)
       .join('\n');
 
     // Also try type: "output_text" format (Databricks/MLflow style)
     if (!textContent) {
-      textContent = output.content
-        .filter((c: any) => c.type === 'output_text' && c.text)
-        .map((c: any) => c.text)
+      textContent = contentBlocks
+        .filter((c: ContentBlock) => c.type === 'output_text' && c.text)
+        .map((c: ContentBlock) => c.text)
         .join('\n');
     }
 
     if (textContent) {
-      const metadata: Record<string, any> = {};
-      if (output.id) metadata.id = output.id;
-      if (output.model) metadata.model = output.model;
-      if (output.type) metadata.type = output.type;
-      if (output.object) metadata.object = output.object;
-      if (output.role) metadata.role = output.role;
-      if (output.usage) metadata.usage = output.usage;
-      if (output.stop_reason) metadata.stop_reason = output.stop_reason;
-      if (output.finish_reason) metadata.finish_reason = output.finish_reason;
+      const metadata: Record<string, unknown> = {};
+      if (out.id) metadata.id = out.id;
+      if (out.model) metadata.model = out.model;
+      if (out.type) metadata.type = out.type;
+      if (out.object) metadata.object = out.object;
+      if (out.role) metadata.role = out.role;
+      if (out.usage) metadata.usage = out.usage;
+      if (out.stop_reason) metadata.stop_reason = out.stop_reason;
+      if (out.finish_reason) metadata.finish_reason = out.finish_reason;
 
       return { content: textContent, metadata: Object.keys(metadata).length > 0 ? metadata : null };
     }
   }
 
   // Handle messages array format: { messages: [{ role: "assistant", content: "..." }] }
-  if (output.messages && Array.isArray(output.messages)) {
+  if (out.messages && Array.isArray(out.messages)) {
     // Find assistant message
-    const assistantMsg = output.messages.find((m: any) => m.role === 'assistant');
+    const assistantMsg = (out.messages as LLMMessage[]).find((m: LLMMessage) => m.role === 'assistant');
     if (assistantMsg) {
       let content: string | null = null;
       if (typeof assistantMsg.content === 'string') {
         content = assistantMsg.content;
       } else if (Array.isArray(assistantMsg.content)) {
-        content = assistantMsg.content
-          .filter((c: any) => (c.type === 'text' || c.type === 'output_text') && c.text)
-          .map((c: any) => c.text)
+        content = (assistantMsg.content as ContentBlock[])
+          .filter((c: ContentBlock) => (c.type === 'text' || c.type === 'output_text') && c.text)
+          .map((c: ContentBlock) => c.text)
           .join('\n');
       }
       if (content) {
-        const metadata: Record<string, any> = {};
-        if (output.id) metadata.id = output.id;
-        if (output.model) metadata.model = output.model;
+        const metadata: Record<string, unknown> = {};
+        if (out.id) metadata.id = out.id;
+        if (out.model) metadata.model = out.model;
         return { content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
       }
     }
   }
 
   // Handle direct content string
-  if (output.content && typeof output.content === 'string') {
-    const metadata: Record<string, any> = {};
-    if (output.id) metadata.id = output.id;
-    if (output.model) metadata.model = output.model;
-    if (output.role) metadata.role = output.role;
+  if (out.content && typeof out.content === 'string') {
+    const metadata: Record<string, unknown> = {};
+    if (out.id) metadata.id = out.id;
+    if (out.model) metadata.model = out.model;
+    if (out.role) metadata.role = out.role;
 
-    return { content: output.content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
+    return { content: out.content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
   }
 
   // Handle response with text field directly
-  if (output.text && typeof output.text === 'string') {
-    return { content: output.text, metadata: null };
+  if (out.text && typeof out.text === 'string') {
+    return { content: out.text as string, metadata: null };
   }
 
   // Handle Databricks agent response format: { output: [{ type: "message", content: [...] }] }
-  if (output.output && Array.isArray(output.output)) {
-    for (const item of output.output) {
+  if (out.output && Array.isArray(out.output)) {
+    for (const item of out.output as LLMMessage[]) {
       if (item.type === 'message' && item.role === 'assistant' && item.content) {
         let content: string | null = null;
         if (typeof item.content === 'string') {
           content = item.content;
         } else if (Array.isArray(item.content)) {
-          content = item.content
-            .filter((c: any) => (c.type === 'text' || c.type === 'output_text') && c.text)
-            .map((c: any) => c.text)
+          content = (item.content as ContentBlock[])
+            .filter((c: ContentBlock) => (c.type === 'text' || c.type === 'output_text') && c.text)
+            .map((c: ContentBlock) => c.text)
             .join('\n');
         }
         if (content) {
-          const metadata: Record<string, any> = {};
-          if (output.id) metadata.id = output.id;
-          if (output.model) metadata.model = output.model;
+          const metadata: Record<string, unknown> = {};
+          if (out.id) metadata.id = out.id;
+          if (out.model) metadata.model = out.model;
           return { content, metadata: Object.keys(metadata).length > 0 ? metadata : null };
         }
       }
@@ -989,25 +1017,27 @@ const extractLLMResponseContent = (output: any): { content: string | null; metad
 
   // LAST RESORT: Recursively search for content/rationale fields anywhere in the structure
   // This handles deeply nested or unusual data formats
-  const findContentRecursively = (obj: any, depth: number = 0): string | null => {
+  const findContentRecursively = (obj: unknown, depth: number = 0): string | null => {
     if (depth > 5 || !obj || typeof obj !== 'object') return null;
 
+    const rec = obj as Record<string, unknown>;
+
     // Check for rationale (judge output)
-    if (obj.rationale && typeof obj.rationale === 'string') {
-      const resultLabel = obj.result !== undefined ? `**Rating: ${obj.result}**\n\n` : '';
-      return resultLabel + obj.rationale;
+    if (rec.rationale && typeof rec.rationale === 'string') {
+      const resultLabel = rec.result !== undefined ? `**Rating: ${String(rec.result)}**\n\n` : '';
+      return resultLabel + rec.rationale;
     }
 
     // Check for content field
-    if (obj.content !== undefined && obj.content !== null) {
-      if (typeof obj.content === 'string') {
-        const trimmed = obj.content.trim();
+    if (rec.content !== undefined && rec.content !== null) {
+      if (typeof rec.content === 'string') {
+        const trimmed = rec.content.trim();
         // Try to parse as JSON (for judge results)
         if (trimmed.startsWith('{')) {
           try {
             const parsed = JSON.parse(trimmed);
             if (parsed.rationale && typeof parsed.rationale === 'string') {
-              const resultLabel = parsed.result !== undefined ? `**Rating: ${parsed.result}**\n\n` : '';
+              const resultLabel = parsed.result !== undefined ? `**Rating: ${String(parsed.result)}**\n\n` : '';
               return resultLabel + parsed.rationale;
             }
           } catch {
@@ -1030,9 +1060,9 @@ const extractLLMResponseContent = (output: any): { content: string | null; metad
     }
 
     // Check object properties
-    for (const key of Object.keys(obj)) {
+    for (const key of Object.keys(rec)) {
       if (['id', 'model', 'object', 'usage', 'created'].includes(key)) continue; // Skip metadata
-      const found = findContentRecursively(obj[key], depth + 1);
+      const found = findContentRecursively(rec[key], depth + 1);
       if (found) return found;
     }
 
@@ -1041,11 +1071,11 @@ const extractLLMResponseContent = (output: any): { content: string | null; metad
 
   const foundContent = findContentRecursively(output);
   if (foundContent) {
-    const metadata: Record<string, any> = {};
-    if (output.id) metadata.id = output.id;
-    if (output.model) metadata.model = output.model;
-    if (output.object) metadata.object = output.object;
-    if (output.finish_reason) metadata.finish_reason = output.finish_reason;
+    const metadata: Record<string, unknown> = {};
+    if (out.id) metadata.id = out.id;
+    if (out.model) metadata.model = out.model;
+    if (out.object) metadata.object = out.object;
+    if (out.finish_reason) metadata.finish_reason = out.finish_reason;
     return { content: foundContent, metadata: Object.keys(metadata).length > 0 ? metadata : null };
   }
 
@@ -1057,7 +1087,7 @@ const extractLLMResponseContent = (output: any): { content: string | null; metad
  */
 const LLMContentRenderer: React.FC<{
   content: string;
-  metadata: Record<string, any> | null;
+  metadata: Record<string, unknown> | null;
 }> = ({ content, metadata }) => {
   const [showMetadata, setShowMetadata] = useState(false);
 
@@ -1299,13 +1329,13 @@ const OutputRenderer: React.FC<{
     if (typeof rawOutput === 'string') {
       const judgeResult = extractJudgeResultFromMalformed(rawOutput);
       if (judgeResult && judgeResult.rationale) {
-        const resultLabel = judgeResult.result !== undefined ? `**Rating: ${judgeResult.result}**\n\n` : '';
+        const resultLabel = judgeResult.result !== undefined ? `**Rating: ${String(judgeResult.result)}**\n\n` : '';
         const content = resultLabel + judgeResult.rationale;
 
         // Extract basic metadata from the raw string
         const idMatch = rawOutput.match(/"id":\s*"([^"]+)"/);
         const modelMatch = rawOutput.match(/"model":\s*"([^"]+)"/);
-        const metadata: Record<string, any> = {};
+        const metadata: Record<string, unknown> = {};
         if (idMatch) metadata.id = idMatch[1];
         if (modelMatch) metadata.model = modelMatch[1];
 
@@ -1315,7 +1345,7 @@ const OutputRenderer: React.FC<{
 
     try {
       // Handle both string and already-parsed object
-      let parsed: any;
+      let parsed: unknown;
       if (typeof rawOutput === 'string') {
         parsed = JSON.parse(rawOutput);
         // Handle double-stringified JSON (string containing JSON string)
@@ -1361,7 +1391,7 @@ export interface TraceData {
       role: 'user' | 'assistant';
       content: string;
     }>;
-    [key: string]: any;
+    [key: string]: unknown;
   };
   mlflow_trace_id?: string;
   mlflow_url?: string;
@@ -1390,13 +1420,66 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({
   const { data: mlflowConfig } = useMLflowConfig(workshopId!);
   const { data: workshop } = useWorkshop(workshopId!);
 
+  // Apply span attribute filter: if configured, use matching span's inputs/outputs
+  const { baseInput, baseOutput } = useMemo(() => {
+    const filter = workshop?.span_attribute_filter;
+    if (!filter || !trace.context) {
+      return { baseInput: trace.input, baseOutput: trace.output };
+    }
+    // Parse spans: may be an array already or a string (Python repr from CSV upload)
+    let spans = (trace.context as Record<string, unknown>).spans;
+    if (typeof spans === 'string') {
+      try { spans = JSON.parse(spans); } catch { /* not JSON, can't parse client-side */ }
+    }
+    if (!Array.isArray(spans)) {
+      return { baseInput: trace.input, baseOutput: trace.output };
+    }
+    // Unwrap one layer of JSON encoding (MLflow raw wire format stores attribute values as JSON strings)
+    const unwrapJsonStr = (v: unknown): unknown => {
+      if (typeof v !== 'string') return v;
+      try { return JSON.parse(v); } catch { return v; }
+    };
+    for (const span of spans) {
+      if (typeof span !== 'object' || !span) continue;
+      const s = span as Record<string, unknown>;
+      let match = true;
+      if ('span_name' in filter && s.name !== filter.span_name) match = false;
+      if ('span_type' in filter) {
+        const attrs = s.attributes as Record<string, unknown> | undefined;
+        const spanType = s.span_type ?? unwrapJsonStr(attrs?.['mlflow.spanType']);
+        if (spanType !== filter.span_type) match = false;
+      }
+      if ('attribute_key' in filter) {
+        const attrs = s.attributes as Record<string, unknown> | undefined;
+        const key = filter.attribute_key;
+        if (!attrs || !(key in attrs)) {
+          match = false;
+        } else if ('attribute_value' in filter && String(attrs[key]) !== String(filter.attribute_value)) {
+          match = false;
+        }
+      }
+      if (match) {
+        const toStr = (v: unknown) => {
+          if (typeof v === 'string') return v;
+          if (v == null) return '';
+          try { return JSON.stringify(v, null, 2); } catch { return String(v); }
+        };
+        const attrs = s.attributes as Record<string, unknown> | undefined;
+        const inputs = s.inputs ?? unwrapJsonStr(attrs?.['mlflow.spanInputs']);
+        const outputs = s.outputs ?? unwrapJsonStr(attrs?.['mlflow.spanOutputs']);
+        return { baseInput: toStr(inputs), baseOutput: toStr(outputs) };
+      }
+    }
+    return { baseInput: trace.input, baseOutput: trace.output };
+  }, [trace.input, trace.output, trace.context, workshop?.span_attribute_filter]);
+
   // Get JSONPath settings from props or workshop settings
   const effectiveInputJsonPath = inputJsonPath ?? workshop?.input_jsonpath;
   const effectiveOutputJsonPath = outputJsonPath ?? workshop?.output_jsonpath;
 
   // Apply JSONPath extraction to input and output
-  const displayInput = useJsonPathExtraction(trace.input, effectiveInputJsonPath);
-  const displayOutput = useJsonPathExtraction(trace.output, effectiveOutputJsonPath);
+  const displayInput = useJsonPathExtraction(baseInput, effectiveInputJsonPath);
+  const displayOutput = useJsonPathExtraction(baseOutput, effectiveOutputJsonPath);
 
   // Check if input/output are JSON for badge display
   const isInputJson = useMemo(() => {

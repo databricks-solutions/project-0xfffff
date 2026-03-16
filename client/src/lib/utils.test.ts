@@ -126,8 +126,8 @@ describe('@spec:DESIGN_SYSTEM_SPEC cn utility', () => {
 
   describe('design system usage patterns', () => {
     it('handles button variant pattern', () => {
-      const variant = 'primary';
-      const size = 'lg';
+      const variant: string = 'primary';
+      const size: string = 'lg';
       const result = cn(
         'inline-flex items-center justify-center rounded-md font-medium',
         variant === 'primary' && 'bg-primary text-primary-foreground hover:bg-primary/90',

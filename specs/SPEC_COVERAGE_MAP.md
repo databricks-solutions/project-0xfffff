@@ -108,7 +108,19 @@ These tests are tagged with the spec but don't link to specific requirements:
 - `tests/unit/services/test_database_service_participant_notes.py` (test_delete_participant_note_success) [unit]
 - `tests/unit/services/test_database_service_participant_notes.py` (test_delete_participant_note_not_found) [unit]
 
-## JUDGE_EVALUATION_SPEC
+- [x] Participants only see traces in current active discovery dataset (e2e-real, unit)
+- [x] When new discovery round starts, old traces hidden (not deleted) (e2e-real)
+- [x] Switching between discovery rounds hides/shows appropriate traces (unit) **[BE-only]**
+- [x] Phase/round context properly scoped in database (unit) **[BE-only]**
+- [x] Annotation traces randomized per (user_id, trace_set) pair (unit) **[BE-only]**
+- [x] Randomization persistent across page reloads for same trace set (e2e-real, unit)
+- [x] When annotation dataset changes mid-round, new traces appended (unit) **[BE-only]**
+- [x] When annotation round changes, full re-randomization applied (unit) **[BE-only]**
+- [x] Randomization context includes phase and round info (unit) **[BE-only]**
+- [x] Dataset operations (union, subtract) work correctly and maintain audit trail (unit) **[BE-only]**
+- [x] Multiple participants can see same trace with different orders (unit) **[BE-only]**
+- [x] Assignment metadata properly tracks all context (unit)
+- [x] Inter-rater reliability (IRR) can be measured (same traces, different orders) (unit) **[BE-only]**
 
 **Coverage**: 25/25 requirements (100%)
 
