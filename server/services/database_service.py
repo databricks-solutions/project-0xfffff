@@ -3579,9 +3579,9 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
     workshop.current_phase = WorkshopPhase.ANNOTATION
     workshop.annotation_started = False
     
-    # Keep completed phases up to discovery (annotation not yet complete)
+    # Keep completed phases up to rubric (annotation not yet complete, but rubric is preserved)
     completed = workshop.completed_phases or []
-    workshop.completed_phases = [p for p in completed if p in ['intake', 'discovery']]
+    workshop.completed_phases = [p for p in completed if p in ['intake', 'discovery', 'rubric']]
     
     # Clear active annotation trace list so new selection can be made
     workshop.active_annotation_trace_ids = None

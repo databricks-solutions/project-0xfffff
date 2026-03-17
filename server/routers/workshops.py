@@ -4481,8 +4481,8 @@ async def restart_auto_evaluation(
     if not workshop:
         raise HTTPException(status_code=404, detail="Workshop not found")
 
-    if workshop.current_phase != "annotation":
-        raise HTTPException(status_code=400, detail="Workshop must be in annotation phase")
+    if workshop.current_phase not in [WorkshopPhase.ANNOTATION, WorkshopPhase.JUDGE_TUNING]:
+        raise HTTPException(status_code=400, detail="Workshop must be in annotation or judge tuning phase")
 
     # Get active annotation trace IDs
     trace_ids = workshop.active_annotation_trace_ids or []
