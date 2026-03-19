@@ -134,7 +134,7 @@ class AlignmentService:
         import mlflow
 
         filter_parts = [
-            f"tags.label = '{tag_type}'",
+            f"tags.{tag_type} = 'true'",
             f"tags.workshop_id = '{workshop_id}'",
         ]
         filter_string = " AND ".join(filter_parts)
