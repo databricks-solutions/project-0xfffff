@@ -466,44 +466,63 @@ class DatabaseService:
 
   # Trace operations
   def add_traces(self, workshop_id: str, traces: List[TraceUpload]) -> List[Trace]:
-    """Add traces to a workshop."""
+    """Add or update traces in a workshop.
+
+    For traces with a non-null mlflow_trace_id, upserts by (workshop_id, mlflow_trace_id):
+    if a matching row exists, updates it in place (preserving the internal ID and any FK
+    references); otherwise inserts a new row.  Traces with a null mlflow_trace_id always
+    insert a new row (legacy behaviour).
+    """
     db_traces = []
 
     for trace_data in traces:
-      trace_id = str(uuid.uuid4())
-      db_trace = TraceDB(
-        id=trace_id,
-        workshop_id=workshop_id,
-        input=trace_data.input,
-        output=trace_data.output,
-        context=trace_data.context,
-        trace_metadata=trace_data.trace_metadata,
-        mlflow_trace_id=trace_data.mlflow_trace_id,
-        mlflow_experiment_id=trace_data.mlflow_experiment_id,
-      )
-      self.db.add(db_trace)
-      db_traces.append(db_trace)
+      existing: Optional[TraceDB] = None
+      if trace_data.mlflow_trace_id is not None:
+        existing = (
+          self.db.query(TraceDB)
+          .filter(
+            TraceDB.workshop_id == workshop_id,
+            TraceDB.mlflow_trace_id == trace_data.mlflow_trace_id,
+          )
+          .first()
+        )
+
+      if existing is not None:
+        # Update mutable fields on the existing row
+        existing.input = trace_data.input
+        existing.output = trace_data.output
+        existing.context = trace_data.context
+        existing.trace_metadata = trace_data.trace_metadata
+        existing.mlflow_url = trace_data.mlflow_url
+        existing.mlflow_host = trace_data.mlflow_host
+        existing.mlflow_experiment_id = trace_data.mlflow_experiment_id
+        db_traces.append(existing)
+      else:
+        trace_id = str(uuid.uuid4())
+        db_trace = TraceDB(
+          id=trace_id,
+          workshop_id=workshop_id,
+          input=trace_data.input,
+          output=trace_data.output,
+          context=trace_data.context,
+          trace_metadata=trace_data.trace_metadata,
+          mlflow_trace_id=trace_data.mlflow_trace_id,
+          mlflow_url=trace_data.mlflow_url,
+          mlflow_host=trace_data.mlflow_host,
+          mlflow_experiment_id=trace_data.mlflow_experiment_id,
+        )
+        self.db.add(db_trace)
+        db_traces.append(db_trace)
 
     self.db.commit()
 
     # Refresh and create response objects after commit
-    created_traces = []
+    result_traces = []
     for db_trace in db_traces:
       self.db.refresh(db_trace)
-      created_traces.append(
-        Trace(
-          id=db_trace.id,
-          workshop_id=db_trace.workshop_id,
-          input=db_trace.input,
-          output=db_trace.output,
-          context=db_trace.context,
-          trace_metadata=db_trace.trace_metadata,
-          mlflow_trace_id=db_trace.mlflow_trace_id,
-          created_at=db_trace.created_at,
-        )
-      )
+      result_traces.append(self._trace_from_db(db_trace))
 
-    return created_traces
+    return result_traces
 
   def get_traces(self, workshop_id: str) -> List[Trace]:
     """Get all traces for a workshop in chronological order."""
