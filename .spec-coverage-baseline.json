@@ -1,31 +1,31 @@
 {
-  "generated": "2026-02-11T16:37:40.089530",
+  "generated": "2026-03-19T11:32:12.049817",
   "summary": {
-    "total_requirements": 133,
-    "covered_requirements": 20,
-    "coverage_percent": 15
+    "total_requirements": 283,
+    "covered_requirements": 204,
+    "coverage_percent": 72
   },
   "pyramid": {
-    "unit": 420,
-    "integration": 0,
-    "e2e-mocked": 13,
-    "e2e-real": 37
+    "unit": 877,
+    "integration": 50,
+    "e2e-mocked": 22,
+    "e2e-real": 100
   },
   "specs": {
     "ANNOTATION_SPEC": {
-      "total_requirements": 9,
-      "covered_requirements": 2,
-      "coverage_percent": 22,
+      "total_requirements": 21,
+      "covered_requirements": 13,
+      "coverage_percent": 61,
       "by_type": {
-        "unit": 41,
+        "unit": 47,
         "integration": 0,
         "e2e-mocked": 0,
-        "e2e-real": 12
+        "e2e-real": 10
       },
       "requirements": [
         {
           "text": "Users can edit previously submitted annotations",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Changes automatically save on navigation (Next/Previous)",
@@ -33,11 +33,11 @@
         },
         {
           "text": "Toast shows \"Annotation saved!\" for new submissions",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Toast shows \"Annotation updated!\" only when changes detected",
-          "covered": false
+          "covered": true
         },
         {
           "text": "No toast when navigating without changes",
@@ -45,7 +45,7 @@
         },
         {
           "text": "Multi-line comments preserved throughout the stack",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Comments display with proper line breaks",
@@ -53,20 +53,109 @@
         },
         {
           "text": "Next button enabled for annotated traces (allows re-navigation)",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Annotation count reflects unique submissions (not re-submissions)",
+          "covered": true
+        },
+        {
+          "text": "Annotations sync to MLflow as feedback on save (one entry per rubric question)",
+          "covered": true
+        },
+        {
+          "text": "MLflow trace tagged with `label: \"align\"` and `workshop_id` on annotation",
+          "covered": true
+        },
+        {
+          "text": "Feedback source is HUMAN with annotator's user_id",
+          "covered": true
+        },
+        {
+          "text": "Annotation comment maps to MLflow feedback rationale",
+          "covered": true
+        },
+        {
+          "text": "Duplicate feedback entries are detected and skipped",
+          "covered": true
+        },
+        {
+          "text": "Bulk resync re-exports all annotations when rubric titles change",
+          "covered": false
+        },
+        {
+          "text": "Failed saves are queued and retried automatically with exponential backoff",
+          "covered": false
+        },
+        {
+          "text": "Navigation is optimistic (UI advances immediately, save completes in background)",
+          "covered": false
+        },
+        {
+          "text": "Navigation debounced at 300ms to prevent duplicate saves",
+          "covered": false
+        },
+        {
+          "text": "Freeform question responses are optional (not required for navigation)",
+          "covered": false
+        },
+        {
+          "text": "Freeform responses are encoded in the comment field as JSON",
+          "covered": false
+        },
+        {
+          "text": "Legacy single-rating format loads correctly alongside multi-rating format",
+          "covered": true
+        }
+      ]
+    },
+    "ASSISTED_FACILITATION_SPEC": {
+      "total_requirements": 7,
+      "covered_requirements": 7,
+      "coverage_percent": 100,
+      "by_type": {
+        "unit": 30,
+        "integration": 0,
+        "e2e-mocked": 0,
+        "e2e-real": 42
+      },
+      "requirements": [
+        {
+          "text": "Findings are classified in real-time as participants submit them",
+          "covered": true
+        },
+        {
+          "text": "Facilitators see per-trace structured view with category breakdown",
+          "covered": true
+        },
+        {
+          "text": "Facilitators can generate targeted questions that broadcast to all participants",
+          "covered": true
+        },
+        {
+          "text": "Disagreements are auto-detected and surfaced",
+          "covered": true
+        },
+        {
+          "text": "Participants see only fuzzy progress (no category bias)",
+          "covered": true
+        },
+        {
+          "text": "Findings can be promoted to draft rubric staging area",
+          "covered": true
+        },
+        {
+          "text": "Thresholds are configurable per category per trace",
           "covered": true
         }
       ]
     },
     "AUTHENTICATION_SPEC": {
       "total_requirements": 7,
-      "covered_requirements": 5,
-      "coverage_percent": 71,
+      "covered_requirements": 7,
+      "coverage_percent": 100,
       "by_type": {
-        "unit": 11,
+        "unit": 12,
         "integration": 0,
         "e2e-mocked": 3,
         "e2e-real": 0
@@ -86,7 +175,7 @@
         },
         {
           "text": "Permission API failure: User can log in with defaults",
-          "covered": false
+          "covered": true
         },
         {
           "text": "404 on validation: Session cleared, fresh login allowed",
@@ -94,7 +183,7 @@
         },
         {
           "text": "Rapid navigation: Components wait for `isLoading = false`",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Error recovery: Errors cleared on new login attempt",
@@ -104,10 +193,10 @@
     },
     "BUILD_AND_DEPLOY_SPEC": {
       "total_requirements": 15,
-      "covered_requirements": 1,
-      "coverage_percent": 6,
+      "covered_requirements": 12,
+      "coverage_percent": 80,
       "by_type": {
-        "unit": 43,
+        "unit": 56,
         "integration": 0,
         "e2e-mocked": 0,
         "e2e-real": 0
@@ -123,27 +212,27 @@
         },
         {
           "text": "Assets minified and hashed",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Build directory contains all required files",
-          "covered": false
+          "covered": true
         },
         {
           "text": "`just db-bootstrap` creates database if missing",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Migrations apply without errors",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Batch mode works for SQLite ALTER TABLE",
-          "covered": false
+          "covered": true
         },
         {
           "text": "File lock prevents race conditions with multiple workers",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Full deployment completes successfully",
@@ -155,23 +244,23 @@
         },
         {
           "text": "API endpoints respond correctly",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Database connection established",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Release workflow creates zip artifact",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Pre-built client included in release",
-          "covered": false
+          "covered": true
         },
         {
           "text": "No sensitive files in artifact",
-          "covered": false
+          "covered": true
         }
       ]
     },
@@ -250,10 +339,10 @@
     },
     "DATASETS_SPEC": {
       "total_requirements": 9,
-      "covered_requirements": 2,
-      "coverage_percent": 22,
+      "covered_requirements": 9,
+      "coverage_percent": 100,
       "by_type": {
-        "unit": 19,
+        "unit": 33,
         "integration": 0,
         "e2e-mocked": 0,
         "e2e-real": 2
@@ -265,27 +354,27 @@
         },
         {
           "text": "Union operation combines traces from multiple datasets",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Subtract operation removes specified traces",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Same user sees same order for same dataset (deterministic)",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Different users see different orders (per-user randomization)",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Adding traces preserves existing order (incremental)",
-          "covered": false
+          "covered": true
         },
         {
           "text": "New round triggers fresh randomization",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Dataset lineage tracked (source datasets, operations)",
@@ -293,7 +382,7 @@
         },
         {
           "text": "Facilitators see chronological order (no randomization)",
-          "covered": false
+          "covered": true
         }
       ]
     },
@@ -338,12 +427,261 @@
         }
       ]
     },
+    "DISCOVERY_SPEC": {
+      "total_requirements": 59,
+      "covered_requirements": 59,
+      "coverage_percent": 100,
+      "by_type": {
+        "unit": 251,
+        "integration": 4,
+        "e2e-mocked": 8,
+        "e2e-real": 19
+      },
+      "requirements": [
+        {
+          "text": "Facilitator can start Discovery phase with configurable trace limit",
+          "covered": true
+        },
+        {
+          "text": "Participants view traces and provide GOOD/BAD + comment",
+          "covered": true
+        },
+        {
+          "text": "Facilitator can select LLM model for follow-up question generation in Discovery dashboard",
+          "covered": true
+        },
+        {
+          "text": "AI generates 3 follow-up questions per trace based on feedback",
+          "covered": true
+        },
+        {
+          "text": "Questions build progressively on prior answers",
+          "covered": true
+        },
+        {
+          "text": "All 3 questions required before moving to next trace",
+          "covered": true
+        },
+        {
+          "text": "Previous Q&A visible while answering new questions",
+          "covered": true
+        },
+        {
+          "text": "Loading spinner during LLM generation (1-3s)",
+          "covered": true
+        },
+        {
+          "text": "Error handling with retry for LLM failures",
+          "covered": true
+        },
+        {
+          "text": "Feedback saved incrementally (no data loss on failure)",
+          "covered": true
+        },
+        {
+          "text": "Completion status shows % of participants finished",
+          "covered": true
+        },
+        {
+          "text": "Facilitator can view participant feedback details (label, comment, follow-up Q&A)",
+          "covered": true
+        },
+        {
+          "text": "Facilitator can trigger analysis at any time (even partial feedback)",
+          "covered": true
+        },
+        {
+          "text": "Facilitator selects analysis template (Evaluation Criteria or Themes & Patterns) before running",
+          "covered": true
+        },
+        {
+          "text": "System aggregates feedback by trace",
+          "covered": true
+        },
+        {
+          "text": "Disagreements detected at 3 priority levels (deterministic, no LLM)",
+          "covered": true
+        },
+        {
+          "text": "LLM distills evaluation criteria with evidence from trace IDs",
+          "covered": true
+        },
+        {
+          "text": "LLM analyzes disagreements with follow-up questions and suggestions",
+          "covered": true
+        },
+        {
+          "text": "Analysis record stores which template was used",
+          "covered": true
+        },
+        {
+          "text": "Each analysis run creates a new record (history preserved)",
+          "covered": true
+        },
+        {
+          "text": "Re-runnable \u2014 new analysis as more feedback comes in, prior analyses retained",
+          "covered": true
+        },
+        {
+          "text": "Warning if < 2 participants (not an error)",
+          "covered": true
+        },
+        {
+          "text": "Data freshness banner (participant count, last run timestamp)",
+          "covered": true
+        },
+        {
+          "text": "Results organized by priority (HIGH \u2192 MEDIUM \u2192 LOWER)",
+          "covered": true
+        },
+        {
+          "text": "Facilitator can promote distilled criteria to draft rubric",
+          "covered": true
+        },
+        {
+          "text": "Facilitator can promote disagreement insights to draft rubric",
+          "covered": true
+        },
+        {
+          "text": "Facilitator can promote raw participant feedback to draft rubric",
+          "covered": true
+        },
+        {
+          "text": "Facilitator can manually add draft rubric items",
+          "covered": true
+        },
+        {
+          "text": "Draft rubric items editable and removable",
+          "covered": true
+        },
+        {
+          "text": "\"Suggest Groups\" returns LLM proposal without persisting",
+          "covered": true
+        },
+        {
+          "text": "Facilitator can review, adjust, and apply group proposal",
+          "covered": true
+        },
+        {
+          "text": "Manual grouping: create groups, name them, move items between groups",
+          "covered": true
+        },
+        {
+          "text": "Each group maps to one rubric question (group name = question title)",
+          "covered": true
+        },
+        {
+          "text": "Draft rubric items available during Rubric Creation phase",
+          "covered": true
+        },
+        {
+          "text": "Source traceability maintained (which traces support each item)",
+          "covered": true
+        },
+        {
+          "text": "One feedback record per (workshop, trace, user) \u2014 upsert behavior",
+          "covered": true
+        },
+        {
+          "text": "Q&A pairs appended in order to JSON array",
+          "covered": true
+        },
+        {
+          "text": "Multiple analysis records per workshop allowed (history preserved)",
+          "covered": true
+        },
+        {
+          "text": "Draft rubric items track promotion source and promoter",
+          "covered": true
+        },
+        {
+          "text": "LLM failures show error toast with retry",
+          "covered": true
+        },
+        {
+          "text": "Fallback question if LLM unavailable after retries",
+          "covered": true
+        },
+        {
+          "text": "Fallback warning banner shown only to facilitators, never to participants/SMEs",
+          "covered": true
+        },
+        {
+          "text": "Analysis shows warning (not error) if < 2 participants",
+          "covered": true
+        },
+        {
+          "text": "Form validation prevents empty submissions",
+          "covered": true
+        },
+        {
+          "text": "Progressive disclosure (one question at a time)",
+          "covered": true
+        },
+        {
+          "text": "Submit buttons disabled until required fields filled",
+          "covered": true
+        },
+        {
+          "text": "Clear progress indication (X of Y traces completed)",
+          "covered": true
+        },
+        {
+          "text": "Smooth transitions between feedback states",
+          "covered": true
+        },
+        {
+          "text": "Single two-panel workspace replaces multi-page flow (no FacilitatorDashboard discovery tabs, no FindingsReviewPage)",
+          "covered": true
+        },
+        {
+          "text": "Trace feed shows actual trace content (input/output), not trace ID badges",
+          "covered": true
+        },
+        {
+          "text": "Trace-specific analysis findings appear on the trace card, pinned above feedback (collapsible)",
+          "covered": true
+        },
+        {
+          "text": "Cross-trace analysis findings appear in collapsible summary section above the feed",
+          "covered": true
+        },
+        {
+          "text": "Overview bar shows stats inline + compact controls (Run Analysis, Add Traces, Pause, Model selector)",
+          "covered": true
+        },
+        {
+          "text": "Draft rubric sidebar is always visible while browsing traces",
+          "covered": true
+        },
+        {
+          "text": "Promote action visibly moves items from trace feed/summary into the sidebar",
+          "covered": true
+        },
+        {
+          "text": "Draft rubric items show trace reference badges (interactive: hover for preview, click to scroll)",
+          "covered": true
+        },
+        {
+          "text": "Draft rubric items do NOT show source-type badges (Finding, Disagreement, etc.)",
+          "covered": true
+        },
+        {
+          "text": "Disagreements color-coded by priority (red/yellow/blue) on trace cards",
+          "covered": true
+        },
+        {
+          "text": "\"Create Rubric \u2192\" in sidebar transitions to rubric creation with groups pre-populated as criteria",
+          "covered": true
+        }
+      ]
+    },
     "DISCOVERY_TRACE_ASSIGNMENT_SPEC": {
       "total_requirements": 13,
-      "covered_requirements": 3,
-      "coverage_percent": 23,
+      "covered_requirements": 13,
+      "coverage_percent": 100,
       "by_type": {
-        "unit": 14,
+        "unit": 21,
         "integration": 0,
         "e2e-mocked": 2,
         "e2e-real": 3
@@ -351,11 +689,11 @@
       "requirements": [
         {
           "text": "Participants only see traces in current active discovery dataset",
-          "covered": false
+          "covered": true
         },
         {
           "text": "When new discovery round starts, old traces hidden (not deleted)",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Switching between discovery rounds hides/shows appropriate traces",
@@ -371,60 +709,60 @@
         },
         {
           "text": "Randomization persistent across page reloads for same trace set",
-          "covered": false
+          "covered": true
         },
         {
           "text": "When annotation dataset changes mid-round, new traces appended",
-          "covered": false
+          "covered": true
         },
         {
           "text": "When annotation round changes, full re-randomization applied",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Randomization context includes phase and round info",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Dataset operations (union, subtract) work correctly and maintain audit trail",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Multiple participants can see same trace with different orders",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Assignment metadata properly tracks all context",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Inter-rater reliability (IRR) can be measured (same traces, different orders)",
-          "covered": false
+          "covered": true
         }
       ]
     },
     "JUDGE_EVALUATION_SPEC": {
       "total_requirements": 25,
-      "covered_requirements": 7,
-      "coverage_percent": 28,
+      "covered_requirements": 25,
+      "coverage_percent": 100,
       "by_type": {
-        "unit": 76,
+        "unit": 89,
         "integration": 0,
         "e2e-mocked": 0,
-        "e2e-real": 6
+        "e2e-real": 9
       },
       "requirements": [
         {
           "text": "Likert judges return values 1-5",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Binary judges return values 0 or 1",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Fallback conversion handles Likert-style returns for binary",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Evaluation results persisted to database",
@@ -432,51 +770,51 @@
         },
         {
           "text": "Results reload correctly in UI",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Auto-evaluation runs in background when annotation phase starts",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Judge prompt auto-derived from rubric questions",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Per-question judge_type parsed from rubric (`[JUDGE_TYPE:xxx]`)",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Binary rubrics evaluated with 0/1 scale (not 1-5)",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Auto-evaluation model stored for re-evaluation consistency",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Results appear in Judge Tuning page",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Re-evaluate loads registered judge with aligned instructions",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Uses same model as initial auto-evaluation",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Spinner stops when re-evaluation completes",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Results stored against correct prompt version",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Pre-align and post-align scores directly comparable",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Alignment jobs run asynchronously",
@@ -484,15 +822,15 @@
         },
         {
           "text": "MemAlign distills semantic memory (guidelines)",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Aligned judge registered to MLflow",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Metrics reported (guideline count, example count)",
-          "covered": false
+          "covered": true
         },
         {
           "text": "Works for both Likert and Binary scales",
@@ -516,76 +854,297 @@
         }
       ]
     },
-    "RUBRIC_SPEC": {
-      "total_requirements": 10,
-      "covered_requirements": 0,
-      "coverage_percent": 0,
+    "ROLE_PERMISSIONS_SPEC": {
+      "total_requirements": 16,
+      "covered_requirements": 16,
+      "coverage_percent": 100,
       "by_type": {
-        "unit": 51,
-        "integration": 0,
-        "e2e-mocked": 1,
-        "e2e-real": 6
-      },
-      "requirements": [
-        {
-          "text": "Questions with multi-line descriptions parse correctly",
-          "covered": false
-        },
-        {
-          "text": "Delimiter never appears in user input (by design)",
-          "covered": false
-        },
-        {
-          "text": "Frontend and backend use same delimiter constant",
-          "covered": false
-        },
-        {
-          "text": "Likert scale shows 1-5 rating options",
-          "covered": false
-        },
-        {
-          "text": "Binary scale shows Pass/Fail buttons (not star ratings)",
-          "covered": false
-        },
-        {
-          "text": "Binary feedback logged as 0/1 to MLflow (not 3)",
-          "covered": false
-        },
-        {
-          "text": "Per-question judge_type parsed from `[JUDGE_TYPE:xxx]` format",
-          "covered": false
-        },
-        {
-          "text": "Mixed rubrics support different scales per question",
-          "covered": false
-        },
-        {
-          "text": "Parsed questions have stable UUIDs within session",
-          "covered": false
-        },
-        {
-          "text": "Empty/whitespace-only parts filtered out",
-          "covered": false
-        }
-      ]
-    },
-    "TESTING_SPEC": {
-      "total_requirements": 7,
-      "covered_requirements": 0,
-      "coverage_percent": 0,
-      "by_type": {
-        "unit": 12,
+        "unit": 24,
         "integration": 0,
         "e2e-mocked": 0,
         "e2e-real": 0
       },
       "requirements": [
         {
+          "text": "Facilitator role grants: can_create_rubric, can_manage_workshop, can_assign_annotations, can_view_all_findings, can_view_all_annotations, can_view_results",
+          "covered": true
+        },
+        {
+          "text": "Facilitator role denies: can_annotate, can_create_findings",
+          "covered": true
+        },
+        {
+          "text": "SME role grants: can_annotate, can_create_findings, can_view_discovery",
+          "covered": true
+        },
+        {
+          "text": "SME role denies: can_create_rubric, can_manage_workshop, can_view_results, can_view_all_annotations",
+          "covered": true
+        },
+        {
+          "text": "Participant role grants: can_annotate, can_create_findings, can_view_discovery",
+          "covered": true
+        },
+        {
+          "text": "Participant role denies: can_create_rubric, can_manage_workshop, can_view_results, can_view_all_annotations",
+          "covered": true
+        },
+        {
+          "text": "Permissions derived from role via UserPermissions.for_role() classmethod",
+          "covered": true
+        },
+        {
+          "text": "Facilitator role cannot be changed via update endpoint",
+          "covered": true
+        },
+        {
+          "text": "Facilitator accounts cannot be deleted via delete endpoint",
+          "covered": true
+        },
+        {
+          "text": "Only facilitators can create invitations",
+          "covered": true
+        },
+        {
+          "text": "Only facilitators can advance workshop phases",
+          "covered": true
+        },
+        {
+          "text": "Phase advancement validates prerequisites before transitioning",
+          "covered": true
+        },
+        {
+          "text": "Phase advancement returns 400 if prerequisites not met",
+          "covered": true
+        },
+        {
+          "text": "Facilitators authenticate via YAML config (preconfigured credentials)",
+          "covered": true
+        },
+        {
+          "text": "SMEs and participants authenticate via database credentials",
+          "covered": true
+        },
+        {
+          "text": "Login response includes is_preconfigured_facilitator flag for facilitator logins",
+          "covered": true
+        }
+      ]
+    },
+    "RUBRIC_SPEC": {
+      "total_requirements": 25,
+      "covered_requirements": 25,
+      "coverage_percent": 100,
+      "by_type": {
+        "unit": 83,
+        "integration": 0,
+        "e2e-mocked": 2,
+        "e2e-real": 6
+      },
+      "requirements": [
+        {
+          "text": "Questions with multi-line descriptions parse correctly",
+          "covered": true
+        },
+        {
+          "text": "Delimiter never appears in user input (by design)",
+          "covered": true
+        },
+        {
+          "text": "Frontend and backend use same delimiter constant",
+          "covered": true
+        },
+        {
+          "text": "Per-question judge_type parsed from `[JUDGE_TYPE:xxx]` format",
+          "covered": true
+        },
+        {
+          "text": "Parsed questions have stable UUIDs within session",
+          "covered": true
+        },
+        {
+          "text": "Empty/whitespace-only parts filtered out",
+          "covered": true
+        },
+        {
+          "text": "Likert scale shows 1-5 rating options",
+          "covered": true
+        },
+        {
+          "text": "Binary scale shows Pass/Fail buttons (not star ratings)",
+          "covered": true
+        },
+        {
+          "text": "Binary feedback logged as 0/1 to MLflow (not 3)",
+          "covered": true
+        },
+        {
+          "text": "Mixed rubrics support different scales per question",
+          "covered": true
+        },
+        {
+          "text": "Facilitator can create a rubric question with title and description",
+          "covered": true
+        },
+        {
+          "text": "Facilitator can edit an existing rubric question",
+          "covered": true
+        },
+        {
+          "text": "Facilitator can delete a rubric question",
+          "covered": true
+        },
+        {
+          "text": "Only one rubric exists per workshop (upsert semantics)",
+          "covered": true
+        },
+        {
+          "text": "Rubric persists and is retrievable via GET after creation",
+          "covered": true
+        },
+        {
+          "text": "Rubric required before advancing to annotation phase",
+          "covered": true
+        },
+        {
+          "text": "No phase restriction on rubric CRUD",
+          "covered": true
+        },
+        {
+          "text": "Question IDs re-indexed sequentially after deletion",
+          "covered": true
+        },
+        {
+          "text": "Annotation data preserved when rubric questions are deleted",
+          "covered": true
+        },
+        {
+          "text": "Judge name auto-derived from first rubric question title",
+          "covered": true
+        },
+        {
+          "text": "MLflow re-sync triggered on rubric create/update (best-effort)",
+          "covered": true
+        },
+        {
+          "text": "AI suggestions generated from discovery findings and participant notes",
+          "covered": true
+        },
+        {
+          "text": "Suggestions validated: title >= 3 chars, description >= 10 chars",
+          "covered": true
+        },
+        {
+          "text": "Invalid judge type in suggestions defaults to likert",
+          "covered": true
+        },
+        {
+          "text": "Facilitator can accept, reject, or edit suggestions before adding to rubric",
+          "covered": true
+        }
+      ]
+    },
+    "TESTING_SPEC": {
+      "total_requirements": 30,
+      "covered_requirements": 0,
+      "coverage_percent": 0,
+      "by_type": {
+        "unit": 35,
+        "integration": 46,
+        "e2e-mocked": 0,
+        "e2e-real": 0
+      },
+      "requirements": [
+        {
+          "text": "`tests/integration/conftest.py` provides real-DB fixtures with transaction rollback isolation",
+          "covered": false
+        },
+        {
+          "text": "Integration tests run against SQLite (default) and Postgres (via testcontainers)",
+          "covered": false
+        },
+        {
+          "text": "`just test-integration` recipe exists and passes",
+          "covered": false
+        },
+        {
+          "text": "Workshop CRUD tested end-to-end through HTTP \u2192 DB \u2192 response",
+          "covered": false
+        },
+        {
+          "text": "Trace ingestion tested: bulk upload, retrieval, metadata persistence",
+          "covered": false
+        },
+        {
+          "text": "Phase transition prerequisites enforced: no discovery without traces, no annotation without rubric",
+          "covered": false
+        },
+        {
+          "text": "Annotation upsert semantics verified: same user+trace updates (not duplicates), different users create separate records",
+          "covered": false
+        },
+        {
+          "text": "Discovery finding upsert semantics verified at DB level",
+          "covered": false
+        },
+        {
+          "text": "All integration tests tagged with `@pytest.mark.integration` and `@pytest.mark.spec()`",
+          "covered": false
+        },
+        {
+          "text": "External services (MLflow, Databricks) mocked \u2014 only database is real",
+          "covered": false
+        },
+        {
+          "text": "Connection resilience tested (Postgres-only): pool reset disposes + refreshes OAuth, `get_db()` retries with backoff, stale connections detected via `pool_pre_ping`",
+          "covered": false
+        },
+        {
+          "text": "Tests are hermetic: no shared state, runnable in any order",
+          "covered": false
+        },
+        {
+          "text": "Contract shapes documented for all 5 MLflow domains (trace ops, feedback, evaluation, alignment, experiment management)",
+          "covered": false
+        },
+        {
+          "text": "Mock shape tests verify test mocks match real MLflow response structures",
+          "covered": false
+        },
+        {
+          "text": "Call-site tests verify services pass correct parameter types to MLflow methods",
+          "covered": false
+        },
+        {
+          "text": "Error classification tested: retryable vs non-retryable errors handled correctly",
+          "covered": false
+        },
+        {
+          "text": "Feedback value types validated: binary (0.0/1.0 float), likert (1.0-5.0 float)",
+          "covered": false
+        },
+        {
+          "text": "Assessment limit (50 per trace) handling tested",
+          "covered": false
+        },
+        {
+          "text": "Contract tests tagged with `@pytest.mark.spec(\"TESTING_SPEC\")`",
+          "covered": false
+        },
+        {
           "text": "Server unit tests pass with >20% coverage",
           "covered": false
         },
         {
           "text": "Client unit tests pass with >20% coverage",
+          "covered": false
+        },
+        {
+          "text": "Integration tests pass against real database (SQLite + Postgres)",
+          "covered": false
+        },
+        {
+          "text": "Contract tests verify MLflow integration boundaries",
           "covered": false
         },
         {
@@ -607,20 +1166,101 @@
         {
           "text": "Test isolation (no shared state between tests)",
           "covered": false
+        },
+        {
+          "text": "`just test-integration` recipe works",
+          "covered": false
+        },
+        {
+          "text": "`just test-contract` recipe works",
+          "covered": false
         }
       ]
     },
     "TRACE_DISPLAY_SPEC": {
-      "total_requirements": 0,
-      "covered_requirements": 0,
+      "total_requirements": 18,
+      "covered_requirements": 18,
       "coverage_percent": 100,
       "by_type": {
-        "unit": 43,
+        "unit": 86,
         "integration": 0,
         "e2e-mocked": 0,
-        "e2e-real": 6
+        "e2e-real": 7
       },
-      "requirements": []
+      "requirements": [
+        {
+          "text": "Facilitator can configure input/output JSONPath in settings panel",
+          "covered": true
+        },
+        {
+          "text": "JSONPath fields are optional and clearly labeled as such",
+          "covered": true
+        },
+        {
+          "text": "Preview shows extraction results against first workshop trace",
+          "covered": true
+        },
+        {
+          "text": "TraceViewer applies JSONPath when configured",
+          "covered": true
+        },
+        {
+          "text": "Multiple JSONPath matches are concatenated with newlines",
+          "covered": true
+        },
+        {
+          "text": "System falls back to raw display when JSONPath is not configured, JSON parsing fails, JSONPath query fails, or JSONPath returns null/empty",
+          "covered": true
+        },
+        {
+          "text": "Settings are persisted per workshop",
+          "covered": true
+        },
+        {
+          "text": "Facilitator can configure span attribute filter with span name, span type, attribute key, and attribute value",
+          "covered": true
+        },
+        {
+          "text": "Filter criteria are AND-combined and first matching span wins",
+          "covered": true
+        },
+        {
+          "text": "Attribute value input is disabled until attribute key has a value",
+          "covered": true
+        },
+        {
+          "text": "Span filter preview shows match status and filtered inputs/outputs against first trace",
+          "covered": true
+        },
+        {
+          "text": "Span filter is applied before JSONPath extraction in TraceViewer",
+          "covered": true
+        },
+        {
+          "text": "Empty filter config results in no filtering and root trace data is used",
+          "covered": true
+        },
+        {
+          "text": "String span inputs and outputs are returned as-is without double-serialization",
+          "covered": true
+        },
+        {
+          "text": "All backend services that consume trace input/output apply the same span filter and JSONPath pipeline as the TraceViewer",
+          "covered": true
+        },
+        {
+          "text": "JSONPath evaluation does not noticeably slow down trace display",
+          "covered": true
+        },
+        {
+          "text": "Preview responds within 500ms",
+          "covered": true
+        },
+        {
+          "text": "Invalid JSONPath syntax shows helpful error message in preview",
+          "covered": true
+        }
+      ]
     },
     "UI_COMPONENTS_SPEC": {
       "total_requirements": 16,
