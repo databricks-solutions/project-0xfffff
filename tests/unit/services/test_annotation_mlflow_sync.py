@@ -173,7 +173,7 @@ class TestMlflowTraceTagging:
 
             # Verify both tags were set
             tag_calls = {call.kwargs.get('key') or call[1].get('key'): call.kwargs.get('value') or call[1].get('value') for call in mock_tag.call_args_list}
-            assert tag_calls.get('label') == 'align'
+            assert tag_calls.get('align') == 'true'
             assert tag_calls.get('workshop_id') == 'ws-test-42'
 
 
