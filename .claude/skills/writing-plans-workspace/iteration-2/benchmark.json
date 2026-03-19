@@ -1,0 +1,362 @@
+{
+  "skill_name": "writing-plans",
+  "iteration": 2,
+  "configs": {
+    "with_skill": {
+      "pass_rate": {
+        "mean": 0.963,
+        "stddev": 0.064
+      },
+      "time_seconds": {
+        "mean": 206.9,
+        "stddev": 25.8
+      },
+      "tokens": {
+        "mean": 54821,
+        "stddev": 3434
+      },
+      "per_eval": [
+        {
+          "eval_name": "csv-export",
+          "pass_rate": 1.0,
+          "time_seconds": 177.3,
+          "tokens": 53022,
+          "assertions": [
+            {
+              "text": "Plan header references ANNOTATION_SPEC and lists success criteria",
+              "passed": true,
+              "evidence": "Spec: True, Criteria: True"
+            },
+            {
+              "text": "Plan includes a file map table",
+              "passed": true,
+              "evidence": "Found: True"
+            },
+            {
+              "text": "Tasks follow TDD pattern",
+              "passed": true,
+              "evidence": "TDD elements found: True"
+            },
+            {
+              "text": "Tests include @spec and @req tags",
+              "passed": true,
+              "evidence": "@spec: True, @req: True"
+            },
+            {
+              "text": "Steps reference exact file paths",
+              "passed": true,
+              "evidence": "Found 24 paths"
+            },
+            {
+              "text": "Uses just commands (not npx directly)",
+              "passed": true,
+              "evidence": "just: True, no npx: True"
+            },
+            {
+              "text": "Final task includes lint + coverage verification",
+              "passed": true,
+              "evidence": "Lint: True, Coverage: True"
+            },
+            {
+              "text": "Plan includes Implementation Log entry",
+              "passed": true,
+              "evidence": "Found: True"
+            },
+            {
+              "text": "@req text appears to be verbatim spec criteria (>20 chars)",
+              "passed": true,
+              "evidence": "Found 2 substantial @req markers"
+            }
+          ]
+        },
+        {
+          "eval_name": "webhook-notifications",
+          "pass_rate": 0.8888888888888888,
+          "time_seconds": 225.0,
+          "tokens": 58781,
+          "assertions": [
+            {
+              "text": "Plan header references WEBHOOK_NOTIFICATIONS_SPEC and lists success criteria",
+              "passed": true,
+              "evidence": "Spec: True, Criteria: True"
+            },
+            {
+              "text": "Plan includes a file map table",
+              "passed": true,
+              "evidence": "Found: True"
+            },
+            {
+              "text": "Tasks follow TDD pattern",
+              "passed": true,
+              "evidence": "TDD elements found: True"
+            },
+            {
+              "text": "Tests include @spec and @req tags",
+              "passed": true,
+              "evidence": "@spec: True, @req: True"
+            },
+            {
+              "text": "Steps reference exact file paths",
+              "passed": true,
+              "evidence": "Found 38 paths"
+            },
+            {
+              "text": "Uses just commands (not npx directly)",
+              "passed": true,
+              "evidence": "just: True, no npx: True"
+            },
+            {
+              "text": "Final task includes lint + coverage verification",
+              "passed": false,
+              "evidence": "Lint: False, Coverage: True"
+            },
+            {
+              "text": "Plan includes Implementation Log entry",
+              "passed": true,
+              "evidence": "Found: True"
+            },
+            {
+              "text": "@req text appears to be verbatim spec criteria (>20 chars)",
+              "passed": true,
+              "evidence": "Found 15 substantial @req markers"
+            }
+          ]
+        },
+        {
+          "eval_name": "admin-dashboard",
+          "pass_rate": 1.0,
+          "time_seconds": 218.3,
+          "tokens": 52661,
+          "assertions": [
+            {
+              "text": "Plan header references ADMIN_DASHBOARD_SPEC and lists success criteria",
+              "passed": true,
+              "evidence": "Spec: True, Criteria: True"
+            },
+            {
+              "text": "Plan includes a file map table",
+              "passed": true,
+              "evidence": "Found: True"
+            },
+            {
+              "text": "Tasks follow TDD pattern",
+              "passed": true,
+              "evidence": "TDD elements found: True"
+            },
+            {
+              "text": "Tests include @spec and @req tags",
+              "passed": true,
+              "evidence": "@spec: True, @req: True"
+            },
+            {
+              "text": "Steps reference exact file paths",
+              "passed": true,
+              "evidence": "Found 70 paths"
+            },
+            {
+              "text": "Uses just commands (not npx directly)",
+              "passed": true,
+              "evidence": "just: True, no npx: True"
+            },
+            {
+              "text": "Final task includes lint + coverage verification",
+              "passed": true,
+              "evidence": "Lint: True, Coverage: True"
+            },
+            {
+              "text": "Plan includes Implementation Log entry",
+              "passed": true,
+              "evidence": "Found: True"
+            },
+            {
+              "text": "@req text appears to be verbatim spec criteria (>20 chars)",
+              "passed": true,
+              "evidence": "Found 8 substantial @req markers"
+            }
+          ]
+        }
+      ]
+    },
+    "without_skill": {
+      "pass_rate": {
+        "mean": 0.37,
+        "stddev": 0.357
+      },
+      "time_seconds": {
+        "mean": 164.0,
+        "stddev": 56.6
+      },
+      "tokens": {
+        "mean": 61604,
+        "stddev": 18629
+      },
+      "per_eval": [
+        {
+          "eval_name": "csv-export",
+          "pass_rate": 0.1111111111111111,
+          "time_seconds": 122.7,
+          "tokens": 44159,
+          "assertions": [
+            {
+              "text": "Plan header references ANNOTATION_SPEC and lists success criteria",
+              "passed": false,
+              "evidence": "Spec: True, Criteria: False"
+            },
+            {
+              "text": "Plan includes a file map table",
+              "passed": false,
+              "evidence": "Found: False"
+            },
+            {
+              "text": "Tasks follow TDD pattern",
+              "passed": false,
+              "evidence": "TDD elements found: False"
+            },
+            {
+              "text": "Tests include @spec and @req tags",
+              "passed": false,
+              "evidence": "@spec: True, @req: False"
+            },
+            {
+              "text": "Steps reference exact file paths",
+              "passed": true,
+              "evidence": "Found 10 paths"
+            },
+            {
+              "text": "Uses just commands (not npx directly)",
+              "passed": false,
+              "evidence": "just: False, no npx: True"
+            },
+            {
+              "text": "Final task includes lint + coverage verification",
+              "passed": false,
+              "evidence": "Lint: False, Coverage: False"
+            },
+            {
+              "text": "Plan includes Implementation Log entry",
+              "passed": false,
+              "evidence": "Found: False"
+            },
+            {
+              "text": "@req text appears to be verbatim spec criteria (>20 chars)",
+              "passed": false,
+              "evidence": "Found 0 substantial @req markers"
+            }
+          ]
+        },
+        {
+          "eval_name": "webhook-notifications",
+          "pass_rate": 0.2222222222222222,
+          "time_seconds": 140.7,
+          "tokens": 59428,
+          "assertions": [
+            {
+              "text": "Plan header references WEBHOOK_NOTIFICATIONS_SPEC and lists success criteria",
+              "passed": true,
+              "evidence": "Spec: True, Criteria: True"
+            },
+            {
+              "text": "Plan includes a file map table",
+              "passed": false,
+              "evidence": "Found: False"
+            },
+            {
+              "text": "Tasks follow TDD pattern",
+              "passed": false,
+              "evidence": "TDD elements found: False"
+            },
+            {
+              "text": "Tests include @spec and @req tags",
+              "passed": false,
+              "evidence": "@spec: False, @req: False"
+            },
+            {
+              "text": "Steps reference exact file paths",
+              "passed": true,
+              "evidence": "Found 17 paths"
+            },
+            {
+              "text": "Uses just commands (not npx directly)",
+              "passed": false,
+              "evidence": "just: False, no npx: True"
+            },
+            {
+              "text": "Final task includes lint + coverage verification",
+              "passed": false,
+              "evidence": "Lint: False, Coverage: False"
+            },
+            {
+              "text": "Plan includes Implementation Log entry",
+              "passed": false,
+              "evidence": "Found: False"
+            },
+            {
+              "text": "@req text appears to be verbatim spec criteria (>20 chars)",
+              "passed": false,
+              "evidence": "Found 0 substantial @req markers"
+            }
+          ]
+        },
+        {
+          "eval_name": "admin-dashboard",
+          "pass_rate": 0.7777777777777778,
+          "time_seconds": 228.5,
+          "tokens": 81225,
+          "assertions": [
+            {
+              "text": "Plan header references ADMIN_DASHBOARD_SPEC and lists success criteria",
+              "passed": true,
+              "evidence": "Spec: True, Criteria: True"
+            },
+            {
+              "text": "Plan includes a file map table",
+              "passed": true,
+              "evidence": "Found: True"
+            },
+            {
+              "text": "Tasks follow TDD pattern",
+              "passed": true,
+              "evidence": "TDD elements found: True"
+            },
+            {
+              "text": "Tests include @spec and @req tags",
+              "passed": true,
+              "evidence": "@spec: True, @req: True"
+            },
+            {
+              "text": "Steps reference exact file paths",
+              "passed": true,
+              "evidence": "Found 65 paths"
+            },
+            {
+              "text": "Uses just commands (not npx directly)",
+              "passed": false,
+              "evidence": "just: True, no npx: False"
+            },
+            {
+              "text": "Final task includes lint + coverage verification",
+              "passed": false,
+              "evidence": "Lint: False, Coverage: True"
+            },
+            {
+              "text": "Plan includes Implementation Log entry",
+              "passed": true,
+              "evidence": "Found: True"
+            },
+            {
+              "text": "@req text appears to be verbatim spec criteria (>20 chars)",
+              "passed": true,
+              "evidence": "Found 12 substantial @req markers"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "delta": 0.593,
+  "analyst_observations": [
+    "With-skill: 96% vs baseline: 37% (delta: +59%)",
+    "Iteration 2 added: verbatim @req requirement, just-only commands (no npx), ui-lint in final task",
+    "All three feedback issues from iteration 1 appear resolved in with-skill outputs"
+  ]
+}

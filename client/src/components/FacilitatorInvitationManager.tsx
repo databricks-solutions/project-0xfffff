@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useUser } from '@/context/UserContext';
 import { Button } from '@/components/ui/button';
@@ -38,25 +38,26 @@ export const FacilitatorInvitationManager: React.FC = () => {
   });
 
   // Fetch existing invitations
-  const fetchInvitations = async () => {
+  const fetchInvitations = useCallback(async () => {
+    if (!workshopId) return;
     try {
       const response = await fetch(`/users/invitations/?workshop_id=${workshopId}`);
       if (response.ok) {
         const data = await response.json();
         setInvitations(data);
       } else {
-        
+        // Silently ignore non-OK responses
       }
     } catch (error) {
-      
+      // Silently ignore fetch errors
     }
-  };
+  }, [workshopId]);
 
   useEffect(() => {
     if (workshopId) {
       fetchInvitations();
     }
-  }, [workshopId]);
+  }, [workshopId, fetchInvitations]);
 
   const handleCreateInvitation = async (e: React.FormEvent) => {
     e.preventDefault();

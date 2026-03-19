@@ -1,14 +1,16 @@
 // @spec JUDGE_EVALUATION_SPEC
+// @req Binary judges return values 0 or 1
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { JudgeTypeSelector, defaultPromptTemplates, binaryLabelPresets } from './JudgeTypeSelector';
+import { JudgeType } from '@/client';
 
 describe('@spec:JUDGE_EVALUATION_SPEC JudgeTypeSelector', () => {
   describe('Rendering', () => {
     it('renders all three judge type cards', () => {
       render(
         <JudgeTypeSelector
-          selectedType="likert"
+          selectedType={JudgeType.LIKERT}
           onTypeChange={() => {}}
         />
       );
@@ -21,7 +23,7 @@ describe('@spec:JUDGE_EVALUATION_SPEC JudgeTypeSelector', () => {
     it('displays descriptions for each judge type', () => {
       render(
         <JudgeTypeSelector
-          selectedType="likert"
+          selectedType={JudgeType.LIKERT}
           onTypeChange={() => {}}
         />
       );
@@ -34,7 +36,7 @@ describe('@spec:JUDGE_EVALUATION_SPEC JudgeTypeSelector', () => {
     it('shows features for Likert judge', () => {
       render(
         <JudgeTypeSelector
-          selectedType="likert"
+          selectedType={JudgeType.LIKERT}
           onTypeChange={() => {}}
         />
       );
@@ -47,7 +49,7 @@ describe('@spec:JUDGE_EVALUATION_SPEC JudgeTypeSelector', () => {
     it('shows features for Binary judge', () => {
       render(
         <JudgeTypeSelector
-          selectedType="binary"
+          selectedType={JudgeType.BINARY}
           onTypeChange={() => {}}
         />
       );
@@ -60,7 +62,7 @@ describe('@spec:JUDGE_EVALUATION_SPEC JudgeTypeSelector', () => {
     it('shows features for Free-form judge', () => {
       render(
         <JudgeTypeSelector
-          selectedType="freeform"
+          selectedType={JudgeType.FREEFORM}
           onTypeChange={() => {}}
         />
       );
@@ -73,7 +75,7 @@ describe('@spec:JUDGE_EVALUATION_SPEC JudgeTypeSelector', () => {
     it('shows use cases for each judge type', () => {
       render(
         <JudgeTypeSelector
-          selectedType="likert"
+          selectedType={JudgeType.LIKERT}
           onTypeChange={() => {}}
         />
       );
@@ -94,7 +96,7 @@ describe('@spec:JUDGE_EVALUATION_SPEC JudgeTypeSelector', () => {
       const onTypeChange = vi.fn();
       render(
         <JudgeTypeSelector
-          selectedType="binary"
+          selectedType={JudgeType.BINARY}
           onTypeChange={onTypeChange}
         />
       );
@@ -107,7 +109,7 @@ describe('@spec:JUDGE_EVALUATION_SPEC JudgeTypeSelector', () => {
       const onTypeChange = vi.fn();
       render(
         <JudgeTypeSelector
-          selectedType="likert"
+          selectedType={JudgeType.LIKERT}
           onTypeChange={onTypeChange}
         />
       );
@@ -120,7 +122,7 @@ describe('@spec:JUDGE_EVALUATION_SPEC JudgeTypeSelector', () => {
       const onTypeChange = vi.fn();
       render(
         <JudgeTypeSelector
-          selectedType="likert"
+          selectedType={JudgeType.LIKERT}
           onTypeChange={onTypeChange}
         />
       );
@@ -132,7 +134,7 @@ describe('@spec:JUDGE_EVALUATION_SPEC JudgeTypeSelector', () => {
     it('highlights selected type with checkmark', () => {
       const { container } = render(
         <JudgeTypeSelector
-          selectedType="binary"
+          selectedType={JudgeType.BINARY}
           onTypeChange={() => {}}
         />
       );
@@ -148,7 +150,7 @@ describe('@spec:JUDGE_EVALUATION_SPEC JudgeTypeSelector', () => {
       const onTypeChange = vi.fn();
       render(
         <JudgeTypeSelector
-          selectedType="likert"
+          selectedType={JudgeType.LIKERT}
           onTypeChange={onTypeChange}
           disabled={true}
         />
@@ -161,7 +163,7 @@ describe('@spec:JUDGE_EVALUATION_SPEC JudgeTypeSelector', () => {
     it('applies opacity styling when disabled', () => {
       const { container } = render(
         <JudgeTypeSelector
-          selectedType="likert"
+          selectedType={JudgeType.LIKERT}
           onTypeChange={() => {}}
           disabled={true}
         />

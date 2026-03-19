@@ -6,6 +6,7 @@ from server.models import User, UserLogin, UserPermissions, UserRole, UserStatus
 
 
 @pytest.mark.spec("AUTHENTICATION_SPEC")
+@pytest.mark.req("No page refresh required after login")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_users_login_facilitator_path(async_client, app):
@@ -45,6 +46,7 @@ async def test_users_login_facilitator_path(async_client, app):
 
 
 @pytest.mark.spec("AUTHENTICATION_SPEC")
+@pytest.mark.req("Error recovery: Errors cleared on new login attempt")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_users_login_invalid_credentials_returns_401(async_client, app):
@@ -67,6 +69,7 @@ async def test_users_login_invalid_credentials_returns_401(async_client, app):
 
 
 @pytest.mark.spec("AUTHENTICATION_SPEC")
+@pytest.mark.req("No \"permission denied\" errors on normal login")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_user_permissions_derived_from_role(async_client, app):

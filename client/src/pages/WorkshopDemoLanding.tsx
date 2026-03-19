@@ -20,7 +20,7 @@ import { IRRResultsDemo } from './IRRResultsDemo';
 import { JudgeTuningPage } from './JudgeTuningPage';
 import { DBSQLExportPage } from './DBSQLExportPage';
 import { UnityVolumePage } from './UnityVolumePage';
-import { FindingsReviewPage } from './FindingsReviewPage';
+
 import { IntakePage } from './IntakePage';
 import { AppSidebar } from '@/components/AppSidebar';
 import { AnnotationAssignmentManager } from '@/components/AnnotationAssignmentManager';
@@ -41,6 +41,8 @@ import { AnnotationPendingPage } from '@/components/AnnotationPendingPage';
 import { FacilitatorScreenShare } from '@/components/FacilitatorScreenShare';
 import { PhasePausedView } from '@/components/PhasePausedView';
 import { GeneralDashboard } from '@/components/GeneralDashboard';
+import { ErrorBoundary, PageErrorFallback } from '@/components/ErrorBoundary';
+import { FacilitatorDiscoveryWorkspace } from '@/components/discovery/FacilitatorDiscoveryWorkspace';
 
 
 
@@ -83,6 +85,7 @@ export function WorkshopDemoLanding() {
       switch(requestedPhase) {
         case 'intake': return 'intake';
         case 'user-management': return 'user-management';
+        case 'view-all-findings': return 'discovery-monitor';
         case 'discovery': 
           // Show start page ONLY if discovery has never been started
           if (!state.discovery_started) {
@@ -145,24 +148,19 @@ export function WorkshopDemoLanding() {
   const hasAttemptedRecovery = React.useRef(false);
   const createWorkshop = useCreateWorkshop();
 
-  // Effect: Handle case where workshop doesn't exist (404/500 error) with auto-recovery
+  // Effect: Handle case where workshop doesn't exist (404 error) with auto-recovery.
+  // Only 404 triggers recovery — transient 500s are handled by the query's retry logic
+  // and refetchInterval stops polling on error to avoid cascading side effects.
   React.useEffect(() => {
     // Prevent infinite loops - only attempt recovery once
     if (workshopError && !isAutoRecovering && !hasAttemptedRecovery.current) {
       const is404Error = (
-        ('status' in workshopError && (workshopError as any).status === 404) ||
-        ('response' in workshopError && (workshopError as any).response?.status === 404) ||
+        ('status' in workshopError && (workshopError as { status?: number }).status === 404) ||
+        ('response' in workshopError && (workshopError as { response?: { status?: number } }).response?.status === 404) ||
         (workshopError instanceof Error && workshopError.message?.includes('404'))
       );
-      
-      const is500Error = (
-        ('status' in workshopError && (workshopError as any).status === 500) ||
-        ('response' in workshopError && (workshopError as any).response?.status === 500) ||
-        (workshopError instanceof Error && workshopError.message?.includes('500')) ||
-        (workshopError instanceof Error && workshopError.message?.includes('Internal Server Error'))
-      );
-      
-      if ((is404Error || is500Error) && workshopId) {
+
+      if (is404Error && workshopId) {
         // Mark that we've attempted recovery to prevent infinite loops
         hasAttemptedRecovery.current = true;
         
@@ -342,8 +340,8 @@ export function WorkshopDemoLanding() {
   // Show auto-recovery screen while handling invalid workshop
   if (workshopError) {
     const is404Error = (
-      ('status' in workshopError && (workshopError as any).status === 404) ||
-      ('response' in workshopError && (workshopError as any).response?.status === 404) ||
+      ('status' in workshopError && (workshopError as { status?: number }).status === 404) ||
+      ('response' in workshopError && (workshopError as { response?: { status?: number } }).response?.status === 404) ||
       (workshopError instanceof Error && workshopError.message?.includes('404'))
     );
     
@@ -507,7 +505,7 @@ export function WorkshopDemoLanding() {
       case 'discovery-pending':
         return <DiscoveryPendingPage />;
       case 'discovery-monitor':
-        return <FacilitatorDashboard onNavigate={handleNavigation} focusPhase={'discovery'} />;
+        return <FacilitatorDiscoveryWorkspace onNavigate={handleNavigation} />;
       case 'discovery-participate':
         return <TraceViewerDemo />;
       case 'discovery-complete':
@@ -546,7 +544,7 @@ export function WorkshopDemoLanding() {
       case 'unity-volume':
         return <UnityVolumePage />;
       case 'findings-review':
-        return <FindingsReviewPage onBack={() => setCurrentView('discovery-monitor')} />;
+        return <FacilitatorDiscoveryWorkspace onNavigate={handleNavigation} />;
       case 'assign-annotations':
         return <AnnotationAssignmentManager />;
       case 'user-management':
@@ -639,9 +637,17 @@ export function WorkshopDemoLanding() {
                 </div>
               );
             }
-            
-            // Render the appropriate component
-            return renderCurrentView();
+
+            // Render the appropriate component inside a page-level error boundary
+            // so a crash in any page keeps the sidebar/header functional
+            return (
+              <ErrorBoundary
+                key={currentView}
+                fallback={(props) => <PageErrorFallback {...props} />}
+              >
+                {renderCurrentView()}
+              </ErrorBoundary>
+            );
           })()}
         </div>
       </div>

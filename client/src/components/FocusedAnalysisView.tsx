@@ -34,7 +34,7 @@ interface DiscoveryResponse {
   trace: {
     input: string;
     output: string;
-    context?: any;
+    context?: Record<string, unknown>;
     mlflow_trace_id?: string;
   } | null;
   responses: {

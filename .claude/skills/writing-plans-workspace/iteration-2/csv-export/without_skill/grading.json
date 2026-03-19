@@ -1,0 +1,52 @@
+{
+  "eval_name": "csv-export",
+  "variant": "without_skill",
+  "expectations": [
+    {
+      "text": "Plan header references ANNOTATION_SPEC and lists success criteria",
+      "passed": false,
+      "evidence": "Spec: True, Criteria: False"
+    },
+    {
+      "text": "Plan includes a file map table",
+      "passed": false,
+      "evidence": "Found: False"
+    },
+    {
+      "text": "Tasks follow TDD pattern",
+      "passed": false,
+      "evidence": "TDD elements found: False"
+    },
+    {
+      "text": "Tests include @spec and @req tags",
+      "passed": false,
+      "evidence": "@spec: True, @req: False"
+    },
+    {
+      "text": "Steps reference exact file paths",
+      "passed": true,
+      "evidence": "Found 10 paths"
+    },
+    {
+      "text": "Uses just commands (not npx directly)",
+      "passed": false,
+      "evidence": "just: False, no npx: True"
+    },
+    {
+      "text": "Final task includes lint + coverage verification",
+      "passed": false,
+      "evidence": "Lint: False, Coverage: False"
+    },
+    {
+      "text": "Plan includes Implementation Log entry",
+      "passed": false,
+      "evidence": "Found: False"
+    },
+    {
+      "text": "@req text appears to be verbatim spec criteria (>20 chars)",
+      "passed": false,
+      "evidence": "Found 0 substantial @req markers"
+    }
+  ],
+  "pass_rate": 0.1111111111111111
+}

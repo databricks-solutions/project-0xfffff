@@ -7,6 +7,7 @@ describe('@spec:DATASETS_SPEC traceUtils', () => {
     it('converts basic API trace fields', () => {
       const out = convertTraceToTraceData({
         id: 't1',
+        workshop_id: 'w1',
         input: '{"query": "test"}',
         output: '{"response": "result"}',
       });
@@ -26,6 +27,7 @@ describe('@spec:DATASETS_SPEC traceUtils', () => {
     it('normalizes null optional fields to undefined', () => {
       const out = convertTraceToTraceData({
         id: 't1',
+        workshop_id: 'w1',
         input: 'in',
         output: 'out',
         context: null,
@@ -45,6 +47,7 @@ describe('@spec:DATASETS_SPEC traceUtils', () => {
     it('normalizes empty string optional fields to undefined', () => {
       const out = convertTraceToTraceData({
         id: 't1',
+        workshop_id: 'w1',
         input: 'in',
         output: 'out',
         mlflow_trace_id: '',
@@ -62,13 +65,14 @@ describe('@spec:DATASETS_SPEC traceUtils', () => {
     it('normalizes zero/falsy optional fields to undefined', () => {
       const out = convertTraceToTraceData({
         id: 't1',
+        workshop_id: 'w1',
         input: 'in',
         output: 'out',
         context: undefined,
         mlflow_trace_id: '',
         mlflow_url: undefined,
         mlflow_host: null,
-        mlflow_experiment_id: 0,
+        mlflow_experiment_id: 0 as unknown as string,
       });
 
       expect(out).toEqual({
@@ -86,6 +90,7 @@ describe('@spec:DATASETS_SPEC traceUtils', () => {
     it('preserves valid MLflow metadata', () => {
       const out = convertTraceToTraceData({
         id: 'trace-123',
+        workshop_id: 'w1',
         input: '{"messages": []}',
         output: '{"choices": []}',
         context: { source: 'test' },
@@ -119,6 +124,7 @@ describe('@spec:DATASETS_SPEC traceUtils', () => {
 
       const out = convertTraceToTraceData({
         id: 't1',
+        workshop_id: 'w1',
         input: complexInput,
         output: complexOutput,
       });
@@ -130,6 +136,7 @@ describe('@spec:DATASETS_SPEC traceUtils', () => {
     it('handles trace with only required fields', () => {
       const out = convertTraceToTraceData({
         id: 'minimal-trace',
+        workshop_id: 'w1',
         input: 'test input',
         output: 'test output',
       });
@@ -149,6 +156,7 @@ describe('@spec:DATASETS_SPEC traceUtils', () => {
 
       const out = convertTraceToTraceData({
         id: 't1',
+        workshop_id: 'w1',
         input: 'in',
         output: 'out',
         context: context,

@@ -1,0 +1,357 @@
+"""Tests for draft rubric items CRUD in DatabaseService.
+
+Covers creation, listing, update, delete, group apply/clear,
+and phase gate validation per DISCOVERY_SPEC Step 3.
+
+Uses real in-memory SQLite (same pattern as test_database_service_feedback.py).
+"""
+
+import pytest
+from fastapi import HTTPException
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from server.database import (
+    Base,
+    DraftRubricItemDB,
+    TraceDB,
+    WorkshopDB,
+)
+from server.models import (
+    DraftRubricItem,
+    DraftRubricItemCreate,
+    DraftRubricItemUpdate,
+)
+from server.services.database_service import DatabaseService
+from server.services.discovery_service import DiscoveryService
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def test_db():
+    """Create an in-memory SQLite database for testing."""
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    yield session
+    session.close()
+
+
+@pytest.fixture
+def db_service(test_db):
+    return DatabaseService(test_db)
+
+
+@pytest.fixture
+def workshop(test_db):
+    ws = WorkshopDB(
+        id="ws-1",
+        name="Test Workshop",
+        facilitator_id="f-1",
+    )
+    test_db.add(ws)
+    test_db.commit()
+    return ws
+
+
+@pytest.fixture
+def traces(test_db, workshop):
+    t1 = TraceDB(id="t-1", workshop_id="ws-1", input="Hello", output="Hi")
+    t2 = TraceDB(id="t-2", workshop_id="ws-1", input="Bye", output="Later")
+    test_db.add_all([t1, t2])
+    test_db.commit()
+    return [t1, t2]
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+class TestDraftRubricItemsCRUD:
+    """@req DI-S3-CRUD: Draft rubric items can be created, read, updated, deleted."""
+
+    @pytest.mark.req("Facilitator can manually add draft rubric items")
+    def test_create_draft_rubric_item(self, db_service, workshop):
+        """@req DI-S3-CREATE: Facilitator can add a draft rubric item."""
+        data = DraftRubricItemCreate(
+            text="Does the response cite sources?",
+            source_type="manual",
+        )
+        item = db_service.add_draft_rubric_item("ws-1", data, promoted_by="f-1")
+
+        assert isinstance(item, DraftRubricItem)
+        assert item.text == "Does the response cite sources?"
+        assert item.source_type == "manual"
+        assert item.promoted_by == "f-1"
+        assert item.workshop_id == "ws-1"
+        assert item.group_id is None
+        assert item.group_name is None
+
+    @pytest.mark.req("Source traceability maintained (which traces support each item)")
+    def test_create_item_with_source_metadata(self, db_service, workshop):
+        """@req DI-S3-SOURCE: Items track promotion source type and trace IDs."""
+        data = DraftRubricItemCreate(
+            text="Tone is appropriate",
+            source_type="feedback",
+            source_trace_ids=["t-1", "t-2"],
+        )
+        item = db_service.add_draft_rubric_item("ws-1", data, promoted_by="f-1")
+
+        assert item.source_type == "feedback"
+        assert item.source_trace_ids == ["t-1", "t-2"]
+
+    @pytest.mark.req("Draft rubric items available during Rubric Creation phase")
+    def test_list_draft_rubric_items(self, db_service, workshop):
+        """@req DI-S3-LIST: All items for a workshop can be retrieved."""
+        for text in ["Item A", "Item B", "Item C"]:
+            data = DraftRubricItemCreate(text=text, source_type="manual")
+            db_service.add_draft_rubric_item("ws-1", data, promoted_by="f-1")
+
+        items = db_service.get_draft_rubric_items("ws-1")
+        assert len(items) == 3
+        assert all(isinstance(i, DraftRubricItem) for i in items)
+
+    @pytest.mark.req("Draft rubric items available during Rubric Creation phase")
+    def test_list_items_empty_workshop(self, db_service, workshop):
+        """Listing items for a workshop with no items returns empty list."""
+        items = db_service.get_draft_rubric_items("ws-1")
+        assert items == []
+
+    @pytest.mark.req("Draft rubric items editable and removable")
+    def test_update_text(self, db_service, workshop):
+        """@req DI-S3-EDIT: Draft rubric items are editable."""
+        data = DraftRubricItemCreate(text="Original", source_type="manual")
+        item = db_service.add_draft_rubric_item("ws-1", data, promoted_by="f-1")
+
+        updates = DraftRubricItemUpdate(text="Updated text")
+        updated = db_service.update_draft_rubric_item(item.id, updates)
+
+        assert updated is not None
+        assert updated.text == "Updated text"
+
+    @pytest.mark.req("Each group maps to one rubric question (group name = question title)")
+    def test_update_group_fields(self, db_service, workshop):
+        """@req DI-S3-GROUP: Items can be assigned to groups."""
+        data = DraftRubricItemCreate(text="Item", source_type="manual")
+        item = db_service.add_draft_rubric_item("ws-1", data, promoted_by="f-1")
+
+        updates = DraftRubricItemUpdate(group_id="g-1", group_name="Accuracy")
+        updated = db_service.update_draft_rubric_item(item.id, updates)
+
+        assert updated.group_id == "g-1"
+        assert updated.group_name == "Accuracy"
+
+    @pytest.mark.req("Draft rubric items editable and removable")
+    def test_update_nonexistent_item(self, db_service, workshop):
+        """Updating a nonexistent item returns None."""
+        updates = DraftRubricItemUpdate(text="x")
+        result = db_service.update_draft_rubric_item("nonexistent", updates)
+        assert result is None
+
+    @pytest.mark.req("Draft rubric items editable and removable")
+    def test_delete_draft_rubric_item(self, db_service, workshop):
+        """@req DI-S3-DELETE: Draft rubric items can be removed."""
+        data = DraftRubricItemCreate(text="To delete", source_type="manual")
+        item = db_service.add_draft_rubric_item("ws-1", data, promoted_by="f-1")
+
+        deleted = db_service.delete_draft_rubric_item(item.id)
+        assert deleted is True
+
+        items = db_service.get_draft_rubric_items("ws-1")
+        assert len(items) == 0
+
+    @pytest.mark.req("Draft rubric items editable and removable")
+    def test_delete_nonexistent_item(self, db_service, workshop):
+        """Deleting a nonexistent item returns False."""
+        deleted = db_service.delete_draft_rubric_item("nonexistent")
+        assert deleted is False
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+class TestDraftRubricGrouping:
+    """@req DI-S3-GROUPING: Items can be organized into groups."""
+
+    @pytest.mark.req("Facilitator can review, adjust, and apply group proposal")
+    def test_apply_groups(self, db_service, workshop):
+        """@req DI-S3-APPLY: apply_draft_rubric_groups persists group assignments."""
+        items = []
+        for text in ["Accuracy", "Completeness", "Tone"]:
+            data = DraftRubricItemCreate(text=text, source_type="manual")
+            items.append(db_service.add_draft_rubric_item("ws-1", data, promoted_by="f-1"))
+
+        groups = [
+            {"name": "Content Quality", "item_ids": [items[0].id, items[1].id]},
+            {"name": "Communication", "item_ids": [items[2].id]},
+        ]
+        db_service.apply_draft_rubric_groups("ws-1", groups)
+
+        updated_items = db_service.get_draft_rubric_items("ws-1")
+        grouped = {i.id: i for i in updated_items}
+
+        # Items 0 and 1 should be in "Content Quality"
+        assert grouped[items[0].id].group_name == "Content Quality"
+        assert grouped[items[1].id].group_name == "Content Quality"
+        assert grouped[items[0].id].group_id == grouped[items[1].id].group_id
+
+        # Item 2 should be in "Communication"
+        assert grouped[items[2].id].group_name == "Communication"
+
+    @pytest.mark.req("Facilitator can review, adjust, and apply group proposal")
+    def test_apply_groups_clears_previous(self, db_service, workshop):
+        """@req DI-S3-REGROUP: Applying new groups clears previous assignments."""
+        data = DraftRubricItemCreate(text="Item", source_type="manual")
+        item = db_service.add_draft_rubric_item("ws-1", data, promoted_by="f-1")
+
+        # First grouping
+        db_service.apply_draft_rubric_groups(
+            "ws-1", [{"name": "Group A", "item_ids": [item.id]}]
+        )
+        items = db_service.get_draft_rubric_items("ws-1")
+        assert items[0].group_name == "Group A"
+
+        # Second grouping - should replace
+        db_service.apply_draft_rubric_groups(
+            "ws-1", [{"name": "Group B", "item_ids": [item.id]}]
+        )
+        items = db_service.get_draft_rubric_items("ws-1")
+        assert items[0].group_name == "Group B"
+
+    @pytest.mark.req("Manual grouping: create groups, name them, move items between groups")
+    def test_apply_empty_groups_clears_all(self, db_service, workshop):
+        """Applying empty groups list clears all group assignments."""
+        data = DraftRubricItemCreate(text="Item", source_type="manual")
+        item = db_service.add_draft_rubric_item("ws-1", data, promoted_by="f-1")
+
+        db_service.apply_draft_rubric_groups(
+            "ws-1", [{"name": "G", "item_ids": [item.id]}]
+        )
+        db_service.apply_draft_rubric_groups("ws-1", [])
+
+        items = db_service.get_draft_rubric_items("ws-1")
+        assert items[0].group_id is None
+        assert items[0].group_name is None
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+class TestSourceTypeValidation:
+    """@req DI-S3-SOURCE-TYPES: Items support multiple source types."""
+
+    @pytest.mark.req("Draft rubric items track promotion source and promoter")
+    @pytest.mark.parametrize("source_type", ["finding", "disagreement", "feedback", "manual"])
+    def test_valid_source_types(self, db_service, workshop, source_type):
+        """@req DI-S3-SOURCE: All four source types are accepted."""
+        data = DraftRubricItemCreate(text=f"From {source_type}", source_type=source_type)
+        item = db_service.add_draft_rubric_item("ws-1", data, promoted_by="f-1")
+        assert item.source_type == source_type
+
+    @pytest.mark.req("Facilitator can promote distilled criteria to draft rubric")
+    def test_source_analysis_id(self, db_service, workshop):
+        """@req DI-S3-ANALYSIS: Items can reference a source analysis."""
+        data = DraftRubricItemCreate(
+            text="From analysis",
+            source_type="finding",
+            source_analysis_id="analysis-123",
+        )
+        item = db_service.add_draft_rubric_item("ws-1", data, promoted_by="f-1")
+        assert item.source_analysis_id == "analysis-123"
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+class TestCreateRubricFromDraft:
+    """@req DI-S3-RUBRIC-SEED: Draft rubric items seed initial rubric."""
+
+    @pytest.mark.req("\"Create Rubric \u2192\" in sidebar transitions to rubric creation with groups pre-populated as criteria")
+    def test_grouped_items_become_questions(self, db_service, workshop):
+        """@req DI-S3-GROUP-TO-Q: Each group becomes one rubric question."""
+        # Create draft items in two groups
+        item1 = db_service.add_draft_rubric_item(
+            workshop.id,
+            DraftRubricItemCreate(text="Accuracy matters", source_type="finding"),
+            promoted_by="facilitator",
+        )
+        db_service.update_draft_rubric_item(item1.id, DraftRubricItemUpdate(group_id="g1", group_name="Response Quality"))
+        item2 = db_service.add_draft_rubric_item(
+            workshop.id,
+            DraftRubricItemCreate(text="Completeness check", source_type="finding"),
+            promoted_by="facilitator",
+        )
+        db_service.update_draft_rubric_item(item2.id, DraftRubricItemUpdate(group_id="g1", group_name="Response Quality"))
+        item3 = db_service.add_draft_rubric_item(
+            workshop.id,
+            DraftRubricItemCreate(text="Tone is friendly", source_type="disagreement"),
+            promoted_by="facilitator",
+        )
+        db_service.update_draft_rubric_item(item3.id, DraftRubricItemUpdate(group_id="g2", group_name="Tone"))
+
+        svc = DiscoveryService(db_service.db)
+        rubric = svc.create_rubric_from_draft(workshop.id, created_by="facilitator")
+
+        assert rubric is not None
+        assert "Response Quality" in rubric.question
+        assert "Tone" in rubric.question
+        assert "Accuracy matters" in rubric.question
+        assert "Completeness check" in rubric.question
+        assert "Tone is friendly" in rubric.question
+        assert "|||QUESTION_SEPARATOR|||" in rubric.question
+        assert "|||JUDGE_TYPE|||likert" in rubric.question
+        # Verify bullet list format for grouped items
+        assert "- Accuracy matters" in rubric.question
+        assert "- Completeness check" in rubric.question
+
+    @pytest.mark.req("Ungrouped draft items each become a question")
+    def test_ungrouped_items_each_become_question(self, db_service, workshop):
+        """@req DI-S3-UNGROUPED-Q: Ungrouped items become individual questions."""
+        db_service.add_draft_rubric_item(
+            workshop.id,
+            DraftRubricItemCreate(text="Factual accuracy", source_type="finding"),
+            promoted_by="facilitator",
+        )
+        db_service.add_draft_rubric_item(
+            workshop.id,
+            DraftRubricItemCreate(text="Code quality", source_type="finding"),
+            promoted_by="facilitator",
+        )
+
+        svc = DiscoveryService(db_service.db)
+        rubric = svc.create_rubric_from_draft(workshop.id, created_by="facilitator")
+
+        assert "Factual accuracy" in rubric.question
+        assert "Code quality" in rubric.question
+        assert rubric.question.count("|||QUESTION_SEPARATOR|||") >= 1
+
+    @pytest.mark.req("Empty draft items raises error")
+    def test_no_items_raises_400(self, db_service, workshop):
+        """@req DI-S3-EMPTY-GUARD: Cannot create rubric from empty draft."""
+        svc = DiscoveryService(db_service.db)
+        with pytest.raises(HTTPException) as exc_info:
+            svc.create_rubric_from_draft(workshop.id, created_by="facilitator")
+        assert exc_info.value.status_code == 400
+
+    @pytest.mark.req("Mixed grouped and ungrouped items")
+    def test_mixed_grouped_and_ungrouped(self, db_service, workshop):
+        """@req DI-S3-MIXED: Groups appear first, ungrouped items after."""
+        item1 = db_service.add_draft_rubric_item(
+            workshop.id,
+            DraftRubricItemCreate(text="Grouped item", source_type="finding"),
+            promoted_by="facilitator",
+        )
+        db_service.update_draft_rubric_item(item1.id, DraftRubricItemUpdate(group_id="g1", group_name="Quality"))
+        db_service.add_draft_rubric_item(
+            workshop.id,
+            DraftRubricItemCreate(text="Solo item", source_type="finding"),
+            promoted_by="facilitator",
+        )
+
+        svc = DiscoveryService(db_service.db)
+        rubric = svc.create_rubric_from_draft(workshop.id, created_by="facilitator")
+
+        quality_pos = rubric.question.index("Quality")
+        solo_pos = rubric.question.index("Solo item")
+        assert quality_pos < solo_pos

@@ -1,0 +1,34 @@
+{
+  "expectations": [
+    {
+      "text": "Found ROLE_PERMISSIONS_SPEC or DISCOVERY_TRACE_ASSIGNMENT_SPEC as related spec",
+      "passed": true,
+      "evidence": "Found both: 'phase -> DISCOVERY_TRACE_ASSIGNMENT_SPEC' and 'phase advancement -> ROLE_PERMISSIONS_SPEC'"
+    },
+    {
+      "text": "Identified that webhooks are not in the existing spec's success criteria (spec gap)",
+      "passed": true,
+      "evidence": "Explicitly states 'No Spec Exists for webhook notifications' after checking index"
+    },
+    {
+      "text": "Drafted new success criteria as - [ ] checkbox items",
+      "passed": true,
+      "evidence": "Full WEBHOOK_NOTIFICATIONS_SPEC with 17 success criteria as - [ ] items grouped by Configuration, Delivery, Edge Cases"
+    },
+    {
+      "text": "Proposed keyword additions for specs/README.md",
+      "passed": true,
+      "evidence": "Step 7 drafts Quick Reference table row and 10 keyword entries under 'Webhooks & Notifications'"
+    },
+    {
+      "text": "Stopped to present proposed spec additions as a protected operation before editing",
+      "passed": true,
+      "evidence": "Step 8 explicitly notes '[STOP: Normally I would present the draft spec and keyword additions above to the user for approval]'"
+    },
+    {
+      "text": "Terminal state mentions invoking writing-plans skill",
+      "passed": true,
+      "evidence": "Step 9 states 'brainstorming -> writing-plans -> implementation' pipeline"
+    }
+  ]
+}

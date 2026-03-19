@@ -9,7 +9,7 @@ export type User = {
     email: string;
     name: string;
     role: UserRole;
-    workshop_id: string;
+    workshop_id?: (string | null);
     status?: UserStatus;
     created_at?: string;
     last_active?: (string | null);
