@@ -2028,9 +2028,10 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       return result
 
     set_trace_tag = getattr(mlflow, 'set_trace_tag', None)
-    # Tag with 'align' label for alignment after human annotation
+    # Tag with 'align' key for alignment after human annotation
+    # Uses dedicated key so it doesn't overwrite the 'eval' tag
     tags = {
-      'label': 'align',
+      'align': 'true',
       'workshop_id': workshop_id,
     }
     if set_trace_tag:
@@ -2531,7 +2532,7 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
 
       # Use retry logic for tagging - bind variables via default args
       def _tag_trace(_tid=mlflow_trace_id, _tag=tag_type, _wid=workshop_id, _set_tag=set_trace_tag):
-        _set_tag(trace_id=_tid, key='label', value=_tag)
+        _set_tag(trace_id=_tid, key=_tag, value='true')
         _set_tag(trace_id=_tid, key='workshop_id', value=_wid)
         return True
 
@@ -2542,7 +2543,7 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       )
       if result:
         tagged.append(trace_id)
-        logger.debug(f"Tagged trace {mlflow_trace_id} with label={tag_type}")
+        logger.debug(f"Tagged trace {mlflow_trace_id} with {tag_type}=true")
       else:
         failed.append(trace_id)
 
