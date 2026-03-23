@@ -1,26 +1,26 @@
 {
-  "generated": "2026-03-23T11:28:52.023329",
+  "generated": "2026-03-23T12:37:49.380444",
   "summary": {
     "total_requirements": 283,
-    "covered_requirements": 204,
-    "coverage_percent": 72
+    "covered_requirements": 185,
+    "coverage_percent": 65
   },
   "pyramid": {
-    "unit": 877,
+    "unit": 591,
     "integration": 50,
-    "e2e-mocked": 22,
-    "e2e-real": 100
+    "e2e-mocked": 17,
+    "e2e-real": 94
   },
   "specs": {
     "ANNOTATION_SPEC": {
       "total_requirements": 21,
-      "covered_requirements": 13,
-      "coverage_percent": 61,
+      "covered_requirements": 9,
+      "coverage_percent": 42,
       "by_type": {
         "unit": 47,
         "integration": 0,
         "e2e-mocked": 0,
-        "e2e-real": 10
+        "e2e-real": 6
       },
       "requirements": [
         {
@@ -33,11 +33,11 @@
         },
         {
           "text": "Toast shows \"Annotation saved!\" for new submissions",
-          "covered": true
+          "covered": false
         },
         {
           "text": "Toast shows \"Annotation updated!\" only when changes detected",
-          "covered": true
+          "covered": false
         },
         {
           "text": "No toast when navigating without changes",
@@ -45,7 +45,7 @@
         },
         {
           "text": "Multi-line comments preserved throughout the stack",
-          "covered": true
+          "covered": false
         },
         {
           "text": "Comments display with proper line breaks",
@@ -53,7 +53,7 @@
         },
         {
           "text": "Next button enabled for annotated traces (allows re-navigation)",
-          "covered": true
+          "covered": false
         },
         {
           "text": "Annotation count reflects unique submissions (not re-submissions)",
@@ -152,12 +152,12 @@
     },
     "AUTHENTICATION_SPEC": {
       "total_requirements": 7,
-      "covered_requirements": 7,
-      "coverage_percent": 100,
+      "covered_requirements": 5,
+      "coverage_percent": 71,
       "by_type": {
-        "unit": 12,
+        "unit": 11,
         "integration": 0,
-        "e2e-mocked": 3,
+        "e2e-mocked": 2,
         "e2e-real": 0
       },
       "requirements": [
@@ -171,7 +171,7 @@
         },
         {
           "text": "Slow network: Loading indicator shown until ready",
-          "covered": true
+          "covered": false
         },
         {
           "text": "Permission API failure: User can log in with defaults",
@@ -183,7 +183,7 @@
         },
         {
           "text": "Rapid navigation: Components wait for `isLoading = false`",
-          "covered": true
+          "covered": false
         },
         {
           "text": "Error recovery: Errors cleared on new login attempt",
@@ -271,7 +271,7 @@
       "by_type": {
         "unit": 13,
         "integration": 0,
-        "e2e-mocked": 7,
+        "e2e-mocked": 1,
         "e2e-real": 0
       },
       "requirements": [
@@ -342,10 +342,10 @@
       "covered_requirements": 9,
       "coverage_percent": 100,
       "by_type": {
-        "unit": 33,
+        "unit": 27,
         "integration": 0,
         "e2e-mocked": 0,
-        "e2e-real": 2
+        "e2e-real": 1
       },
       "requirements": [
         {
@@ -391,9 +391,9 @@
       "covered_requirements": 0,
       "coverage_percent": 0,
       "by_type": {
-        "unit": 40,
+        "unit": 4,
         "integration": 0,
-        "e2e-mocked": 0,
+        "e2e-mocked": 1,
         "e2e-real": 0
       },
       "requirements": [
@@ -429,13 +429,13 @@
     },
     "DISCOVERY_SPEC": {
       "total_requirements": 59,
-      "covered_requirements": 59,
-      "coverage_percent": 100,
+      "covered_requirements": 48,
+      "coverage_percent": 81,
       "by_type": {
-        "unit": 251,
+        "unit": 138,
         "integration": 4,
-        "e2e-mocked": 8,
-        "e2e-real": 19
+        "e2e-mocked": 11,
+        "e2e-real": 17
       },
       "requirements": [
         {
@@ -464,11 +464,11 @@
         },
         {
           "text": "Previous Q&A visible while answering new questions",
-          "covered": true
+          "covered": false
         },
         {
           "text": "Loading spinner during LLM generation (1-3s)",
-          "covered": true
+          "covered": false
         },
         {
           "text": "Error handling with retry for LLM failures",
@@ -596,7 +596,7 @@
         },
         {
           "text": "LLM failures show error toast with retry",
-          "covered": true
+          "covered": false
         },
         {
           "text": "Fallback question if LLM unavailable after retries",
@@ -604,7 +604,7 @@
         },
         {
           "text": "Fallback warning banner shown only to facilitators, never to participants/SMEs",
-          "covered": true
+          "covered": false
         },
         {
           "text": "Analysis shows warning (not error) if < 2 participants",
@@ -620,7 +620,7 @@
         },
         {
           "text": "Submit buttons disabled until required fields filled",
-          "covered": true
+          "covered": false
         },
         {
           "text": "Clear progress indication (X of Y traces completed)",
@@ -628,15 +628,15 @@
         },
         {
           "text": "Smooth transitions between feedback states",
-          "covered": true
+          "covered": false
         },
         {
           "text": "Single two-panel workspace replaces multi-page flow (no FacilitatorDashboard discovery tabs, no FindingsReviewPage)",
-          "covered": true
+          "covered": false
         },
         {
           "text": "Trace feed shows actual trace content (input/output), not trace ID badges",
-          "covered": true
+          "covered": false
         },
         {
           "text": "Trace-specific analysis findings appear on the trace card, pinned above feedback (collapsible)",
@@ -644,11 +644,11 @@
         },
         {
           "text": "Cross-trace analysis findings appear in collapsible summary section above the feed",
-          "covered": true
+          "covered": false
         },
         {
           "text": "Overview bar shows stats inline + compact controls (Run Analysis, Add Traces, Pause, Model selector)",
-          "covered": true
+          "covered": false
         },
         {
           "text": "Draft rubric sidebar is always visible while browsing traces",
@@ -664,7 +664,7 @@
         },
         {
           "text": "Draft rubric items do NOT show source-type badges (Finding, Disagreement, etc.)",
-          "covered": true
+          "covered": false
         },
         {
           "text": "Disagreements color-coded by priority (red/yellow/blue) on trace cards",
@@ -678,13 +678,13 @@
     },
     "DISCOVERY_TRACE_ASSIGNMENT_SPEC": {
       "total_requirements": 13,
-      "covered_requirements": 13,
-      "coverage_percent": 100,
+      "covered_requirements": 12,
+      "coverage_percent": 92,
       "by_type": {
-        "unit": 21,
+        "unit": 20,
         "integration": 0,
-        "e2e-mocked": 2,
-        "e2e-real": 3
+        "e2e-mocked": 1,
+        "e2e-real": 1
       },
       "requirements": [
         {
@@ -693,7 +693,7 @@
         },
         {
           "text": "When new discovery round starts, old traces hidden (not deleted)",
-          "covered": true
+          "covered": false
         },
         {
           "text": "Switching between discovery rounds hides/shows appropriate traces",
@@ -746,10 +746,10 @@
       "covered_requirements": 25,
       "coverage_percent": 100,
       "by_type": {
-        "unit": 89,
+        "unit": 60,
         "integration": 0,
         "e2e-mocked": 0,
-        "e2e-real": 9
+        "e2e-real": 10
       },
       "requirements": [
         {
@@ -936,9 +936,9 @@
       "covered_requirements": 25,
       "coverage_percent": 100,
       "by_type": {
-        "unit": 83,
+        "unit": 63,
         "integration": 0,
-        "e2e-mocked": 2,
+        "e2e-mocked": 1,
         "e2e-real": 6
       },
       "requirements": [
@@ -1179,10 +1179,10 @@
     },
     "TRACE_DISPLAY_SPEC": {
       "total_requirements": 18,
-      "covered_requirements": 18,
-      "coverage_percent": 100,
+      "covered_requirements": 17,
+      "coverage_percent": 94,
       "by_type": {
-        "unit": 86,
+        "unit": 63,
         "integration": 0,
         "e2e-mocked": 0,
         "e2e-real": 7
@@ -1226,7 +1226,7 @@
         },
         {
           "text": "Attribute value input is disabled until attribute key has a value",
-          "covered": true
+          "covered": false
         },
         {
           "text": "Span filter preview shows match status and filtered inputs/outputs against first trace",
@@ -1267,10 +1267,10 @@
       "covered_requirements": 0,
       "coverage_percent": 0,
       "by_type": {
-        "unit": 57,
+        "unit": 0,
         "integration": 0,
         "e2e-mocked": 0,
-        "e2e-real": 2
+        "e2e-real": 4
       },
       "requirements": [
         {
