@@ -46,9 +46,11 @@ import click
 # Test result directory
 RESULTS_DIR = Path(".test-results")
 
-# Spec extraction patterns (same as spec_coverage_analyzer.py)
+# Spec extraction patterns
+# Note: Playwright strips the '@' prefix from tags in JSON reports,
+# so "spec:AUTHENTICATION_SPEC" not "@spec:AUTHENTICATION_SPEC"
 PYTEST_SPEC_PATTERN = re.compile(r"spec\[([A-Z_]+)\]")
-PLAYWRIGHT_SPEC_PATTERN = re.compile(r"@spec:([A-Z_]+)")
+PLAYWRIGHT_SPEC_PATTERN = re.compile(r"@?spec:([A-Z_]+)")
 VITEST_SPEC_PATTERN = re.compile(r"@spec[:\s]+([A-Z_]+)")
 
 

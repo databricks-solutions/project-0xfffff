@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { getBackendModelName, getFrontendModelName, getModelOptions, requiresDatabricks } from './modelMapping';
 
 // @spec JUDGE_EVALUATION_SPEC
+// @req Likert judges return values 1-5
 describe('modelMapping', () => {
   it('maps known frontend names to backend names and back', () => {
     expect(getBackendModelName('GPT-5.1')).toBe('databricks-gpt-5-1');

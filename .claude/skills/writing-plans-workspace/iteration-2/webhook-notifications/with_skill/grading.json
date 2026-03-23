@@ -1,0 +1,52 @@
+{
+  "eval_name": "webhook-notifications",
+  "variant": "with_skill",
+  "expectations": [
+    {
+      "text": "Plan header references WEBHOOK_NOTIFICATIONS_SPEC and lists success criteria",
+      "passed": true,
+      "evidence": "Spec: True, Criteria: True"
+    },
+    {
+      "text": "Plan includes a file map table",
+      "passed": true,
+      "evidence": "Found: True"
+    },
+    {
+      "text": "Tasks follow TDD pattern",
+      "passed": true,
+      "evidence": "TDD elements found: True"
+    },
+    {
+      "text": "Tests include @spec and @req tags",
+      "passed": true,
+      "evidence": "@spec: True, @req: True"
+    },
+    {
+      "text": "Steps reference exact file paths",
+      "passed": true,
+      "evidence": "Found 38 paths"
+    },
+    {
+      "text": "Uses just commands (not npx directly)",
+      "passed": true,
+      "evidence": "just: True, no npx: True"
+    },
+    {
+      "text": "Final task includes lint + coverage verification",
+      "passed": false,
+      "evidence": "Lint: False, Coverage: True"
+    },
+    {
+      "text": "Plan includes Implementation Log entry",
+      "passed": true,
+      "evidence": "Found: True"
+    },
+    {
+      "text": "@req text appears to be verbatim spec criteria (>20 chars)",
+      "passed": true,
+      "evidence": "Found 15 substantial @req markers"
+    }
+  ],
+  "pass_rate": 0.8888888888888888
+}

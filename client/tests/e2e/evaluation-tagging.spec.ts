@@ -16,7 +16,7 @@
 import { test, expect } from '@playwright/test';
 import { TestScenario } from '../lib';
 
-const API_URL = 'http://127.0.0.1:8000';
+const API_URL = process.env.E2E_API_URL ?? 'http://127.0.0.1:8000';
 
 /** Helper: set up a fake MLflow config so endpoints don't 400 */
 async function configureFakeMlflow(page: import('@playwright/test').Page, workshopId: string) {

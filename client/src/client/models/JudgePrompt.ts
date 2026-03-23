@@ -2,12 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-
-/**
- * Type of judge evaluation.
- */
-export type JudgeType = 'likert' | 'binary' | 'freeform';
-
+import type { JudgeType } from './JudgeType';
 /**
  * Judge prompt model.
  */
@@ -21,7 +16,7 @@ export type JudgePrompt = {
     model_name?: string;
     model_parameters?: (Record<string, any> | null);
     binary_labels?: (Record<string, string> | null);
-    rating_scale?: number;
+    rating_scale?: (number | null);
     created_by: string;
     created_at?: string;
     performance_metrics?: (Record<string, any> | null);

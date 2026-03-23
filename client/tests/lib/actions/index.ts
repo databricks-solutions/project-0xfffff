@@ -15,11 +15,16 @@ export {
 export {
   goToPhase,
   goToTab,
+  goToFacilitatorDashboard,
+  goToTraceCoverage,
+  expandTraceRow,
   advanceToPhase,
   startWorkshop,
   beginDiscovery,
   beginAnnotation,
   reloadWorkshop,
+  configureDiscoveryLLM,
+  configureMLflow,
 } from './workshop';
 
 // Discovery actions
@@ -31,7 +36,24 @@ export {
   isDiscoveryComplete,
   getDiscoveryCompletionStatus,
   waitForDiscoveryPhase,
+  // Facilitator panel actions
+  DISCOVERY_CATEGORIES,
+  waitForTraceDiscoveryPanel,
+  getCategoryCount,
+  getCategoryFindings,
+  promoteFindingInUI,
+  isFindingPromoted,
+  updateCategoryThreshold,
+  clickGenerateQuestion,
+  getDisagreementsCount,
+  getDisagreementSummary,
+  // Draft Rubric Panel actions (Step 3)
+  createDraftRubricItemViaApi,
+  addDraftRubricItemViaUI,
+  editDraftRubricItem,
+  deleteDraftRubricItem,
 } from './discovery';
+export type { DiscoveryCategory } from './discovery';
 
 // Rubric actions
 export {
@@ -52,3 +74,14 @@ export {
   waitForAnnotationInterface,
   completeAllAnnotations,
 } from './annotation';
+
+// Custom LLM Provider actions
+export {
+  navigateToCustomLlmProvider,
+  expandProviderConfig,
+  fillProviderConfig,
+  saveProviderConfig,
+  deleteProviderConfig,
+  configureProvider,
+  updateProviderConfig,
+} from './custom-llm-provider';

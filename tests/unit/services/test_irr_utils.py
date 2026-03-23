@@ -22,6 +22,7 @@ def _ann(*, trace_id: str, user_id: str, rating: int) -> Annotation:
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Works for both Likert and Binary scales")
 def test_analyze_annotation_structure_empty():
     assert analyze_annotation_structure([]) == {
         "num_raters": 0,
@@ -36,6 +37,7 @@ def test_analyze_annotation_structure_empty():
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Cohen's Kappa calculated for rater pairs")
 def test_analyze_annotation_structure_recommends_cohens_kappa_when_two_raters_complete():
     annotations = [
         _ann(trace_id="t1", user_id="u1", rating=3),
@@ -51,6 +53,7 @@ def test_analyze_annotation_structure_recommends_cohens_kappa_when_two_raters_co
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Krippendorff's Alpha calculated correctly")
 def test_analyze_annotation_structure_recommends_krippendorff_alpha_when_missing_data():
     annotations = [
         _ann(trace_id="t1", user_id="u1", rating=3),
@@ -66,6 +69,7 @@ def test_analyze_annotation_structure_recommends_krippendorff_alpha_when_missing
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Handles edge cases (no variation, single rater)")
 @pytest.mark.parametrize(
     "annotations, expected_error_substr",
     [
@@ -113,6 +117,7 @@ def test_validate_annotations_for_irr_invalid_cases(annotations, expected_error_
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Updates when new annotations added")
 def test_validate_annotations_for_irr_valid_case():
     annotations = [
         _ann(trace_id="t1", user_id="u1", rating=3),
@@ -126,6 +131,7 @@ def test_validate_annotations_for_irr_valid_case():
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Alignment metrics reported")
 def test_format_irr_result_rounding_and_ready_flag():
     analysis = analyze_annotation_structure(
         [
@@ -150,6 +156,7 @@ def test_format_irr_result_rounding_and_ready_flag():
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Handles edge cases (no variation, single rater)")
 def test_detect_problematic_patterns_basic_signals():
     # u1 always gives 1; t1 has extreme disagreement (1 vs 5)
     annotations = [

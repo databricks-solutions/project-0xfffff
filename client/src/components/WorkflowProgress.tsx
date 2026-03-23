@@ -19,7 +19,8 @@ import {
   ChevronRight,
   Brain,
   Table,
-  Settings
+  Settings,
+  Database
 } from 'lucide-react';
 
 export interface WorkflowPhase {

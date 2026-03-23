@@ -1,0 +1,26 @@
+{
+  "skill_name": "brainstorming",
+  "evals": [
+    {
+      "id": 0,
+      "name": "export-csv-annotations",
+      "prompt": "Add a button to export annotations as CSV",
+      "expected_output": "Should find ANNOTATION_SPEC, read its success criteria, brainstorm the approach within spec constraints, propose 2-3 approaches, present design, then transition to writing-plans. Should NOT propose new spec criteria since the domain is already covered.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "webhook-phase-notifications",
+      "prompt": "Add webhook notifications when a workshop phase changes",
+      "expected_output": "Should find ROLE_PERMISSIONS_SPEC (covers phase advancement) but recognize webhooks aren't in its success criteria. Should brainstorm through Socratic exploration, draft new success criteria as - [ ] items, draft keyword additions for specs/README.md, and STOP to present proposed additions before proceeding. Should treat spec editing as a protected operation.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "admin-dashboard",
+      "prompt": "Build an admin dashboard for monitoring system health",
+      "expected_output": "Should search specs/README.md, find no governing spec, then conduct Socratic exploration (one question at a time). Should eventually draft a new spec in project format with Success Criteria as - [ ] items, draft README.md keyword additions, and STOP to present both to user before creating files. Should NOT jump to implementation.",
+      "files": []
+    }
+  ]
+}

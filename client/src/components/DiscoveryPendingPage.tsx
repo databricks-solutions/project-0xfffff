@@ -1,9 +1,22 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Clock, Search, Users, Lightbulb } from 'lucide-react';
+import { useWorkshopContext } from '@/context/WorkshopContext';
+import { useWorkshop } from '@/hooks/useWorkshopApi';
 
 export const DiscoveryPendingPage: React.FC = () => {
+  const { workshopId } = useWorkshopContext();
+  const { refetch } = useWorkshop(workshopId || '');
+
+  // Auto-refresh every 5 seconds to detect when discovery starts
+  useEffect(() => {
+    if (!workshopId) return;
+    const interval = setInterval(() => {
+      refetch();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [workshopId, refetch]);
   return (
     <div className="max-w-3xl mx-auto p-6 space-y-6">
       {/* Header */}

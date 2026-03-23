@@ -240,7 +240,7 @@ ui-install:
   npm -C {{client-dir}} install
 
 [group('dev')]
-ui-dev:
+ui-dev: openapi
   npm -C {{client-dir}} run dev
 
 [group('dev')]
@@ -256,6 +256,15 @@ ui-build:
 
   npm -C {{client-dir}} run build
 
+# Generate OpenAPI spec from FastAPI and TypeScript client
+[group('dev')]
+openapi:
+  @echo "📜 Generating OpenAPI spec from FastAPI..."
+  @uv run python -m server.make_openapi --output /tmp/openapi.json
+  @echo "🔧 Generating TypeScript client..."
+  @npx openapi-typescript-codegen --input /tmp/openapi.json --output {{client-dir}}/src/client --client fetch
+  @echo "✅ TypeScript client generated at {{client-dir}}/src/client"
+
 # Run pytest (writes JSON report to .test-results/ for token-efficient summaries)
 [group('dev')]
 test-server *args:
@@ -264,8 +273,24 @@ test-server *args:
   mkdir -p .test-results
   uv run pytest -q --json-report --json-report-file=.test-results/pytest.json {{args}}
 
+# Run integration tests (real DB, transaction-rollback isolation)
 [group('dev')]
-ui-test:
+test-integration *args:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  mkdir -p .test-results
+  uv run pytest tests/integration/ -q --json-report --json-report-file=.test-results/pytest-integration.json {{args}}
+
+# Run MLflow contract tests (mock shape & call-site verification)
+[group('dev')]
+test-contract *args:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  mkdir -p .test-results
+  uv run pytest tests/contract/ -q --json-report --json-report-file=.test-results/pytest-contract.json {{args}}
+
+[group('dev')]
+ui-test: openapi
   npm -C {{client-dir}} run test
 
 # Run vitest (writes JSON report to .test-results/ for token-efficient summaries)
@@ -277,22 +302,87 @@ ui-test-unit *args:
   VITEST_JSON_REPORT=1 npm -C {{client-dir}} run test:unit -- {{args}}
 
 [group('dev')]
-ui-lint:
+ui-lint: openapi
   npm -C {{client-dir}} run lint
+
+# Detect dead Python code with vulture
+[group('dev')]
+lint-vulture:
+  uv run vulture {{server-dir}}/ vulture_whitelist.py --min-confidence 80
+
+# Run full ruff lint (uses pyproject.toml config)
+[group('dev')]
+lint-ruff *args:
+  uv run ruff check {{server-dir}}/ {{args}}
+
+# Detect dead Python code with ruff F4xx rules
+[group('dev')]
+lint-ruff-deadcode:
+  uv run ruff check --select F {{server-dir}}/
+
+# Detect dead TypeScript/JS code with knip
+[group('dev')]
+lint-knip:
+  npm -C {{client-dir}} run knip
+
+# Run all dead-code linters (vulture + ruff F4xx + knip)
+[group('dev')]
+lint-deadcode: lint-vulture lint-ruff-deadcode lint-knip
+
+[group('dev')]
+ui-typecheck: openapi
+  npm -C {{client-dir}} run typecheck
 
 [group('dev')]
 ui-format:
   npm -C {{client-dir}} run format
 
+# Analyze spec test coverage (writes to SPEC_COVERAGE_MAP.md)
+# Use --json for JSON output, --affected [REF] for changes since REF (default HEAD~1)
+# Example: just spec-coverage --affected          # specs affected since last commit
+# Example: just spec-coverage --affected main     # specs affected since main branch
+# Example: just spec-coverage --specs AUTHENTICATION_SPEC ANNOTATION_SPEC
 [group('dev')]
-spec-coverage:
-  @echo "📊 Analyzing spec test coverage..."
-  uv run spec-coverage-analyzer
-  @echo ""
-  @echo "📋 Coverage report: SPEC_COVERAGE_MAP.md"
+spec-coverage *args:
+  #!/usr/bin/env bash
+  if [[ "{{args}}" == *"--json"* ]]; then
+    uv run spec-coverage-analyzer {{args}}
+  else
+    echo "📊 Analyzing spec test coverage..."
+    uv run spec-coverage-analyzer {{args}}
+    if [[ "{{args}}" != *"--affected"* ]]; then
+      echo ""
+      echo "📋 Coverage report: SPEC_COVERAGE_MAP.md"
+    fi
+  fi
+
+# Show specs affected by recent changes and run their tests
+[group('dev')]
+test-affected base="HEAD~1":
+  #!/usr/bin/env bash
+  echo "🔍 Detecting affected specs since {{base}}..."
+  AFFECTED=$(uv run spec-coverage-analyzer --affected {{base}} --json 2>/dev/null | jq -r '.affected_mode.affected_specs[]' 2>/dev/null)
+  if [ -z "$AFFECTED" ]; then
+    echo "No specs affected by changes since {{base}}"
+    exit 0
+  fi
+  echo "Affected specs:"
+  echo "$AFFECTED" | while read spec; do echo "  - $spec"; done
+  echo ""
+  echo "Running tests for affected specs..."
+  for spec in $AFFECTED; do
+    echo "=== Testing $spec ==="
+    just test-server-spec "$spec" || true
+  done
+
+# Check for spec coverage regressions against baseline
+# Use --update-baseline to snapshot current coverage as the new baseline
+[group('dev')]
+spec-coverage-gate *args:
+  uv run spec-coverage-gate {{args}}
 
 [group('dev')]
-spec-tagging-check:
+spec-validate:
   @echo "✅ Validating that all tests are tagged with specs..."
   uv run spec-tagging-validator
 
@@ -304,13 +394,39 @@ test-server-spec spec *args:
 [group('dev')]
 ui-test-unit-spec spec *args:
   @echo "Running unit tests for {{spec}}..."
-  just ui-test-unit --grep "@spec:{{spec}}" {{args}}
+  just ui-test-unit -t "@spec:{{spec}}" {{args}}
 
 # Run E2E tests for a specific spec (writes JSON report to .test-results/)
 [group('e2e')]
 e2e-spec spec mode="headless" workers="1":
   @echo "Running E2E tests for {{spec}} in {{mode}} mode..."
   just e2e {{mode}} {{workers}} "@spec:{{spec}}"
+
+# Run all tests (unit, integration, E2E) for a specific spec
+[group('dev')]
+test-spec spec mode="headless" workers="1":
+  #!/usr/bin/env bash
+  set -euo pipefail
+  echo "🧪 Running all tests for {{spec}}"
+  echo "=================================="
+  FAILED=0
+  echo ""
+  echo "── Python tests ──"
+  just test-server-spec {{spec}} || FAILED=1
+  echo ""
+  echo "── Frontend unit tests ──"
+  just ui-test-unit-spec {{spec}} || FAILED=1
+  echo ""
+  echo "── E2E tests ──"
+  just e2e-spec {{spec}} {{mode}} {{workers}} || FAILED=1
+  echo ""
+  echo "=================================="
+  if [ "$FAILED" -eq 0 ]; then
+    echo "✅ All tests passed for {{spec}}"
+  else
+    echo "❌ Some tests failed for {{spec}}"
+    exit 1
+  fi
 
 # Get token-efficient test summary from JSON reports
 [group('dev')]
@@ -432,7 +548,7 @@ deploy:
   echo "   Run 'just app-info' to check deployment status"
 
 [group('dev')]
-dev api_port="8000" ui_port="5173":
+dev api_port="8000" ui_port="5173": openapi
   #!/usr/bin/env bash
   set -euo pipefail
 
@@ -512,8 +628,8 @@ e2e-servers db_path=".e2e-workshop.db" api_port="8000" ui_port="3000":
   (ENVIRONMENT=development DATABASE_URL="sqlite:///./${DB_PATH}" uv run uvicorn {{server-dir}}.app:app --host 127.0.0.1 --port "$API_PORT" > "$API_LOG" 2>&1) &
   api_pid=$!
 
-  # Start UI (force port for determinism)
-  (npm -C {{client-dir}} run dev -- --host 127.0.0.1 --port "$UI_PORT" --strictPort > "$UI_LOG" 2>&1) &
+  # Start UI (force port for determinism, proxy to correct API port)
+  (E2E_API_URL="http://127.0.0.1:${API_PORT}" npm -C {{client-dir}} run dev -- --host 127.0.0.1 --port "$UI_PORT" --strictPort > "$UI_LOG" 2>&1) &
   ui_pid=$!
 
   cleanup() {
@@ -598,13 +714,31 @@ _find-port start_port:
   exit(1)
 
 # Run E2E tests (writes JSON report to .test-results/ for token-efficient summaries)
+# Loads environment variables from .env file (not .env.local) for CI secrets
+#
+# Browser Error Capture:
+#   Tests using TestScenario automatically capture browser console errors and
+#   JavaScript exceptions (pageerror). Errors are logged to stdout and cause
+#   test failure via scenario.cleanup(). This helps catch React errors, undefined
+#   function calls, and other client-side bugs.
+#
+# Example: just e2e headless 1 "my-test.spec.ts"
 [group('e2e')]
 e2e mode="headless" workers="1" *args:
   #!/usr/bin/env bash
   set -euo pipefail
 
+  # Load environment variables from .env file if it exists (for CI secrets like E2E_DATABRICKS_*)
+  if [ -f ".env" ]; then
+    set -a
+    source .env
+    set +a
+  fi
+
   # Enable JSON reporting for token-efficient output
   export PW_JSON_REPORT=1
+  # Fail fast on type errors before redirecting logs
+  just ui-typecheck
   # Suppress server logs (redirect to files in .test-results/)
   export E2E_QUIET=1
   mkdir -p .test-results
@@ -634,7 +768,7 @@ e2e mode="headless" workers="1" *args:
   # Wait for API + UI to be ready
   just e2e-wait-ready "$API_PORT" "$UI_PORT"
 
-  # Run tests with the correct base URL
-  PLAYWRIGHT_BASE_URL="http://127.0.0.1:$UI_PORT" just e2e-test "{{mode}}" "{{workers}}" {{args}}
+  # Run tests with the correct URLs
+  E2E_API_URL="http://127.0.0.1:$API_PORT" PLAYWRIGHT_BASE_URL="http://127.0.0.1:$UI_PORT" just e2e-test "{{mode}}" "{{workers}}" {{args}}
 
   cleanup

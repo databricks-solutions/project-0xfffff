@@ -1,0 +1,13 @@
+{
+  "eval_id": 1,
+  "eval_name": "webhook-phase-notifications",
+  "prompt": "Add webhook notifications when a workshop phase changes",
+  "assertions": [
+    {"text": "Found ROLE_PERMISSIONS_SPEC or DISCOVERY_TRACE_ASSIGNMENT_SPEC as related spec", "type": "content_check"},
+    {"text": "Identified that webhooks are not in the existing spec's success criteria (spec gap)", "type": "content_check"},
+    {"text": "Drafted new success criteria as - [ ] checkbox items", "type": "content_check"},
+    {"text": "Proposed keyword additions for specs/README.md", "type": "content_check"},
+    {"text": "Stopped to present proposed spec additions as a protected operation before editing", "type": "content_check"},
+    {"text": "Terminal state mentions invoking writing-plans skill", "type": "content_check"}
+  ]
+}

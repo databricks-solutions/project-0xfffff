@@ -1,12 +1,30 @@
 """MLflow intake service for pulling traces from MLflow experiments."""
 
-from typing import Any, Dict, List, Literal
+import math
 
 import mlflow
-import mlflow.genai
+from typing import Any, Dict, List, Literal
 
 from server.models import MLflowIntakeConfig, MLflowTraceInfo, TraceUpload
 from server.services.database_service import DatabaseService
+
+
+def sanitize_for_json(obj: Any) -> Any:
+    """Recursively replace float NaN/Infinity values with None.
+
+    PostgreSQL JSON columns reject NaN and Infinity because they are not
+    valid JSON tokens.  MLflow span inputs/outputs can contain these values
+    (e.g. from pandas DataFrames), so we sanitize before insertion.
+    """
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    if isinstance(obj, dict):
+        return {k: sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [sanitize_for_json(v) for v in obj]
+    return obj
 
 
 class MLflowIntakeService:
@@ -59,10 +77,12 @@ class MLflowIntakeService:
             # Extract content from JSON for previews
             # Safely handle traces with missing or incomplete data
             input_content = self._extract_content_from_json(
-              getattr(trace.data, 'request', None) if hasattr(trace, 'data') else None
+              getattr(trace.data, 'request', None) if hasattr(trace, 'data') else None,
+              role_hint="input",
             )
             output_content = self._extract_content_from_json(
-              getattr(trace.data, 'response', None) if hasattr(trace, 'data') else None
+              getattr(trace.data, 'response', None) if hasattr(trace, 'data') else None,
+              role_hint="output",
             )
 
             trace_info = MLflowTraceInfo(
@@ -117,10 +137,12 @@ class MLflowIntakeService:
           # Extract content from JSON input/output
           # Safely handle traces with missing or incomplete data
           input_content = self._extract_content_from_json(
-            getattr(full_trace.data, 'request', None) if hasattr(full_trace, 'data') else None
+            getattr(full_trace.data, 'request', None) if hasattr(full_trace, 'data') else None,
+            role_hint="input",
           )
           output_content = self._extract_content_from_json(
-            getattr(full_trace.data, 'response', None) if hasattr(full_trace, 'data') else None
+            getattr(full_trace.data, 'response', None) if hasattr(full_trace, 'data') else None,
+            role_hint="output",
           )
 
           trace_upload = TraceUpload(
@@ -206,8 +228,13 @@ class MLflowIntakeService:
     text = text.replace('\\n', '\n')
     return text
 
-  def _extract_content_from_json(self, json_text: str) -> str:
-    """Extract content from JSON input/output format."""
+  def _extract_content_from_json(self, json_text: str, role_hint: str = "output") -> str:
+    """Extract content from JSON input/output format.
+
+    Args:
+      json_text: Raw JSON string from MLflow trace data.
+      role_hint: "input" to prefer user messages, "output" to prefer assistant messages.
+    """
     try:
       import json
 
@@ -245,31 +272,35 @@ class MLflowIntakeService:
         if not messages:
           return json_text
 
-        # First, try to find an assistant message (for output)
-        for message in reversed(messages):
-          if isinstance(message, dict) and message.get('role') == 'assistant' and 'content' in message:
-            content = message['content']
-            # Replace escaped newlines with actual newlines
+        if role_hint == "input":
+          # Input extraction: prefer last user message
+          for message in reversed(messages):
+            if isinstance(message, dict) and message.get('role') == 'user' and 'content' in message:
+              content = message['content']
+              if isinstance(content, str):
+                content = content.replace('\\n', '\n')
+              return content
+          # Fallback: first message with content
+          for message in messages:
+            if isinstance(message, dict) and 'content' in message:
+              content = message['content']
+              if isinstance(content, str):
+                content = content.replace('\\n', '\n')
+              return content
+        else:
+          # Output extraction: prefer last assistant message
+          for message in reversed(messages):
+            if isinstance(message, dict) and message.get('role') == 'assistant' and 'content' in message:
+              content = message['content']
+              if isinstance(content, str):
+                content = content.replace('\\n', '\n')
+              return content
+          # Fallback: last message with content
+          if messages and isinstance(messages[-1], dict) and 'content' in messages[-1]:
+            content = messages[-1]['content']
             if isinstance(content, str):
               content = content.replace('\\n', '\n')
             return content
-
-        # If no assistant message found, return the first user message (for input)
-        for message in messages:
-          if isinstance(message, dict) and message.get('role') == 'user' and 'content' in message:
-            content = message['content']
-            # Replace escaped newlines with actual newlines
-            if isinstance(content, str):
-              content = content.replace('\\n', '\n')
-            return content
-
-        # If no specific role found, return the last message content
-        if messages and isinstance(messages[-1], dict) and 'content' in messages[-1]:
-          content = messages[-1]['content']
-          # Replace escaped newlines with actual newlines
-          if isinstance(content, str):
-            content = content.replace('\\n', '\n')
-          return content
 
       # Handle output format that is a list of items
       if isinstance(data, list):
@@ -374,30 +405,22 @@ class MLflowIntakeService:
             # Check if it's an output_text type content with a text field
             if isinstance(first_content, dict) and first_content.get('type') == 'output_text' and 'text' in first_content:
               return first_content['text']
-        except Exception as e:
+        except Exception:
           pass
-          # maybe logging info
-          # print(f'Error with ResponsesAgentResponse: {e}')
 
         # Fallback to ChatAgentResponse
         try:
           outputs = ChatAgentResponse.model_validate(data).messages
           if isinstance(outputs[0].content, str):
             return outputs[0].content
-        except Exception as e:
+        except Exception:
           pass
-          # maybe logging info
-          # print(f'Error with ChatAgentResponse: {e}')
 
         return data
 
-    except Exception as e:
+    except (json.JSONDecodeError, KeyError, IndexError, TypeError) as e:
       print(f'Error parsing JSON: {e}')
       return str(data)
-
-    except (KeyError, IndexError, TypeError):
-      # If fallback processing fails, return the original text
-      return data
 
   def _generate_mlflow_url(self, databricks_host: str, experiment_id: str, trace_id: str) -> str:
     """Generate MLflow URL for an experiment."""
@@ -424,13 +447,12 @@ class MLflowIntakeService:
       # Try to search for traces to verify access (with minimal request)
       try:
         traces = mlflow.search_traces(
-          experiment_ids=[config.experiment_id],
-          max_results=1,  # Just get one trace to test access
+          locations=[config.experiment_id],
+          max_results=1,
           return_type='list',
         )
         trace_count = len(traces)
       except Exception as trace_error:
-        # If we can access experiment but not traces, still consider it a partial success
         trace_count = 0
         print(f'Warning: Could not search traces: {str(trace_error)}')
 
@@ -450,11 +472,10 @@ class MLflowIntakeService:
           'error': 'Authentication failed',
           'message': 'MLflow authentication failed. Please check your Databricks token and permissions.',
         }
-      elif '404' in error_msg:
+      if '404' in error_msg:
         return {
           'success': False,
           'error': 'Experiment not found',
           'message': f'Experiment {config.experiment_id} not found. Please check your experiment ID.',
         }
-      else:
-        return {'success': False, 'error': str(e), 'message': f'Connection failed: {str(e)}'}
+      return {'success': False, 'error': str(e), 'message': f'Connection failed: {str(e)}'}

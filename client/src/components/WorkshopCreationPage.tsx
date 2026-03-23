@@ -52,7 +52,7 @@ export function WorkshopCreationPage() {
       window.history.pushState({}, '', `?workshop=${workshop.id}`);
       
     } catch (error) {
-      
+      // Workshop creation failed — form remains visible for retry
     }
   };
 
@@ -126,6 +126,7 @@ export function WorkshopCreationPage() {
                   workshops.map((workshop) => (
                     <div
                       key={workshop.id}
+                      data-testid={`workshop-card-${workshop.id}`}
                       className="flex items-center justify-between p-5 bg-gradient-to-r from-blue-50 to-indigo-50/60 rounded-xl border-l-4 border-l-blue-500 border border-blue-100 hover:from-blue-100 hover:to-indigo-100 hover:border-blue-300 hover:shadow-lg transition-all duration-200 cursor-pointer group"
                       onClick={() => handleSelectWorkshop(workshop)}
                     >

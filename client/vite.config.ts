@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react-swc'
 import path from 'path'
 
 // https://vitejs.dev/config/
+const apiTarget = process.env.E2E_API_URL ?? 'http://localhost:8000';
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -34,27 +36,27 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/users': {
-        target: 'http://localhost:8000',
+        target: apiTarget,
         changeOrigin: true,
       },
       '/workshops': {
-        target: 'http://localhost:8000',
+        target: apiTarget,
         changeOrigin: true,
       },
       '/dbsql-export': {
-        target: 'http://localhost:8000',
+        target: apiTarget,
         changeOrigin: true,
       },
       '/health': {
-        target: 'http://localhost:8000',
+        target: apiTarget,
         changeOrigin: true,
       },
       '/test': {
-        target: 'http://localhost:8000',
+        target: apiTarget,
         changeOrigin: true,
       },
       '/databricks': {
-        target: 'http://localhost:8000',
+        target: apiTarget,
         changeOrigin: true,
       },
     },

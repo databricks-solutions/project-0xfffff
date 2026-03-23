@@ -283,20 +283,19 @@ def restore_from_volume() -> bool:
         # File doesn't exist on volume - this is normal for first run
         logger.info(f"No backup found at {volume_backup_path} - starting fresh")
         return False
-    elif result is False:
+    if result is False:
         # An actual error occurred
         logger.error(f"Failed to restore database from {volume_backup_path}")
         return False
-    else:
-        # Success! Try to restore WAL file too (if it exists on volume)
-        wal_volume = volume_backup_path + "-wal"
-        wal_local = str(local_path) + "-wal"
-        wal_result = _download_from_volume(wal_volume, wal_local)
-        if wal_result is True:
-            logger.info(f"Also restored WAL file from {wal_volume}")
+    # Success! Try to restore WAL file too (if it exists on volume)
+    wal_volume = volume_backup_path + "-wal"
+    wal_local = str(local_path) + "-wal"
+    wal_result = _download_from_volume(wal_volume, wal_local)
+    if wal_result is True:
+        logger.info(f"Also restored WAL file from {wal_volume}")
 
-        logger.info(f"Successfully restored database from {volume_backup_path}")
-        return True
+    logger.info(f"Successfully restored database from {volume_backup_path}")
+    return True
 
 
 def backup_to_volume(force: bool = False) -> bool:
@@ -434,8 +433,7 @@ def start_backup_timer() -> None:
         _backup_timer.start()
 
     logger.info(
-        f"Periodic backup timer started - backing up to {volume_backup_path} "
-        f"every {backup_interval_minutes} minutes"
+        f"Periodic backup timer started - backing up to {volume_backup_path} every {backup_interval_minutes} minutes"
     )
 
 
@@ -491,19 +489,13 @@ def install_shutdown_handlers() -> None:
     _, volume_backup_path, _ = _get_config()
 
     if not volume_backup_path:
-        logger.info(
-            "SQLITE_VOLUME_BACKUP_PATH not configured - "
-            "shutdown backup handlers not installed"
-        )
+        logger.info("SQLITE_VOLUME_BACKUP_PATH not configured - shutdown backup handlers not installed")
         return
 
     # Validate volume path format early to catch misconfiguration at startup
     is_valid, error_msg = _validate_volume_path(volume_backup_path)
     if not is_valid:
-        logger.error(
-            f"Invalid SQLITE_VOLUME_BACKUP_PATH: {error_msg}. "
-            "Shutdown backup handlers NOT installed."
-        )
+        logger.error(f"Invalid SQLITE_VOLUME_BACKUP_PATH: {error_msg}. Shutdown backup handlers NOT installed.")
         return
 
     # Verify we can create a WorkspaceClient (SDK is available)
@@ -531,8 +523,7 @@ def install_shutdown_handlers() -> None:
 
     _shutdown_handlers_installed = True
     logger.info(
-        f"Shutdown backup handlers installed - "
-        f"database will be backed up to {volume_backup_path} on SIGTERM/SIGINT"
+        f"Shutdown backup handlers installed - database will be backed up to {volume_backup_path} on SIGTERM/SIGINT"
     )
 
 

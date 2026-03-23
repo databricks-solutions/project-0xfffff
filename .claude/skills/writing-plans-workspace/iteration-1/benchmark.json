@@ -1,0 +1,364 @@
+{
+  "skill_name": "writing-plans",
+  "iteration": 1,
+  "configs": {
+    "with_skill": {
+      "pass_rate": {
+        "mean": 0.963,
+        "stddev": 0.064
+      },
+      "time_seconds": {
+        "mean": 198.1,
+        "stddev": 61.2
+      },
+      "tokens": {
+        "mean": 48751.0,
+        "stddev": 5578.0
+      },
+      "per_eval": [
+        {
+          "eval_name": "csv-export",
+          "pass_rate": 1.0,
+          "time_seconds": 162.3,
+          "tokens": 46563,
+          "assertions": [
+            {
+              "text": "Plan header references ANNOTATION_SPEC by name and lists specific success criteria",
+              "passed": true,
+              "evidence": "Spec ref: True, Criteria listed: True"
+            },
+            {
+              "text": "Plan includes a file map table with new and modified files",
+              "passed": true,
+              "evidence": "File map table found: True"
+            },
+            {
+              "text": "Tasks follow TDD pattern: write failing test -> run to verify fail -> implement -> run to verify pass -> commit",
+              "passed": true,
+              "evidence": "Failing test: True, Verify fail: True, Implement: True, Verify pass: True, Commit: True"
+            },
+            {
+              "text": "Test code blocks include @pytest.mark.spec or @spec and @pytest.mark.req or @req tags",
+              "passed": true,
+              "evidence": "@spec tag: True, @req tag: True"
+            },
+            {
+              "text": "Steps reference exact file paths (not vague descriptions)",
+              "passed": true,
+              "evidence": "Found 16 file paths: ['client/src/utils/buildAnnotationCSV.ts', 'client/src/utils/buildAnnotationCSV.test', 'client/src/hooks/useExportAnnotationsCSV.ts', 'client/src/hooks/useExportAnnotationsCSV.test', 'client/src/components/FacilitatorDashboard.tsx']"
+            },
+            {
+              "text": "Steps include exact verification commands using 'just test-' or 'just spec-coverage'",
+              "passed": true,
+              "evidence": "'just test-*': True, 'just spec-coverage': True"
+            },
+            {
+              "text": "Final task verifies spec coverage with just spec-coverage and just spec-validate",
+              "passed": true,
+              "evidence": "Coverage in final third: True, Validate in final third: True"
+            },
+            {
+              "text": "Plan includes an Implementation Log entry for the spec",
+              "passed": true,
+              "evidence": "Implementation Log mentioned: True"
+            },
+            {
+              "text": "Tasks are ordered correctly for this feature type",
+              "passed": true,
+              "evidence": "Checked keyword ordering patterns"
+            }
+          ]
+        },
+        {
+          "eval_name": "webhook-notifications",
+          "pass_rate": 0.8888888888888888,
+          "time_seconds": 163.3,
+          "tokens": 44598,
+          "assertions": [
+            {
+              "text": "Plan header references WEBHOOK_NOTIFICATIONS_SPEC by name and lists specific success criteria",
+              "passed": true,
+              "evidence": "Spec ref: True, Criteria listed: True"
+            },
+            {
+              "text": "Plan includes a file map table with new and modified files",
+              "passed": true,
+              "evidence": "File map table found: True"
+            },
+            {
+              "text": "Tasks follow TDD pattern: write failing test -> run to verify fail -> implement -> run to verify pass -> commit",
+              "passed": true,
+              "evidence": "Failing test: True, Verify fail: True, Implement: True, Verify pass: True, Commit: True"
+            },
+            {
+              "text": "Test code blocks include @pytest.mark.spec or @spec and @pytest.mark.req or @req tags",
+              "passed": true,
+              "evidence": "@spec tag: True, @req tag: True"
+            },
+            {
+              "text": "Steps reference exact file paths (not vague descriptions)",
+              "passed": true,
+              "evidence": "Found 34 file paths: ['server/routers/workshops.py', 'server/services/webhook_service.py', 'tests/unit/services/test_webhook_service.py', 'tests/unit/routers/test_workshops_webhook.py', 'server/database.py']"
+            },
+            {
+              "text": "Steps include exact verification commands using 'just test-' or 'just spec-coverage'",
+              "passed": true,
+              "evidence": "'just test-*': True, 'just spec-coverage': True"
+            },
+            {
+              "text": "Final task verifies spec coverage with just spec-coverage and just spec-validate",
+              "passed": true,
+              "evidence": "Coverage in final third: True, Validate in final third: True"
+            },
+            {
+              "text": "Plan includes an Implementation Log entry for the spec",
+              "passed": true,
+              "evidence": "Implementation Log mentioned: True"
+            },
+            {
+              "text": "Tasks are ordered correctly for this feature type",
+              "passed": false,
+              "evidence": "Checked keyword ordering patterns"
+            }
+          ]
+        },
+        {
+          "eval_name": "admin-dashboard",
+          "pass_rate": 1.0,
+          "time_seconds": 268.8,
+          "tokens": 55091,
+          "assertions": [
+            {
+              "text": "Plan header references ADMIN_DASHBOARD_SPEC by name and lists specific success criteria",
+              "passed": true,
+              "evidence": "Spec ref: True, Criteria listed: True"
+            },
+            {
+              "text": "Plan includes a file map table with new and modified files",
+              "passed": true,
+              "evidence": "File map table found: True"
+            },
+            {
+              "text": "Tasks follow TDD pattern: write failing test -> run to verify fail -> implement -> run to verify pass -> commit",
+              "passed": true,
+              "evidence": "Failing test: True, Verify fail: True, Implement: True, Verify pass: True, Commit: True"
+            },
+            {
+              "text": "Test code blocks include @pytest.mark.spec or @spec and @pytest.mark.req or @req tags",
+              "passed": true,
+              "evidence": "@spec tag: True, @req tag: True"
+            },
+            {
+              "text": "Steps reference exact file paths (not vague descriptions)",
+              "passed": true,
+              "evidence": "Found 71 file paths: ['server/routers/admin.py', 'server/services/admin_service.py', 'client/src/pages/AdminDashboard.tsx', 'client/src/components/admin/InfrastructurePanel.tsx', 'client/src/components/admin/WorkshopSummaryPanel.tsx']"
+            },
+            {
+              "text": "Steps include exact verification commands using 'just test-' or 'just spec-coverage'",
+              "passed": true,
+              "evidence": "'just test-*': True, 'just spec-coverage': True"
+            },
+            {
+              "text": "Final task verifies spec coverage with just spec-coverage and just spec-validate",
+              "passed": true,
+              "evidence": "Coverage in final third: True, Validate in final third: True"
+            },
+            {
+              "text": "Plan includes an Implementation Log entry for the spec",
+              "passed": true,
+              "evidence": "Implementation Log mentioned: True"
+            },
+            {
+              "text": "Tasks are ordered correctly for this feature type",
+              "passed": true,
+              "evidence": "Checked keyword ordering patterns"
+            }
+          ]
+        }
+      ]
+    },
+    "without_skill": {
+      "pass_rate": {
+        "mean": 0.519,
+        "stddev": 0.421
+      },
+      "time_seconds": {
+        "mean": 164.0,
+        "stddev": 56.6
+      },
+      "tokens": {
+        "mean": 61604,
+        "stddev": 18629.0
+      },
+      "per_eval": [
+        {
+          "eval_name": "csv-export",
+          "pass_rate": 0.2222222222222222,
+          "time_seconds": 122.7,
+          "tokens": 44159,
+          "assertions": [
+            {
+              "text": "Plan header references ANNOTATION_SPEC by name and lists specific success criteria",
+              "passed": false,
+              "evidence": "Spec ref: True, Criteria listed: False"
+            },
+            {
+              "text": "Plan includes a file map table with new and modified files",
+              "passed": false,
+              "evidence": "File map table found: False"
+            },
+            {
+              "text": "Tasks follow TDD pattern: write failing test -> run to verify fail -> implement -> run to verify pass -> commit",
+              "passed": false,
+              "evidence": "Failing test: False, Verify fail: False, Implement: True, Verify pass: False, Commit: False"
+            },
+            {
+              "text": "Test code blocks include @pytest.mark.spec or @spec and @pytest.mark.req or @req tags",
+              "passed": false,
+              "evidence": "@spec tag: True, @req tag: False"
+            },
+            {
+              "text": "Steps reference exact file paths (not vague descriptions)",
+              "passed": true,
+              "evidence": "Found 10 file paths: ['client/src/utils/csvExportUtils.ts', 'client/src/hooks/useExportAnnotationsCSV.ts', 'client/src/utils/csvExportUtils.test', 'client/src/hooks/useExportAnnotationsCSV.test', 'client/src/utils/csvExportUtils.ts']"
+            },
+            {
+              "text": "Steps include exact verification commands using 'just test-' or 'just spec-coverage'",
+              "passed": false,
+              "evidence": "'just test-*': False, 'just spec-coverage': False"
+            },
+            {
+              "text": "Final task verifies spec coverage with just spec-coverage and just spec-validate",
+              "passed": false,
+              "evidence": "Coverage in final third: False, Validate in final third: False"
+            },
+            {
+              "text": "Plan includes an Implementation Log entry for the spec",
+              "passed": false,
+              "evidence": "Implementation Log mentioned: False"
+            },
+            {
+              "text": "Tasks are ordered correctly for this feature type",
+              "passed": true,
+              "evidence": "Checked keyword ordering patterns"
+            }
+          ]
+        },
+        {
+          "eval_name": "webhook-notifications",
+          "pass_rate": 0.3333333333333333,
+          "time_seconds": 140.7,
+          "tokens": 59428,
+          "assertions": [
+            {
+              "text": "Plan header references WEBHOOK_NOTIFICATIONS_SPEC by name and lists specific success criteria",
+              "passed": true,
+              "evidence": "Spec ref: True, Criteria listed: True"
+            },
+            {
+              "text": "Plan includes a file map table with new and modified files",
+              "passed": true,
+              "evidence": "File map table found: True"
+            },
+            {
+              "text": "Tasks follow TDD pattern: write failing test -> run to verify fail -> implement -> run to verify pass -> commit",
+              "passed": false,
+              "evidence": "Failing test: False, Verify fail: False, Implement: True, Verify pass: False, Commit: True"
+            },
+            {
+              "text": "Test code blocks include @pytest.mark.spec or @spec and @pytest.mark.req or @req tags",
+              "passed": false,
+              "evidence": "@spec tag: False, @req tag: False"
+            },
+            {
+              "text": "Steps reference exact file paths (not vague descriptions)",
+              "passed": true,
+              "evidence": "Found 17 file paths: ['server/database.py', 'server/models.py', 'server/services/database_service.py', 'server/services/webhook_service.py', 'server/routers/workshops.py']"
+            },
+            {
+              "text": "Steps include exact verification commands using 'just test-' or 'just spec-coverage'",
+              "passed": false,
+              "evidence": "'just test-*': False, 'just spec-coverage': False"
+            },
+            {
+              "text": "Final task verifies spec coverage with just spec-coverage and just spec-validate",
+              "passed": false,
+              "evidence": "Coverage in final third: False, Validate in final third: False"
+            },
+            {
+              "text": "Plan includes an Implementation Log entry for the spec",
+              "passed": false,
+              "evidence": "Implementation Log mentioned: False"
+            },
+            {
+              "text": "Tasks are ordered correctly for this feature type",
+              "passed": false,
+              "evidence": "Checked keyword ordering patterns"
+            }
+          ]
+        },
+        {
+          "eval_name": "admin-dashboard",
+          "pass_rate": 1.0,
+          "time_seconds": 228.5,
+          "tokens": 81225,
+          "assertions": [
+            {
+              "text": "Plan header references ADMIN_DASHBOARD_SPEC by name and lists specific success criteria",
+              "passed": true,
+              "evidence": "Spec ref: True, Criteria listed: True"
+            },
+            {
+              "text": "Plan includes a file map table with new and modified files",
+              "passed": true,
+              "evidence": "File map table found: True"
+            },
+            {
+              "text": "Tasks follow TDD pattern: write failing test -> run to verify fail -> implement -> run to verify pass -> commit",
+              "passed": true,
+              "evidence": "Failing test: True, Verify fail: True, Implement: True, Verify pass: True, Commit: True"
+            },
+            {
+              "text": "Test code blocks include @pytest.mark.spec or @spec and @pytest.mark.req or @req tags",
+              "passed": true,
+              "evidence": "@spec tag: True, @req tag: True"
+            },
+            {
+              "text": "Steps reference exact file paths (not vague descriptions)",
+              "passed": true,
+              "evidence": "Found 65 file paths: ['server/routers/admin.py', 'server/routers/admin.py', 'server/services/admin_service.py', 'client/src/pages/AdminDashboard.tsx', 'client/src/components/admin/InfrastructurePanel.tsx']"
+            },
+            {
+              "text": "Steps include exact verification commands using 'just test-' or 'just spec-coverage'",
+              "passed": true,
+              "evidence": "'just test-*': True, 'just spec-coverage': True"
+            },
+            {
+              "text": "Final task verifies spec coverage with just spec-coverage and just spec-validate",
+              "passed": true,
+              "evidence": "Coverage in final third: True, Validate in final third: True"
+            },
+            {
+              "text": "Plan includes an Implementation Log entry for the spec",
+              "passed": true,
+              "evidence": "Implementation Log mentioned: True"
+            },
+            {
+              "text": "Tasks are ordered correctly for this feature type",
+              "passed": true,
+              "evidence": "Checked keyword ordering patterns"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "delta": 0.444,
+  "analyst_observations": [
+    "With-skill pass rate: 96% vs baseline: 52% (delta: +44%)",
+    "admin-dashboard baseline scored 100% \u2014 likely because the SessionStart hook injects spec-driven rules into all conversations, giving the baseline access to our workflow patterns. This makes that eval non-discriminating.",
+    "csv-export shows the largest gap (100% vs 22%) \u2014 the skill adds spec tags, TDD structure, implementation log, and coverage verification that the baseline completely misses.",
+    "webhook-notifications with-skill missed 1/9 (task ordering) while scoring 89% overall.",
+    "The skill's unique value is strongest for: spec tags in tests, implementation log entries, and coverage verification final tasks."
+  ]
+}
