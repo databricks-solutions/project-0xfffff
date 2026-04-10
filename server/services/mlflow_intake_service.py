@@ -34,26 +34,29 @@ class MLflowIntakeService:
     self.db_service = db_service
 
   def configure_mlflow(self, config: MLflowIntakeConfig) -> None:
-    """Configure MLflow with Databricks credentials."""
-    try:
-      # Validate configuration
-      if not config.databricks_host or not config.databricks_token:
-        raise ValueError('Databricks host and token are required')
+    """Configure MLflow with Databricks credentials.
 
-      # Validate host format
+    Auth is handled by the Databricks SDK (service principal on Apps,
+    CLI profile locally).  We only need to set DATABRICKS_HOST so the
+    SDK knows which workspace to talk to.
+    """
+    try:
+      if not config.databricks_host:
+        raise ValueError('Databricks host is required')
+
       if not config.databricks_host.startswith('https://'):
         raise ValueError('Databricks host must start with https://')
 
-      # Set tracking URI to Databricks
       mlflow.set_tracking_uri('databricks')
 
-      # Set authentication — clear profile-related env vars that override token auth
+      # Set host for SDK; clear profile vars that would override SDK auth
       import os
 
       os.environ['DATABRICKS_HOST'] = config.databricks_host.rstrip('/')
-      os.environ['DATABRICKS_TOKEN'] = config.databricks_token
       os.environ.pop('DATABRICKS_CONFIG_PROFILE', None)
       os.environ.pop('DATABRICKS_AUTH_TYPE', None)
+      # Don't set DATABRICKS_TOKEN — let the SDK handle auth
+      # (service principal on Apps, CLI profile locally)
 
     except Exception as e:
       raise ValueError(f'Failed to configure MLflow: {str(e)}')
