@@ -216,7 +216,7 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
           onAddTraces={() => {/* wire to add traces */}}
           isPaused={isPaused}
           isAnalysisRunning={runAnalysis.isPending}
-          hasMlflowConfig={hasMlflowConfig}
+          hasMlflowConfig={modelOptions.length > 0}
         />
 
         {currentAnalysis && (

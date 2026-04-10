@@ -117,7 +117,7 @@ export const DiscoveryAnalysisTab: React.FC<DiscoveryAnalysisTabProps> = ({ work
 
             <Button
               onClick={handleRunAnalysis}
-              disabled={runAnalysis.isPending || !hasMlflowConfig}
+              disabled={runAnalysis.isPending || modelOptions.length === 0}
               className="bg-emerald-600 hover:bg-emerald-700"
             >
               {runAnalysis.isPending ? (
@@ -156,7 +156,7 @@ export const DiscoveryAnalysisTab: React.FC<DiscoveryAnalysisTabProps> = ({ work
             )}
           </div>
 
-          {!hasMlflowConfig && (
+          {modelOptions.length === 0 && (
             <Alert className="mt-4" variant="destructive">
               <AlertCircle className="h-4 w-4" />
               <AlertTitle>Databricks Not Configured</AlertTitle>

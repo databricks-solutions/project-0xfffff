@@ -3312,9 +3312,9 @@ async def mark_user_discovery_complete(workshop_id: str, user_id: str, db: Sessi
     if not workshop:
         raise HTTPException(status_code=404, detail="Workshop not found")
 
-    # Check if user exists in workshop
+    # Check if user exists in workshop (facilitators may have workshop_id=NULL)
     user = db_service.get_user(user_id)
-    if not user or user.workshop_id != workshop_id:
+    if not user or (user.workshop_id != workshop_id and user_id != workshop.facilitator_id):
         raise HTTPException(status_code=404, detail="User not found in workshop")
 
     # Mark user as complete
@@ -3346,9 +3346,9 @@ async def is_user_discovery_complete(workshop_id: str, user_id: str, db: Session
     if not workshop:
         raise HTTPException(status_code=404, detail="Workshop not found")
 
-    # Check if user exists in workshop
+    # Check if user exists in workshop (facilitators may have workshop_id=NULL)
     user = db_service.get_user(user_id)
-    if not user or user.workshop_id != workshop_id:
+    if not user or (user.workshop_id != workshop_id and user_id != workshop.facilitator_id):
         raise HTTPException(status_code=404, detail="User not found in workshop")
 
     is_complete = db_service.is_user_discovery_complete(workshop_id, user_id)
