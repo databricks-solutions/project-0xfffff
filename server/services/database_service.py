@@ -68,7 +68,6 @@ from server.models import (
   WorkshopParticipant,
   WorkshopPhase,
 )
-from server.services.token_storage_service import token_storage
 from server.utils.config import get_facilitator_config
 from server.utils.password import generate_default_password, hash_password, verify_password
 
@@ -1995,11 +1994,12 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       result['error'] = 'config missing'
       return result
 
-    databricks_token = token_storage.get_token(workshop_id)
-    if not databricks_token:
-      databricks_token = self.get_databricks_token(workshop_id)
-      if databricks_token:
-        token_storage.store_token(workshop_id, databricks_token)
+    from server.services.databricks_service import resolve_databricks_token
+
+    try:
+      databricks_token = resolve_databricks_token(config.databricks_host if config else None)
+    except RuntimeError:
+      databricks_token = None
     if not databricks_token:
       logger.debug('Skipping MLflow sync: token missing for workshop %s', workshop_id)
       result['error'] = 'token missing'
@@ -2334,11 +2334,12 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       logger.warning('Skipping MLflow eval sync: config missing for workshop %s', workshop_id)
       return {'synced': 0, 'error': 'MLflow config missing'}
 
-    databricks_token = token_storage.get_token(workshop_id)
-    if not databricks_token:
-      databricks_token = self.get_databricks_token(workshop_id)
-      if databricks_token:
-        token_storage.store_token(workshop_id, databricks_token)
+    from server.services.databricks_service import resolve_databricks_token
+
+    try:
+      databricks_token = resolve_databricks_token(config.databricks_host if config else None)
+    except RuntimeError:
+      databricks_token = None
     if not databricks_token:
       logger.warning('Skipping MLflow eval sync: token missing for workshop %s', workshop_id)
       return {'synced': 0, 'error': 'Databricks token missing'}
@@ -2480,8 +2481,13 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       logger.warning('Skipping MLflow tagging: config missing for workshop %s', workshop_id)
       return {'tagged': 0, 'failed': trace_ids, 'error': 'MLflow config missing'}
 
-    # Get token from token storage
-    databricks_token = token_storage.get_token(workshop_id)
+    # Get token via SDK auth
+    from server.services.databricks_service import resolve_databricks_token
+
+    try:
+      databricks_token = resolve_databricks_token(config.databricks_host if config else None)
+    except RuntimeError:
+      databricks_token = None
     if not databricks_token:
       logger.warning('Skipping MLflow tagging: token missing for workshop %s', workshop_id)
       return {'tagged': 0, 'failed': trace_ids, 'error': 'Databricks token missing'}
@@ -3399,29 +3405,6 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       max_traces=db_config.max_traces,
       filter_string=db_config.filter_string,
     )
-
-  def set_databricks_token(self, workshop_id: str, token: str) -> None:
-    """Persist Databricks token for a workshop."""
-    if not token:
-      return
-
-    db_token = self.db.query(DatabricksTokenDB).filter(DatabricksTokenDB.workshop_id == workshop_id).first()
-
-    if db_token:
-      db_token.token = token
-      db_token.updated_at = datetime.now()
-    else:
-      db_token = DatabricksTokenDB(workshop_id=workshop_id, token=token)
-      self.db.add(db_token)
-
-    self.db.commit()
-
-  def get_databricks_token(self, workshop_id: str) -> Optional[str]:
-    """Retrieve persisted Databricks token for a workshop."""
-    db_token = self.db.query(DatabricksTokenDB).filter(DatabricksTokenDB.workshop_id == workshop_id).first()
-    if db_token:
-      return db_token.token
-    return None
 
   def update_mlflow_ingestion_status(self, workshop_id: str, trace_count: int, error_message: Optional[str] = None) -> None:
     """Update MLflow ingestion status for a workshop."""

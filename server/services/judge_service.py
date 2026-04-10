@@ -78,19 +78,16 @@ class JudgeService:
                     detail="MLflow configuration required for AI judge evaluation. Configure in Intake phase.",
                 )
 
-            # Get token from memory storage
-            from server.services.token_storage_service import token_storage
+            # Get token via SDK auth
+            from server.services.databricks_service import resolve_databricks_token
 
-            databricks_token = token_storage.get_token(workshop_id)
-            if not databricks_token:
-                databricks_token = self.db_service.get_databricks_token(workshop_id)
-                if databricks_token:
-                    token_storage.store_token(workshop_id, databricks_token)
-            if not databricks_token:
+            try:
+                databricks_token = resolve_databricks_token(mlflow_config.databricks_host if mlflow_config else None)
+            except RuntimeError as exc:
                 raise HTTPException(
                     status_code=400,
                     detail="Databricks token not found. Please configure MLflow intake with your token.",
-                )
+                ) from exc
 
             # Validate MLflow credentials before proceeding
             if not mlflow_config.databricks_host:

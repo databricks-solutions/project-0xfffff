@@ -23,7 +23,7 @@ router = APIRouter()
 def get_databricks_service(config: DatabricksConfig) -> DatabricksService:
     """Create a Databricks service instance from configuration."""
     try:
-        return create_databricks_service(workspace_url=config.workspace_url, token=config.token)
+        return create_databricks_service(workspace_url=config.workspace_url, token=config.token or None)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to initialize Databricks service: {e!s}") from e
 
@@ -177,60 +177,19 @@ async def evaluate_judge_prompt(request: dict, db: Session = Depends(get_db)) ->
         max_tokens = request.get("max_tokens", 10)
         workshop_id = request.get("workshop_id")
 
-        # Get MLflow config from database if workshop_id is provided
+        # Resolve workspace URL from MLflow config or request config
+        workspace_url = config_data.get("workspace_url")
         if workshop_id:
             db_service = DatabaseService(db)
             mlflow_config = db_service.get_mlflow_config(workshop_id)
             if mlflow_config:
-                # Get token from memory storage
-                from server.services.token_storage_service import token_storage
+                workspace_url = mlflow_config.databricks_host
 
-                databricks_token = token_storage.get_token(workshop_id)
-                if not databricks_token:
-                    databricks_token = db_service.get_databricks_token(workshop_id)
-                    if databricks_token:
-                        token_storage.store_token(workshop_id, databricks_token)
-                if databricks_token:
-                    # Use token from memory storage - same approach as intake service
-                    # Set environment variables like the intake service does
-                    import os
-
-                    os.environ["DATABRICKS_HOST"] = mlflow_config.databricks_host.rstrip("/")
-                    os.environ["DATABRICKS_TOKEN"] = databricks_token
-
-                    # Clear profile-related environment variables that force profile auth
-                    # These override token auth even when we provide explicit tokens
-                    if "DATABRICKS_CONFIG_PROFILE" in os.environ:
-                        del os.environ["DATABRICKS_CONFIG_PROFILE"]
-                    if "DATABRICKS_AUTH_TYPE" in os.environ:
-                        del os.environ["DATABRICKS_AUTH_TYPE"]
-
-                    service = DatabricksService(
-                        workspace_url=mlflow_config.databricks_host,
-                        token=databricks_token,
-                        init_sdk=True,  # Use SDK like intake service
-                    )
-                else:
-                    # Fallback to request config
-                    service = DatabricksService(
-                        workspace_url=config_data.get("workspace_url"),
-                        token=config_data.get("token"),
-                        init_sdk=True,  # Use SDK approach
-                    )
-            else:
-                # Fallback to request config
-                service = DatabricksService(
-                    workspace_url=config_data.get("workspace_url"),
-                    token=config_data.get("token"),
-                    init_sdk=True,  # Use SDK approach
-                )
-        else:
-            # Use request config if no workshop_id
-            service = DatabricksService(
-                workspace_url=config_data.get("workspace_url"),
-                token=config_data.get("token"),
-                init_sdk=True,  # Use SDK approach
-            )
+        # Use SDK auth via create_databricks_service (token from request is fallback)
+        service = create_databricks_service(
+            workspace_url=workspace_url,
+            token=config_data.get("token") or None,
+        )
 
         # Call the serving endpoint with judge-specific parameters using SDK (same as intake)
         result = service.call_serving_endpoint(

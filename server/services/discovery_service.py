@@ -281,9 +281,12 @@ class DiscoveryService:
                 "coverage": coverage,
             }
 
-        from server.services.token_storage_service import token_storage
+        from server.services.databricks_service import resolve_databricks_token
 
-        databricks_token = token_storage.get_token(workshop_id) or self.db_service.get_databricks_token(workshop_id)
+        try:
+            databricks_token = resolve_databricks_token(mlflow_config.databricks_host if mlflow_config else None)
+        except RuntimeError:
+            databricks_token = None
         if not databricks_token:
             logger.warning(
                 "Discovery question generation requested but Databricks token missing; falling back to fixed."
@@ -555,9 +558,12 @@ class DiscoveryService:
         if not mlflow_config:
             raise HTTPException(status_code=400, detail="MLflow/Databricks configuration not found for workshop")
 
-        from server.services.token_storage_service import token_storage
+        from server.services.databricks_service import resolve_databricks_token
 
-        databricks_token = token_storage.get_token(workshop_id) or self.db_service.get_databricks_token(workshop_id)
+        try:
+            databricks_token = resolve_databricks_token(mlflow_config.databricks_host if mlflow_config else None)
+        except RuntimeError:
+            databricks_token = None
         if not databricks_token:
             raise HTTPException(status_code=400, detail="Databricks token not found for workshop")
 
@@ -993,11 +999,12 @@ class DiscoveryService:
         mlflow_config = self.db_service.get_mlflow_config(workshop_id)
         if mlflow_config:
             workspace_url = mlflow_config.databricks_host
-            from server.services.token_storage_service import token_storage
+            from server.services.databricks_service import resolve_databricks_token
 
-            databricks_token = token_storage.get_token(workshop_id) or self.db_service.get_databricks_token(
-                workshop_id
-            )
+            try:
+                databricks_token = resolve_databricks_token(mlflow_config.databricks_host)
+            except RuntimeError:
+                databricks_token = None
 
         # Check for custom LLM provider configuration
         custom_base_url = None
@@ -1134,7 +1141,7 @@ class DiscoveryService:
     ) -> str:
         """Classify finding using LLM if configured, otherwise fall back to keyword-based."""
         from server.services.classification_service import ClassificationService
-        from server.services.token_storage_service import token_storage
+        from server.services.databricks_service import resolve_databricks_token
 
         # Get LLM configuration
         mlflow_config = self.db_service.get_mlflow_config(workshop_id)
@@ -1145,10 +1152,11 @@ class DiscoveryService:
             logger.debug("No LLM config for workshop %s, using local classification", workshop_id)
             return self._classify_finding_locally(finding_text)
 
-        # Get token from memory or database
-        databricks_token = token_storage.get_token(workshop_id)
-        if not databricks_token:
-            databricks_token = self.db_service.get_databricks_token(workshop_id)
+        # Get token via SDK auth
+        try:
+            databricks_token = resolve_databricks_token(mlflow_config.databricks_host if mlflow_config else None)
+        except RuntimeError:
+            databricks_token = None
 
         if not databricks_token:
             logger.debug("No Databricks token for workshop %s, using local classification", workshop_id)
@@ -1184,7 +1192,7 @@ class DiscoveryService:
         """Detect disagreements using LLM if configured."""
         from server.models import ClassifiedFinding
         from server.services.classification_service import ClassificationService
-        from server.services.token_storage_service import token_storage
+        from server.services.databricks_service import resolve_databricks_token
 
         if not findings or len(findings) < 2:
             return
@@ -1199,10 +1207,11 @@ class DiscoveryService:
             self.detect_disagreements(workshop_id, trace_id, findings)
             return
 
-        # Get token from memory or database
-        databricks_token = token_storage.get_token(workshop_id)
-        if not databricks_token:
-            databricks_token = self.db_service.get_databricks_token(workshop_id)
+        # Get token via SDK auth
+        try:
+            databricks_token = resolve_databricks_token(mlflow_config.databricks_host if mlflow_config else None)
+        except RuntimeError:
+            databricks_token = None
 
         if not databricks_token:
             self.detect_disagreements(workshop_id, trace_id, findings)
@@ -1310,9 +1319,12 @@ class DiscoveryService:
             logger.debug("Disagreement detection skipped: no MLflow config")
             return []
 
-        from server.services.token_storage_service import token_storage
+        from server.services.databricks_service import resolve_databricks_token
 
-        databricks_token = token_storage.get_token(workshop_id) or self.db_service.get_databricks_token(workshop_id)
+        try:
+            databricks_token = resolve_databricks_token(mlflow_config.databricks_host if mlflow_config else None)
+        except RuntimeError:
+            databricks_token = None
         if not databricks_token:
             logger.debug("Disagreement detection skipped: no Databricks token")
             return []
