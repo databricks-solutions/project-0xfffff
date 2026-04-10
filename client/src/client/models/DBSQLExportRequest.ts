@@ -11,9 +11,9 @@ export type DBSQLExportRequest = {
      */
     databricks_host: string;
     /**
-     * Databricks access token for DBSQL authentication
+     * Deprecated — SDK auth used instead
      */
-    databricks_token: string;
+    databricks_token?: string;
     /**
      * DBSQL warehouse HTTP path (e.g., /sql/1.0/warehouses/xxxxxx)
      */
