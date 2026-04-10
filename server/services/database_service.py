@@ -12,7 +12,6 @@ from sqlalchemy.orm import Session
 from server.database import (
   AnnotationDB,
   ClassifiedFindingDB,
-  DatabricksTokenDB,
   DisagreementDB,
   DiscoveryAnalysisDB,
   DiscoveryFeedbackDB,

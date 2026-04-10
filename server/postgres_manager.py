@@ -36,7 +36,6 @@ ALLOWED_TABLES: set[str] = {
     "rubrics",
     "annotations",
     "mlflow_intake_config",
-    "databricks_tokens",
     "judge_prompts",
     "judge_evaluations",
     "user_trace_orders",
@@ -197,15 +196,6 @@ _TABLE_DDL: list[str] = [
         error_message       TEXT,
         created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-    """,
-    # -- databricks_tokens --
-    """
-    CREATE TABLE IF NOT EXISTS databricks_tokens (
-        workshop_id     VARCHAR PRIMARY KEY REFERENCES workshops(id),
-        token           TEXT NOT NULL,
-        created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """,
     # -- judge_prompts --

@@ -57,7 +57,6 @@ class TestAllowedTables:
         config_tables = {
             "facilitator_configs",
             "mlflow_intake_config",
-            "databricks_tokens",
             "custom_llm_provider_config",
         }
         assert config_tables.issubset(ALLOWED_TABLES)
