@@ -2787,6 +2787,50 @@ async def get_mlflow_config(workshop_id: str, db: Session = Depends(get_db)) -> 
     return db_service.get_mlflow_config(workshop_id)
 
 
+@router.get("/{workshop_id}/available-models")
+async def list_available_models(workshop_id: str, db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    """List available model serving endpoints for a workshop's Databricks workspace."""
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    mlflow_config = db_service.get_mlflow_config(workshop_id)
+    if not mlflow_config or not mlflow_config.databricks_host:
+        return []
+
+    from server.services.token_storage_service import token_storage
+
+    databricks_token = token_storage.get_token(workshop_id)
+    if not databricks_token:
+        databricks_token = db_service.get_databricks_token(workshop_id)
+        if databricks_token:
+            token_storage.store_token(workshop_id, databricks_token)
+    if not databricks_token:
+        return []
+
+    try:
+        from server.services.databricks_service import DatabricksService
+
+        service = DatabricksService(
+            workspace_url=mlflow_config.databricks_host,
+            token=databricks_token,
+            init_sdk=False,
+        )
+        endpoints = await service.list_serving_endpoints()
+        # Return only READY Foundation Model API chat endpoints
+        return [
+            {"name": ep["name"], "state": ep.get("state", ""), "task": ep.get("task", "")}
+            for ep in endpoints
+            if ep.get("state") == "READY"
+            and ep.get("name", "").startswith("databricks-")
+            and ep.get("task") == "llm/v1/chat"
+        ]
+    except Exception as e:
+        logger.warning(f"Failed to list models for workshop {workshop_id}: {e}")
+        return []
+
+
 @router.get("/{workshop_id}/mlflow-status")
 async def get_mlflow_intake_status(workshop_id: str, db: Session = Depends(get_db)) -> MLflowIntakeStatus:
     """Get MLflow intake status for a workshop."""

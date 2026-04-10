@@ -42,7 +42,7 @@ import { toast } from 'sonner';
 import { parseRubricQuestions as parseQuestions } from '@/utils/rubricUtils';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { getModelOptions, getBackendModelName } from '@/utils/modelMapping';
+
 import { BarChart3 } from 'lucide-react';
 
 /** Annotation extended with user details from the annotations-with-users endpoint */

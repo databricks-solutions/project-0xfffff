@@ -7,11 +7,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useTraces, useAllTraces, useRubric, useFacilitatorAnnotations, useFacilitatorAnnotationsWithUserDetails, useWorkshop, useDiscoveryFeedback, useFacilitatorDiscoveryFeedback, useUpdateDiscoveryModel, useMLflowConfig } from '@/hooks/useWorkshopApi';
+import { useTraces, useAllTraces, useRubric, useFacilitatorAnnotations, useFacilitatorAnnotationsWithUserDetails, useWorkshop, useDiscoveryFeedback, useFacilitatorDiscoveryFeedback, useUpdateDiscoveryModel, useAvailableModels } from '@/hooks/useWorkshopApi';
 import type { DiscoveryFeedbackWithUser } from '@/hooks/useWorkshopApi';
 import { Settings, Users, FileText, CheckCircle, Clock, AlertCircle, ChevronRight, Play, Eye, Plus, RotateCcw, Target, TrendingUp, Activity, MessageSquare, ChevronDown, Brain } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { getModelOptions, getBackendModelName, getFrontendModelName } from '@/utils/modelMapping';
+import { buildModelOptions, getDisplayName } from '@/utils/modelMapping';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -81,18 +81,14 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
   const [isResettingAnnotation, setIsResettingAnnotation] = React.useState(false);
 
   // Model selection for discovery questions
-  const { data: mlflowConfig } = useMLflowConfig(workshopId!);
+  const { data: availableModels } = useAvailableModels(workshopId!);
   const updateModelMutation = useUpdateDiscoveryModel(workshopId!);
+  const modelOptions = React.useMemo(() => availableModels ? buildModelOptions(availableModels) : [], [availableModels]);
 
-  const currentModel = React.useMemo(() => {
-    const backendName = workshop?.discovery_questions_model_name || 'demo';
-    if (backendName === 'demo' || backendName === 'custom') return backendName;
-    return getFrontendModelName(backendName);
-  }, [workshop?.discovery_questions_model_name]);
+  const currentModel = workshop?.discovery_questions_model_name || 'demo';
 
   const handleModelChange = (value: string) => {
-    const backendName = value === 'demo' || value === 'custom' ? value : getBackendModelName(value);
-    updateModelMutation.mutate({ model_name: backendName });
+    updateModelMutation.mutate({ model_name: value });
   };
 
   // Calculate progress metrics
@@ -1169,11 +1165,10 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="demo">Demo (static questions)</SelectItem>
-                        {getModelOptions(!!mlflowConfig).map(option => (
+                        {modelOptions.map(option => (
                           <SelectItem
                             key={option.value}
                             value={option.value}
-                            disabled={option.disabled}
                           >
                             {option.label}
                           </SelectItem>

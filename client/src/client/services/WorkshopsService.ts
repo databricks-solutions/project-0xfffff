@@ -1580,6 +1580,27 @@ export class WorkshopsService {
         });
     }
     /**
+     * List Available Models
+     * List available model serving endpoints for a workshop's Databricks workspace.
+     * @param workshopId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static listAvailableModelsWorkshopsWorkshopIdAvailableModelsGet(
+        workshopId: string,
+    ): CancelablePromise<Array<Record<string, any>>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/available-models',
+            path: {
+                'workshop_id': workshopId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * Get Mlflow Intake Status
      * Get MLflow intake status for a workshop.
      * @param workshopId

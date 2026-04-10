@@ -27,8 +27,8 @@ import {
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useUser, useRoleCheck } from '@/context/UserContext';
 import { WorkshopsService } from '@/client';
-import { useWorkshop, useOriginalTraces, useAggregateAllFeedback, useFacilitatorAnnotations } from '@/hooks/useWorkshopApi';
-import { getModelOptions, getBackendModelName, getFrontendModelName, getDisplayName, MODEL_MAPPING } from '@/utils/modelMapping';
+import { useWorkshop, useOriginalTraces, useAggregateAllFeedback, useFacilitatorAnnotations, useAvailableModels } from '@/hooks/useWorkshopApi';
+import { buildModelOptions, getDisplayName } from '@/utils/modelMapping';
 import { parseRubricQuestions } from '@/utils/rubricUtils';
 import { Pagination } from '@/components/Pagination';
 import { TraceDataViewer } from '@/components/TraceDataViewer';
@@ -100,14 +100,15 @@ export function JudgeTuningPage() {
   const { data: traces } = useOriginalTraces(workshopId!);
   const aggregateAllFeedback = useAggregateAllFeedback(workshopId!);
   const { data: annotations = [], refetch: refetchAnnotations } = useFacilitatorAnnotations(workshopId!);
+  const { data: availableModels } = useAvailableModels(workshopId!);
   const queryClient = useQueryClient();
   
   // State management
   const [prompts, setPrompts] = useState<JudgePrompt[]>([]);
   const [currentPrompt, setCurrentPrompt] = useState<string>('');
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
-  const [selectedEvaluationModel, setSelectedEvaluationModel] = useState<string>('Claude Opus 4.5');
-  const [selectedAlignmentModel, setSelectedAlignmentModel] = useState<string>('Claude Opus 4.5');
+  const [selectedEvaluationModel, setSelectedEvaluationModel] = useState<string>('databricks-claude-opus-4-5');
+  const [selectedAlignmentModel, setSelectedAlignmentModel] = useState<string>('databricks-claude-opus-4-5');
   const [evaluations, setEvaluations] = useState<JudgeEvaluationWithMlflow[]>([]);
   const [metrics, setMetrics] = useState<JudgePerformanceMetricsExtended | null>(null);
   const [rubric, setRubric] = useState<Rubric | null>(null);
@@ -116,6 +117,11 @@ export function JudgeTuningPage() {
   // Selected rubric question index for tuning
   const [selectedQuestionIndex, setSelectedQuestionIndex] = useState<number>(0);
   
+  const modelOptions = useMemo(
+    () => (availableModels ? buildModelOptions(availableModels) : []),
+    [availableModels],
+  );
+
   // Parse rubric questions
   const parsedRubricQuestions = rubric?.question ? parseRubricQuestions(rubric.question) : [];
   
@@ -572,8 +578,7 @@ export function JudgeTuningPage() {
       refetchAnnotations();
 
       // Determine default model first (used in multiple places)
-      const modelOptions = getModelOptions(!!mlflowConfigData);
-      const defaultModel = modelOptions.find(opt => !opt.disabled)?.value || modelOptions[0]?.value || 'Claude Opus 4.5';
+      const defaultModel = modelOptions[0]?.value || 'databricks-claude-opus-4-5';
       
       // Initialize with rubric question if no prompts exist
       if (promptsData.length === 0 && rubricData) {
@@ -636,11 +641,10 @@ export function JudgeTuningPage() {
         // For evaluation model: use model_name (the model used for judge creation)
         // For alignment model: use model_parameters.alignment_model if available, otherwise default to Opus 4.5
         if (latestPrompt.model_name) {
-          const frontendModel = getFrontendModelName(latestPrompt.model_name);
-          const isValidOption = modelOptions.some(opt => opt.value === frontendModel);
+          const isValidOption = modelOptions.some(opt => opt.value === latestPrompt.model_name);
 
           if (isValidOption) {
-            setSelectedEvaluationModel(frontendModel);
+            setSelectedEvaluationModel(latestPrompt.model_name);
           } else {
             setSelectedEvaluationModel(defaultModel);
           }
@@ -650,15 +654,15 @@ export function JudgeTuningPage() {
 
         // Alignment model: extract from model_parameters.alignment_model if this is an aligned prompt
         if (latestPrompt.model_parameters && typeof latestPrompt.model_parameters === 'object' && latestPrompt.model_parameters.alignment_model) {
-          const alignmentModel = getFrontendModelName(latestPrompt.model_parameters.alignment_model);
-          const isValidOption = modelOptions.some(opt => opt.value === alignmentModel);
+          const savedAlignmentModel = latestPrompt.model_parameters.alignment_model as string;
+          const isValidOption = modelOptions.some(opt => opt.value === savedAlignmentModel);
           if (isValidOption) {
-            setSelectedAlignmentModel(alignmentModel);
+            setSelectedAlignmentModel(savedAlignmentModel);
           } else {
-            setSelectedAlignmentModel('Claude Opus 4.5'); // Default to Opus 4.5 for alignment
+            setSelectedAlignmentModel('databricks-claude-opus-4-5');
           }
         } else {
-          setSelectedAlignmentModel('Claude Opus 4.5'); // Default to Opus 4.5 for alignment
+          setSelectedAlignmentModel('databricks-claude-opus-4-5');
         }
         
         // Don't auto-load metrics from saved prompts - only show metrics after running evaluation
@@ -902,7 +906,7 @@ Think step by step about how well the output addresses the criteria, then provid
         prompt_text: currentPrompt,
         judge_type: judgeType, // Include judge type to ensure correct template association
         few_shot_examples: [],
-        model_name: getBackendModelName(selectedEvaluationModel),
+        model_name: selectedEvaluationModel,
         model_parameters: {
           ...(selectedEvaluationModel === 'demo' ? {} : { temperature: 0.0, max_tokens: 10 }),
           judge_name: judgeName, // Associate prompt with current judge for per-judge versioning
@@ -992,7 +996,7 @@ Think step by step about how well the output addresses the criteria, then provid
     
     const promptData = {
       prompt_text: currentPrompt,
-      model_name: getBackendModelName(selectedEvaluationModel),
+      model_name: selectedEvaluationModel,
       model_parameters: selectedEvaluationModel === 'demo' ? null : { temperature: 0.0, max_tokens: 10 },
       exported_at: new Date().toISOString(),
       workshop_id: workshopId,
@@ -1092,8 +1096,8 @@ Think step by step about how well the output addresses the criteria, then provid
         : {
             judge_name: judgeName,
             judge_prompt: normalizedPrompt,
-            evaluation_model_name: getBackendModelName(selectedEvaluationModel),
-            alignment_model_name: getBackendModelName(selectedAlignmentModel),
+            evaluation_model_name: selectedEvaluationModel,
+            alignment_model_name: selectedAlignmentModel,
             prompt_id: selectedPromptId || undefined,
             judge_type: judgeType, // Pass the selected question's judge type
           };
@@ -1321,7 +1325,7 @@ Think step by step about how well the output addresses the criteria, then provid
           judge_prompt: currentPrompt.trim(),
           judge_name: judgeName,
           judge_type: judgeType,
-          evaluation_model_name: getBackendModelName(selectedEvaluationModel),
+          evaluation_model_name: selectedEvaluationModel,
         }),
       });
 
@@ -1419,7 +1423,7 @@ Think step by step about how well the output addresses the criteria, then provid
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            evaluation_model_name: getBackendModelName(selectedEvaluationModel),
+            evaluation_model_name: selectedEvaluationModel,
           }),
         });
 
@@ -1504,8 +1508,8 @@ Think step by step about how well the output addresses the criteria, then provid
       const requestBody = {
           judge_name: judgeName,
           judge_prompt: normalizedPrompt,
-        evaluation_model_name: getBackendModelName(selectedEvaluationModel),
-        alignment_model_name: getBackendModelName(selectedAlignmentModel),
+        evaluation_model_name: selectedEvaluationModel,
+        alignment_model_name: selectedAlignmentModel,
       };
       
       const startResponse = await fetch(`/workshops/${workshopId}/start-alignment`, {
@@ -1825,15 +1829,13 @@ Think step by step about how well the output addresses the criteria, then provid
                     setOriginalPromptText(prompt.prompt_text); // Track original for modification detection
                     // Sync UI model selection with saved prompt's model
                     if (prompt.model_name) {
-                        const frontendModel = getFrontendModelName(prompt.model_name);
-                        setSelectedEvaluationModel(frontendModel);
+                        setSelectedEvaluationModel(prompt.model_name);
                     }
-                    // Set alignment model from model_parameters if available, otherwise default to Opus 4.5
+                    // Set alignment model from model_parameters if available
                     if (prompt.model_parameters && typeof prompt.model_parameters === 'object' && prompt.model_parameters.alignment_model) {
-                        const alignmentModel = getFrontendModelName(prompt.model_parameters.alignment_model);
-                        setSelectedAlignmentModel(alignmentModel);
+                        setSelectedAlignmentModel(prompt.model_parameters.alignment_model as string);
                     } else {
-                        setSelectedAlignmentModel('Claude Opus 4.5');
+                        setSelectedAlignmentModel('databricks-claude-opus-4-5');
                     }
                     // Clear evaluation state when switching prompts
                     setHasEvaluated(false);
@@ -1870,7 +1872,7 @@ Think step by step about how well the output addresses the criteria, then provid
                                 ? 'Default'
                                 : prompt.model_name === 'demo'
                                   ? 'Demo'
-                                  : getDisplayName(getFrontendModelName(prompt.model_name || ''))}
+                                  : getDisplayName(prompt.model_name || '')}
                           </Badge>
                         </div>
                         {prompt.performance_metrics && (
@@ -2492,20 +2494,12 @@ Think step by step about how well the output addresses the criteria, then provid
                     <SelectValue placeholder="Choose alignment model" />
                   </SelectTrigger>
                   <SelectContent>
-                    {getModelOptions(!!mlflowConfig).map((option) => (
+                    {modelOptions.map((option) => (
                       <SelectItem
                         key={option.value}
                         value={option.value}
-                        disabled={option.disabled}
                       >
-                        <div className="flex items-center justify-between w-full">
-                          <span>{option.label}</span>
-                          {option.requiresDatabricks && !mlflowConfig && (
-                            <Badge className="bg-amber-100 text-amber-700 border-amber-300 ml-2 text-xs">
-                              Requires Databricks
-                            </Badge>
-                          )}
-                        </div>
+                        {option.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -2550,9 +2544,9 @@ Think step by step about how well the output addresses the criteria, then provid
                     <SelectValue placeholder="Select model endpoint" />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.entries(MODEL_MAPPING).map(([displayName, endpointName]) => (
-                      <SelectItem key={endpointName} value={endpointName}>
-                        {displayName}
+                    {modelOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
                       </SelectItem>
                     ))}
                   </SelectContent>

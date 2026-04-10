@@ -10,13 +10,13 @@ import {
   useCreateDraftRubricItem,
   useDeleteDraftRubricItem,
   useWorkshop,
-  useMLflowConfig,
   useUpdateDiscoveryModel,
   useCreateRubricFromDraft,
+  useAvailableModels,
   type DiscoveryAnalysis,
 } from '@/hooks/useWorkshopApi';
 import type { Trace } from '@/client';
-import { getModelOptions, getBackendModelName, getFrontendModelName } from '@/utils/modelMapping';
+import { buildModelOptions } from '@/utils/modelMapping';
 import { toast } from 'sonner';
 
 import { DiscoveryOverviewBar } from './DiscoveryOverviewBar';
@@ -40,7 +40,7 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
   const { data: allFeedback } = useFacilitatorDiscoveryFeedback(workshopId!);
   const { data: analyses } = useDiscoveryAnalyses(workshopId!);
   const { data: draftItems = [] } = useDraftRubricItems(workshopId!);
-  const { data: mlflowConfig } = useMLflowConfig(workshopId!);
+  const { data: availableModels } = useAvailableModels(workshopId!);
 
   // Mutations
   const runAnalysis = useRunDiscoveryAnalysis(workshopId!);
@@ -53,13 +53,8 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
   // State
   const [promotedKeys, setPromotedKeys] = useState<Set<string>>(new Set());
 
-  const hasMlflowConfig = !!mlflowConfig;
-  const modelOptions = getModelOptions(hasMlflowConfig);
-  const currentModel = useMemo(() => {
-    const backendName = workshop?.discovery_questions_model_name || 'demo';
-    if (backendName === 'demo' || backendName === 'custom') return backendName;
-    return getFrontendModelName(backendName);
-  }, [workshop?.discovery_questions_model_name]);
+  const modelOptions = useMemo(() => availableModels ? buildModelOptions(availableModels) : [], [availableModels]);
+  const currentModel = workshop?.discovery_questions_model_name || 'demo';
 
   const currentAnalysis = analyses?.[0] ?? null;
 
@@ -124,9 +119,8 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
 
   // Handlers
   const handleRunAnalysis = (template: string) => {
-    const backendModel = getBackendModelName(currentModel);
     runAnalysis.mutate(
-      { template, model: backendModel },
+      { template, model: currentModel },
       {
         onSuccess: () => toast.success('Analysis completed'),
         onError: (err) => toast.error(err.message || 'Analysis failed'),
@@ -192,8 +186,7 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
   }, [createDraftItem, deleteDraftItem, user?.id]);
 
   const handleModelChange = (value: string) => {
-    const backendName = value === 'demo' || value === 'custom' ? value : getBackendModelName(value);
-    updateModelMutation.mutate({ model_name: backendName });
+    updateModelMutation.mutate({ model_name: value });
   };
 
   const handleCreateRubric = useCallback(async () => {

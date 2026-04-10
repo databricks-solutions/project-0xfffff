@@ -12,9 +12,9 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { useWorkshopContext } from '@/context/WorkshopContext';
-import { useAllTraces, useFacilitatorAnnotations } from '@/hooks/useWorkshopApi';
+import { useAllTraces, useFacilitatorAnnotations, prefetchAvailableModels } from '@/hooks/useWorkshopApi';
 import { UsersService } from '@/client';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { JsonPathSettings } from './JsonPathSettings';
 
 interface GeneralDashboardProps {
@@ -23,8 +23,12 @@ interface GeneralDashboardProps {
 
 export const GeneralDashboard: React.FC<GeneralDashboardProps> = ({ onNavigate }) => {
   const { workshopId } = useWorkshopContext();
+  const queryClient = useQueryClient();
   const { data: traces } = useAllTraces(workshopId!);
   const { data: annotations } = useFacilitatorAnnotations(workshopId!);
+  const handlePrefetchModels = () => {
+    if (workshopId) prefetchAvailableModels(queryClient, workshopId);
+  };
 
   // Fetch workshop users
   const { data: workshopUsers } = useQuery({
@@ -118,6 +122,8 @@ export const GeneralDashboard: React.FC<GeneralDashboardProps> = ({ onNavigate }
               variant="default"
               size="sm"
               onClick={() => onNavigate?.('discovery')}
+              onMouseEnter={handlePrefetchModels}
+              onFocus={handlePrefetchModels}
               className="h-8"
             >
               <Eye className="w-3.5 h-3.5 mr-1.5" />
@@ -127,6 +133,8 @@ export const GeneralDashboard: React.FC<GeneralDashboardProps> = ({ onNavigate }
               variant="outline"
               size="sm"
               onClick={() => onNavigate?.('annotation')}
+              onMouseEnter={handlePrefetchModels}
+              onFocus={handlePrefetchModels}
               className="h-8"
             >
               <Eye className="w-3.5 h-3.5 mr-1.5" />

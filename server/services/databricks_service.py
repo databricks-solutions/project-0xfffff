@@ -8,6 +8,7 @@ import logging
 import os
 from typing import Any
 
+import httpx
 import requests
 from fastapi import HTTPException
 from openai import OpenAI
@@ -223,31 +224,45 @@ class DatabricksService:
             logger.error("Full traceback:", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Error calling serving endpoint: {e!s}") from e
 
-    def list_serving_endpoints(self) -> list[dict[str, Any]]:
-        """List all available serving endpoints.
-        Note: This method returns a placeholder since OpenAI client doesn't provide endpoint listing.
-        You may need to implement this using direct HTTP calls to Databricks API.
+    async def list_serving_endpoints(self) -> list[dict[str, Any]]:
+        """List all available serving endpoints from the Databricks workspace.
+
+        Calls the Databricks REST API to fetch real serving endpoints.
 
         Returns:
             List of serving endpoint information
         """
         try:
-            logger.info("Listing Databricks serving endpoints")
+            logger.info("Listing Databricks serving endpoints via REST API")
 
-            # Since OpenAI client doesn't provide endpoint listing, return a placeholder
-            # In a real implementation, you might want to make direct HTTP calls to Databricks API
-            endpoint_list = [
-                {
-                    "name": "databricks-claude-sonnet-4-5",
-                    "id": "placeholder-id",
-                    "state": "active",
-                    "config": {"model_name": "claude-4-5-sonnet"},
-                }
-            ]
+            url = f"{self.workspace_url}/api/2.0/serving-endpoints"
+            headers = {"Authorization": f"Bearer {self.token}"}
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.get(url, headers=headers)
+                resp.raise_for_status()
 
-            logger.info(f"Found {len(endpoint_list)} serving endpoints (placeholder)")
+            data = resp.json()
+            raw_endpoints = data.get("endpoints", [])
+
+            endpoint_list = []
+            for ep in raw_endpoints:
+                state_obj = ep.get("state", {})
+                ready = state_obj.get("ready", "")
+                endpoint_list.append({
+                    "name": ep.get("name", ""),
+                    "id": ep.get("id", ""),
+                    "state": ready,
+                    "config": ep.get("config"),
+                    "task": ep.get("task", ""),
+                    "creator": ep.get("creator", ""),
+                })
+
+            logger.info(f"Found {len(endpoint_list)} serving endpoints")
             return endpoint_list
 
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Error listing endpoints: {e}")
+            raise HTTPException(status_code=502, detail=f"Error listing endpoints from Databricks: {e!s}") from e
         except Exception as e:
             logger.error(f"Error listing endpoints: {e}")
             raise HTTPException(status_code=500, detail=f"Error listing endpoints: {e!s}") from e
