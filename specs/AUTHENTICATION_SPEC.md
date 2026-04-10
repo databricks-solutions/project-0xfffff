@@ -276,3 +276,9 @@ Key implementation points:
 - No database changes required
 - No API changes needed
 - Graceful fallbacks for all error cases
+
+## Implementation Log
+
+| Date | Plan | Status | Summary |
+|------|------|--------|---------|
+| 2026-04-10 | [SDK Auth Migration](../.claude/plans/2026-04-10-sdk-auth-migration.md) | in-progress | Replace PAT token auth with Databricks SDK unified auth |

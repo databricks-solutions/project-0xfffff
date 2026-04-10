@@ -54,6 +54,33 @@ def _get_sdk_token(workspace_url: str | None = None) -> str | None:
     return None
 
 
+def resolve_databricks_token(workspace_url: str | None = None) -> str:
+    """Resolve a Databricks auth token via the SDK.
+
+    On Databricks Apps the platform injects service principal credentials.
+    Locally, the SDK picks up CLI profile auth from ``databricks auth login``.
+
+    Falls back to the ``DATABRICKS_TOKEN`` environment variable when the SDK
+    is not configured (e.g. CI or minimal local setups).
+
+    Raises:
+        RuntimeError: If no valid token can be resolved.
+    """
+    token = _get_sdk_token(workspace_url)
+    if token:
+        return token
+    # Fallback: explicit env var (useful for CI / containers without SDK config)
+    token = os.getenv("DATABRICKS_TOKEN")
+    if token:
+        logger.info("Using DATABRICKS_TOKEN env var (SDK auth unavailable)")
+        return token
+    raise RuntimeError(
+        "Could not resolve Databricks auth token. "
+        "On Databricks Apps this is automatic. "
+        "Locally, run: databricks auth login --host <workspace-url>"
+    )
+
+
 class DatabricksService:
     """Service for interacting with Databricks model serving endpoints."""
 
@@ -87,23 +114,14 @@ class DatabricksService:
         else:
             self.workspace_url = workspace_url or os.getenv("DATABRICKS_HOST")
 
-        # Resolve token: prefer SDK OAuth token (accepted on /chat/completions)
-        # over stored PATs (which may lack required scopes for that path).
+        # Resolve token: prefer SDK OAuth token (service principal on Apps,
+        # CLI profile locally).  Fall back to explicit token / env var.
         sdk_token = _get_sdk_token(self.workspace_url)
         if sdk_token:
             self.token = sdk_token
             logger.info("Using Databricks SDK OAuth token for serving endpoint auth")
         elif token:
             self.token = token
-        elif workshop_id and db_service:
-            try:
-                from server.services.token_storage_service import token_storage
-
-                self.token = token_storage.get_token(workshop_id)
-                if not self.token:
-                    self.token = db_service.get_databricks_token(workshop_id)
-            except Exception:
-                self.token = None
         else:
             self.token = os.getenv("DATABRICKS_TOKEN")
 
