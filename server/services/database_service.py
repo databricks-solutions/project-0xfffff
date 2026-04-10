@@ -2013,9 +2013,7 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       return result
 
     os.environ['DATABRICKS_HOST'] = config.databricks_host.rstrip('/')
-    os.environ['DATABRICKS_TOKEN'] = databricks_token
-    os.environ.pop('DATABRICKS_CLIENT_ID', None)
-    os.environ.pop('DATABRICKS_CLIENT_SECRET', None)
+    # SDK handles auth (service principal on Apps, CLI profile locally)
 
     mlflow.set_tracking_uri('databricks')
 
@@ -2351,9 +2349,7 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       return {'synced': 0, 'error': 'MLflow not available'}
 
     os.environ['DATABRICKS_HOST'] = config.databricks_host.rstrip('/')
-    os.environ['DATABRICKS_TOKEN'] = databricks_token
-    os.environ.pop('DATABRICKS_CLIENT_ID', None)
-    os.environ.pop('DATABRICKS_CLIENT_SECRET', None)
+    # SDK handles auth (service principal on Apps, CLI profile locally)
 
     mlflow.set_tracking_uri('databricks')
 
@@ -2499,9 +2495,7 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
 
     # Set up MLflow credentials
     os.environ['DATABRICKS_HOST'] = config.databricks_host.rstrip('/')
-    os.environ['DATABRICKS_TOKEN'] = databricks_token
-    os.environ.pop('DATABRICKS_CLIENT_ID', None)
-    os.environ.pop('DATABRICKS_CLIENT_SECRET', None)
+    # SDK handles auth (service principal on Apps, CLI profile locally)
 
     mlflow.set_tracking_uri('databricks')
 

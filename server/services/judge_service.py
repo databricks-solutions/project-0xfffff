@@ -282,17 +282,12 @@ class JudgeService:
         self, workshop_id: str, prompt: JudgePrompt, input_text: str, output_text: str, mlflow_config
     ) -> tuple[int, str]:
         """Evaluate using real MLflow LLM judge."""
-        # Set up MLflow with Databricks credentials
+        # Set up MLflow — SDK handles auth (service principal on Apps, CLI profile locally)
         os.environ["DATABRICKS_HOST"] = mlflow_config.databricks_host.rstrip("/")
-        os.environ["DATABRICKS_TOKEN"] = mlflow_config.databricks_token
 
-        # Validate credentials format
+        # Validate host format
         if not mlflow_config.databricks_host.startswith("https://"):
             raise ValueError("Databricks host must start with https://")
-        if not mlflow_config.databricks_token.startswith("dapi"):
-            print(
-                f"Warning: Databricks token should typically start with 'dapi'. Current token starts with: {mlflow_config.databricks_token[:10]}..."
-            )
 
         # Initialize MLflow with proper experiment context
         try:
