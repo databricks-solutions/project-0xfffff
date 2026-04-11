@@ -1535,7 +1535,7 @@ export class WorkshopsService {
     }
     /**
      * Configure Mlflow Intake
-     * Configure MLflow intake for a workshop (token stored in memory, not database).
+     * Configure MLflow intake for a workshop.
      * @param workshopId
      * @param requestBody
      * @returns MLflowIntakeConfig Successful Response
@@ -1751,8 +1751,9 @@ export class WorkshopsService {
      *
      * Environment variables used if parameters not provided:
      * - DATABRICKS_HOST
-     * - DATABRICKS_TOKEN
      * - MLFLOW_EXPERIMENT_ID
+     *
+     * Authentication is resolved via Databricks SDK (service principal or CLI profile).
      * @param workshopId
      * @param formData
      * @returns any Successful Response
