@@ -122,11 +122,12 @@ class TestBuildConnString:
         monkeypatch.setenv("PGPORT", "5432")
         monkeypatch.setenv("PGSSLMODE", "require")
         monkeypatch.setenv("PGAPPNAME", "test-app")
+        monkeypatch.setenv("ENDPOINT_NAME", "projects/p1/branches/b1/endpoints/e1")
 
-        with patch("server.db_config.get_token_manager") as mock_tm:
-            mock_tm_inst = MagicMock()
-            mock_tm_inst.get_token.return_value = "test_token"
-            mock_tm.return_value = mock_tm_inst
+        with patch("server.db_config.get_credential_manager") as mock_cm:
+            mock_cm_inst = MagicMock()
+            mock_cm_inst.get_password.return_value = "test_token"
+            mock_cm.return_value = mock_cm_inst
 
             mgr = PostgresManager()
             conn_str = mgr._build_conn_string()
@@ -164,18 +165,18 @@ class TestPostgresManagerOperations:
         monkeypatch.setenv("PGDATABASE", "testdb")
         monkeypatch.setenv("PGUSER", "svc-user")
         monkeypatch.setenv("PGAPPNAME", "test-app")
+        monkeypatch.setenv("ENDPOINT_NAME", "projects/p1/branches/b1/endpoints/e1")
 
-        with patch("server.db_config.get_token_manager") as mock_tm:
-            mock_tm_inst = MagicMock()
-            mock_tm_inst.get_token.return_value = "tok"
-            mock_tm_inst.needs_refresh = False
-            mock_tm.return_value = mock_tm_inst
+        with patch("server.db_config.get_credential_manager") as mock_cm:
+            mock_cm_inst = MagicMock()
+            mock_cm_inst.get_password.return_value = "tok"
+            mock_cm.return_value = mock_cm_inst
 
             mgr = PostgresManager()
             # Mock the pool
             mock_pool = MagicMock()
             mgr._pool = mock_pool
-            mgr._token_manager = mock_tm_inst
+            mgr._credential_manager = mock_cm_inst
             return mgr
 
     def test_write_validates_table(self, monkeypatch):
@@ -398,15 +399,15 @@ class TestCreateTables:
         monkeypatch.setenv("PGDATABASE", "testdb")
         monkeypatch.setenv("PGUSER", "svc-user")
         monkeypatch.setenv("PGAPPNAME", "test-app")
+        monkeypatch.setenv("ENDPOINT_NAME", "projects/p1/branches/b1/endpoints/e1")
 
-        with patch("server.db_config.get_token_manager") as mock_tm:
-            mock_tm_inst = MagicMock()
-            mock_tm_inst.get_token.return_value = "tok"
-            mock_tm_inst.needs_refresh = False
-            mock_tm.return_value = mock_tm_inst
+        with patch("server.db_config.get_credential_manager") as mock_cm:
+            mock_cm_inst = MagicMock()
+            mock_cm_inst.get_password.return_value = "tok"
+            mock_cm.return_value = mock_cm_inst
 
             mgr = PostgresManager()
-            mgr._token_manager = mock_tm_inst
+            mgr._credential_manager = mock_cm_inst
             return mgr
 
     def test_create_tables_executes_ddl(self, monkeypatch):
@@ -464,12 +465,12 @@ class TestEnsurePool:
         monkeypatch.setenv("PGDATABASE", "testdb")
         monkeypatch.setenv("PGUSER", "svc-user")
         monkeypatch.setenv("PGAPPNAME", "test-app")
+        monkeypatch.setenv("ENDPOINT_NAME", "projects/p1/branches/b1/endpoints/e1")
 
-        with patch("server.db_config.get_token_manager") as mock_tm:
-            mock_tm_inst = MagicMock()
-            mock_tm_inst.get_token.return_value = "tok"
-            mock_tm_inst.needs_refresh = True
-            mock_tm.return_value = mock_tm_inst
+        with patch("server.db_config.get_credential_manager") as mock_cm:
+            mock_cm_inst = MagicMock()
+            mock_cm_inst.get_password.return_value = "tok"
+            mock_cm.return_value = mock_cm_inst
 
             mgr = PostgresManager()
             mgr._pool = None
@@ -482,7 +483,8 @@ class TestEnsurePool:
 
             PostgresManager._instance = None
 
-    def test_ensure_pool_recreates_on_token_refresh(self, monkeypatch):
+    def test_ensure_pool_reuses_existing(self, monkeypatch):
+        """Pool is created once and reused on subsequent calls."""
         from server.postgres_manager import PostgresManager
 
         PostgresManager._instance = None
@@ -490,23 +492,23 @@ class TestEnsurePool:
         monkeypatch.setenv("PGDATABASE", "testdb")
         monkeypatch.setenv("PGUSER", "svc-user")
         monkeypatch.setenv("PGAPPNAME", "test-app")
+        monkeypatch.setenv("ENDPOINT_NAME", "projects/p1/branches/b1/endpoints/e1")
 
-        with patch("server.db_config.get_token_manager") as mock_tm:
-            mock_tm_inst = MagicMock()
-            mock_tm_inst.get_token.return_value = "tok"
-            mock_tm_inst.needs_refresh = True
-            mock_tm.return_value = mock_tm_inst
+        with patch("server.db_config.get_credential_manager") as mock_cm:
+            mock_cm_inst = MagicMock()
+            mock_cm_inst.get_password.return_value = "tok"
+            mock_cm.return_value = mock_cm_inst
 
             mgr = PostgresManager()
-            old_pool = MagicMock()
-            mgr._pool = old_pool
+            existing_pool = MagicMock()
+            mgr._pool = existing_pool
 
             with patch("psycopg_pool.ConnectionPool") as mock_pool_cls:
-                mock_pool_cls.return_value = MagicMock()
                 pool = mgr._ensure_pool()
-                # Old pool should be closed
-                old_pool.close.assert_called_once()
-                # New pool should be created
-                mock_pool_cls.assert_called_once()
+                # Should return the existing pool without creating a new one
+                assert pool is existing_pool
+                mock_pool_cls.assert_not_called()
+                # Existing pool should NOT be closed
+                existing_pool.close.assert_not_called()
 
             PostgresManager._instance = None

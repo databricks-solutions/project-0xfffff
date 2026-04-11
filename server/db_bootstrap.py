@@ -110,14 +110,15 @@ def _list_postgres_tables(database_url: str) -> list[str]:
 
 def _get_postgres_url() -> str:
     """Construct PostgreSQL URL from Lakebase environment variables."""
-    from server.db_config import LakebaseConfig, get_token_manager
+    from server.db_config import LakebaseConfig, get_credential_manager
 
     config = LakebaseConfig.from_env()
     if config is None:
         raise RuntimeError("Lakebase environment variables not set")
 
-    token_manager = get_token_manager()
-    password = token_manager.get_token()
+    credential_manager = get_credential_manager()
+    endpoint_name = os.getenv("ENDPOINT_NAME")
+    password = credential_manager.get_password(endpoint_name)
 
     return (
         f"postgresql+psycopg://{config.user}:{password}@"

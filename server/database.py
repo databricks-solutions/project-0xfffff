@@ -632,22 +632,14 @@ def _is_connection_error(exc: Exception) -> bool:
 
 
 def _reset_connection_pool() -> None:
-    """Reset the connection pool and force OAuth token refresh.
+    """Reset the connection pool.
 
-    Disposes all pooled connections (closing stale ones) and marks the
-    OAuth token for refresh so the next connection gets a fresh token.
+    Disposes all pooled connections (closing stale ones).  New connections
+    created by the pool will automatically get fresh credentials via the
+    ``do_connect`` event listener — no explicit token refresh needed.
     """
     engine.dispose()
-    if DATABASE_BACKEND == DatabaseBackend.POSTGRESQL:
-        try:
-            from .db_config import get_token_manager
-
-            get_token_manager().force_refresh()
-            logger.info("Connection pool reset and OAuth token marked for refresh")
-        except Exception as e:
-            logger.warning("Pool reset OK but token refresh failed: %s", e)
-    else:
-        logger.info("Connection pool reset (SQLite)")
+    logger.info("Connection pool reset (%s)", DATABASE_BACKEND.value)
 
 
 def get_db():
