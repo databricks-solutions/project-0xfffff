@@ -165,6 +165,9 @@ class Workshop(BaseModel):
     auto_evaluation_model: str | None = None  # Model used for auto-evaluation
     show_participant_notes: bool = False  # Facilitator toggle: show notepad to SMEs
     span_attribute_filter: dict | None = None  # Filter config for selecting a span's inputs/outputs
+    summarization_enabled: bool = False
+    summarization_model: str | None = None
+    summarization_guidance: str | None = None
     created_at: datetime = Field(default_factory=datetime.now)
 
 
@@ -192,6 +195,7 @@ class Trace(BaseModel):
     mlflow_experiment_id: str | None = None
     include_in_alignment: bool = True  # Whether to include in judge alignment
     sme_feedback: str | None = None  # Concatenated SME feedback for alignment
+    summary: dict | None = None  # Structured milestone view from LLM summarization
     created_at: datetime = Field(default_factory=datetime.now)
 
 

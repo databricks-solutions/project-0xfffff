@@ -165,6 +165,9 @@ class WorkshopDB(Base):
     auto_evaluation_model = Column(String, nullable=True)  # Model used for auto-evaluation
     show_participant_notes = Column(Boolean, default=False)  # Facilitator toggle: show notepad to SMEs
     span_attribute_filter = Column(JSON, nullable=True)  # Filter config for selecting a span's inputs/outputs
+    summarization_enabled = Column(Boolean, default=False)
+    summarization_model = Column(String, nullable=True)
+    summarization_guidance = Column(Text, nullable=True)
     created_at = Column(DateTime, default=func.now())
 
     # Relationships
@@ -219,6 +222,7 @@ class TraceDB(Base):
     mlflow_experiment_id = Column(String, nullable=True)  # Optional MLflow experiment ID
     include_in_alignment = Column(Boolean, default=True)  # Whether to include in judge alignment
     sme_feedback = Column(Text, nullable=True)  # Concatenated SME feedback for alignment
+    summary = Column(JSON, nullable=True)  # Structured milestone view from LLM summarization
     created_at = Column(DateTime, default=func.now())
 
     # Relationships
