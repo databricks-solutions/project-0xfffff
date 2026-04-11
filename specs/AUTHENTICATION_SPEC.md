@@ -70,7 +70,7 @@ The app's service principal needs access to these Databricks resources. On Datab
 
 | Resource | Operations | Required Permission |
 |----------|-----------|-------------------|
-| **Lakebase (PostgreSQL)** | Primary production database. `OAuthTokenManager` refreshes OAuth tokens via `WorkspaceClient().config.oauth_token()` every 15 minutes. Configured via `DATABASE_ENV=postgres` + `PGHOST`/`PGDATABASE`/`PGUSER` env vars. | App resource with read/write |
+| **Lakebase (PostgreSQL)** | Primary production database. OAuth tokens injected per-connection via `do_connect` event. Configured via `DATABASE_ENV=postgres` + `PGHOST`/`PGDATABASE`/`PGUSER`/`ENDPOINT_NAME` env vars. | Postgres role with `databricks_auth` extension ([docs](https://docs.databricks.com/aws/en/lakebase/admin/authentication.html)) |
 | **MLflow Experiment** | `search_traces`, `get_experiment`, `set_experiment`, `log_feedback`, `set_trace_tag` | Can edit |
 | **Model Serving Endpoints** | `chat.completions.create` (judge evaluation, rubric generation, discovery) | Can query |
 
@@ -80,6 +80,60 @@ The app's service principal needs access to these Databricks resources. On Datab
 |----------|-----------|-------------|-------------------|
 | **SQL Warehouse** | DBSQL export via `databricks.sql.connect()` | DBSQL export feature | Can use |
 | **Unity Catalog Volume** | SQLite backup/restore via SDK Files API (`files.upload`, `files.download`, `files.get_status`) | Only if using SQLite with SQLite Rescue (not needed with Lakebase) | Can read and write |
+
+### Lakebase Connection Pool
+
+The app connects to Lakebase Autoscaling (serverless PostgreSQL) using SQLAlchemy + psycopg with OAuth token rotation. This section defines the required connection pool behavior.
+
+**Reference:** [Connect a custom Databricks app to Lakebase](https://docs.databricks.com/aws/en/lakebase/connect/custom-app.html), [Token rotation in Lakebase](https://docs.databricks.com/aws/en/lakebase/connect/token-rotation.html)
+
+#### Token Lifecycle
+
+- OAuth tokens expire after **1 hour**, but expiration is enforced **only at connection establishment** (login), not on existing connections
+- Existing pooled connections remain valid after their token expires — no need to recycle them
+- Fresh tokens are needed only when creating **new** physical connections (pool growth or replacing dropped connections)
+
+#### Token Injection Pattern
+
+Use the SQLAlchemy `do_connect` event listener to inject fresh tokens into new physical connections. Do **not** bake the token into the connection URL or use a `creator` callable.
+
+```python
+@event.listens_for(engine, "do_connect")
+def provide_token(dialect, conn_rec, cargs, cparams):
+    # Refresh token if near expiry (2 min buffer before 1-hour lifetime)
+    if token is None or near_expiry:
+        cred = w.postgres.generate_database_credential(endpoint=endpoint_name)
+        token = cred.token
+    cparams["password"] = token
+```
+
+**Reference:** [About authentication in Lakebase](https://docs.databricks.com/aws/en/lakebase/admin/authentication.html)
+
+#### Required Pool Settings
+
+| Setting | Value | Rationale |
+|---------|-------|-----------|
+| `pool_size` | 5 | Matches recommended range (5–10). With 2 gunicorn workers = 10 base connections. |
+| `max_overflow` | 5 | Caps burst at 10 per worker, 20 total. Docs recommend 0–5. |
+| `pool_recycle` | 3600 | Match 1-hour token lifetime. 300s (5 min) causes excessive connection churn. |
+| `pool_pre_ping` | False | Conflicts with `do_connect` token injection. Use retry logic instead. |
+
+#### Credential API
+
+For Lakebase Autoscaling, use `WorkspaceClient().postgres.generate_database_credential(endpoint=endpoint_name)` to generate connection-scoped credentials. This requires the `ENDPOINT_NAME` environment variable (format: `projects/<id>/branches/<id>/endpoints/<id>`).
+
+**Reference:** [Connect external app to Lakebase using SDK](https://docs.databricks.com/aws/en/lakebase/connect/external-app.html)
+
+#### Lakebase Setup Prerequisites
+
+Before the app can connect, a workspace admin must:
+
+1. Enable the `databricks_auth` extension: `CREATE EXTENSION IF NOT EXISTS databricks_auth`
+2. Create a Postgres role for the app's service principal: `SELECT databricks_create_role('<DATABRICKS_CLIENT_ID>', 'service_principal')`
+3. Grant `CONNECT` on the database and `CREATE, USAGE` on schemas
+4. Grant table-level permissions (`SELECT`, `INSERT`, `UPDATE`, `DELETE`) on all app tables
+
+**Reference:** [Create an OAuth role for a Databricks identity](https://docs.databricks.com/aws/en/lakebase/admin/authentication.html#create-oauth-role)
 
 ### What Was Removed
 
@@ -303,6 +357,15 @@ Key implementation points:
 - [ ] `DATABRICKS_TOKEN` env var works as fallback for CI/containers
 - [ ] `resolve_databricks_token()` raises `RuntimeError` with actionable message when no auth available
 
+### Lakebase Connection Pool
+- [ ] Token injection uses `do_connect` event listener, not `creator` callable or baked-in URL
+- [ ] Tokens generated via `generate_database_credential(endpoint=...)` for Lakebase Autoscaling
+- [ ] Token refresh only when creating new physical connections (not on every checkout)
+- [ ] `pool_recycle=3600` (not shorter — avoids unnecessary connection churn)
+- [ ] `pool_pre_ping=False` (conflicts with `do_connect` token injection)
+- [ ] `max_overflow` ≤ 5 (caps total connections at 20 across 2 gunicorn workers)
+- [ ] `ENDPOINT_NAME` environment variable required for Lakebase Autoscaling deployments
+
 ## Testing Scenarios
 
 ### Scenario 1: Normal Login
@@ -347,3 +410,4 @@ Key implementation points:
 | Date | Plan | Status | Summary |
 |------|------|--------|---------|
 | 2026-04-10 | [SDK Auth Migration](../.claude/plans/2026-04-10-sdk-auth-migration.md) | complete | Replace PAT token auth with Databricks SDK unified auth |
+| 2026-04-11 | (inline) | complete | Fix Lakebase connection pool: switch to `do_connect` + `generate_database_credential()`, fix pool settings to match Databricks docs |

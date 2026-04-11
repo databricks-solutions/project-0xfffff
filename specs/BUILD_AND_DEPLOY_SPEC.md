@@ -213,11 +213,19 @@ uv run gunicorn server.app:app \
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `DATABASE_URL` | Database connection string | `sqlite:///workshop.db` |
+| `DATABASE_URL` | Database connection string (SQLite only) | `sqlite:///workshop.db` |
+| `DATABASE_ENV` | Database backend: `postgres` (Lakebase) or `sqlite` | `sqlite` |
 | `DB_BOOTSTRAP_ON_STARTUP` | Auto-run migrations on startup | `false` |
 | `MLFLOW_TRACKING_URI` | MLflow server URL | (required) |
 | `DATABRICKS_HOST` | Databricks workspace URL | (required) |
 | `DATABRICKS_TOKEN` | Databricks access token (fallback — SDK auth preferred) | (optional) |
+| `PGHOST` | Lakebase endpoint hostname | (required for Lakebase) |
+| `PGDATABASE` | Lakebase database name | `databricks_postgres` |
+| `PGUSER` | Lakebase username (service principal `DATABRICKS_CLIENT_ID`) | (required for Lakebase) |
+| `PGPORT` | Lakebase port | `5432` |
+| `PGSSLMODE` | Lakebase SSL mode | `require` |
+| `PGAPPNAME` | Application name for connection tracking / schema derivation | `human-eval-workshop` |
+| `ENDPOINT_NAME` | Lakebase endpoint for credential generation (`projects/<id>/branches/<id>/endpoints/<id>`) | (required for Lakebase) |
 
 ---
 
@@ -483,4 +491,11 @@ Limitations:
 - Uses Databricks SDK Files API (FUSE mounts NOT supported in Apps)
 - The rescue module copies the entire DB file; not suitable for very large databases
 - Brief data loss possible if container crashes between backups (up to backup interval worth of writes)
+
+## Implementation Log
+
+| Date | Plan | Status | Summary |
+|------|------|--------|---------|
+| 2026-04-10 | [SDK Auth Migration](../.claude/plans/2026-04-10-sdk-auth-migration.md) | complete | Replace PAT token auth with SDK auth; update Databricks Apps auth section; add Lakebase env vars |
+| 2026-04-11 | (inline) | complete | Fix Lakebase connection pool: `do_connect` token injection, `pool_recycle=3600`, `pool_pre_ping=False`, `generate_database_credential()` API |
 
