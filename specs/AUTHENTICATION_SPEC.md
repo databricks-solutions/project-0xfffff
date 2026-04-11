@@ -62,6 +62,19 @@ Token Resolution Order:
 
 MLflow operations (`search_traces`, `log_feedback`, `set_experiment`) use whatever auth the Databricks SDK provides. The backend sets `DATABRICKS_HOST` so the SDK knows which workspace, then calls `mlflow.set_tracking_uri('databricks')`. No explicit token is passed — the SDK handles it.
 
+### Required Service Principal Permissions
+
+The app's service principal needs access to these Databricks resources. On Databricks Apps, grant these through the Apps UI "Add resource" flow.
+
+| Resource | Operations | Required Permission |
+|----------|-----------|-------------------|
+| **MLflow Experiment** | `search_traces`, `get_experiment`, `set_experiment`, `log_feedback`, `set_trace_tag` | Can edit |
+| **Model Serving Endpoints** | `chat.completions.create` (judge evaluation, rubric generation, discovery) | Can query |
+| **SQL Warehouse** | DBSQL export via `databricks.sql.connect()` | Can use |
+| **Unity Catalog Volume** | SQLite backup/restore via SDK Files API (`files.upload`, `files.download`, `files.get_status`) | Can read and write |
+
+Not all resources are required for every deployment — only MLflow Experiment and Model Serving Endpoints are needed for the core workshop flow. SQL Warehouse is only needed for DBSQL export. Unity Catalog Volume is only needed if SQLite Rescue is enabled for database persistence.
+
 ### What Was Removed
 
 Prior to this migration, the system had:
