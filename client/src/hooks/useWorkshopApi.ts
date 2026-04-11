@@ -856,6 +856,37 @@ export function usePreviewSpanFilter(workshopId: string) {
   });
 }
 
+// Summarization Settings hooks
+
+interface SummarizationSettingsUpdate {
+  summarization_enabled: boolean;
+  summarization_model?: string | null;
+  summarization_guidance?: string | null;
+}
+
+export function useUpdateSummarizationSettings(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (settings: SummarizationSettingsUpdate): Promise<Workshop> => {
+      const response = await fetch(`/workshops/${workshopId}/summarization-settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to update summarization settings' }));
+        throw new Error(error.detail || 'Failed to update summarization settings');
+      }
+      return response.json();
+    },
+    onSuccess: (workshop) => {
+      queryClient.setQueryData(QUERY_KEYS.workshop(workshopId), workshop);
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.workshop(workshopId) });
+    },
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Discovery Feedback hooks (v2 Structured Feedback)
 // ---------------------------------------------------------------------------

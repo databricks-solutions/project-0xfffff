@@ -16,6 +16,7 @@ import { useAllTraces, useFacilitatorAnnotations, prefetchAvailableModels } from
 import { UsersService } from '@/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { JsonPathSettings } from './JsonPathSettings';
+import { SummarizationSettings } from './SummarizationSettings';
 
 interface GeneralDashboardProps {
   onNavigate?: (phase: string) => void;
@@ -179,6 +180,9 @@ export const GeneralDashboard: React.FC<GeneralDashboardProps> = ({ onNavigate }
 
       {/* Trace Display Settings */}
       <JsonPathSettings />
+
+      {/* Trace Summarization Settings */}
+      <SummarizationSettings />
     </div>
   );
 };

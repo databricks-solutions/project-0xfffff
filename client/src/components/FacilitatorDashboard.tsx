@@ -28,6 +28,7 @@ import { Label } from '@/components/ui/label';
 import { useQueryClient } from '@tanstack/react-query';
 import { PhaseControlButton } from './PhaseControlButton';
 import { JsonPathSettings } from './JsonPathSettings';
+import { SummarizationSettings } from './SummarizationSettings';
 import { DraftRubricPanel } from './DraftRubricPanel';
 import { toast } from 'sonner';
 import { parseRubricQuestions } from '@/utils/rubricUtils';
@@ -1415,6 +1416,9 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
 
         {/* JSONPath Settings - Only show in general dashboard view */}
         {!focusPhase && <JsonPathSettings />}
+
+        {/* Summarization Settings - Only show in general dashboard view */}
+        {!focusPhase && <SummarizationSettings />}
       </div>
     </div>
   );
