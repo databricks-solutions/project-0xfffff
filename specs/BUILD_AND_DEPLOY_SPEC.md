@@ -217,7 +217,7 @@ uv run gunicorn server.app:app \
 | `DB_BOOTSTRAP_ON_STARTUP` | Auto-run migrations on startup | `false` |
 | `MLFLOW_TRACKING_URI` | MLflow server URL | (required) |
 | `DATABRICKS_HOST` | Databricks workspace URL | (required) |
-| `DATABRICKS_TOKEN` | Databricks access token | (required) |
+| `DATABRICKS_TOKEN` | Databricks access token (fallback — SDK auth preferred) | (optional) |
 
 ---
 
@@ -349,11 +349,17 @@ persistence by backing up to Unity Catalog Volumes.
 
 ### Databricks Apps Authentication
 
-Databricks Apps automatically provides authentication to workspace resources via a dedicated **service principal**. Key points:
+Databricks Apps automatically provides authentication to workspace resources via a dedicated **service principal**. The application uses Databricks SDK unified auth exclusively — no PAT tokens are accepted from users or stored.
 
-**Automatic Credentials**:
-- `DATABRICKS_CLIENT_ID` - Automatically injected
-- `DATABRICKS_CLIENT_SECRET` - Automatically injected
+**Automatic Credentials** (injected by the platform):
+- `DATABRICKS_CLIENT_ID` - Service principal client ID
+- `DATABRICKS_CLIENT_SECRET` - Service principal client secret
+
+**How it works**:
+- `resolve_databricks_token()` in `server/services/databricks_service.py` calls `WorkspaceClient().config.authenticate()` which auto-detects the injected credentials
+- MLflow uses the same SDK auth via `mlflow.set_tracking_uri('databricks')`
+- No token input fields exist in the UI — auth is fully automatic
+- See [AUTHENTICATION_SPEC](./AUTHENTICATION_SPEC.md) § Databricks API Authentication for the full contract
 
 **Best Practices**:
 - Never hardcode personal access tokens (PATs) in code

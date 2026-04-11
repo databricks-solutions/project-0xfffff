@@ -635,7 +635,7 @@ Check that:
 ### Auto-Evaluation Not Starting
 
 Check that:
-1. MLflow configuration is set up (Databricks host, token)
+1. MLflow configuration is set up (Databricks host, experiment ID) and SDK auth is working
 2. Rubric exists for the workshop
 3. Auto-evaluation toggle is enabled
 4. Model is selected in dropdown
@@ -659,3 +659,4 @@ Databricks models may not support the JSON schema format required for guideline 
 | Date | Plan | Status | Summary |
 |------|------|--------|---------|
 | 2026-03-13 | [Trace Tag Key Separation](../.claude/plans/2026-03-13-trace-tag-key-separation.md) | complete | Fix eval/align tag mutual destruction by using dedicated MLflow tag keys |
+| 2026-04-10 | [SDK Auth Migration](../.claude/plans/2026-04-10-sdk-auth-migration.md) | complete | Replace PAT token fallback in judge/alignment services with SDK auth; remove `os.environ["DATABRICKS_TOKEN"]` mutations |

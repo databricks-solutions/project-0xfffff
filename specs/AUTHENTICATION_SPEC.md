@@ -6,16 +6,17 @@ This specification defines the authentication flow, permission management, and s
 
 ## Architecture Context
 
-### Current State: Application-Layer Auth
+The system has two distinct authentication concerns:
 
-The workshop system currently implements a **secondary authentication layer** on top of Databricks workspace authentication:
+1. **Workshop application auth** (this spec) — login, roles, permissions, sessions
+2. **Databricks API auth** — how the backend authenticates to Databricks services (MLflow, serving endpoints, volumes)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Databricks Workspace                      │
 │  ┌─────────────────────────────────────────────────────┐    │
-│  │              Databricks User Auth                    │    │
-│  │         (handles workspace access)                   │    │
+│  │         Databricks API Auth (SDK-based)              │    │
+│  │    Service principal (Apps) / CLI profile (local)    │    │
 │  └─────────────────────────────────────────────────────┘    │
 │                           │                                  │
 │                           ▼                                  │
@@ -27,20 +28,54 @@ The workshop system currently implements a **secondary authentication layer** on
 ```
 
 **Why two layers?**
-- Databricks handles workspace-level access (who can access the app)
+- Databricks API auth handles backend-to-Databricks communication (MLflow traces, serving endpoints, volume access)
 - Workshop auth handles application-level permissions (what users can do within the app)
 - Workshop roles (participant, SME, facilitator) are app-specific concepts not in Databricks IAM
 
-### Future State: Native Databricks Auth
+## Databricks API Authentication
 
-The system is designed to eventually migrate to native Databricks user authentication:
+All Databricks API calls (MLflow, model serving, volume access) use the **Databricks SDK unified auth**. Users never provide Personal Access Tokens (PATs) through the UI.
 
-- Workshop roles will map to Databricks groups or custom attributes
-- Permission checks will use Databricks IAM where possible
-- Session management will leverage Databricks tokens
-- The application auth layer will be removed or simplified
+### Token Resolution
 
-**Migration path**: The permission model is intentionally abstract to allow swapping the auth backend without changing application code.
+The backend resolves auth tokens via `resolve_databricks_token()` in `server/services/databricks_service.py`:
+
+```
+Token Resolution Order:
+1. Databricks SDK (WorkspaceClient().config.authenticate())
+   - On Databricks Apps: uses platform-injected service principal
+     (DATABRICKS_CLIENT_ID / DATABRICKS_CLIENT_SECRET)
+   - Locally: uses CLI profile from `databricks auth login`
+2. DATABRICKS_TOKEN environment variable (fallback for CI/containers)
+3. Raise RuntimeError if nothing available
+```
+
+### Environment-Specific Behavior
+
+| Environment | Auth Method | Setup |
+|-------------|-------------|-------|
+| Databricks Apps | Service principal (automatic) | Platform injects `DATABRICKS_CLIENT_ID`/`SECRET` |
+| Local development | CLI profile | Run `databricks auth login --host <workspace-url>` |
+| CI / containers | Environment variable | Set `DATABRICKS_TOKEN` |
+
+### MLflow Auth
+
+MLflow operations (`search_traces`, `log_feedback`, `set_experiment`) use whatever auth the Databricks SDK provides. The backend sets `DATABRICKS_HOST` so the SDK knows which workspace, then calls `mlflow.set_tracking_uri('databricks')`. No explicit token is passed — the SDK handles it.
+
+### What Was Removed
+
+Prior to this migration, the system had:
+- Token input fields in the UI (IntakePage, DBSQLExportPage)
+- In-memory token storage (`TokenStorageService`) with 24-hour expiration
+- Database-persisted tokens (`databricks_tokens` table)
+- A 4-level token fallback chain (SDK → explicit → stored → env var)
+- `os.environ["DATABRICKS_TOKEN"]` mutations at runtime
+
+All of this was replaced by the single `resolve_databricks_token()` function.
+
+### Future: Per-User Auth (On-Behalf-Of-User)
+
+Databricks Apps can forward the logged-in user's OAuth token via the `x-forwarded-access-token` HTTP header. This would allow per-user Unity Catalog enforcement (row-level filters, column masks). Not yet implemented — the app currently uses the service principal identity for all Databricks API calls.
 
 ## Core Concepts
 
@@ -230,6 +265,7 @@ Key implementation points:
 
 ## Success Criteria
 
+### Workshop Application Auth
 - [ ] No "permission denied" errors on normal login
 - [ ] No page refresh required after login
 - [ ] Slow network: Loading indicator shown until ready
@@ -237,6 +273,16 @@ Key implementation points:
 - [ ] 404 on validation: Session cleared, fresh login allowed
 - [ ] Rapid navigation: Components wait for `isLoading = false`
 - [ ] Error recovery: Errors cleared on new login attempt
+
+### Databricks API Auth
+- [ ] All Databricks API calls use SDK-resolved tokens (no user-provided PATs)
+- [ ] MLflow operations use SDK auth without `os.environ["DATABRICKS_TOKEN"]` mutation
+- [ ] No token input fields exist in the frontend UI
+- [ ] No token persistence in memory (`TokenStorageService` for Databricks) or database (`databricks_tokens` table)
+- [ ] Local development works via `databricks auth login` CLI profile
+- [ ] Databricks Apps deployment works via platform-injected service principal
+- [ ] `DATABRICKS_TOKEN` env var works as fallback for CI/containers
+- [ ] `resolve_databricks_token()` raises `RuntimeError` with actionable message when no auth available
 
 ## Testing Scenarios
 
@@ -281,4 +327,4 @@ Key implementation points:
 
 | Date | Plan | Status | Summary |
 |------|------|--------|---------|
-| 2026-04-10 | [SDK Auth Migration](../.claude/plans/2026-04-10-sdk-auth-migration.md) | in-progress | Replace PAT token auth with Databricks SDK unified auth |
+| 2026-04-10 | [SDK Auth Migration](../.claude/plans/2026-04-10-sdk-auth-migration.md) | complete | Replace PAT token auth with Databricks SDK unified auth |
