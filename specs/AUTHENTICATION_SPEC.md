@@ -126,14 +126,16 @@ For Lakebase Autoscaling, use `WorkspaceClient().postgres.generate_database_cred
 
 #### Lakebase Setup Prerequisites
 
-Before the app can connect, a workspace admin must:
+**Databricks Apps (production):** Add the Lakebase database as an App resource in the Apps UI. Databricks automatically creates a Postgres role for the app's service principal (named after its `DATABRICKS_CLIENT_ID`) with `CONNECT` and `CREATE` grants. No manual role creation needed.
+
+**External / additional identities:** If connecting from outside Databricks Apps or adding extra identities beyond the app SP, a workspace admin must manually create roles:
 
 1. Enable the `databricks_auth` extension: `CREATE EXTENSION IF NOT EXISTS databricks_auth`
-2. Create a Postgres role for the app's service principal: `SELECT databricks_create_role('<DATABRICKS_CLIENT_ID>', 'service_principal')`
+2. Create a Postgres role: `SELECT databricks_create_role('<DATABRICKS_CLIENT_ID>', 'service_principal')`
 3. Grant `CONNECT` on the database and `CREATE, USAGE` on schemas
-4. Grant table-level permissions (`SELECT`, `INSERT`, `UPDATE`, `DELETE`) on all app tables
+4. Grant table-level permissions on app tables
 
-**Reference:** [Create an OAuth role for a Databricks identity](https://docs.databricks.com/aws/en/lakebase/admin/authentication.html#create-oauth-role)
+**Reference:** [Lakebase authentication](https://docs.databricks.com/aws/en/lakebase/admin/authentication.html), [Databricks Apps resources](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources)
 
 ### What Was Removed
 
