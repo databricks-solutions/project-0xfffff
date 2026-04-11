@@ -66,14 +66,20 @@ MLflow operations (`search_traces`, `log_feedback`, `set_experiment`) use whatev
 
 The app's service principal needs access to these Databricks resources. On Databricks Apps, grant these through the Apps UI "Add resource" flow.
 
+#### Core Resources (required)
+
 | Resource | Operations | Required Permission |
 |----------|-----------|-------------------|
+| **Lakebase (PostgreSQL)** | Primary production database. `OAuthTokenManager` refreshes OAuth tokens via `WorkspaceClient().config.oauth_token()` every 15 minutes. Configured via `DATABASE_ENV=postgres` + `PGHOST`/`PGDATABASE`/`PGUSER` env vars. | App resource with read/write |
 | **MLflow Experiment** | `search_traces`, `get_experiment`, `set_experiment`, `log_feedback`, `set_trace_tag` | Can edit |
 | **Model Serving Endpoints** | `chat.completions.create` (judge evaluation, rubric generation, discovery) | Can query |
-| **SQL Warehouse** | DBSQL export via `databricks.sql.connect()` | Can use |
-| **Unity Catalog Volume** | SQLite backup/restore via SDK Files API (`files.upload`, `files.download`, `files.get_status`) | Can read and write |
 
-Not all resources are required for every deployment — only MLflow Experiment and Model Serving Endpoints are needed for the core workshop flow. SQL Warehouse is only needed for DBSQL export. Unity Catalog Volume is only needed if SQLite Rescue is enabled for database persistence.
+#### Optional Resources
+
+| Resource | Operations | When Needed | Required Permission |
+|----------|-----------|-------------|-------------------|
+| **SQL Warehouse** | DBSQL export via `databricks.sql.connect()` | DBSQL export feature | Can use |
+| **Unity Catalog Volume** | SQLite backup/restore via SDK Files API (`files.upload`, `files.download`, `files.get_status`) | Only if using SQLite with SQLite Rescue (not needed with Lakebase) | Can read and write |
 
 ### What Was Removed
 
