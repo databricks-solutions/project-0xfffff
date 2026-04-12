@@ -34,6 +34,7 @@ import type { RubricGenerationRequest } from '../models/RubricGenerationRequest'
 import type { RubricSuggestion } from '../models/RubricSuggestion';
 import type { SimpleEvaluationRequest } from '../models/SimpleEvaluationRequest';
 import type { SpanAttributeFilterUpdate } from '../models/SpanAttributeFilterUpdate';
+import type { SummarizationSettingsUpdate } from '../models/SummarizationSettingsUpdate';
 import type { Trace } from '../models/Trace';
 import type { TraceUpload } from '../models/TraceUpload';
 import type { Workshop } from '../models/Workshop';
@@ -242,6 +243,59 @@ export class WorkshopsService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/workshops/{workshop_id}/preview-span-filter',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Update Summarization Settings
+     * Update trace summarization settings for a workshop.
+     * @param workshopId
+     * @param requestBody
+     * @returns Workshop Successful Response
+     * @throws ApiError
+     */
+    public static updateSummarizationSettingsWorkshopsWorkshopIdSummarizationSettingsPut(
+        workshopId: string,
+        requestBody: SummarizationSettingsUpdate,
+    ): CancelablePromise<Workshop> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/workshops/{workshop_id}/summarization-settings',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Resummarize Traces
+     * Trigger re-summarization of workshop traces.
+     *
+     * Runs in background. Returns immediately with job info.
+     * Optionally accepts {"trace_ids": [...]} to limit scope.
+     * @param workshopId
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static resummarizeTracesWorkshopsWorkshopIdResummarizePost(
+        workshopId: string,
+        requestBody?: (Record<string, any> | null),
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/resummarize',
             path: {
                 'workshop_id': workshopId,
             },
