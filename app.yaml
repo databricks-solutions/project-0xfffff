@@ -1,6 +1,8 @@
 command:
   - "gunicorn"
   - "server.app:app"
+  - "-c"
+  - "gunicorn_conf.py"
   - "-w"
   - "2"
   - "--worker-class"

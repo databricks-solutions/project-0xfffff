@@ -2,6 +2,7 @@
 
 import logging
 import os
+import sys
 import time
 from contextlib import asynccontextmanager
 
@@ -62,10 +63,13 @@ async def lifespan(app: FastAPI):
         else:
             print("⚠️  SQLITE_VOLUME_BACKUP_PATH not configured - database will NOT persist across container restarts")
 
-    # NOTE: This is a *fallback* safety net for deployments that don't run `just db-bootstrap`.
-    # It is designed to be safe under multi-process servers (e.g., gunicorn with multiple
-    # Uvicorn workers) via an inter-process lock.
-    maybe_bootstrap_db_on_startup()
+    # Under gunicorn, migrations are handled by the on_starting hook in gunicorn_conf.py
+    # (runs once in the master process before workers fork). Only run the lifespan
+    # fallback when using uvicorn directly (dev mode).
+    if "gunicorn" not in sys.modules:
+        maybe_bootstrap_db_on_startup()
+    else:
+        print("ℹ️  Skipping lifespan bootstrap (handled by gunicorn on_starting hook)")
 
     # Safety net: ensure tables exist even if Alembic bootstrap failed/skipped.
     # For SQLite the .db file may exist but be empty; for PG the schema may be missing.
