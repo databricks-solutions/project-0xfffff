@@ -513,7 +513,6 @@ async def resummarize_traces(
     """
     import asyncio
 
-    from server.services.token_storage_service import token_storage
     from server.services.trace_summarization_service import TraceSummarizationService
 
     db_service = DatabaseService(db)
@@ -534,27 +533,32 @@ async def resummarize_traces(
 
     batch = [{"id": t.id, "context": t.context} for t in traces if t.context]
 
-    databricks_token = token_storage.get_token(workshop_id) or db_service.get_databricks_token(workshop_id)
-    if not databricks_token:
-        raise HTTPException(status_code=400, detail="Databricks token not found")
-
     mlflow_config = db_service.get_mlflow_config(workshop_id)
     if not mlflow_config:
         raise HTTPException(status_code=400, detail="MLflow config not found")
 
-    endpoint_url = f"https://{mlflow_config.databricks_host}/serving-endpoints"
+    workspace_host = mlflow_config.databricks_host
+    endpoint_url = f"https://{workspace_host}/serving-endpoints"
 
     async def run_summarization():
+        from server.database import SessionLocal
+
+        from server.services.databricks_service import resolve_databricks_token
+
+        token = resolve_databricks_token(f"https://{workspace_host}")
         svc = TraceSummarizationService(
             endpoint_url=endpoint_url,
-            token=databricks_token,
+            token=token,
             model_name=workshop.summarization_model,
             guidance=workshop.summarization_guidance,
         )
         results = await svc.summarize_batch(batch)
-        for result in results:
-            if result["summary"] is not None:
-                db_service.update_trace_summary(result["trace_id"], result["summary"])
+        with SessionLocal() as bg_db:
+            bg_service = DatabaseService(bg_db)
+            for result in results:
+                if result["summary"] is not None:
+                    bg_service.update_trace_summary(result["trace_id"], result["summary"])
+            logger.info(f"Summarization complete: {len([r for r in results if r['summary']])} succeeded, {len([r for r in results if not r['summary']])} failed")
 
     asyncio.create_task(run_summarization())
 
@@ -3005,16 +3009,24 @@ async def ingest_mlflow_traces(workshop_id: str, ingest_request: dict, db: Sessi
                     endpoint_url = f"https://{config_with_token.databricks_host}/serving-endpoints"
 
                     async def run_summarization():
+                        from server.database import SessionLocal
+
+                        from server.services.databricks_service import resolve_databricks_token
+
+                        token = resolve_databricks_token(f"https://{config_with_token.databricks_host}")
                         svc = TraceSummarizationService(
                             endpoint_url=endpoint_url,
-                            token=config_with_token.databricks_token,
+                            token=token,
                             model_name=workshop.summarization_model,
                             guidance=workshop.summarization_guidance,
                         )
                         results = await svc.summarize_batch(batch)
-                        for r in results:
-                            if r["summary"] is not None:
-                                db_service.update_trace_summary(r["trace_id"], r["summary"])
+                        with SessionLocal() as bg_db:
+                            bg_service = DatabaseService(bg_db)
+                            for r in results:
+                                if r["summary"] is not None:
+                                    bg_service.update_trace_summary(r["trace_id"], r["summary"])
+                            logger.info(f"Background summarization complete: {len([r for r in results if r['summary']])} succeeded, {len([r for r in results if not r['summary']])} failed")
 
                     asyncio.create_task(run_summarization())
             except Exception as e:
