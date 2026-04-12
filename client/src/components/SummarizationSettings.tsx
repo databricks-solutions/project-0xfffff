@@ -5,7 +5,7 @@
  * When enabled, traces are automatically summarized into milestone views at ingestion time.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -17,15 +17,15 @@ import { toast } from 'sonner';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import {
   useWorkshop,
-  useMLflowConfig,
+  useAvailableModels,
   useUpdateSummarizationSettings,
 } from '@/hooks/useWorkshopApi';
-import { getModelOptions, getBackendModelName, getFrontendModelName } from '@/utils/modelMapping';
+import { buildModelOptions } from '@/utils/modelMapping';
 
 export const SummarizationSettings: React.FC = () => {
   const { workshopId } = useWorkshopContext();
   const { data: workshop } = useWorkshop(workshopId!);
-  const { data: mlflowConfig } = useMLflowConfig(workshopId!);
+  const { data: availableModels } = useAvailableModels(workshopId!);
   const updateSettings = useUpdateSummarizationSettings(workshopId!);
 
   const [enabled, setEnabled] = useState(false);
@@ -36,18 +36,16 @@ export const SummarizationSettings: React.FC = () => {
   useEffect(() => {
     if (workshop) {
       setEnabled(workshop.summarization_enabled ?? false);
-      // Convert backend model name to frontend display name for the selector
-      const backendModel = workshop.summarization_model ?? '';
-      setModel(backendModel ? getFrontendModelName(backendModel) : '');
+      setModel(workshop.summarization_model ?? '');
       setGuidance(workshop.summarization_guidance ?? '');
     }
   }, [workshop]);
 
-  const modelOptions = getModelOptions(!!mlflowConfig);
+  const modelOptions = useMemo(() => availableModels ? buildModelOptions(availableModels) : [], [availableModels]);
 
   const hasChanges = (
     (enabled !== (workshop?.summarization_enabled ?? false)) ||
-    (getBackendModelName(model) !== (workshop?.summarization_model ?? '')) ||
+    (model !== (workshop?.summarization_model ?? '')) ||
     (guidance !== (workshop?.summarization_guidance ?? ''))
   );
 
@@ -55,7 +53,7 @@ export const SummarizationSettings: React.FC = () => {
     try {
       await updateSettings.mutateAsync({
         summarization_enabled: enabled,
-        summarization_model: model ? getBackendModelName(model) : null,
+        summarization_model: model || null,
         summarization_guidance: guidance || null,
       });
       toast.success('Summarization settings saved successfully');
@@ -114,7 +112,7 @@ export const SummarizationSettings: React.FC = () => {
                   ))}
                 </SelectContent>
               </Select>
-              {!mlflowConfig && (
+              {modelOptions.length === 0 && (
                 <p className="text-xs text-amber-600">
                   MLflow configuration required to use Databricks models. Configure it in the intake settings.
                 </p>
