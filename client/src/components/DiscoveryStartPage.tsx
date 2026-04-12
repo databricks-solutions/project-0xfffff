@@ -10,8 +10,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useWorkflowContext } from '@/context/WorkflowContext';
 import { WorkshopsService } from '@/client';
-import { useAllTraces, useWorkshop, useMLflowConfig, useUpdateDiscoveryModel } from '@/hooks/useWorkshopApi';
-import { getModelOptions, getBackendModelName, getFrontendModelName } from '@/utils/modelMapping';
+import { useAllTraces, useWorkshop, useMLflowConfig, useUpdateDiscoveryModel, useAvailableModels } from '@/hooks/useWorkshopApi';
+import { buildModelOptions, getDisplayName } from '@/utils/modelMapping';
 import { Play, Users, Search, Lightbulb, Database, Settings, Shuffle, Brain } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
@@ -35,15 +35,17 @@ export const DiscoveryStartPage: React.FC<DiscoveryStartPageProps> = ({ onStartD
   // Model selection
   const { data: workshop } = useWorkshop(workshopId!);
   const { data: mlflowConfig } = useMLflowConfig(workshopId!);
+  const { data: availableModels } = useAvailableModels(workshopId!);
   const updateModelMutation = useUpdateDiscoveryModel(workshopId!);
   const [customProviderStatus, setCustomProviderStatus] = React.useState<{ is_configured: boolean; is_enabled: boolean; provider_name?: string | null } | null>(null);
 
-  // Derive current model from workshop
-  const currentModel = React.useMemo(() => {
-    const backendName = workshop?.discovery_questions_model_name || 'demo';
-    if (backendName === 'demo' || backendName === 'custom') return backendName;
-    return getFrontendModelName(backendName);
-  }, [workshop?.discovery_questions_model_name]);
+  // Derive current model from workshop (stored as endpoint name)
+  const currentModel = workshop?.discovery_questions_model_name || 'demo';
+
+  const modelOptions = React.useMemo(
+    () => (availableModels ? buildModelOptions(availableModels) : []),
+    [availableModels],
+  );
 
   // Fetch custom LLM provider status
   React.useEffect(() => {
@@ -55,8 +57,7 @@ export const DiscoveryStartPage: React.FC<DiscoveryStartPageProps> = ({ onStartD
   }, [workshopId]);
 
   const handleModelChange = (value: string) => {
-    const backendName = value === 'demo' || value === 'custom' ? value : getBackendModelName(value);
-    updateModelMutation.mutate({ model_name: backendName });
+    updateModelMutation.mutate({ model_name: value });
   };
 
   const startDiscoveryPhase = async () => {
@@ -249,11 +250,10 @@ export const DiscoveryStartPage: React.FC<DiscoveryStartPageProps> = ({ onStartD
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="demo">Demo (static questions)</SelectItem>
-                {getModelOptions(!!mlflowConfig).map(option => (
+                {modelOptions.map(option => (
                   <SelectItem
                     key={option.value}
                     value={option.value}
-                    disabled={option.disabled}
                   >
                     {option.label}
                   </SelectItem>
@@ -273,7 +273,7 @@ export const DiscoveryStartPage: React.FC<DiscoveryStartPageProps> = ({ onStartD
             {traceLimit === 'custom' ? `${customLimit} traces` : `${traceLimit} traces`}
             {randomizeTraces && ' · randomized per user'}
             {' · '}
-            {currentModel === 'demo' ? 'demo model' : currentModel === 'custom' ? `custom: ${customProviderStatus?.provider_name || 'Custom'}` : currentModel}
+            {currentModel === 'demo' ? 'demo model' : currentModel === 'custom' ? `custom: ${customProviderStatus?.provider_name || 'Custom'}` : getDisplayName(currentModel)}
             {parseInt(traceLimit === 'custom' ? customLimit : traceLimit) < totalTraces && (
               <span className="ml-auto text-gray-400">
                 ({totalTraces - parseInt(traceLimit === 'custom' ? customLimit : traceLimit)} unused)

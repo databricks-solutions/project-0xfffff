@@ -394,6 +394,15 @@ async def preview_jsonpath(
     }
 
 
+# Summarization Settings Models
+class SummarizationSettingsUpdate(BaseModel):
+    """Request model for updating trace summarization settings."""
+
+    summarization_enabled: bool = False
+    summarization_model: str | None = None
+    summarization_guidance: str | None = None
+
+
 # Span Attribute Filter Models
 class SpanAttributeFilterUpdate(BaseModel):
     """Request model for updating span attribute filter."""
@@ -467,6 +476,91 @@ async def preview_span_filter(
         "output_result": final_output,
         "original_input": first_trace.input[:400] if first_trace.input else None,
         "original_output": first_trace.output[:400] if first_trace.output else None,
+    }
+
+
+@router.put("/{workshop_id}/summarization-settings")
+async def update_summarization_settings(
+    workshop_id: str, body: SummarizationSettingsUpdate, db: Session = Depends(get_db)
+) -> Workshop:
+    """Update trace summarization settings for a workshop."""
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    updated = db_service.update_workshop_summarization_settings(
+        workshop_id,
+        summarization_enabled=body.summarization_enabled,
+        summarization_model=body.summarization_model,
+        summarization_guidance=body.summarization_guidance,
+    )
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to update summarization settings")
+    return updated
+
+
+@router.post("/{workshop_id}/resummarize")
+async def resummarize_traces(
+    workshop_id: str,
+    body: dict | None = None,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Trigger re-summarization of workshop traces.
+
+    Runs in background. Returns immediately with job info.
+    Optionally accepts {"trace_ids": [...]} to limit scope.
+    """
+    import asyncio
+
+    from server.services.token_storage_service import token_storage
+    from server.services.trace_summarization_service import TraceSummarizationService
+
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+    if not workshop.summarization_enabled or not workshop.summarization_model:
+        raise HTTPException(status_code=400, detail="Summarization not configured")
+
+    traces = db_service.get_traces(workshop_id)
+    if not traces:
+        return {"total": 0, "message": "No traces to summarize"}
+
+    # Filter to specific trace IDs if provided
+    trace_ids = (body or {}).get("trace_ids")
+    if trace_ids:
+        traces = [t for t in traces if t.id in trace_ids]
+
+    batch = [{"id": t.id, "context": t.context} for t in traces if t.context]
+
+    databricks_token = token_storage.get_token(workshop_id) or db_service.get_databricks_token(workshop_id)
+    if not databricks_token:
+        raise HTTPException(status_code=400, detail="Databricks token not found")
+
+    mlflow_config = db_service.get_mlflow_config(workshop_id)
+    if not mlflow_config:
+        raise HTTPException(status_code=400, detail="MLflow config not found")
+
+    endpoint_url = f"https://{mlflow_config.databricks_host}/serving-endpoints"
+
+    async def run_summarization():
+        svc = TraceSummarizationService(
+            endpoint_url=endpoint_url,
+            token=databricks_token,
+            model_name=workshop.summarization_model,
+            guidance=workshop.summarization_guidance,
+        )
+        results = await svc.summarize_batch(batch)
+        for result in results:
+            if result["summary"] is not None:
+                db_service.update_trace_summary(result["trace_id"], result["summary"])
+
+    asyncio.create_task(run_summarization())
+
+    return {
+        "total": len(batch),
+        "message": f"Summarization started for {len(batch)} traces",
     }
 
 
@@ -2787,6 +2881,50 @@ async def get_mlflow_config(workshop_id: str, db: Session = Depends(get_db)) -> 
     return db_service.get_mlflow_config(workshop_id)
 
 
+@router.get("/{workshop_id}/available-models")
+async def list_available_models(workshop_id: str, db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    """List available model serving endpoints for a workshop's Databricks workspace."""
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    mlflow_config = db_service.get_mlflow_config(workshop_id)
+    if not mlflow_config or not mlflow_config.databricks_host:
+        return []
+
+    from server.services.token_storage_service import token_storage
+
+    databricks_token = token_storage.get_token(workshop_id)
+    if not databricks_token:
+        databricks_token = db_service.get_databricks_token(workshop_id)
+        if databricks_token:
+            token_storage.store_token(workshop_id, databricks_token)
+    if not databricks_token:
+        return []
+
+    try:
+        from server.services.databricks_service import DatabricksService
+
+        service = DatabricksService(
+            workspace_url=mlflow_config.databricks_host,
+            token=databricks_token,
+            init_sdk=False,
+        )
+        endpoints = await service.list_serving_endpoints()
+        # Return only READY Foundation Model API chat endpoints
+        return [
+            {"name": ep["name"], "state": ep.get("state", ""), "task": ep.get("task", "")}
+            for ep in endpoints
+            if ep.get("state") == "READY"
+            and ep.get("name", "").startswith("databricks-")
+            and ep.get("task") == "llm/v1/chat"
+        ]
+    except Exception as e:
+        logger.warning(f"Failed to list models for workshop {workshop_id}: {e}")
+        return []
+
+
 @router.get("/{workshop_id}/mlflow-status")
 async def get_mlflow_intake_status(workshop_id: str, db: Session = Depends(get_db)) -> MLflowIntakeStatus:
     """Get MLflow intake status for a workshop."""
@@ -2875,6 +3013,35 @@ async def ingest_mlflow_traces(workshop_id: str, ingest_request: dict, db: Sessi
 
         # Update ingestion status
         db_service.update_mlflow_ingestion_status(workshop_id, trace_count)
+
+        # Trigger background summarization if enabled
+        if workshop.summarization_enabled and workshop.summarization_model:
+            try:
+                import asyncio
+
+                from server.services.trace_summarization_service import TraceSummarizationService
+
+                traces = db_service.get_traces(workshop_id)
+                unsummarized = [t for t in traces if t.context and not t.summary]
+                if unsummarized:
+                    batch = [{"id": t.id, "context": t.context} for t in unsummarized]
+                    endpoint_url = f"https://{config_with_token.databricks_host}/serving-endpoints"
+
+                    async def run_summarization():
+                        svc = TraceSummarizationService(
+                            endpoint_url=endpoint_url,
+                            token=config_with_token.databricks_token,
+                            model_name=workshop.summarization_model,
+                            guidance=workshop.summarization_guidance,
+                        )
+                        results = await svc.summarize_batch(batch)
+                        for r in results:
+                            if r["summary"] is not None:
+                                db_service.update_trace_summary(r["trace_id"], r["summary"])
+
+                    asyncio.create_task(run_summarization())
+            except Exception as e:
+                logger.warning(f"Failed to start background summarization: {e}")
 
         return {
             "message": f"Successfully ingested {trace_count} traces from MLflow",
@@ -3268,9 +3435,9 @@ async def mark_user_discovery_complete(workshop_id: str, user_id: str, db: Sessi
     if not workshop:
         raise HTTPException(status_code=404, detail="Workshop not found")
 
-    # Check if user exists in workshop
+    # Check if user exists in workshop (facilitators may have workshop_id=NULL)
     user = db_service.get_user(user_id)
-    if not user or user.workshop_id != workshop_id:
+    if not user or (user.workshop_id != workshop_id and user_id != workshop.facilitator_id):
         raise HTTPException(status_code=404, detail="User not found in workshop")
 
     # Mark user as complete
@@ -3302,9 +3469,9 @@ async def is_user_discovery_complete(workshop_id: str, user_id: str, db: Session
     if not workshop:
         raise HTTPException(status_code=404, detail="Workshop not found")
 
-    # Check if user exists in workshop
+    # Check if user exists in workshop (facilitators may have workshop_id=NULL)
     user = db_service.get_user(user_id)
-    if not user or user.workshop_id != workshop_id:
+    if not user or (user.workshop_id != workshop_id and user_id != workshop.facilitator_id):
         raise HTTPException(status_code=404, detail="User not found in workshop")
 
     is_complete = db_service.is_user_discovery_complete(workshop_id, user_id)

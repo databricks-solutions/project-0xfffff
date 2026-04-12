@@ -8,13 +8,13 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useQueryClient } from '@tanstack/react-query';
 import { useWorkshopContext } from '@/context/WorkshopContext';
-import { useRubric, useAllTraces } from '@/hooks/useWorkshopApi';
+import { useRubric, useAllTraces, useAvailableModels } from '@/hooks/useWorkshopApi';
 import { WorkshopsService } from '@/client';
 import { Play, Users, Star, ClipboardList, CheckCircle, Settings, Database, Scale, Binary, MessageSquareText, Shuffle, Brain, Lightbulb } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 import { parseRubricQuestions } from '@/utils/rubricUtils';
-import { MODEL_MAPPING } from '@/utils/modelMapping';
+import { buildModelOptions } from '@/utils/modelMapping';
 
 interface AnnotationStartPageProps {
   onStartAnnotation?: () => void;
@@ -31,6 +31,8 @@ export const AnnotationStartPage: React.FC<AnnotationStartPageProps> = ({ onStar
   const [autoEvaluateEnabled, setAutoEvaluateEnabled] = React.useState<boolean>(true);
   const { data: rubric } = useRubric(workshopId!);
   const { data: traces } = useAllTraces(workshopId!);
+  const { data: availableModels } = useAvailableModels(workshopId!);
+  const modelOptions = React.useMemo(() => availableModels ? buildModelOptions(availableModels) : [], [availableModels]);
 
   const totalTraces = traces?.length || 0;
   const rubricQuestions = rubric ? parseRubricQuestions(rubric.question) : [];
@@ -260,9 +262,9 @@ export const AnnotationStartPage: React.FC<AnnotationStartPageProps> = ({ onStar
                     <SelectValue placeholder="Select a model" />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.entries(MODEL_MAPPING).map(([displayName, endpointName]) => (
-                      <SelectItem key={endpointName} value={endpointName}>
-                        {displayName}
+                    {modelOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
                       </SelectItem>
                     ))}
                   </SelectContent>

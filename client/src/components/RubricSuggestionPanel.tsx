@@ -6,7 +6,7 @@
  * Facilitators can edit, accept, or reject each suggestion.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -29,7 +29,8 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { MODEL_MAPPING } from '@/utils/modelMapping';
+import { buildModelOptions } from '@/utils/modelMapping';
+import { useAvailableModels } from '@/hooks/useWorkshopApi';
 
 export interface RubricSuggestion {
   title: string;
@@ -57,6 +58,8 @@ export function RubricSuggestionPanel({
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editedSuggestion, setEditedSuggestion] = useState<RubricSuggestion | null>(null);
   const [selectedModel, setSelectedModel] = useState<string>('databricks-claude-opus-4-5');
+  const { data: availableModels } = useAvailableModels(workshopId);
+  const modelOptions = useMemo(() => availableModels ? buildModelOptions(availableModels) : [], [availableModels]);
 
   const handleGenerate = async () => {
     setLoading(true);
@@ -186,9 +189,9 @@ export function RubricSuggestionPanel({
               <SelectValue placeholder="Select a model" />
             </SelectTrigger>
             <SelectContent>
-              {Object.entries(MODEL_MAPPING).map(([displayName, endpointName]) => (
-                <SelectItem key={endpointName} value={endpointName}>
-                  {displayName}
+              {modelOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
                 </SelectItem>
               ))}
             </SelectContent>

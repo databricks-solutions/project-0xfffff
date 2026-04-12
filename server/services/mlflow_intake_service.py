@@ -47,11 +47,13 @@ class MLflowIntakeService:
       # Set tracking URI to Databricks
       mlflow.set_tracking_uri('databricks')
 
-      # Set authentication
+      # Set authentication — clear profile-related env vars that override token auth
       import os
 
       os.environ['DATABRICKS_HOST'] = config.databricks_host.rstrip('/')
       os.environ['DATABRICKS_TOKEN'] = config.databricks_token
+      os.environ.pop('DATABRICKS_CONFIG_PROFILE', None)
+      os.environ.pop('DATABRICKS_AUTH_TYPE', None)
 
     except Exception as e:
       raise ValueError(f'Failed to configure MLflow: {str(e)}')

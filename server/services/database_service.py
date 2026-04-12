@@ -166,6 +166,9 @@ class DatabaseService:
       auto_evaluation_model=getattr(db_workshop, 'auto_evaluation_model', None),
       show_participant_notes=getattr(db_workshop, 'show_participant_notes', False) or False,
       span_attribute_filter=getattr(db_workshop, 'span_attribute_filter', None),
+      summarization_enabled=getattr(db_workshop, 'summarization_enabled', False) or False,
+      summarization_model=getattr(db_workshop, 'summarization_model', None),
+      summarization_guidance=getattr(db_workshop, 'summarization_guidance', None),
       created_at=db_workshop.created_at,
     )
 
@@ -320,6 +323,33 @@ class DatabaseService:
     self.db.refresh(db_workshop)
 
     return self.get_workshop(workshop_id)
+
+  def update_workshop_summarization_settings(
+    self,
+    workshop_id: str,
+    summarization_enabled: bool,
+    summarization_model: str | None,
+    summarization_guidance: str | None,
+  ) -> Optional[Workshop]:
+    """Update trace summarization settings for a workshop."""
+    db_workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if not db_workshop:
+      return None
+
+    db_workshop.summarization_enabled = summarization_enabled
+    db_workshop.summarization_model = summarization_model
+    db_workshop.summarization_guidance = summarization_guidance
+    self.db.commit()
+    self.db.refresh(db_workshop)
+
+    return self.get_workshop(workshop_id)
+
+  def update_trace_summary(self, trace_id: str, summary: dict | None) -> None:
+    """Update a trace's summary (structured milestone view)."""
+    db_trace = self.db.query(TraceDB).filter(TraceDB.id == trace_id).first()
+    if db_trace:
+      db_trace.summary = summary
+      self.db.commit()
 
   def update_workshop_phase(self, workshop_id: str, new_phase: WorkshopPhase) -> Optional[Workshop]:
     """Update the current phase of a workshop."""
@@ -3819,6 +3849,7 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       mlflow_experiment_id=db_trace.mlflow_experiment_id,
       include_in_alignment=db_trace.include_in_alignment if db_trace.include_in_alignment is not None else True,
       sme_feedback=db_trace.sme_feedback,
+      summary=getattr(db_trace, 'summary', None),
       created_at=db_trace.created_at,
     )
 

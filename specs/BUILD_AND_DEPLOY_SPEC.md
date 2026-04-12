@@ -109,6 +109,7 @@ The project uses Alembic for SQLite database migrations with batch mode support 
 | `migrations/env.py` | Migration environment setup |
 | `migrations/versions/*.py` | Individual migration scripts |
 | `server/db_bootstrap.py` | Bootstrap module |
+| `gunicorn_conf.py` | Gunicorn server hooks (runs migrations in master before workers fork) |
 
 ### Migration Commands (via justfile)
 
@@ -145,11 +146,13 @@ This creates a new table, copies data, drops old table, and renames.
 
 **Development**: `just api-dev`, `just api`, and `just dev` automatically run `just db-bootstrap` before starting.
 
-**Production**: Run `just db-bootstrap` as a separate step before starting the server.
+**Production (Gunicorn)**: The `gunicorn_conf.py` `on_starting` hook runs `bootstrap_database(full=True)` once in the master process before workers fork. This ensures pending migrations are applied before any worker accepts traffic. If migrations fail, gunicorn exits.
+
+**Production (Manual)**: Run `just db-bootstrap` as a separate step before starting the server.
 
 ### Startup Fallback
 
-If the API starts without running migrations:
+When running under **uvicorn directly** (dev mode, no gunicorn master), the FastAPI lifespan calls `maybe_bootstrap_db_on_startup()` as a fallback. This is skipped under gunicorn since the `on_starting` hook handles it.
 
 | Scenario | Behavior |
 |----------|----------|
@@ -202,8 +205,9 @@ uv run uvicorn server.app:app --host 0.0.0.0 --port 8000
 ### Production Server
 
 ```bash
-# With Gunicorn (multiple workers)
+# With Gunicorn (multiple workers + automatic migrations)
 uv run gunicorn server.app:app \
+  -c gunicorn_conf.py \
   -w 4 \
   -k uvicorn.workers.UvicornWorker \
   --bind 0.0.0.0:8000
@@ -303,6 +307,7 @@ project-with-build.zip
 - [ ] Migrations apply without errors
 - [ ] Batch mode works for SQLite ALTER TABLE
 - [ ] File lock prevents race conditions with multiple workers
+- [ ] Pending Alembic migrations are applied automatically before workers accept traffic
 
 ### Deployment
 - [ ] Full deployment completes successfully
@@ -477,4 +482,10 @@ Limitations:
 - Uses Databricks SDK Files API (FUSE mounts NOT supported in Apps)
 - The rescue module copies the entire DB file; not suitable for very large databases
 - Brief data loss possible if container crashes between backups (up to backup interval worth of writes)
+
+## Implementation Log
+
+| Date | Plan | Status | Summary |
+|------|------|--------|---------|
+| 2026-04-11 | [Gunicorn on_starting hook](../.claude/plans/jaunty-leaping-lighthouse.md) | complete | Run Alembic migrations in gunicorn master before workers fork |
 

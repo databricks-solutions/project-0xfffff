@@ -39,6 +39,7 @@ const QUERY_KEYS = {
   mlflowConfig: (workshopId: string) => ['mlflowConfig', workshopId],
   draftRubricItems: (workshopId: string) => ['draftRubricItems', workshopId],
   discoveryAnalyses: (workshopId: string) => ['discovery-analyses', workshopId],
+  availableModels: (workshopId: string) => ['availableModels', workshopId],
 };
 
 // Helper function to invalidate all workshop-related queries
@@ -542,6 +543,40 @@ export function useMLflowConfig(workshopId: string) {
   });
 }
 
+export interface AvailableModel {
+  name: string;
+  state: string;
+  task: string;
+}
+
+const AVAILABLE_MODELS_STALE_TIME = 5 * 60 * 1000; // 5 minutes
+
+async function fetchAvailableModels(workshopId: string): Promise<AvailableModel[]> {
+  const response = await fetch(`/workshops/${workshopId}/available-models`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch available models');
+  }
+  return response.json();
+}
+
+export function useAvailableModels(workshopId: string) {
+  return useQuery<AvailableModel[]>({
+    queryKey: QUERY_KEYS.availableModels(workshopId),
+    queryFn: () => fetchAvailableModels(workshopId),
+    enabled: !!workshopId,
+    staleTime: AVAILABLE_MODELS_STALE_TIME,
+  });
+}
+
+/** Prefetch available models into the query cache. */
+export function prefetchAvailableModels(queryClient: QueryClient, workshopId: string) {
+  return queryClient.prefetchQuery({
+    queryKey: QUERY_KEYS.availableModels(workshopId),
+    queryFn: () => fetchAvailableModels(workshopId),
+    staleTime: AVAILABLE_MODELS_STALE_TIME,
+  });
+}
+
 // Trace alignment hooks
 export function useUpdateTraceAlignment(workshopId: string) {
   const queryClient = useQueryClient();
@@ -817,6 +852,37 @@ export function usePreviewSpanFilter(workshopId: string) {
         throw new Error(error.detail || 'Failed to preview span filter');
       }
       return response.json();
+    },
+  });
+}
+
+// Summarization Settings hooks
+
+interface SummarizationSettingsUpdate {
+  summarization_enabled: boolean;
+  summarization_model?: string | null;
+  summarization_guidance?: string | null;
+}
+
+export function useUpdateSummarizationSettings(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (settings: SummarizationSettingsUpdate): Promise<Workshop> => {
+      const response = await fetch(`/workshops/${workshopId}/summarization-settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to update summarization settings' }));
+        throw new Error(error.detail || 'Failed to update summarization settings');
+      }
+      return response.json();
+    },
+    onSuccess: (workshop) => {
+      queryClient.setQueryData(QUERY_KEYS.workshop(workshopId), workshop);
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.workshop(workshopId) });
     },
   });
 }

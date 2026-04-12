@@ -27,6 +27,9 @@ export type Workshop = {
     auto_evaluation_model?: (string | null);
     show_participant_notes?: boolean;
     span_attribute_filter?: (Record<string, any> | null);
+    summarization_enabled?: boolean;
+    summarization_model?: (string | null);
+    summarization_guidance?: (string | null);
     created_at?: string;
 };
 

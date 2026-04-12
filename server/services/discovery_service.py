@@ -909,9 +909,9 @@ class DiscoveryService:
     # User completion tracking
     # ---------------------------------------------------------------------
     def mark_user_discovery_complete(self, workshop_id: str, user_id: str) -> dict[str, Any]:
-        self._get_workshop_or_404(workshop_id)
+        workshop = self._get_workshop_or_404(workshop_id)
         user = self.db_service.get_user(user_id)
-        if not user or user.workshop_id != workshop_id:
+        if not user or (user.workshop_id != workshop_id and user_id != workshop.facilitator_id):
             raise HTTPException(status_code=404, detail="User not found in workshop")
         self.db_service.mark_user_discovery_complete(workshop_id, user_id)
         return {
@@ -925,9 +925,9 @@ class DiscoveryService:
         return self.db_service.get_discovery_completion_status(workshop_id)
 
     def is_user_discovery_complete(self, workshop_id: str, user_id: str) -> dict[str, Any]:
-        self._get_workshop_or_404(workshop_id)
+        workshop = self._get_workshop_or_404(workshop_id)
         user = self.db_service.get_user(user_id)
-        if not user or user.workshop_id != workshop_id:
+        if not user or (user.workshop_id != workshop_id and user_id != workshop.facilitator_id):
             raise HTTPException(status_code=404, detail="User not found in workshop")
         is_complete = self.db_service.is_user_discovery_complete(workshop_id, user_id)
         return {

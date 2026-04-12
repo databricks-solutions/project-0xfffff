@@ -80,6 +80,7 @@ export type { SpanAttributeFilterUpdate } from './models/SpanAttributeFilterUpda
 export type { SubmitFindingV2Request } from './models/SubmitFindingV2Request';
 export type { SubmitFollowUpAnswerRequest } from './models/SubmitFollowUpAnswerRequest';
 export type { SuggestGroupsResponse } from './models/SuggestGroupsResponse';
+export type { SummarizationSettingsUpdate } from './models/SummarizationSettingsUpdate';
 export type { Trace } from './models/Trace';
 export type { TraceUpload } from './models/TraceUpload';
 export type { UpdateDraftRubricItemRequest } from './models/UpdateDraftRubricItemRequest';
