@@ -537,15 +537,16 @@ async def resummarize_traces(
     if not mlflow_config:
         raise HTTPException(status_code=400, detail="MLflow config not found")
 
-    workspace_host = mlflow_config.databricks_host
-    endpoint_url = f"https://{workspace_host}/serving-endpoints"
+    workspace_host = mlflow_config.databricks_host.rstrip("/")
+    workspace_url = workspace_host if workspace_host.startswith("https://") else f"https://{workspace_host}"
+    endpoint_url = f"{workspace_url}/serving-endpoints"
 
     async def run_summarization():
         from server.database import SessionLocal
 
         from server.services.databricks_service import resolve_databricks_token
 
-        token = resolve_databricks_token(f"https://{workspace_host}")
+        token = resolve_databricks_token(workspace_url)
         svc = TraceSummarizationService(
             endpoint_url=endpoint_url,
             token=token,
@@ -3006,14 +3007,16 @@ async def ingest_mlflow_traces(workshop_id: str, ingest_request: dict, db: Sessi
                 unsummarized = [t for t in traces if t.context and not t.summary]
                 if unsummarized:
                     batch = [{"id": t.id, "context": t.context} for t in unsummarized]
-                    endpoint_url = f"https://{config_with_token.databricks_host}/serving-endpoints"
+                    ingest_host = config_with_token.databricks_host.rstrip("/")
+                    ingest_url = ingest_host if ingest_host.startswith("https://") else f"https://{ingest_host}"
+                    endpoint_url = f"{ingest_url}/serving-endpoints"
 
                     async def run_summarization():
                         from server.database import SessionLocal
 
                         from server.services.databricks_service import resolve_databricks_token
 
-                        token = resolve_databricks_token(f"https://{config_with_token.databricks_host}")
+                        token = resolve_databricks_token(ingest_url)
                         svc = TraceSummarizationService(
                             endpoint_url=endpoint_url,
                             token=token,
