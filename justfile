@@ -527,11 +527,13 @@ deploy:
 
   databricks --profile "$PROFILE" sync . "$WORKSPACE_PATH" \
     --exclude ".git" \
+    --exclude ".claude" \
     --exclude "node_modules" \
     --exclude "__pycache__" \
     --exclude "*.db" \
     --exclude ".venv" \
-    --exclude ".e2e-*"
+    --exclude ".e2e-*" \
+    --exclude "htmlcov"
 
   # Create app if it doesn't exist
   if ! databricks --profile "$PROFILE" apps get "$APP" &>/dev/null; then
