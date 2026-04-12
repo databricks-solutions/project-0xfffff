@@ -308,7 +308,7 @@ class MLflowIntakeConfig(BaseModel):
     """Configuration for MLflow trace intake."""
 
     databricks_host: str = Field(..., description="Databricks workspace host URL")
-    databricks_token: str = Field(..., description="Databricks access token")
+    databricks_token: str = Field("", description="Deprecated — SDK auth used instead")
     experiment_id: str = Field(..., description="MLflow experiment ID to pull traces from")
     max_traces: int | None = Field(100, description="Maximum number of traces to pull")
     filter_string: str | None = Field(None, description="Optional filter string for traces")
@@ -318,7 +318,7 @@ class MLflowIntakeConfigCreate(BaseModel):
     """Request model for creating MLflow intake configuration."""
 
     databricks_host: str = Field(..., description="Databricks workspace host URL")
-    databricks_token: str = Field(..., description="Databricks access token")
+    databricks_token: str = Field("", description="Deprecated — SDK auth used instead")
     experiment_id: str = Field(..., description="MLflow experiment ID to pull traces from")
     max_traces: int | None = Field(100, description="Maximum number of traces to pull")
     filter_string: str | None = Field(None, description="Optional filter string for traces")
@@ -460,7 +460,7 @@ class DBSQLExportRequest(BaseModel):
     databricks_host: str = Field(
         ..., description="Databricks workspace URL (e.g., https://your-workspace.cloud.databricks.com)"
     )
-    databricks_token: str = Field(..., description="Databricks access token for DBSQL authentication")
+    databricks_token: str = Field("", description="Deprecated — SDK auth used instead")
     http_path: str = Field(..., description="DBSQL warehouse HTTP path (e.g., /sql/1.0/warehouses/xxxxxx)")
     catalog: str = Field(..., description="Unity Catalog catalog name")
     schema_name: str = Field(..., description="Unity Catalog schema name")
@@ -573,7 +573,7 @@ class DatabricksConfig(BaseModel):
     """Configuration for Databricks workspace connection."""
 
     workspace_url: str = Field(..., description="Databricks workspace URL")
-    token: str = Field(..., description="Databricks API token")
+    token: str = Field("", description="Deprecated — SDK auth used instead")
 
 
 class DatabricksEndpointCall(BaseModel):

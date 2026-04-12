@@ -11,9 +11,9 @@ export type MLflowIntakeConfig = {
      */
     databricks_host: string;
     /**
-     * Databricks access token
+     * Deprecated — SDK auth used instead
      */
-    databricks_token: string;
+    databricks_token?: string;
     /**
      * MLflow experiment ID to pull traces from
      */

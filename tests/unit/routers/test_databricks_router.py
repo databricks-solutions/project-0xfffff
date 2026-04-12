@@ -112,18 +112,17 @@ async def test_databricks_chat_endpoint_success(async_client, monkeypatch):
 async def test_databricks_judge_evaluate_without_workshop_id_uses_request_config(async_client, monkeypatch):
     import server.routers.databricks as databricks_router
 
-    class FakeDatabricksService:
-        def __init__(self, *, workspace_url: str, token: str, init_sdk: bool):
-            assert workspace_url == "https://example.cloud.databricks.com"
-            assert token == "tok"
-            assert init_sdk is True
-
+    class FakeService:
         def call_serving_endpoint(self, *, endpoint_name: str, prompt: str, temperature: float, max_tokens: int):
             assert endpoint_name == "ep"
             assert prompt == "hello"
             return {"choices": [{"message": {"content": "ok"}}]}
 
-    monkeypatch.setattr(databricks_router, "DatabricksService", FakeDatabricksService)
+    monkeypatch.setattr(
+        databricks_router,
+        "create_databricks_service",
+        lambda workspace_url=None, token=None, **kw: FakeService(),
+    )
 
     resp = await async_client.post(
         "/databricks/judge-evaluate",

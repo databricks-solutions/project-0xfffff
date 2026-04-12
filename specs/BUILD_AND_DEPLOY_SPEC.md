@@ -217,11 +217,19 @@ uv run gunicorn server.app:app \
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `DATABASE_URL` | Database connection string | `sqlite:///workshop.db` |
+| `DATABASE_URL` | Database connection string (SQLite only) | `sqlite:///workshop.db` |
+| `DATABASE_ENV` | Database backend: `postgres` (Lakebase) or `sqlite` | `sqlite` |
 | `DB_BOOTSTRAP_ON_STARTUP` | Auto-run migrations on startup | `false` |
 | `MLFLOW_TRACKING_URI` | MLflow server URL | (required) |
 | `DATABRICKS_HOST` | Databricks workspace URL | (required) |
-| `DATABRICKS_TOKEN` | Databricks access token | (required) |
+| `DATABRICKS_TOKEN` | Databricks access token (fallback — SDK auth preferred) | (optional) |
+| `PGHOST` | Lakebase endpoint hostname | (required for Lakebase) |
+| `PGDATABASE` | Lakebase database name | `databricks_postgres` |
+| `PGUSER` | Lakebase username (service principal `DATABRICKS_CLIENT_ID`) | (required for Lakebase) |
+| `PGPORT` | Lakebase port | `5432` |
+| `PGSSLMODE` | Lakebase SSL mode | `require` |
+| `PGAPPNAME` | Application name for connection tracking / schema derivation | `human-eval-workshop` |
+| `ENDPOINT_NAME` | Lakebase endpoint for credential generation (`projects/<id>/branches/<id>/endpoints/<id>`) | (required for Lakebase) |
 
 ---
 
@@ -354,11 +362,17 @@ persistence by backing up to Unity Catalog Volumes.
 
 ### Databricks Apps Authentication
 
-Databricks Apps automatically provides authentication to workspace resources via a dedicated **service principal**. Key points:
+Databricks Apps automatically provides authentication to workspace resources via a dedicated **service principal**. The application uses Databricks SDK unified auth exclusively — no PAT tokens are accepted from users or stored.
 
-**Automatic Credentials**:
-- `DATABRICKS_CLIENT_ID` - Automatically injected
-- `DATABRICKS_CLIENT_SECRET` - Automatically injected
+**Automatic Credentials** (injected by the platform):
+- `DATABRICKS_CLIENT_ID` - Service principal client ID
+- `DATABRICKS_CLIENT_SECRET` - Service principal client secret
+
+**How it works**:
+- `resolve_databricks_token()` in `server/services/databricks_service.py` calls `WorkspaceClient().config.authenticate()` which auto-detects the injected credentials
+- MLflow uses the same SDK auth via `mlflow.set_tracking_uri('databricks')`
+- No token input fields exist in the UI — auth is fully automatic
+- See [AUTHENTICATION_SPEC](./AUTHENTICATION_SPEC.md) § Databricks API Authentication for the full contract
 
 **Best Practices**:
 - Never hardcode personal access tokens (PATs) in code
@@ -487,5 +501,7 @@ Limitations:
 
 | Date | Plan | Status | Summary |
 |------|------|--------|---------|
+| 2026-04-10 | [SDK Auth Migration](../.claude/plans/2026-04-10-sdk-auth-migration.md) | complete | Replace PAT token auth with SDK auth; update Databricks Apps auth section; add Lakebase env vars |
+| 2026-04-11 | (inline) | complete | Fix Lakebase connection pool: `do_connect` token injection, `pool_recycle=3600`, `pool_pre_ping=False`, `generate_database_credential()` API |
 | 2026-04-11 | [Gunicorn on_starting hook](../.claude/plans/jaunty-leaping-lighthouse.md) | complete | Run Alembic migrations in gunicorn master before workers fork |
 

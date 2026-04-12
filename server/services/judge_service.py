@@ -78,19 +78,16 @@ class JudgeService:
                     detail="MLflow configuration required for AI judge evaluation. Configure in Intake phase.",
                 )
 
-            # Get token from memory storage
-            from server.services.token_storage_service import token_storage
+            # Get token via SDK auth
+            from server.services.databricks_service import resolve_databricks_token
 
-            databricks_token = token_storage.get_token(workshop_id)
-            if not databricks_token:
-                databricks_token = self.db_service.get_databricks_token(workshop_id)
-                if databricks_token:
-                    token_storage.store_token(workshop_id, databricks_token)
-            if not databricks_token:
+            try:
+                databricks_token = resolve_databricks_token(mlflow_config.databricks_host if mlflow_config else None)
+            except RuntimeError as exc:
                 raise HTTPException(
                     status_code=400,
                     detail="Databricks token not found. Please configure MLflow intake with your token.",
-                )
+                ) from exc
 
             # Validate MLflow credentials before proceeding
             if not mlflow_config.databricks_host:
@@ -285,17 +282,12 @@ class JudgeService:
         self, workshop_id: str, prompt: JudgePrompt, input_text: str, output_text: str, mlflow_config
     ) -> tuple[int, str]:
         """Evaluate using real MLflow LLM judge."""
-        # Set up MLflow with Databricks credentials
+        # Set up MLflow — SDK handles auth (service principal on Apps, CLI profile locally)
         os.environ["DATABRICKS_HOST"] = mlflow_config.databricks_host.rstrip("/")
-        os.environ["DATABRICKS_TOKEN"] = mlflow_config.databricks_token
 
-        # Validate credentials format
+        # Validate host format
         if not mlflow_config.databricks_host.startswith("https://"):
             raise ValueError("Databricks host must start with https://")
-        if not mlflow_config.databricks_token.startswith("dapi"):
-            print(
-                f"Warning: Databricks token should typically start with 'dapi'. Current token starts with: {mlflow_config.databricks_token[:10]}..."
-            )
 
         # Initialize MLflow with proper experiment context
         try:

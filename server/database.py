@@ -182,9 +182,6 @@ class WorkshopDB(Base):
     )
     judge_prompts = relationship("JudgePromptDB", back_populates="workshop", cascade="all, delete-orphan")
     judge_evaluations = relationship("JudgeEvaluationDB", back_populates="workshop", cascade="all, delete-orphan")
-    databricks_token = relationship(
-        "DatabricksTokenDB", back_populates="workshop", uselist=False, cascade="all, delete-orphan"
-    )
     user_trace_orders = relationship("UserTraceOrderDB", back_populates="workshop", cascade="all, delete-orphan")
     user_discovery_completions = relationship(
         "UserDiscoveryCompletionDB", back_populates="workshop", cascade="all, delete-orphan"
@@ -377,19 +374,6 @@ class MLflowIntakeConfigDB(Base):
 
     # Relationships
     workshop = relationship("WorkshopDB", back_populates="mlflow_config")
-
-
-class DatabricksTokenDB(Base):
-    """Database model for storing Databricks tokens per workshop."""
-
-    __tablename__ = "databricks_tokens"
-
-    workshop_id = Column(String, ForeignKey("workshops.id"), primary_key=True)
-    token = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=func.now())
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
-
-    workshop = relationship("WorkshopDB", back_populates="databricks_token")
 
 
 class JudgePromptDB(Base):
@@ -652,22 +636,14 @@ def _is_connection_error(exc: Exception) -> bool:
 
 
 def _reset_connection_pool() -> None:
-    """Reset the connection pool and force OAuth token refresh.
+    """Reset the connection pool.
 
-    Disposes all pooled connections (closing stale ones) and marks the
-    OAuth token for refresh so the next connection gets a fresh token.
+    Disposes all pooled connections (closing stale ones).  New connections
+    created by the pool will automatically get fresh credentials via the
+    ``do_connect`` event listener — no explicit token refresh needed.
     """
     engine.dispose()
-    if DATABASE_BACKEND == DatabaseBackend.POSTGRESQL:
-        try:
-            from .db_config import get_token_manager
-
-            get_token_manager().force_refresh()
-            logger.info("Connection pool reset and OAuth token marked for refresh")
-        except Exception as e:
-            logger.warning("Pool reset OK but token refresh failed: %s", e)
-    else:
-        logger.info("Connection pool reset (SQLite)")
+    logger.info("Connection pool reset (%s)", DATABASE_BACKEND.value)
 
 
 def get_db():

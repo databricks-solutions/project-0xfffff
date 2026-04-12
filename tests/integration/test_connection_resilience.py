@@ -71,18 +71,17 @@ class TestResetConnectionPool:
             _reset_connection_pool()
             mock_dispose.assert_called_once()
 
-    def test_reset_refreshes_oauth_for_postgres(self):
-        """When backend is PostgreSQL, force_refresh is called."""
+    def test_reset_disposes_engine_for_postgres(self):
+        """When backend is PostgreSQL, engine.dispose() is called (credentials are
+        injected per-connection via do_connect, so no explicit refresh needed)."""
         import server.database as db_mod
 
-        mock_token_mgr = MagicMock()
         with (
             patch.object(db_mod, "DATABASE_BACKEND", db_mod.DatabaseBackend.POSTGRESQL),
-            patch.object(db_mod.engine, "dispose"),
-            patch("server.db_config.get_token_manager", return_value=mock_token_mgr),
+            patch.object(db_mod.engine, "dispose") as mock_dispose,
         ):
             db_mod._reset_connection_pool()
-            mock_token_mgr.force_refresh.assert_called_once()
+            mock_dispose.assert_called_once()
 
 
 class TestGetDbRetry:

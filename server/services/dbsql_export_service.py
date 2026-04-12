@@ -39,11 +39,10 @@ class DBSQLExportService:
         self.catalog = catalog
         self.schema_name = schema_name
 
-        # Configure authentication
+        # Set host for SDK auth (service principal on Apps, CLI profile locally)
         import os
 
         os.environ["DATABRICKS_HOST"] = databricks_host
-        os.environ["DATABRICKS_TOKEN"] = databricks_token
 
         logger.info(f"DBSQL Export Service initialized for {catalog}.{schema_name}")
 

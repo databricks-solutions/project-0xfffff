@@ -1254,18 +1254,15 @@ async def add_traces(workshop_id: str, request: dict, db: Session = Depends(get_
 
             if derived_prompt:
                 # Get Databricks token
-                from server.services.token_storage_service import token_storage
+                from server.services.databricks_service import resolve_databricks_token
 
-                databricks_token = token_storage.get_token(workshop_id)
-                if not databricks_token:
-                    databricks_token = db_service.get_databricks_token(workshop_id)
-                    if databricks_token:
-                        token_storage.store_token(workshop_id, databricks_token)
+                try:
+                    databricks_token = resolve_databricks_token(mlflow_config.databricks_host)
+                except RuntimeError:
+                    databricks_token = None
 
                 logger.info("Add traces - Databricks token available: %s", databricks_token is not None)
                 if databricks_token:
-                    mlflow_config.databricks_token = databricks_token
-
                     # Create auto-evaluation job for the new traces
                     auto_eval_job_id = str(uuid.uuid4())
                     logger.info("Add traces - Creating auto-evaluation job: %s", auto_eval_job_id)
@@ -1579,18 +1576,15 @@ async def begin_annotation_phase(workshop_id: str, request: dict | None = None, 
 
         if derived_prompt:
             # Get Databricks token
-            from server.services.token_storage_service import token_storage
+            from server.services.databricks_service import resolve_databricks_token
 
-            databricks_token = token_storage.get_token(workshop_id)
-            if not databricks_token:
-                databricks_token = db_service.get_databricks_token(workshop_id)
-                if databricks_token:
-                    token_storage.store_token(workshop_id, databricks_token)
+            try:
+                databricks_token = resolve_databricks_token(mlflow_config.databricks_host)
+            except RuntimeError:
+                databricks_token = None
 
             logger.info("Databricks token available: %s", databricks_token is not None)
             if databricks_token:
-                mlflow_config.databricks_token = databricks_token
-
                 # Create auto-evaluation job
                 auto_eval_job_id = str(uuid.uuid4())
                 logger.info("Creating auto-evaluation job: %s", auto_eval_job_id)
@@ -1636,12 +1630,7 @@ async def begin_annotation_phase(workshop_id: str, request: dict | None = None, 
                                 import mlflow as _mlflow
 
                                 _os.environ["DATABRICKS_HOST"] = mlflow_config.databricks_host.rstrip("/")
-                                has_oauth = bool(
-                                    _os.environ.get("DATABRICKS_CLIENT_ID")
-                                    and _os.environ.get("DATABRICKS_CLIENT_SECRET")
-                                )
-                                if not has_oauth:
-                                    _os.environ["DATABRICKS_TOKEN"] = mlflow_config.databricks_token
+                                # SDK handles auth (service principal on Apps, CLI profile locally)
                                 _mlflow.set_tracking_uri("databricks")
 
                                 filter_str = f"tags.eval = 'true' AND tags.workshop_id = '{workshop_id}'"
@@ -2537,12 +2526,18 @@ async def upload_workshop_to_volume(workshop_id: str, upload_request: dict, db: 
         volume_path = upload_request.get("volume_path", "")
         file_name = upload_request.get("file_name", f"workshop_{workshop_id}.db")
         databricks_host = upload_request.get("databricks_host", "")
-        databricks_token = upload_request.get("databricks_token", "")
 
-        if not all([volume_path, databricks_host, databricks_token]):
+        if not all([volume_path, databricks_host]):
             raise HTTPException(
-                status_code=400, detail="Missing required fields: volume_path, databricks_host, and databricks_token"
+                status_code=400, detail="Missing required fields: volume_path and databricks_host"
             )
+
+        from server.services.databricks_service import resolve_databricks_token
+
+        try:
+            databricks_token = resolve_databricks_token(databricks_host)
+        except RuntimeError as e:
+            raise HTTPException(status_code=401, detail=str(e)) from e
 
         # Parse volume path components
         parts = volume_path.strip().split(".")
@@ -2842,30 +2837,21 @@ async def export_judge(
 async def configure_mlflow_intake(
     workshop_id: str, config: MLflowIntakeConfigCreate, db: Session = Depends(get_db)
 ) -> MLflowIntakeConfig:
-    """Configure MLflow intake for a workshop (token stored in memory, not database)."""
+    """Configure MLflow intake for a workshop."""
     db_service = DatabaseService(db)
     workshop = db_service.get_workshop(workshop_id)
     if not workshop:
         raise HTTPException(status_code=404, detail="Workshop not found")
 
     try:
-        # Store token in memory
-        from server.services.token_storage_service import token_storage
-
-        if config.databricks_token:
-            token_storage.store_token(workshop_id, config.databricks_token)
-            db_service.set_databricks_token(workshop_id, config.databricks_token)
-
-        # Create config without token (token will be retrieved from memory during ingestion)
-        config_without_token = MLflowIntakeConfig(
+        config_to_save = MLflowIntakeConfig(
             databricks_host=config.databricks_host,
-            databricks_token="",  # Don't store token in database
             experiment_id=config.experiment_id,
             max_traces=config.max_traces,
             filter_string=config.filter_string,
         )
 
-        return db_service.create_mlflow_config(workshop_id, config_without_token)
+        return db_service.create_mlflow_config(workshop_id, config_to_save)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to configure MLflow intake: {e!s}") from e
 
@@ -2893,14 +2879,11 @@ async def list_available_models(workshop_id: str, db: Session = Depends(get_db))
     if not mlflow_config or not mlflow_config.databricks_host:
         return []
 
-    from server.services.token_storage_service import token_storage
+    from server.services.databricks_service import resolve_databricks_token
 
-    databricks_token = token_storage.get_token(workshop_id)
-    if not databricks_token:
-        databricks_token = db_service.get_databricks_token(workshop_id)
-        if databricks_token:
-            token_storage.store_token(workshop_id, databricks_token)
-    if not databricks_token:
+    try:
+        databricks_token = resolve_databricks_token(mlflow_config.databricks_host)
+    except RuntimeError:
         return []
 
     try:
@@ -2980,19 +2963,13 @@ async def ingest_mlflow_traces(workshop_id: str, ingest_request: dict, db: Sessi
             detail="MLflow configuration not found. Please configure MLflow intake first.",
         )
 
-    # Get token from memory storage
-    from server.services.token_storage_service import token_storage
+    # Get Databricks token via SDK auth
+    from server.services.databricks_service import resolve_databricks_token
 
-    databricks_token = token_storage.get_token(workshop_id)
-    if not databricks_token:
-        databricks_token = db_service.get_databricks_token(workshop_id)
-        if databricks_token:
-            token_storage.store_token(workshop_id, databricks_token)
-    if not databricks_token:
-        raise HTTPException(
-            status_code=400,
-            detail="Databricks token not found. Please configure MLflow intake with your token.",
-        )
+    try:
+        databricks_token = resolve_databricks_token(config.databricks_host if config else None)
+    except RuntimeError as e:
+        raise HTTPException(status_code=401, detail=str(e)) from e
 
     # Create config with token for ingestion
     config_with_token = MLflowIntakeConfig(
@@ -3273,7 +3250,6 @@ async def upload_csv_and_log_to_mlflow(
     workshop_id: str,
     file: UploadFile = File(...),
     databricks_host: str = Form(None),
-    databricks_token: str = Form(None),
     experiment_id: str = Form(None),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
@@ -3293,8 +3269,9 @@ async def upload_csv_and_log_to_mlflow(
 
     Environment variables used if parameters not provided:
     - DATABRICKS_HOST
-    - DATABRICKS_TOKEN
     - MLFLOW_EXPERIMENT_ID
+
+    Authentication is resolved via Databricks SDK (service principal or CLI profile).
     """
     import csv
     import io
@@ -3311,14 +3288,20 @@ async def upload_csv_and_log_to_mlflow(
 
     # Get MLflow configuration from parameters or environment variables
     host = databricks_host or os.environ.get("DATABRICKS_HOST")
-    token = databricks_token or os.environ.get("DATABRICKS_TOKEN")
     exp_id = experiment_id or os.environ.get("MLFLOW_EXPERIMENT_ID")
 
-    if not host or not token or not exp_id:
+    if not host or not exp_id:
         raise HTTPException(
             status_code=400,
-            detail="MLflow configuration required. Provide databricks_host, databricks_token, and experiment_id as parameters or set DATABRICKS_HOST, DATABRICKS_TOKEN, and MLFLOW_EXPERIMENT_ID environment variables.",
+            detail="MLflow configuration required. Provide databricks_host and experiment_id as parameters or set DATABRICKS_HOST and MLFLOW_EXPERIMENT_ID environment variables.",
         )
+
+    from server.services.databricks_service import resolve_databricks_token
+
+    try:
+        token = resolve_databricks_token(host)
+    except RuntimeError:
+        token = None
 
     # Ensure host has proper format
     if not host.startswith("https://"):
@@ -3330,7 +3313,6 @@ async def upload_csv_and_log_to_mlflow(
 
         # Configure MLflow
         os.environ["DATABRICKS_HOST"] = host
-        os.environ["DATABRICKS_TOKEN"] = token
         mlflow.set_tracking_uri("databricks")
         mlflow.set_experiment(experiment_id=exp_id)
 
@@ -3772,15 +3754,12 @@ async def start_alignment_job(
         raise HTTPException(status_code=400, detail="MLflow configuration not found")
 
     # Get Databricks token
-    from server.services.token_storage_service import token_storage
+    from server.services.databricks_service import resolve_databricks_token
 
-    databricks_token = token_storage.get_token(workshop_id)
-    if not databricks_token:
-        databricks_token = db_service.get_databricks_token(workshop_id)
-        if databricks_token:
-            token_storage.store_token(workshop_id, databricks_token)
-    if not databricks_token:
-        raise HTTPException(status_code=400, detail="Databricks token not found")
+    try:
+        databricks_token = resolve_databricks_token(mlflow_config.databricks_host if mlflow_config else None)
+    except RuntimeError as e:
+        raise HTTPException(status_code=401, detail=str(e)) from e
 
     mlflow_config.databricks_token = databricks_token
 
@@ -3978,15 +3957,12 @@ async def start_evaluation_job(
         raise HTTPException(status_code=400, detail="MLflow configuration not found")
 
     # Get Databricks token
-    from server.services.token_storage_service import token_storage
+    from server.services.databricks_service import resolve_databricks_token
 
-    databricks_token = token_storage.get_token(workshop_id)
-    if not databricks_token:
-        databricks_token = db_service.get_databricks_token(workshop_id)
-        if databricks_token:
-            token_storage.store_token(workshop_id, databricks_token)
-    if not databricks_token:
-        raise HTTPException(status_code=400, detail="Databricks token not found")
+    try:
+        databricks_token = resolve_databricks_token(mlflow_config.databricks_host if mlflow_config else None)
+    except RuntimeError as e:
+        raise HTTPException(status_code=401, detail=str(e)) from e
 
     mlflow_config.databricks_token = databricks_token
 
@@ -4179,15 +4155,12 @@ async def start_simple_evaluation(
         )
 
     # Get Databricks token
-    from server.services.token_storage_service import token_storage
+    from server.services.databricks_service import resolve_databricks_token
 
-    databricks_token = token_storage.get_token(workshop_id)
-    if not databricks_token:
-        databricks_token = db_service.get_databricks_token(workshop_id)
-        if databricks_token:
-            token_storage.store_token(workshop_id, databricks_token)
-    if not databricks_token:
-        raise HTTPException(status_code=400, detail="Databricks token not found")
+    try:
+        databricks_token = resolve_databricks_token(mlflow_config.databricks_host if mlflow_config else None)
+    except RuntimeError as e:
+        raise HTTPException(status_code=401, detail=str(e)) from e
 
     # Create job for tracking
     job_id = str(uuid.uuid4())
@@ -4951,15 +4924,12 @@ async def restart_auto_evaluation(
         raise HTTPException(status_code=400, detail="MLflow configuration not found")
 
     # Get Databricks token
-    from server.services.token_storage_service import token_storage
+    from server.services.databricks_service import resolve_databricks_token
 
-    databricks_token = token_storage.get_token(workshop_id)
-    if not databricks_token:
-        databricks_token = db_service.get_databricks_token(workshop_id)
-        if databricks_token:
-            token_storage.store_token(workshop_id, databricks_token)
-    if not databricks_token:
-        raise HTTPException(status_code=400, detail="Databricks token not found")
+    try:
+        databricks_token = resolve_databricks_token(mlflow_config.databricks_host if mlflow_config else None)
+    except RuntimeError as e:
+        raise HTTPException(status_code=401, detail=str(e)) from e
 
     mlflow_config.databricks_token = databricks_token
 
@@ -5329,15 +5299,12 @@ async def re_evaluate(
         raise HTTPException(status_code=400, detail="MLflow configuration not found")
 
     # Get Databricks token
-    from server.services.token_storage_service import token_storage
+    from server.services.databricks_service import resolve_databricks_token
 
-    databricks_token = token_storage.get_token(workshop_id)
-    if not databricks_token:
-        databricks_token = db_service.get_databricks_token(workshop_id)
-        if databricks_token:
-            token_storage.store_token(workshop_id, databricks_token)
-    if not databricks_token:
-        raise HTTPException(status_code=400, detail="Databricks token not found")
+    try:
+        databricks_token = resolve_databricks_token(mlflow_config.databricks_host if mlflow_config else None)
+    except RuntimeError as e:
+        raise HTTPException(status_code=401, detail=str(e)) from e
 
     mlflow_config.databricks_token = databricks_token
 
@@ -5552,9 +5519,6 @@ from server.models import (
     CustomLLMProviderStatus,
     CustomLLMProviderTestResult,
 )
-from server.services.token_storage_service import token_storage
-
-
 def _get_custom_llm_storage_key(workshop_id: str) -> str:
     """Get the storage key for custom LLM API keys."""
     return f"custom_llm_{workshop_id}"
@@ -5602,6 +5566,8 @@ async def get_custom_llm_provider_status(
         )
 
     # Check if API key exists in token storage
+    from server.services.token_storage_service import token_storage
+
     storage_key = _get_custom_llm_storage_key(workshop_id)
     has_api_key = token_storage.get_token(storage_key) is not None
 
@@ -5633,6 +5599,8 @@ async def create_custom_llm_provider(
         raise HTTPException(status_code=404, detail="Workshop not found")
 
     # Store API key in memory (not in database)
+    from server.services.token_storage_service import token_storage
+
     storage_key = _get_custom_llm_storage_key(workshop_id)
     token_storage.store_token(storage_key, config_data.api_key)
 
@@ -5665,6 +5633,8 @@ async def delete_custom_llm_provider(
         raise HTTPException(status_code=404, detail="Workshop not found")
 
     # Remove API key from memory
+    from server.services.token_storage_service import token_storage
+
     storage_key = _get_custom_llm_storage_key(workshop_id)
     token_storage.delete_token(storage_key)
 
@@ -5693,6 +5663,8 @@ async def test_custom_llm_provider(
 
     # Get API key from memory
     storage_key = _get_custom_llm_storage_key(workshop_id)
+    from server.services.token_storage_service import token_storage
+
     api_key = token_storage.get_token(storage_key)
     if not api_key:
         raise HTTPException(status_code=400, detail="API key not found. Please reconfigure the custom LLM provider.")
