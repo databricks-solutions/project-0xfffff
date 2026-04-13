@@ -36,6 +36,10 @@ interface DiscoveryResponse {
     output: string;
     context?: Record<string, unknown>;
     mlflow_trace_id?: string;
+    mlflow_url?: string;
+    mlflow_host?: string;
+    mlflow_experiment_id?: string;
+    summary?: Record<string, unknown> | null;
   } | null;
   responses: {
     participant: string;
@@ -78,7 +82,11 @@ export function FocusedAnalysisView({ discoveryResponses, scratchPad, setScratch
       input: trace.input,
       output: trace.output,
       context: trace.context,
-      mlflow_trace_id: trace.mlflow_trace_id || undefined
+      mlflow_trace_id: trace.mlflow_trace_id || undefined,
+      mlflow_url: trace.mlflow_url || undefined,
+      mlflow_host: trace.mlflow_host || undefined,
+      mlflow_experiment_id: trace.mlflow_experiment_id || undefined,
+      summary: trace.summary || undefined,
     };
   };
 

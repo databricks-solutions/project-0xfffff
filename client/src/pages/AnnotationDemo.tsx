@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { TraceViewer, TraceData } from '@/components/TraceViewer';
+import { TraceViewer, type TraceData } from '@/components/TraceViewer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -29,6 +29,7 @@ import { useTraces, useRubric, useUserAnnotations, useSubmitAnnotation, useMLflo
 import { useQueryClient } from '@tanstack/react-query';
 import type { Trace, Rubric, Annotation } from '@/client';
 import { parseRubricQuestions as parseQuestions } from '@/utils/rubricUtils';
+import { convertTraceToTraceData } from '@/utils/traceUtils';
 import { toast } from 'sonner';
 
 /**
@@ -121,18 +122,6 @@ const FormattedRubricDescription: React.FC<{ description: string }> = ({ descrip
     </div>
   );
 };
-
-// Convert API trace to TraceData format
-const convertTraceToTraceData = (trace: Trace): TraceData => ({
-  id: trace.id,
-  input: trace.input,
-  output: trace.output,
-  context: trace.context || undefined,
-  mlflow_trace_id: trace.mlflow_trace_id || undefined,
-  mlflow_url: trace.mlflow_url || undefined,
-  mlflow_host: trace.mlflow_host || undefined,
-  mlflow_experiment_id: trace.mlflow_experiment_id || undefined
-});
 
 // Parse rubric question from API format - includes judgeType for each question
 const parseRubricQuestions = (rubric: Rubric) => {
