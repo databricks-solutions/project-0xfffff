@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useUser } from '@/context/UserContext';
 import {
@@ -15,9 +16,12 @@ import {
   useAvailableModels,
   type DiscoveryAnalysis,
 } from '@/hooks/useWorkshopApi';
-import type { Trace } from '@/client';
+import type { Trace, Workshop } from '@/client';
 import { buildModelOptions } from '@/utils/modelMapping';
 import { toast } from 'sonner';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 import { DiscoveryOverviewBar } from './DiscoveryOverviewBar';
 import { CrossTraceAnalysisSummary } from './CrossTraceAnalysisSummary';
@@ -33,6 +37,7 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
 }) => {
   const { workshopId } = useWorkshopContext();
   const { user } = useUser();
+  const queryClient = useQueryClient();
 
   // Data
   const { data: workshop } = useWorkshop(workshopId!);
@@ -52,6 +57,9 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
 
   // State
   const [promotedKeys, setPromotedKeys] = useState<Set<string>>(new Set());
+  const [showAddTracesDialog, setShowAddTracesDialog] = useState(false);
+  const [tracesCountInput, setTracesCountInput] = useState('');
+  const [isAddingTraces, setIsAddingTraces] = useState(false);
 
   const modelOptions = useMemo(() => availableModels ? buildModelOptions(availableModels) : [], [availableModels]);
   const currentModel = workshop?.discovery_questions_model_name || 'demo';
@@ -200,6 +208,66 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
 
   const isPaused = workshop?.completed_phases?.includes('discovery') ?? false;
 
+  const handlePauseToggle = async () => {
+    if (!workshopId) return;
+    const endpoint = isPaused
+      ? `/workshops/${workshopId}/resume-phase/discovery`
+      : `/workshops/${workshopId}/complete-phase/discovery`;
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to update phase status');
+      }
+      queryClient.setQueryData<Workshop>(['workshop', workshopId], (old) => {
+        if (!old) return old;
+        const phases = old.completed_phases || [];
+        const newPhases = isPaused
+          ? phases.filter((p) => p !== 'discovery')
+          : [...phases, 'discovery'];
+        return { ...old, completed_phases: newPhases };
+      });
+      void queryClient.refetchQueries({ queryKey: ['workshop', workshopId] });
+      toast.success(`Discovery ${isPaused ? 'resumed' : 'paused'}`);
+    } catch (error: unknown) {
+      void queryClient.refetchQueries({ queryKey: ['workshop', workshopId] });
+      toast.error(error instanceof Error ? error.message : 'Failed to update phase');
+    }
+  };
+
+  const handleAddTracesConfirm = async () => {
+    const count = parseInt(tracesCountInput);
+    if (!count || count <= 0 || !workshopId) return;
+    setIsAddingTraces(true);
+    try {
+      const response = await fetch(`/workshops/${workshopId}/add-traces`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ additional_count: count, phase: 'discovery' }),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to add traces');
+      }
+      const result = await response.json();
+      setTracesCountInput('');
+      setShowAddTracesDialog(false);
+      await queryClient.refetchQueries({ queryKey: ['workshop', workshopId] });
+      await queryClient.refetchQueries({ queryKey: ['traces', workshopId] });
+      void queryClient.invalidateQueries({ queryKey: ['findings', workshopId] });
+      toast.success('Traces added', {
+        description: `${result.traces_added} traces added. Total: ${result.total_active_traces}.`,
+      });
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Failed to add traces');
+    } finally {
+      setIsAddingTraces(false);
+    }
+  };
+
   return (
     <div className="flex h-full">
       {/* Main content — scrollable trace feed */}
@@ -212,8 +280,8 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
           modelOptions={modelOptions}
           onRunAnalysis={handleRunAnalysis}
           onModelChange={handleModelChange}
-          onPauseToggle={() => {/* wire to phase control */}}
-          onAddTraces={() => {/* wire to add traces */}}
+          onPauseToggle={handlePauseToggle}
+          onAddTraces={() => setShowAddTracesDialog(true)}
           isPaused={isPaused}
           isAnalysisRunning={runAnalysis.isPending}
           hasMlflowConfig={modelOptions.length > 0}
@@ -256,6 +324,34 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
           newItemIds={newItemIds}
         />
       </div>
+
+      <Dialog open={showAddTracesDialog} onOpenChange={setShowAddTracesDialog}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Add Discovery Traces</DialogTitle>
+            <DialogDescription>
+              How many additional traces should be added to the discovery phase?
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            type="number"
+            min="1"
+            placeholder="Number of traces"
+            value={tracesCountInput}
+            onChange={(e) => setTracesCountInput(e.target.value)}
+            disabled={isAddingTraces}
+            autoFocus
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddTracesDialog(false)} disabled={isAddingTraces}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddTracesConfirm} disabled={isAddingTraces || !tracesCountInput}>
+              {isAddingTraces ? 'Adding...' : 'Add Traces'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
