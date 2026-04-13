@@ -93,7 +93,8 @@ class TestLakebaseCredentialManager:
         mock_client = MagicMock()
         mock_cred = MagicMock()
         mock_cred.token = "db_cred_123"
-        mock_cred.expire_time.seconds = 3600
+        # expire_time is a protobuf Timestamp — .seconds is epoch seconds
+        mock_cred.expire_time.seconds = int(time.time()) + 3600
         mock_client.postgres.generate_database_credential.return_value = mock_cred
         mgr._workspace_client = mock_client
 
@@ -118,7 +119,7 @@ class TestLakebaseCredentialManager:
         mock_client = MagicMock()
         mock_cred = MagicMock()
         mock_cred.token = "cached_tok"
-        mock_cred.expire_time.seconds = 3600
+        mock_cred.expire_time.seconds = int(time.time()) + 3600
         mock_client.postgres.generate_database_credential.return_value = mock_cred
         mgr._workspace_client = mock_client
 
@@ -135,7 +136,7 @@ class TestLakebaseCredentialManager:
         mock_client = MagicMock()
         mock_cred = MagicMock()
         mock_cred.token = "tok_v1"
-        mock_cred.expire_time.seconds = 3600
+        mock_cred.expire_time.seconds = int(time.time()) + 3600
         mock_client.postgres.generate_database_credential.return_value = mock_cred
         mgr._workspace_client = mock_client
 
@@ -164,7 +165,7 @@ class TestLakebaseCredentialManager:
         mock_client = MagicMock()
         mock_cred = MagicMock()
         mock_cred.token = "stale_tok"
-        mock_cred.expire_time.seconds = 3600
+        mock_cred.expire_time.seconds = int(time.time()) + 3600
         mock_client.postgres.generate_database_credential.return_value = mock_cred
         mgr._workspace_client = mock_client
 

@@ -125,20 +125,34 @@ class LakebaseCredentialManager:
         try:
             if endpoint_name:
                 cred = client.postgres.generate_database_credential(endpoint=endpoint_name)
-                self._token = cred.token
-                # expire_time is a google.protobuf.Duration or similar;
-                # fall back to 1 hour if we can't parse it
+                token = cred.token
+                if not token:
+                    raise RuntimeError(
+                        "generate_database_credential returned empty token "
+                        f"(endpoint={endpoint_name})"
+                    )
+                self._token = token
+                # expire_time is a google.protobuf.Timestamp (absolute UTC),
+                # not a Duration — use .seconds directly as the epoch expiry.
                 try:
-                    self._token_expiry = now + cred.expire_time.seconds
+                    self._token_expiry = cred.expire_time.seconds
                 except (AttributeError, TypeError):
                     self._token_expiry = now + 3600
-                logger.info("Refreshed Lakebase credential via generate_database_credential")
+                logger.info(
+                    "Refreshed Lakebase credential via generate_database_credential "
+                    "(expires in %.0fs)",
+                    self._token_expiry - now,
+                )
             else:
-                # Fallback: workspace OAuth token (works but not recommended for Autoscaling)
                 oauth = client.config.oauth_token()
-                self._token = oauth.access_token
+                token = oauth.access_token
+                if not token:
+                    raise RuntimeError("oauth_token() returned empty access_token")
+                self._token = token
                 self._token_expiry = now + 3600
-                logger.info("Refreshed Lakebase credential via workspace OAuth token (no ENDPOINT_NAME)")
+                logger.info(
+                    "Refreshed Lakebase credential via workspace OAuth token (no ENDPOINT_NAME)"
+                )
         except Exception as e:
             logger.error("Failed to refresh Lakebase credential: %s", e)
             if self._token is None:
@@ -252,6 +266,13 @@ def create_engine_for_backend(backend: DatabaseBackend) -> Engine:
 
     credential_manager = get_credential_manager()
     endpoint_name = os.getenv("ENDPOINT_NAME")
+    if endpoint_name:
+        logger.info("ENDPOINT_NAME=%s — will use generate_database_credential()", endpoint_name)
+    else:
+        logger.warning(
+            "ENDPOINT_NAME not set — falling back to workspace OAuth token. "
+            "Set ENDPOINT_NAME for Lakebase Autoscaling deployments."
+        )
 
     # Derive schema name from PGAPPNAME (hyphens → underscores for SQL safety)
     schema_name = config.app_name.replace("-", "_")
@@ -271,18 +292,25 @@ def create_engine_for_backend(backend: DatabaseBackend) -> Engine:
         pool_size=5,
         max_overflow=5,  # Cap at 10/worker, 20 total with 2 gunicorn workers
         pool_timeout=30,
-        pool_recycle=3600,  # Match 1-hour token lifetime (was 300s — caused excessive churn)
-        pool_pre_ping=False,  # Conflicts with do_connect token injection
+        pool_recycle=2700,  # 45 min — recycle well before token expiry
+        pool_pre_ping=True,  # Detect stale/expired connections before use
         echo=False,
     )
 
     # Inject fresh credential into each NEW physical connection.
-    # Existing pooled connections remain valid after the token expires —
-    # Lakebase enforces token expiry only at connection establishment.
+    # pool_pre_ping detects dead connections and discards them; the
+    # replacement connection comes through do_connect with a fresh token.
     # Reference: https://docs.databricks.com/aws/en/lakebase/connect/token-rotation.html
     @event.listens_for(engine, "do_connect")
     def provide_token(dialect, conn_rec, cargs, cparams):
-        cparams["password"] = credential_manager.get_password(endpoint_name)
+        password = credential_manager.get_password(endpoint_name)
+        cparams["password"] = password
+        logger.debug(
+            "do_connect: injected credential (length=%d, user=%s, host=%s)",
+            len(password) if password else 0,
+            cparams.get("user", "?"),
+            cparams.get("host", "?"),
+        )
 
     # Set search_path on every new connection
     @event.listens_for(engine, "connect")
