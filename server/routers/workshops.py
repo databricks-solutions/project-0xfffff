@@ -5518,7 +5518,7 @@ async def re_evaluate(
                     judge_type=judge_type,
                     require_human_ratings=False,  # Don't require human ratings - just run evaluation
                     tag_type="eval",  # Use 'eval' tag for evaluation traces
-                    use_registered_judge=False,  # Use the prompt directly, not the aligned judge
+                    use_registered_judge=True,  # Use the aligned judge with semantic memory from memalign
                 ):
                     if isinstance(message, dict):
                         result = message
@@ -5529,54 +5529,22 @@ async def re_evaluate(
 
                 if result and result.get("success"):
                     try:
-                        from server.models import JudgeEvaluation, JudgePromptCreate
+                        prompt = alignment_service.store_evaluation_results(
+                            workshop_id=workshop_id,
+                            evaluations=result.get("evaluations", []),
+                            judge_name=judge_name,
+                            judge_prompt=judge_prompt,
+                            model_name=evaluation_model_name,
+                            is_re_evaluation=True,
+                            judge_type=judge_type,
+                        )
+                        job.add_log(
+                            f"Stored {len(result.get('evaluations', []))} re-evaluation results "
+                            f"under prompt v{prompt.version}"
+                        )
 
-                        # Use existing prompt - re-evaluate doesn't create new versions
-                        # Note: get_judge_prompts returns prompts ordered by version DESC, so [0] is the latest
-                        existing_prompts = thread_db_service.get_judge_prompts(workshop_id)
-                        if existing_prompts:
-                            new_prompt = existing_prompts[0]  # [0] is latest (version DESC order)
-                            job.add_log(f"Updating evaluations for prompt v{new_prompt.version}")
-                        else:
-                            # No prompts exist - create one
-                            new_prompt_data = JudgePromptCreate(
-                                prompt_text=judge_prompt,
-                                few_shot_examples=[],
-                                model_name=evaluation_model_name,
-                                model_parameters={},
-                            )
-                            new_prompt = thread_db_service.create_judge_prompt(workshop_id, new_prompt_data)
-                            job.add_log(f"Created prompt v{new_prompt.version}")
-
-                        # Store evaluations - properly construct JudgeEvaluation objects
-                        if "evaluations" in result:
-                            evals_to_store = []
-                            for eval_data in result["evaluations"]:
-                                try:
-                                    pred = eval_data.get("predicted_rating")
-                                    pred_val = round(float(pred)) if pred is not None else 0
-                                    trace_id_for_db = eval_data.get("workshop_uuid") or eval_data["trace_id"]
-                                    evals_to_store.append(
-                                        JudgeEvaluation(
-                                            id=str(uuid.uuid4()),
-                                            workshop_id=workshop_id,
-                                            prompt_id=new_prompt.id,
-                                            trace_id=trace_id_for_db,
-                                            predicted_rating=pred_val,
-                                            human_rating=int(eval_data["human_rating"])
-                                            if eval_data.get("human_rating") is not None
-                                            else 0,
-                                            confidence=eval_data.get("confidence"),
-                                            reasoning=eval_data.get("reasoning"),
-                                            predicted_feedback=judge_name,  # Store judge name for per-question filtering
-                                        )
-                                    )
-                                except Exception as inner_err:
-                                    logger.error(f"Error parsing evaluation: {inner_err}")
-
-                            if evals_to_store:
-                                thread_db_service.store_judge_evaluations(evals_to_store)
-                                job.add_log(f"Stored {len(evals_to_store)} evaluation results")
+                        if "metrics" in result:
+                            thread_db_service.update_judge_prompt_metrics(prompt.id, result["metrics"])
 
                         job.set_status("completed")
                         job.add_log("Re-evaluation completed successfully")

@@ -660,3 +660,4 @@ Databricks models may not support the JSON schema format required for guideline 
 |------|------|--------|---------|
 | 2026-03-13 | [Trace Tag Key Separation](../.claude/plans/2026-03-13-trace-tag-key-separation.md) | complete | Fix eval/align tag mutual destruction by using dedicated MLflow tag keys |
 | 2026-04-10 | [SDK Auth Migration](../.claude/plans/2026-04-10-sdk-auth-migration.md) | complete | Replace PAT token fallback in judge/alignment services with SDK auth; remove `os.environ["DATABRICKS_TOKEN"]` mutations |
+| 2026-04-13 | [Critical Judge Eval Fixes](../.claude/plans/2026-04-13-critical-judge-eval-fixes.md) | complete | Fix re-eval aligned judge, preserve eval history, reject unparseable output, consolidate storage into AlignmentService |

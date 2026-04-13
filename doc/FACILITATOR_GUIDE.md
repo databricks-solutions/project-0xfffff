@@ -30,6 +30,7 @@ Before starting the workshop, ensure you have:
 - [ ] **At least 10 traces** to enable alignment
 - [ ] Access to a Databricks workspace with **Databricks Apps** enabled
 - [ ] MLflow experiment with traces (if using MLflow ingestion)
+- [ ] MLflow experiment [added as an app resource](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/mlflow) with **Can read** permission (grants the app's service principal access — no personal access token needed)
 - [ ] Model serving endpoint(s) for AI features (evaluation and alignment LLMs)
 
 ---
@@ -191,9 +192,10 @@ Fill in the MLflow configuration:
 |-------|-------------|
 | **Databricks Host** | Your workspace URL (e.g., `https://adb-xxx.azuredatabricks.net`) |
 | **Experiment ID** | The MLflow experiment containing your traces |
-| **Databricks Token** | Your personal access token |
 | **Max Traces** | Number of traces to import (recommend **10** to start) |
 | **Filter String** | Optional filter (e.g., `attributes.status = 'OK'`) |
+
+> **Note:** No personal access token is needed. The app authenticates using its service principal, which receives permissions automatically when you [add the MLflow experiment as an app resource](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/mlflow).
 
 #### How to Find the Experiment ID
 
