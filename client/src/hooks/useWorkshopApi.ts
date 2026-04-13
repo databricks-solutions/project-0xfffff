@@ -40,6 +40,8 @@ const QUERY_KEYS = {
   draftRubricItems: (workshopId: string) => ['draftRubricItems', workshopId],
   discoveryAnalyses: (workshopId: string) => ['discovery-analyses', workshopId],
   availableModels: (workshopId: string) => ['availableModels', workshopId],
+  summarizationJob: (workshopId: string, jobId: string) => ['summarization-job', workshopId, jobId],
+  summarizationStatus: (workshopId: string) => ['summarization-status', workshopId],
 };
 
 // Helper function to invalidate all workshop-related queries
@@ -883,6 +885,70 @@ export function useUpdateSummarizationSettings(workshopId: string) {
     onSuccess: (workshop) => {
       queryClient.setQueryData(QUERY_KEYS.workshop(workshopId), workshop);
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.workshop(workshopId) });
+    },
+  });
+}
+
+// Summarization Job polling & re-summarize hooks
+
+export function useSummarizationJob(workshopId: string, jobId: string | null) {
+  return useQuery({
+    queryKey: QUERY_KEYS.summarizationJob(workshopId, jobId ?? ''),
+    queryFn: async () => {
+      const response = await fetch(`/workshops/${workshopId}/summarization-job/${jobId}`);
+      if (!response.ok) throw new Error('Failed to fetch job status');
+      return response.json();
+    },
+    enabled: !!jobId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      if (status === 'completed' || status === 'failed') return false;
+      return 2000;
+    },
+  });
+}
+
+export function useSummarizationStatus(workshopId: string) {
+  return useQuery({
+    queryKey: QUERY_KEYS.summarizationStatus(workshopId),
+    queryFn: async () => {
+      const response = await fetch(`/workshops/${workshopId}/summarization-status`);
+      if (!response.ok) throw new Error('Failed to fetch summarization status');
+      return response.json();
+    },
+    refetchInterval: 30000,
+  });
+}
+
+interface ResummarizeRequest {
+  mode: 'all' | 'unsummarized' | 'failed';
+  trace_ids?: string[];
+}
+
+interface ResummarizeResponse {
+  job_id: string | null;
+  total: number;
+  message: string;
+}
+
+export function useResummarize(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (request: ResummarizeRequest): Promise<ResummarizeResponse> => {
+      const response = await fetch(`/workshops/${workshopId}/resummarize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to start summarization' }));
+        throw new Error(error.detail || 'Failed to start summarization');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.summarizationStatus(workshopId) });
     },
   });
 }

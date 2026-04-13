@@ -21,7 +21,7 @@ This directory contains declarative specifications for the Human Evaluation Work
 | [DESIGN_SYSTEM_SPEC](./DESIGN_SYSTEM_SPEC.md) | Design System | color, theme, purple, indigo, dark mode, accessibility |
 | [TRACE_DISPLAY_SPEC](./TRACE_DISPLAY_SPEC.md) | Trace Display | JSONPath, input extraction, output extraction, preview, facilitator settings |
 | [TRACE_INGESTION_SPEC](./TRACE_INGESTION_SPEC.md) | Trace Ingestion | ingest, intake, CSV upload, content extraction, deduplication, mlflow_trace_id, upsert |
-| [TRACE_SUMMARIZATION_SPEC](./TRACE_SUMMARIZATION_SPEC.md) | Trace Summarization | milestone view, executive summary, LLM summarization, batch summarization, trace agent |
+| [TRACE_SUMMARIZATION_SPEC](./TRACE_SUMMARIZATION_SPEC.md) | Trace Summarization | milestone view, executive summary, LLM summarization, batch summarization, job tracking, progress UI, re-summarize, summary indicators |
 
 ---
 
@@ -279,6 +279,15 @@ Use this index to find relevant specs by keyword.
 - **TraceSummarizationService** → [TRACE_SUMMARIZATION_SPEC](./TRACE_SUMMARIZATION_SPEC.md)
 - **resummarize** → [TRACE_SUMMARIZATION_SPEC](./TRACE_SUMMARIZATION_SPEC.md)
 - **batch summarization** → [TRACE_SUMMARIZATION_SPEC](./TRACE_SUMMARIZATION_SPEC.md)
+- **summarization status** → [TRACE_SUMMARIZATION_SPEC](./TRACE_SUMMARIZATION_SPEC.md)
+- **summarization progress** → [TRACE_SUMMARIZATION_SPEC](./TRACE_SUMMARIZATION_SPEC.md)
+- **SummarizationJob** → [TRACE_SUMMARIZATION_SPEC](./TRACE_SUMMARIZATION_SPEC.md)
+- **SummarizationJobDB** → [TRACE_SUMMARIZATION_SPEC](./TRACE_SUMMARIZATION_SPEC.md)
+- **summarization_job_id** → [TRACE_SUMMARIZATION_SPEC](./TRACE_SUMMARIZATION_SPEC.md)
+- **re-summarize button** → [TRACE_SUMMARIZATION_SPEC](./TRACE_SUMMARIZATION_SPEC.md)
+- **summary indicator** → [TRACE_SUMMARIZATION_SPEC](./TRACE_SUMMARIZATION_SPEC.md)
+- **summarization-status** → [TRACE_SUMMARIZATION_SPEC](./TRACE_SUMMARIZATION_SPEC.md)
+- **DiscoveryTraceCard summary** → [TRACE_SUMMARIZATION_SPEC](./TRACE_SUMMARIZATION_SPEC.md)
 
 ### Build and Deployment
 - **SQLite rescue** → [BUILD_AND_DEPLOY_SPEC](./BUILD_AND_DEPLOY_SPEC.md)

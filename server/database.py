@@ -233,6 +233,21 @@ class TraceDB(Base):
     trace_discovery_thresholds = relationship("TraceDiscoveryThresholdDB", back_populates="trace", cascade="all, delete-orphan")
 
 
+class SummarizationJobDB(Base):
+    """Database model for tracking summarization batch jobs."""
+
+    __tablename__ = "summarization_jobs"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id", ondelete="CASCADE"), nullable=False, index=True)
+    status = Column(String, default="pending")  # pending, running, completed, failed
+    total = Column(Integer, default=0)
+    completed_traces = Column(JSON, default=list)  # [trace_id, ...]
+    failed_traces = Column(JSON, default=list)  # [{ trace_id, error }, ...]
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
 class DiscoveryFindingDB(Base):
     """Database model for discovery findings."""
 

@@ -25,6 +25,7 @@ from server.database import (
   MLflowIntakeConfigDB,
   ParticipantNoteDB,
   RubricDB,
+  SummarizationJobDB,
   TraceDB,
   TraceDiscoveryThresholdDB,
   UserDB,
@@ -348,6 +349,109 @@ class DatabaseService:
     if db_trace:
       db_trace.summary = summary
       self.db.commit()
+
+  # --- Summarization Job CRUD ---
+
+  def create_summarization_job(self, workshop_id: str, total: int) -> "SummarizationJob":
+    """Create a new summarization job for tracking batch progress."""
+    from server.models import SummarizationJob
+
+    db_job = SummarizationJobDB(
+      workshop_id=workshop_id,
+      status="pending",
+      total=total,
+      completed_traces=[],
+      failed_traces=[],
+    )
+    self.db.add(db_job)
+    self.db.commit()
+    self.db.refresh(db_job)
+    return self._job_from_db(db_job)
+
+  def get_summarization_job(self, job_id: str) -> "SummarizationJob | None":
+    """Get a summarization job by ID."""
+    db_job = self.db.query(SummarizationJobDB).filter(SummarizationJobDB.id == job_id).first()
+    if not db_job:
+      return None
+    return self._job_from_db(db_job)
+
+  def update_summarization_job_status(self, job_id: str, status: str) -> "SummarizationJob | None":
+    """Update the status of a summarization job."""
+    db_job = self.db.query(SummarizationJobDB).filter(SummarizationJobDB.id == job_id).first()
+    if not db_job:
+      return None
+    db_job.status = status
+    self.db.commit()
+    self.db.refresh(db_job)
+    return self._job_from_db(db_job)
+
+  def add_summarization_job_completed(self, job_id: str, trace_id: str) -> "SummarizationJob | None":
+    """Append a trace ID to the job's completed list."""
+    db_job = self.db.query(SummarizationJobDB).filter(SummarizationJobDB.id == job_id).first()
+    if not db_job:
+      return None
+    completed = list(db_job.completed_traces or [])
+    completed.append(trace_id)
+    db_job.completed_traces = completed
+    self.db.commit()
+    self.db.refresh(db_job)
+    return self._job_from_db(db_job)
+
+  def add_summarization_job_failed(self, job_id: str, trace_id: str, error: str) -> "SummarizationJob | None":
+    """Append a failed trace entry to the job's failed list."""
+    db_job = self.db.query(SummarizationJobDB).filter(SummarizationJobDB.id == job_id).first()
+    if not db_job:
+      return None
+    failed = list(db_job.failed_traces or [])
+    failed.append({"trace_id": trace_id, "error": error})
+    db_job.failed_traces = failed
+    self.db.commit()
+    self.db.refresh(db_job)
+    return self._job_from_db(db_job)
+
+  def get_latest_summarization_job(self, workshop_id: str) -> "SummarizationJob | None":
+    """Get the most recent summarization job for a workshop."""
+    db_job = (
+      self.db.query(SummarizationJobDB)
+      .filter(SummarizationJobDB.workshop_id == workshop_id)
+      .order_by(SummarizationJobDB.created_at.desc())
+      .first()
+    )
+    if not db_job:
+      return None
+    return self._job_from_db(db_job)
+
+  def get_summarization_status(self, workshop_id: str) -> dict:
+    """Get summary coverage stats and last job for a workshop."""
+    with_summary = self.db.query(TraceDB).filter(
+      TraceDB.workshop_id == workshop_id,
+      TraceDB.summary.isnot(None),
+    ).count()
+    without_summary = self.db.query(TraceDB).filter(
+      TraceDB.workshop_id == workshop_id,
+      TraceDB.summary.is_(None),
+    ).count()
+    last_job = self.get_latest_summarization_job(workshop_id)
+    return {
+      "traces_with_summaries": with_summary,
+      "traces_without_summaries": without_summary,
+      "last_job": last_job,
+    }
+
+  def _job_from_db(self, db_job: SummarizationJobDB) -> "SummarizationJob":
+    """Convert a SummarizationJobDB row to a Pydantic model."""
+    from server.models import SummarizationJob
+
+    return SummarizationJob(
+      id=db_job.id,
+      workshop_id=db_job.workshop_id,
+      status=db_job.status,
+      total=db_job.total,
+      completed_traces=db_job.completed_traces or [],
+      failed_traces=db_job.failed_traces or [],
+      created_at=db_job.created_at,
+      updated_at=db_job.updated_at,
+    )
 
   def update_workshop_phase(self, workshop_id: str, new_phase: WorkshopPhase) -> Optional[Workshop]:
     """Update the current phase of a workshop."""

@@ -100,6 +100,57 @@ When traces are re-ingested (upsert by `mlflow_trace_id`):
 - If summarization is enabled: existing summary is regenerated
 - If summarization is disabled: existing summary is preserved (not cleared)
 
+### Facilitator Visibility — Job Tracking
+
+Summarization is a background operation that can take minutes for large batches. The facilitator needs visibility into whether it's running, how far along it is, and what the outcome was.
+
+**Job lifecycle:**
+1. Summarization triggered (ingestion with summarization enabled, or manual re-summarize) → a `SummarizationJob` row is created in the database with status `pending`
+2. The API response includes the `job_id`
+3. The background task updates the job row as traces complete: incrementing `completed` and `failed` counts
+4. Frontend polls a status endpoint using the `job_id`
+5. On completion, job status becomes `completed` (or `failed` if the entire batch errored). Per-trace failures are recorded in `failed_traces`
+
+**Job data available to the facilitator:**
+- `status`: pending, running, completed, failed
+- `total`: total traces in the batch
+- `completed_traces`: list of trace IDs that have been successfully summarized
+- `failed_traces`: list of `{ trace_id, error }` for traces that failed after retries
+- `created_at` / `updated_at`: timestamps
+
+Derived counts (`completed`, `failed`, `pending`) are computed from the list lengths.
+
+**Job persistence:** Jobs are stored in the database (not files or memory), so they survive restarts, redeploys, and page refreshes.
+
+### Facilitator Visibility — Progress UI
+
+The SummarizationSettings component shows the state of the most recent summarization job:
+
+- **While running:** Progress indicator with "Summarizing traces... 45/80 complete (2 failed)". Auto-polls the job status endpoint.
+- **On completion:** Result summary — "78 succeeded, 2 failed". Failed traces listed with error descriptions.
+- **Retry:** Facilitator can retry failed traces, which creates a new job for just those traces.
+- **Idle:** Shows last job result summary (if any) and aggregate summary coverage stats.
+
+The progress section appears below the existing configuration controls (enable/disable, model, guidance).
+
+### Facilitator Visibility — Summary Indicators
+
+The facilitator's trace list (FacilitatorDashboard Traces tab) shows summary coverage:
+
+- **Per-trace indicator:** Each trace shows whether it has a summary (e.g., a small icon or badge)
+- **Aggregate count:** "45/80 traces summarized" visible in the trace list header or SummarizationSettings
+
+This lets the facilitator see at a glance which traces are covered without clicking into each one.
+
+### Re-summarization from UI
+
+The existing `POST /resummarize` endpoint is surfaced in the SummarizationSettings UI:
+
+- **Re-summarize button** with two options: "All traces" or "Only unsummarized traces"
+- **Confirmation dialog** before starting (re-summarizing all traces overwrites existing summaries)
+- Triggers a tracked job with the same progress UI as ingestion-triggered summarization
+- Button is disabled while a summarization job is already running
+
 ## Data Model
 
 ### TraceDB Extension
@@ -130,6 +181,46 @@ class WorkshopDB(Base):
     summarization_guidance = Column(Text, nullable=True)
 ```
 
+### SummarizationJobDB
+
+```python
+class SummarizationJobDB(Base):
+    __tablename__ = "summarization_jobs"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False, index=True)
+    status = Column(String, default="pending")  # pending, running, completed, failed
+    total = Column(Integer, default=0)
+    completed_traces = Column(JSON, default=list)  # [trace_id, ...]
+    failed_traces = Column(JSON, default=list)  # [{ trace_id, error }, ...]
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+```
+
+### SummarizationJob (Pydantic)
+
+```python
+class SummarizationJob(BaseModel):
+    id: str
+    workshop_id: str
+    status: str  # pending, running, completed, failed
+    total: int = 0
+    completed_traces: list[str] = []  # trace IDs
+    failed_traces: list[dict] = []  # [{ trace_id, error }]
+    created_at: datetime
+    updated_at: datetime
+
+    @computed_field
+    @property
+    def completed(self) -> int:
+        return len(self.completed_traces)
+
+    @computed_field
+    @property
+    def failed(self) -> int:
+        return len(self.failed_traces)
+```
+
 ## Implementation
 
 ### Files
@@ -141,9 +232,11 @@ class WorkshopDB(Base):
 | `server/models.py` | Add `summarization_*` fields to Workshop, add `summary` to Trace |
 | `server/database.py` | Add columns to WorkshopDB and TraceDB |
 | `migrations/versions/XXXX_add_summarization.py` | **New** — Alembic migration |
-| `server/routers/workshops.py` | Add settings endpoints, expose summary in trace responses |
+| `server/routers/workshops.py` | Add settings endpoints, job status endpoints, expose summary in trace responses |
+| `server/database.py` | Add `SummarizationJobDB` table and CRUD methods |
+| `migrations/versions/XXXX_add_summarization_jobs.py` | **New** — Alembic migration for `summarization_jobs` table |
 | `client/src/components/TraceViewer.tsx` | Milestone view as default with toggle |
-| `client/src/components/SummarizationSettings.tsx` | **New** — Facilitator config UI |
+| `client/src/components/SummarizationSettings.tsx` | **New** — Facilitator config UI with progress tracking and re-summarize controls |
 
 ### Summarization Service
 
@@ -171,8 +264,24 @@ PUT  /workshops/{workshop_id}/summarization-settings
      Response: Updated Workshop
 
 POST /workshops/{workshop_id}/resummarize
-     Triggers re-summarization of all traces (or selected trace_ids)
-     Response: { queued: int }
+     Triggers re-summarization of all traces or only unsummarized traces
+     Request: { mode: "all" | "unsummarized" | "failed", trace_ids?: string[] }
+     Response: { job_id: string, total: int, message: string }
+
+GET  /workshops/{workshop_id}/summarization-job/{job_id}
+     Poll progress of a summarization job
+     Response: SummarizationJob { id, status, completed, total, failed, failed_traces, created_at, updated_at }
+
+GET  /workshops/{workshop_id}/summarization-status
+     Lightweight summary coverage stats (no job needed)
+     Response: { traces_with_summaries: int, traces_without_summaries: int, last_job: SummarizationJob | null }
+```
+
+The `ingest-mlflow-traces` endpoint also returns `summarization_job_id` when summarization is triggered:
+
+```
+POST /workshops/{workshop_id}/ingest-mlflow-traces
+     Response: { trace_count: int, summarization_job_id?: string }
 ```
 
 ## Success Criteria
@@ -213,7 +322,9 @@ POST /workshops/{workshop_id}/resummarize
 ### Batch Summarization
 - [ ] Multiple traces are summarized concurrently up to a configurable concurrency limit
 - [ ] Ingestion API returns immediately; summarization runs in the background
-- [ ] Progress is trackable (completed, total, failed counts)
+- [ ] A `SummarizationJob` database row is created when summarization starts
+- [ ] The ingestion response includes `summarization_job_id` when summarization is triggered
+- [ ] The job row is updated as each trace completes (trace ID appended to `completed_traces` or `failed_traces`)
 - [ ] Failed individual traces are retried up to 2 times with exponential backoff
 - [ ] Partial failures do not block the batch — failed traces are ingested with `summary = null`
 - [ ] Rate limit responses (429) trigger backoff, not failure
@@ -223,6 +334,35 @@ POST /workshops/{workshop_id}/resummarize
 - [ ] Concurrent LLM calls do not exceed the serving endpoint's rate limit
 - [ ] Summarization does not block the ingestion API response
 - [ ] Individual trace summarization errors are logged with trace ID, error type, and retry count
+
+### Facilitator UX — Status & Progress
+- [ ] `GET /workshops/{id}/summarization-job/{job_id}` returns job status with completed/total/failed counts
+- [ ] `GET /workshops/{id}/summarization-status` returns summary coverage stats and last job info
+- [ ] SummarizationSettings shows a progress indicator while a summarization job is running
+- [ ] Progress indicator shows completed/total/failed counts (e.g., "Summarizing... 45/80 complete, 2 failed")
+- [ ] Progress updates automatically via polling while the job is active
+- [ ] On completion, succeeded/failed counts are displayed in SummarizationSettings
+- [ ] Failed traces are listed with their error descriptions
+- [ ] Facilitator can retry failed traces from the completion view (creates a new job for just those traces)
+
+### Facilitator UX — Re-summarization
+- [ ] Re-summarize button exists in SummarizationSettings (disabled while a job is running)
+- [ ] Facilitator can choose to re-summarize all traces or only unsummarized traces
+- [ ] Confirmation dialog is shown before starting re-summarization
+- [ ] `POST /resummarize` accepts a `mode` parameter: "all", "unsummarized", or "failed"
+- [ ] Re-summarization creates a tracked `SummarizationJob` with the same progress UI
+
+### Facilitator UX — Summary Indicators
+- [ ] Trace list in FacilitatorDashboard shows a visual indicator for traces that have summaries
+- [ ] Aggregate count of summarized vs. unsummarized traces is visible (e.g., "45/80 traces summarized")
+- [ ] Last summarization timestamp is visible in SummarizationSettings
+- [ ] `summarization-status` endpoint provides the data for these indicators without requiring a job
+
+### Facilitator UX — Discovery Trace Summaries
+- [ ] DiscoveryTraceCard defaults to summary view when a summary exists
+- [ ] Facilitator can toggle between summary view and raw user/assistant content
+- [ ] Summary view shows the executive summary text
+- [ ] Summary view has expandable milestones with titles and descriptions
 
 ## Future Work
 
@@ -236,6 +376,7 @@ POST /workshops/{workshop_id}/resummarize
 | Date | Plan | Status | Summary |
 |------|------|--------|---------|
 | 2026-04-11 | [Trace Summarization](../.claude/plans/2026-04-11-trace-summarization.md) | planned | Two-pass LLM summarization with batch orchestration and milestone view UI |
+| 2026-04-13 | [Facilitator UX](../.claude/plans/2026-04-13-summarization-facilitator-ux.md) | complete | DB-backed job tracking, progress UI, re-summarize button, summary indicators |
 
 ## Related Specs
 

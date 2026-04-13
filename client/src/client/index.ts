@@ -71,6 +71,7 @@ export type { ParticipantNote } from './models/ParticipantNote';
 export type { ParticipantNoteCreate } from './models/ParticipantNoteCreate';
 export type { PromoteFindingRequest } from './models/PromoteFindingRequest';
 export type { ProposedGroup } from './models/ProposedGroup';
+export type { ResummarizeRequest } from './models/ResummarizeRequest';
 export type { Rubric } from './models/Rubric';
 export type { RubricCreate } from './models/RubricCreate';
 export type { RubricGenerationRequest } from './models/RubricGenerationRequest';

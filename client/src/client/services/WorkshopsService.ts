@@ -28,6 +28,7 @@ import type { MLflowIntakeStatus } from '../models/MLflowIntakeStatus';
 import type { MLflowTraceInfo } from '../models/MLflowTraceInfo';
 import type { ParticipantNote } from '../models/ParticipantNote';
 import type { ParticipantNoteCreate } from '../models/ParticipantNoteCreate';
+import type { ResummarizeRequest } from '../models/ResummarizeRequest';
 import type { Rubric } from '../models/Rubric';
 import type { RubricCreate } from '../models/RubricCreate';
 import type { RubricGenerationRequest } from '../models/RubricGenerationRequest';
@@ -282,8 +283,9 @@ export class WorkshopsService {
      * Resummarize Traces
      * Trigger re-summarization of workshop traces.
      *
-     * Runs in background. Returns immediately with job info.
-     * Optionally accepts {"trace_ids": [...]} to limit scope.
+     * Creates a tracked SummarizationJob and returns the job_id for progress polling.
+     * Modes: "all" (re-summarize everything), "unsummarized" (only traces without summaries),
+     * "failed" (only traces from the last job's failed list).
      * @param workshopId
      * @param requestBody
      * @returns any Successful Response
@@ -291,7 +293,7 @@ export class WorkshopsService {
      */
     public static resummarizeTracesWorkshopsWorkshopIdResummarizePost(
         workshopId: string,
-        requestBody?: (Record<string, any> | null),
+        requestBody?: (ResummarizeRequest | null),
     ): CancelablePromise<Record<string, any>> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -301,6 +303,51 @@ export class WorkshopsService {
             },
             body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Summarization Job Status
+     * Get the status of a summarization job for progress polling.
+     * @param workshopId
+     * @param jobId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getSummarizationJobStatusWorkshopsWorkshopIdSummarizationJobJobIdGet(
+        workshopId: string,
+        jobId: string,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/summarization-job/{job_id}',
+            path: {
+                'workshop_id': workshopId,
+                'job_id': jobId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Summarization Status
+     * Get summary coverage stats and last job info for a workshop.
+     * @param workshopId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getSummarizationStatusWorkshopsWorkshopIdSummarizationStatusGet(
+        workshopId: string,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/summarization-status',
+            path: {
+                'workshop_id': workshopId,
+            },
             errors: {
                 422: `Validation Error`,
             },

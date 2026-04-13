@@ -198,9 +198,14 @@ class TraceSummarizationService:
         async def process_one(trace: dict) -> dict:
             nonlocal completed, failed
             trace_id = trace["id"]
+            error_msg = None
 
             async with semaphore:
-                summary = await self.summarize_trace(trace["context"], trace_id=trace_id)
+                try:
+                    summary = await self.summarize_trace(trace["context"], trace_id=trace_id)
+                except Exception as e:
+                    summary = None
+                    error_msg = str(e)
 
             async with lock:
                 if summary is None:
@@ -209,10 +214,13 @@ class TraceSummarizationService:
                 if on_progress:
                     on_progress(completed, total, failed)
 
-            return {
+            result = {
                 "trace_id": trace_id,
                 "summary": summary.model_dump() if summary else None,
             }
+            if error_msg:
+                result["error"] = error_msg
+            return result
 
         results = await asyncio.gather(*[process_one(t) for t in traces])
         return list(results)

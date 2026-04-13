@@ -199,6 +199,25 @@ class Trace(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
 
 
+class SummarizationJob(BaseModel):
+    id: str
+    workshop_id: str
+    status: str = "pending"  # pending, running, completed, failed
+    total: int = 0
+    completed_traces: list[str] = Field(default_factory=list)
+    failed_traces: list[dict] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+    @property
+    def completed(self) -> int:
+        return len(self.completed_traces)
+
+    @property
+    def failed(self) -> int:
+        return len(self.failed_traces)
+
+
 class DiscoveryFindingCreate(BaseModel):
     trace_id: str
     user_id: str
