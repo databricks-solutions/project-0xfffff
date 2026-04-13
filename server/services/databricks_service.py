@@ -46,9 +46,9 @@ def _get_sdk_token(workspace_url: str | None = None) -> str | None:
                 headers2 = w2.config.authenticate()
                 auth2 = headers2.get("Authorization", "")
                 if auth2.startswith("Bearer "):
-                    return auth2[len("Bearer "):]
+                    return auth2[len("Bearer ") :]
                 return None
-            return auth_header[len("Bearer "):]
+            return auth_header[len("Bearer ") :]
     except Exception as exc:
         logger.warning("Databricks SDK auth failed in DatabricksService: %s", exc)
     return None
@@ -137,7 +137,7 @@ class DatabricksService:
                 self.client = _client_cache[cache_key]
                 logger.info(f"✅ Reusing cached OpenAI client for Databricks workspace: {self.workspace_url}")
             else:
-                print(f"Initializing OpenAI client for Databricks workspace: {self.workspace_url}")
+                logger.info(f"Initializing OpenAI client for Databricks workspace: {self.workspace_url}")
 
                 # Create OpenAI client configured for Databricks serving endpoints
                 self.client = OpenAI(api_key=self.token, base_url=f"{self.workspace_url}/serving-endpoints")
@@ -266,14 +266,16 @@ class DatabricksService:
             for ep in raw_endpoints:
                 state_obj = ep.get("state", {})
                 ready = state_obj.get("ready", "")
-                endpoint_list.append({
-                    "name": ep.get("name", ""),
-                    "id": ep.get("id", ""),
-                    "state": ready,
-                    "config": ep.get("config"),
-                    "task": ep.get("task", ""),
-                    "creator": ep.get("creator", ""),
-                })
+                endpoint_list.append(
+                    {
+                        "name": ep.get("name", ""),
+                        "id": ep.get("id", ""),
+                        "state": ready,
+                        "config": ep.get("config"),
+                        "task": ep.get("task", ""),
+                        "creator": ep.get("creator", ""),
+                    }
+                )
 
             logger.info(f"Found {len(endpoint_list)} serving endpoints")
             return endpoint_list
@@ -459,18 +461,20 @@ class DatabricksService:
             logger.debug(f"Request payload: {payload}")
             # Log token prefix for debugging (never log full token)
             token_prefix = self.token[:10] if self.token else "None"
-            print(f"Using token starting with: {token_prefix}...")
+            logger.debug(f"Using token starting with: {token_prefix}...")
 
             # Make the HTTP request
             response = requests.post(api_url, headers=headers, json=payload, timeout=60)
 
             # Add detailed error logging for 403 errors
             if response.status_code == 403:
-                print("403 Forbidden error details:")
-                print(f"  - Endpoint: {endpoint_name}")
-                print(f"  - URL: {api_url}")
-                print(f"  - Token prefix: {token_prefix}...")
-                print(f"  - Response text: {response.text}")
+                logger.error(
+                    "403 Forbidden: endpoint=%s url=%s token_prefix=%s response=%s",
+                    endpoint_name,
+                    api_url,
+                    token_prefix,
+                    response.text,
+                )
 
             # Check if request was successful
             response.raise_for_status()

@@ -1,5 +1,6 @@
 """Workshop API endpoints."""
 
+import asyncio
 import json
 import logging
 import os
@@ -156,6 +157,7 @@ from server.models import (
     MLflowTraceInfo,
     ParticipantNote,
     ParticipantNoteCreate,
+    ResummarizeRequest,
     Rubric,
     RubricCreate,
     RubricGenerationRequest,
@@ -168,6 +170,18 @@ from server.models import (
 )
 from server.services.database_service import DatabaseService
 from server.services.irr_service import calculate_irr_for_workshop
+
+# Set of strong references to background tasks so they aren't garbage-collected
+# before completion.  Tasks remove themselves from this set when done.
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _fire_background_task(coro) -> asyncio.Task:
+    """Schedule a coroutine as a background task with GC protection."""
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return task
 
 
 def _retry_db_operations(operations_fn, db_session, max_retries=5, base_delay=0.5):
@@ -198,7 +212,9 @@ def _retry_db_operations(operations_fn, db_session, max_retries=5, base_delay=0.
                 time.sleep(delay)
             else:
                 logging.getLogger(__name__).error(f"Database error after {attempt + 1} attempts: {e}")
-                raise HTTPException(status_code=503, detail="Database temporarily unavailable. Please try again.") from e
+                raise HTTPException(
+                    status_code=503, detail="Database temporarily unavailable. Please try again."
+                ) from e
     return None
 
 
@@ -500,9 +516,57 @@ async def update_summarization_settings(
     return updated
 
 
-class ResummarizeRequest(BaseModel):
-    mode: str = "all"  # "all", "unsummarized", or "failed"
-    trace_ids: list[str] | None = None
+async def _run_summarization_background(
+    job_id: str,
+    workspace_url: str,
+    endpoint_url: str,
+    model_name: str,
+    guidance: str | None,
+    batch: list[dict],
+) -> None:
+    """Run batch summarization in the background with proper error handling.
+
+    Creates its own DB session (the request session is closed by the time this runs).
+    Marks the job as "failed" if an unhandled error prevents completion.
+    """
+    from server.database import SessionLocal
+    from server.services.databricks_service import resolve_databricks_token
+    from server.services.trace_summarization_service import TraceSummarizationService
+
+    try:
+        token = resolve_databricks_token(workspace_url)
+        svc = TraceSummarizationService(
+            endpoint_url=endpoint_url,
+            token=token,
+            model_name=model_name,
+            guidance=guidance,
+        )
+
+        with SessionLocal() as bg_db:
+            bg_service = DatabaseService(bg_db)
+            bg_service.update_summarization_job_status(job_id, "running")
+
+            results = await svc.summarize_batch(batch)
+            for result in results:
+                if result["summary"] is not None:
+                    bg_service.update_trace_summary(result["trace_id"], result["summary"])
+                    bg_service.add_summarization_job_completed(job_id, result["trace_id"])
+                else:
+                    bg_service.add_summarization_job_failed(
+                        job_id, result["trace_id"], result.get("error", "Unknown error")
+                    )
+
+            bg_service.update_summarization_job_status(job_id, "completed")
+            succeeded = len([r for r in results if r["summary"]])
+            failed = len([r for r in results if not r["summary"]])
+            logger.info("Summarization job %s complete: %d succeeded, %d failed", job_id, succeeded, failed)
+    except Exception:
+        logger.exception("Summarization job %s failed", job_id)
+        try:
+            with SessionLocal() as err_db:
+                DatabaseService(err_db).update_summarization_job_status(job_id, "failed")
+        except Exception:
+            logger.exception("Could not mark job %s as failed", job_id)
 
 
 @router.post("/{workshop_id}/resummarize")
@@ -517,10 +581,6 @@ async def resummarize_traces(
     Modes: "all" (re-summarize everything), "unsummarized" (only traces without summaries),
     "failed" (only traces from the last job's failed list).
     """
-    import asyncio
-
-    from server.services.trace_summarization_service import TraceSummarizationService
-
     db_service = DatabaseService(db)
     workshop = db_service.get_workshop(workshop_id)
     if not workshop:
@@ -562,41 +622,16 @@ async def resummarize_traces(
     workspace_url = workspace_host if workspace_host.startswith("https://") else f"https://{workspace_host}"
     endpoint_url = f"{workspace_url}/serving-endpoints"
 
-    async def run_summarization():
-        from server.database import SessionLocal
-
-        from server.services.databricks_service import resolve_databricks_token
-
-        token = resolve_databricks_token(workspace_url)
-        svc = TraceSummarizationService(
+    _fire_background_task(
+        _run_summarization_background(
+            job_id=job.id,
+            workspace_url=workspace_url,
             endpoint_url=endpoint_url,
-            token=token,
             model_name=workshop.summarization_model,
             guidance=workshop.summarization_guidance,
+            batch=batch,
         )
-
-        with SessionLocal() as bg_db:
-            bg_service = DatabaseService(bg_db)
-            bg_service.update_summarization_job_status(job.id, "running")
-
-            results = await svc.summarize_batch(batch)
-            for result in results:
-                if result["summary"] is not None:
-                    bg_service.update_trace_summary(result["trace_id"], result["summary"])
-                    bg_service.add_summarization_job_completed(job.id, result["trace_id"])
-                else:
-                    bg_service.add_summarization_job_failed(
-                        job.id, result["trace_id"], result.get("error", "Unknown error")
-                    )
-
-            bg_service.update_summarization_job_status(job.id, "completed")
-            logger.info(
-                f"Summarization job {job.id} complete: "
-                f"{len([r for r in results if r['summary']])} succeeded, "
-                f"{len([r for r in results if not r['summary']])} failed"
-            )
-
-    asyncio.create_task(run_summarization())
+    )
 
     return {
         "job_id": job.id,
@@ -657,7 +692,9 @@ async def get_summarization_status(
             "failed_traces": last_job.failed_traces,
             "created_at": last_job.created_at.isoformat(),
             "updated_at": last_job.updated_at.isoformat(),
-        } if last_job else None,
+        }
+        if last_job
+        else None,
     }
 
 
@@ -1647,9 +1684,12 @@ async def begin_annotation_phase(workshop_id: str, request: dict | None = None, 
     if auto_evaluate_enabled:
         logger.info("Auto-eval tagging: %d traces to tag for workshop %s", len(trace_ids_to_use), workshop_id)
         try:
-            tag_result = db_service.tag_traces_for_evaluation(workshop_id, trace_ids_to_use, tag_type='eval')
-            logger.info("Auto-eval tagging result: tagged=%d, failed=%s",
-                        tag_result.get('tagged', 0), tag_result.get('failed', []))
+            tag_result = db_service.tag_traces_for_evaluation(workshop_id, trace_ids_to_use, tag_type="eval")
+            logger.info(
+                "Auto-eval tagging result: tagged=%d, failed=%s",
+                tag_result.get("tagged", 0),
+                tag_result.get("failed", []),
+            )
         except Exception as tag_err:
             logger.warning("Auto-eval tagging FAILED for workshop %s: %s", workshop_id, tag_err, exc_info=True)
 
@@ -1743,21 +1783,29 @@ async def begin_annotation_phase(workshop_id: str, request: dict | None = None, 
                                             return_type="pandas",
                                         )
                                         found_count = len(test_df) if test_df is not None and not test_df.empty else 0
-                                        job.add_log(f"Tag poll attempt {wait_attempt + 1}/5: found {found_count} traces")
+                                        job.add_log(
+                                            f"Tag poll attempt {wait_attempt + 1}/5: found {found_count} traces"
+                                        )
                                         if found_count > 0:
-                                            job.add_log(f"MLflow tags verified after {(wait_attempt + 1) * 2}s ({found_count} traces)")
+                                            job.add_log(
+                                                f"MLflow tags verified after {(wait_attempt + 1) * 2}s ({found_count} traces)"
+                                            )
                                             tag_verified = True
                                             break
                                     except Exception as search_err:
                                         job.add_log(f"Tag poll attempt {wait_attempt + 1}/5 error: {search_err}")
-                                        logger.debug("Tag verification attempt %d failed: %s", wait_attempt + 1, search_err)
+                                        logger.debug(
+                                            "Tag verification attempt %d failed: %s", wait_attempt + 1, search_err
+                                        )
                                 if not tag_verified:
                                     job.add_log("WARNING: MLflow tags not found after 10s, re-tagging traces...")
                                     try:
                                         retag_result = thread_db_service.tag_traces_for_evaluation(
-                                            workshop_id, trace_ids_to_use, tag_type='eval'
+                                            workshop_id, trace_ids_to_use, tag_type="eval"
                                         )
-                                        job.add_log(f"Re-tagged {retag_result.get('tagged', 0)} traces (failed: {retag_result.get('failed', [])})")
+                                        job.add_log(
+                                            f"Re-tagged {retag_result.get('tagged', 0)} traces (failed: {retag_result.get('failed', [])})"
+                                        )
                                         _time.sleep(2)
                                     except Exception as retag_err:
                                         job.add_log(f"WARNING: Re-tagging failed: {retag_err}")
@@ -2091,7 +2139,8 @@ async def advance_to_rubric(workshop_id: str, db: Session = Depends(get_db)):
     has_content = len(findings) > 0 or len(draft_items) > 0 or len(feedback) > 0
     if not has_content:
         raise HTTPException(
-            status_code=400, detail="Cannot advance to rubric phase: No discovery findings, draft rubric items, or feedback submitted yet"
+            status_code=400,
+            detail="Cannot advance to rubric phase: No discovery findings, draft rubric items, or feedback submitted yet",
         )
 
     # Update workshop phase
@@ -2625,9 +2674,7 @@ async def upload_workshop_to_volume(workshop_id: str, upload_request: dict, db: 
         databricks_host = upload_request.get("databricks_host", "")
 
         if not all([volume_path, databricks_host]):
-            raise HTTPException(
-                status_code=400, detail="Missing required fields: volume_path and databricks_host"
-            )
+            raise HTTPException(status_code=400, detail="Missing required fields: volume_path and databricks_host")
 
         from server.services.databricks_service import resolve_databricks_token
 
@@ -2973,9 +3020,7 @@ async def list_available_models(workshop_id: str, db: Session = Depends(get_db))
         raise HTTPException(status_code=404, detail="Workshop not found")
 
     mlflow_config = db_service.get_mlflow_config(workshop_id)
-    databricks_host = (mlflow_config.databricks_host if mlflow_config else None) or os.getenv(
-        "DATABRICKS_HOST"
-    )
+    databricks_host = (mlflow_config.databricks_host if mlflow_config else None) or os.getenv("DATABRICKS_HOST")
     if not databricks_host:
         # Fall back to SDK default host (e.g. from databricks CLI profile)
         try:
@@ -3103,57 +3148,26 @@ async def ingest_mlflow_traces(workshop_id: str, ingest_request: dict, db: Sessi
         summarization_job_id = None
         if workshop.summarization_enabled and workshop.summarization_model:
             try:
-                import asyncio
-
-                from server.services.trace_summarization_service import TraceSummarizationService
-
                 traces = db_service.get_traces(workshop_id)
                 unsummarized = [t for t in traces if t.context and not t.summary]
                 if unsummarized:
                     batch = [{"id": t.id, "context": t.context} for t in unsummarized]
                     ingest_host = config_with_token.databricks_host.rstrip("/")
                     ingest_url = ingest_host if ingest_host.startswith("https://") else f"https://{ingest_host}"
-                    endpoint_url = f"{ingest_url}/serving-endpoints"
 
-                    # Create tracked job
                     summ_job = db_service.create_summarization_job(workshop_id=workshop_id, total=len(batch))
                     summarization_job_id = summ_job.id
 
-                    async def run_summarization():
-                        from server.database import SessionLocal
-
-                        from server.services.databricks_service import resolve_databricks_token
-
-                        token = resolve_databricks_token(ingest_url)
-                        svc = TraceSummarizationService(
-                            endpoint_url=endpoint_url,
-                            token=token,
+                    _fire_background_task(
+                        _run_summarization_background(
+                            job_id=summ_job.id,
+                            workspace_url=ingest_url,
+                            endpoint_url=f"{ingest_url}/serving-endpoints",
                             model_name=workshop.summarization_model,
                             guidance=workshop.summarization_guidance,
+                            batch=batch,
                         )
-
-                        with SessionLocal() as bg_db:
-                            bg_service = DatabaseService(bg_db)
-                            bg_service.update_summarization_job_status(summ_job.id, "running")
-
-                            results = await svc.summarize_batch(batch)
-                            for r in results:
-                                if r["summary"] is not None:
-                                    bg_service.update_trace_summary(r["trace_id"], r["summary"])
-                                    bg_service.add_summarization_job_completed(summ_job.id, r["trace_id"])
-                                else:
-                                    bg_service.add_summarization_job_failed(
-                                        summ_job.id, r["trace_id"], r.get("error", "Unknown error")
-                                    )
-
-                            bg_service.update_summarization_job_status(summ_job.id, "completed")
-                            logger.info(
-                                f"Background summarization job {summ_job.id} complete: "
-                                f"{len([r for r in results if r['summary']])} succeeded, "
-                                f"{len([r for r in results if not r['summary']])} failed"
-                            )
-
-                    asyncio.create_task(run_summarization())
+                    )
             except Exception as e:
                 logger.warning(f"Failed to start background summarization: {e}")
 
@@ -3251,8 +3265,7 @@ async def upload_csv_traces(
                 status_code=400,
                 detail='CSV must contain either "request_preview"/"response_preview" columns '
                 '(MLflow UI export) or "request"/"response" columns '
-                "(mlflow.search_traces() export). Found columns: "
-                + ", ".join(fieldnames),
+                "(mlflow.search_traces() export). Found columns: " + ", ".join(fieldnames),
             )
 
         is_raw_format = not has_preview_cols and has_raw_cols
@@ -3314,9 +3327,12 @@ async def upload_csv_traces(
                         if field == "spans":
                             try:
                                 import ast
+
                                 context[field] = ast.literal_eval(row[field])
                             except (ValueError, SyntaxError):
-                                logger.warning(f"Row {row_number}: Invalid JSON/Python in {field} column, storing as string")
+                                logger.warning(
+                                    f"Row {row_number}: Invalid JSON/Python in {field} column, storing as string"
+                                )
                                 context[field] = row[field]
                         else:
                             logger.warning(f"Row {row_number}: Invalid JSON in {field} column, storing as string")
@@ -3433,13 +3449,6 @@ async def upload_csv_and_log_to_mlflow(
             status_code=400,
             detail="MLflow configuration required. Provide databricks_host and experiment_id as parameters or set DATABRICKS_HOST and MLFLOW_EXPERIMENT_ID environment variables.",
         )
-
-    from server.services.databricks_service import resolve_databricks_token
-
-    try:
-        token = resolve_databricks_token(host)
-    except RuntimeError:
-        token = None
 
     # Ensure host has proper format
     if not host.startswith("https://"):
@@ -5454,8 +5463,8 @@ async def re_evaluate(
         all_traces = db_service.get_traces(workshop_id)
         trace_ids = [t.id for t in all_traces if t.mlflow_trace_id]
     if trace_ids:
-        tag_result = db_service.tag_traces_for_evaluation(workshop_id, trace_ids, tag_type='eval')
-        logger.info("Re-evaluate: tagged %d traces with 'eval': %s", tag_result.get('tagged', 0), tag_result)
+        tag_result = db_service.tag_traces_for_evaluation(workshop_id, trace_ids, tag_type="eval")
+        logger.info("Re-evaluate: tagged %d traces with 'eval': %s", tag_result.get("tagged", 0), tag_result)
 
     # Get judge_name from request, or fall back to workshop judge_name
     judge_name = request.get("judge_name") or workshop.judge_name or "workshop_judge"
@@ -5625,6 +5634,8 @@ from server.models import (
     CustomLLMProviderStatus,
     CustomLLMProviderTestResult,
 )
+
+
 def _get_custom_llm_storage_key(workshop_id: str) -> str:
     """Get the storage key for custom LLM API keys."""
     return f"custom_llm_{workshop_id}"

@@ -269,9 +269,9 @@ def create_engine_for_backend(backend: DatabaseBackend) -> Engine:
     engine = create_engine(
         conninfo,
         pool_size=5,
-        max_overflow=5,       # Cap at 10/worker, 20 total with 2 gunicorn workers
+        max_overflow=5,  # Cap at 10/worker, 20 total with 2 gunicorn workers
         pool_timeout=30,
-        pool_recycle=3600,    # Match 1-hour token lifetime (was 300s — caused excessive churn)
+        pool_recycle=3600,  # Match 1-hour token lifetime (was 300s — caused excessive churn)
         pool_pre_ping=False,  # Conflicts with do_connect token injection
         echo=False,
     )

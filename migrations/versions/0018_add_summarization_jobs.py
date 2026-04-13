@@ -6,9 +6,8 @@ facilitator can monitor summarization progress in the UI.
 
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "0018_add_summarization_jobs"
@@ -20,7 +19,6 @@ depends_on = None
 def upgrade() -> None:
     op.create_table(
         "summarization_jobs",
-        if_not_exists=True,
         sa.Column("id", sa.String(), primary_key=True),
         sa.Column(
             "workshop_id",
@@ -35,6 +33,7 @@ def upgrade() -> None:
         sa.Column("failed_traces", sa.JSON(), default=list),
         sa.Column("created_at", sa.DateTime(), server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(), server_default=sa.func.now()),
+        if_not_exists=True,
     )
 
 

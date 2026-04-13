@@ -6,8 +6,10 @@ import asyncio
 import json
 import logging
 import re
-from dataclasses import dataclass, field as dc_field
-from typing import Any, Callable, Literal
+from collections.abc import Callable
+from dataclasses import dataclass
+from dataclasses import field as dc_field
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
@@ -43,12 +45,8 @@ class Milestone(BaseModel):
     number: int
     title: str
     summary: str = Field(description="Agent's narrative of what happened in this phase")
-    inputs: list[SpanDataRef] = Field(
-        default_factory=list, description="Data that flowed into this phase"
-    )
-    outputs: list[SpanDataRef] = Field(
-        default_factory=list, description="Data that came out of this phase"
-    )
+    inputs: list[SpanDataRef] = Field(default_factory=list, description="Data that flowed into this phase")
+    outputs: list[SpanDataRef] = Field(default_factory=list, description="Data that came out of this phase")
 
 
 class TraceSummary(BaseModel):
@@ -153,8 +151,17 @@ def get_root_span(ctx: TraceContext) -> dict:
     }
 
 
+_MAX_SEARCH_PATTERN_LEN = 200
+
+
 def search_spans(ctx: TraceContext, pattern: str) -> list[dict]:
-    """Regex search across span inputs and outputs."""
+    """Regex search across span inputs and outputs.
+
+    Pattern length is capped to avoid catastrophic backtracking (ReDoS) from
+    agent-generated patterns.
+    """
+    if len(pattern) > _MAX_SEARCH_PATTERN_LEN:
+        return [{"error": f"Pattern too long ({len(pattern)} chars, max {_MAX_SEARCH_PATTERN_LEN})"}]
     matches = []
     try:
         regex = re.compile(pattern, re.IGNORECASE)
@@ -195,9 +202,7 @@ def _resolve_jsonpath(data: Any, path: str) -> Any | None:
         return None
 
 
-def resolve_span_data_refs(
-    refs: list[SpanDataRef], ctx: TraceContext
-) -> list[SpanDataRef]:
+def resolve_span_data_refs(refs: list[SpanDataRef], ctx: TraceContext) -> list[SpanDataRef]:
     """Resolve SpanDataRef list to actual values from the trace.
 
     For each ref, finds the named span, extracts the field (inputs/outputs),
@@ -221,8 +226,10 @@ def resolve_span_data_refs(
 # --- Prompts ---
 
 EXECUTIVE_SUMMARY_INSTRUCTIONS = """\
-You are a trace analysis agent. You analyze execution traces from AI agents \
-by inspecting them with your tools, then produce a concise executive summary.
+You are a CTO providing an executive summary of an AI agent's execution \
+trajectory to non-technical subject matter experts. Your audience evaluates \
+the quality of AI agent behavior — they need to understand what the agent \
+did and whether it did it well, not the technical plumbing.
 
 Use your tools to understand what happened:
 1. Call get_trace_overview to see the trace status, span count, and any errors
@@ -235,13 +242,15 @@ Then write a 1-3 sentence executive summary focusing on:
 - What substantive actions were taken? (name the actual tools, queries, data sources)
 - What was the concrete outcome? (include specific results, numbers, findings)
 
-Include actual data from the spans — not "a query was executed" but \
-"queried view_spend_active_rate, returning 240 rows"."""
+Write for non-technical readers. Use plain language, not developer jargon. \
+Include actual data — not "a query was executed" but \
+"queried issuer spend active rates, returning 240 rows"."""
 
 MILESTONE_INSTRUCTIONS = """\
-You are a trace analysis agent. Given an executive summary and access to \
-trace inspection tools, extract logical milestones that tell the substantive \
-story of what happened.
+You are a CTO providing a milestone breakdown of an AI agent's execution \
+trajectory to non-technical subject matter experts who evaluate agent quality. \
+They need to see what the agent did at each step and the actual data that \
+flowed through — but presented in a readable, non-technical way.
 
 Use your tools to drill into specific spans for each milestone:
 1. Call list_spans to see the full span structure
@@ -256,11 +265,17 @@ For each milestone:
 
 For span data references (inputs and outputs lists):
 - Each ref points to a specific span's inputs or outputs
-- Use jsonpath (e.g. "$.query", "$.sql", "$.result") to select the specific subfield that matters
-- Omit jsonpath to include the entire inputs or outputs object
-- The system will resolve these to actual values — just provide the span_name, field, and jsonpath
+- Use jsonpath to select the specific subfield that matters for understanding quality
+- Prefer paths that resolve to human-readable text, markdown, or simple values
+- Prefer user-facing content: the question asked, the answer given, the data found
+- Omit technical metadata (token counts, model IDs, response_metadata, additional_kwargs) \
+unless it is critical to evaluating quality (e.g. an error message)
+- When a span contains both raw JSON and a formatted/text version, prefer the text version
+- Omit jsonpath to include the entire field only when the whole object is readable
 
-Anti-patterns to avoid in summaries:
+Anti-patterns to avoid:
+- Selecting paths that resolve to nested JSON blobs with internal framework fields
+- Including system prompts, tool schemas, or model configuration as milestone data
 - "The agent processed the query" → instead: name the actual query and data source
 - "Results were returned" → instead: state what the results showed
 - "A response was generated" → instead: summarize what the response concluded"""
@@ -433,9 +448,7 @@ class TraceSummarizationService:
             return summary
 
         except Exception as e:
-            logger.error(
-                f"Trace summarization failed for {trace_id}: {e}", exc_info=True
-            )
+            logger.error(f"Trace summarization failed for {trace_id}: {e}", exc_info=True)
             return None
 
     async def summarize_batch(
@@ -465,9 +478,7 @@ class TraceSummarizationService:
 
             async with semaphore:
                 try:
-                    summary = await self.summarize_trace(
-                        trace["context"], trace_id=trace_id
-                    )
+                    summary = await self.summarize_trace(trace["context"], trace_id=trace_id)
                 except Exception as e:
                     summary = None
                     error_msg = str(e)

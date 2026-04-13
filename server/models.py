@@ -960,6 +960,13 @@ class DiscoveryAnalysisResponse(BaseModel):
     updated_at: datetime
 
 
+class ResummarizeRequest(BaseModel):
+    """Request model for triggering re-summarization of workshop traces."""
+
+    mode: str = "all"  # "all", "unsummarized", or "failed"
+    trace_ids: list[str] | None = None
+
+
 class AnalyzeDiscoveryRequest(BaseModel):
     """Request model for triggering discovery analysis."""
 
