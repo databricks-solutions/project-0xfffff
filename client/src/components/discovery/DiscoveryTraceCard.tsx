@@ -153,6 +153,7 @@ export const DiscoveryTraceCard: React.FC<DiscoveryTraceCardProps> = ({
             <MilestoneView
               executiveSummary={trace.summary!.executive_summary}
               milestones={trace.summary!.milestones}
+              showPaths={false}
             />
           </div>
         ) : (

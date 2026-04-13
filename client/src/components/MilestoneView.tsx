@@ -19,6 +19,8 @@ interface Milestone {
 interface MilestoneViewProps {
   executiveSummary: string;
   milestones: Milestone[];
+  /** Show span path labels (span_name → jsonpath). Useful for facilitators, noisy for SMEs. */
+  showPaths?: boolean;
 }
 
 function formatValue(value: unknown): string {
@@ -38,7 +40,7 @@ function RefLabel({ dataRef }: { dataRef: SpanDataRef }) {
   );
 }
 
-function SpanDataItem({ dataRef }: { dataRef: SpanDataRef }) {
+function SpanDataItem({ dataRef, showPath = true }: { dataRef: SpanDataRef; showPath?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const valueStr = formatValue(dataRef.value);
   const isLong = valueStr.length > 120;
@@ -46,7 +48,7 @@ function SpanDataItem({ dataRef }: { dataRef: SpanDataRef }) {
 
   return (
     <div className="py-1.5">
-      <RefLabel dataRef={dataRef} />
+      {showPath && <RefLabel dataRef={dataRef} />}
       <div className="mt-0.5">
         {dataRef.value === null || dataRef.value === undefined ? (
           <span className="text-sm text-gray-400 italic">not resolved</span>
@@ -70,7 +72,7 @@ function SpanDataItem({ dataRef }: { dataRef: SpanDataRef }) {
   );
 }
 
-export function MilestoneView({ executiveSummary, milestones }: MilestoneViewProps) {
+export function MilestoneView({ executiveSummary, milestones, showPaths = true }: MilestoneViewProps) {
   return (
     <div className="space-y-4">
       {/* Executive Summary */}
@@ -83,14 +85,14 @@ export function MilestoneView({ executiveSummary, milestones }: MilestoneViewPro
       {/* Milestones */}
       <div className="space-y-3">
         {milestones.map((milestone) => (
-          <MilestoneCard key={milestone.number} milestone={milestone} />
+          <MilestoneCard key={milestone.number} milestone={milestone} showPaths={showPaths} />
         ))}
       </div>
     </div>
   );
 }
 
-function MilestoneCard({ milestone }: { milestone: Milestone }) {
+function MilestoneCard({ milestone, showPaths = true }: { milestone: Milestone; showPaths?: boolean }) {
   const [expanded, setExpanded] = useState(true);
   const hasData = milestone.inputs.length > 0 || milestone.outputs.length > 0;
 
@@ -131,7 +133,7 @@ function MilestoneCard({ milestone }: { milestone: Milestone }) {
                   </div>
                   <div className="border-l-2 border-blue-200 dark:border-blue-800 pl-3">
                     {milestone.inputs.map((ref, i) => (
-                      <SpanDataItem key={i} dataRef={ref} />
+                      <SpanDataItem key={i} dataRef={ref} showPath={showPaths} />
                     ))}
                   </div>
                 </div>
@@ -150,7 +152,7 @@ function MilestoneCard({ milestone }: { milestone: Milestone }) {
                   </div>
                   <div className="border-l-2 border-green-200 dark:border-green-800 pl-3">
                     {milestone.outputs.map((ref, i) => (
-                      <SpanDataItem key={i} dataRef={ref} />
+                      <SpanDataItem key={i} dataRef={ref} showPath={showPaths} />
                     ))}
                   </div>
                 </div>
