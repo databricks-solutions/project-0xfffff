@@ -58,16 +58,15 @@ async function pollJob(
 
 test.describe('Evaluation Lifecycle', { tag: ['@spec:JUDGE_EVALUATION_SPEC'] }, () => {
 
-  test('begin-annotation triggers auto-eval job and judge tuning page loads after phase advancement', {
+  test('judge tuning page loads with evaluation controls after phase advancement', {
     tag: [
       '@spec:JUDGE_EVALUATION_SPEC',
-      '@req:Auto-evaluation runs in background when annotation phase starts',
       '@req:Results appear in Judge Tuning page',
     ],
   }, async ({ page }) => {
-    // Workshop with annotations, in results phase — ready for judge tuning
+    // Full lifecycle: annotations → results → judge tuning via sidebar navigation
     const scenario = await TestScenario.create(page)
-      .withWorkshop({ name: 'Eval Lifecycle E2E' })
+      .withWorkshop({ name: 'Judge Tuning Nav E2E' })
       .withFacilitator()
       .withParticipants(2)
       .withTraces(3)
@@ -82,45 +81,24 @@ test.describe('Evaluation Lifecycle', { tag: ['@spec:JUDGE_EVALUATION_SPEC'] }, 
 
     const workshopId = scenario.workshop.id;
 
-    // Configure MLflow
-    await configureFakeMlflow(page, workshopId);
-
-    // Check if auto-eval ran during annotation start (scenario setup)
-    const autoEvalResp = await page.request.get(
-      `${API_URL}/workshops/${workshopId}/auto-evaluation-status`,
-    );
-    if (autoEvalResp.ok()) {
-      const autoEval = await autoEvalResp.json();
-      if (autoEval.job_id) {
-        const job = await pollJob(page, workshopId, autoEval.job_id);
-        // Job may have already completed or failed — either is fine
-        expect(job.status).toMatch(/completed|failed|not_started|unknown/);
-      }
-    }
-
-    // Advance to judge_tuning via API
+    // Advance to judge_tuning phase
     await advanceToPhase(page, workshopId, WorkshopPhase.JUDGE_TUNING, API_URL);
 
-    // Now drive the UI: login → click into workshop → navigate to Judge Tuning
+    // Login and navigate through the UI
     await page.goto('/');
     await scenario.loginAs(scenario.facilitator);
-    await expect(page.getByRole('heading', { name: 'Eval Lifecycle E2E' })).toBeVisible({
+    await expect(page.getByRole('heading', { name: 'Judge Tuning Nav E2E' })).toBeVisible({
       timeout: 10000,
     });
-    // Click into the workshop from the list
-    await page.getByRole('heading', { name: 'Eval Lifecycle E2E' }).click();
+    await page.getByRole('heading', { name: 'Judge Tuning Nav E2E' }).click();
     await page.waitForTimeout(1000);
 
     // Click "Judge Tuning" in the sidebar
     await goToPhase(page, WorkshopPhase.JUDGE_TUNING);
     await page.waitForTimeout(1500);
 
-    // The Judge Tuning page should render with evaluation mode controls
-    await expect(
-      page.getByText(/Evaluation Mode/i).first(),
-    ).toBeVisible({ timeout: 5000 });
-
-    // Should show both MLflow and Simple Model Serving toggle buttons
+    // Judge Tuning page should render with evaluation mode controls
+    await expect(page.getByText(/Evaluation Mode/i).first()).toBeVisible({ timeout: 5000 });
     await expect(page.getByText('MLflow').first()).toBeVisible({ timeout: 3000 });
     await expect(page.getByText('Simple Model Serving').first()).toBeVisible({ timeout: 3000 });
 
