@@ -12,14 +12,16 @@ This is an opt-in feature configured per-workshop by the facilitator. It's most 
 A high-level narrative (1-3 sentences) of what happened in the trace. Generated first, then used to guide milestone extraction.
 
 ### Milestone
-A logical phase of the trace's execution. Each milestone has a title, a summary description, and a set of events selected from the trace's actual spans. The agent decides how many milestones are appropriate based on trace complexity — there is no fixed target.
+A logical phase of the trace's execution. Each milestone has a title, a narrative summary, and references to the actual span data that flowed through that phase. The agent decides how many milestones are appropriate based on trace complexity — there is no fixed target.
 
-### Milestone Event
-A relevant sub-event within a milestone, drawn from actual span data. Events have a type (e.g., tool call, transfer, result), a label, a summary, and selected input/output data from the corresponding span.
+### Span Data Reference
+A pointer to actual data in a trace span. Each reference specifies a span name, whether it's the span's inputs or outputs, and an optional JSONPath to select a specific subfield. The agent produces these references; the system resolves them to actual values from the trace — following the same pattern as the existing span attribute filter and JSONPath extraction (see TRACE_DISPLAY_SPEC).
+
+This ensures milestone data is ground truth from the trace, not LLM-generated summaries of it.
 
 ### Two-Pass Generation
-1. **Pass 1 — Executive summary**: LLM receives the full trace and produces a high-level narrative
-2. **Pass 2 — Milestone extraction**: LLM uses the executive summary to identify milestones and select relevant span data for each
+1. **Pass 1 — Executive summary**: Agent uses trace inspection tools to explore the trace structure and key spans, then produces a high-level narrative of what happened substantively
+2. **Pass 2 — Milestone extraction**: Agent uses the executive summary as a guide, then uses trace inspection tools to drill into specific spans and extract milestones with actual content from the trace
 
 ## Behavior
 
@@ -31,47 +33,96 @@ Summarization runs at ingestion time when:
 When disabled or not configured, traces are ingested normally without summaries.
 
 ### Agent Input
-The agent receives the full trace context:
-- All spans with their names, types, inputs, outputs, status, and timing
-- Parent-child span relationships (hierarchy)
-- Trace-level metadata (status, execution time, tags)
+The agent accesses trace data through tools rather than receiving the full trace as text. The trace context is provided as a PydanticAI dependency, and the agent calls tools to selectively inspect the trace:
+
+1. **Overview first**: `get_trace_overview` and `list_spans` to understand structure
+2. **Selective drilling**: `get_span_detail` on spans that matter (tool calls, errors, key outputs)
+3. **Content search**: `search_spans` to find specific data across the trace
+
+This tool-based approach produces better summaries because the agent decides what's important rather than trying to summarize a truncated text dump.
+
+### Agent Tools
+
+The summarization agent has access to trace inspection tools modeled on [`mlflow.genai.judges.tools`](https://github.com/mlflow/mlflow/tree/master/mlflow/genai/judges/tools). These tools operate on the in-memory trace context (the trace data is already available at ingestion time).
+
+| Tool | Signature | Purpose |
+|------|-----------|---------|
+| `get_trace_overview` | `() → { status, execution_time_ms, span_count, error_spans, root_span_name }` | High-level trace metadata and health check |
+| `list_spans` | `(filter_type?: str, filter_status?: str) → [{ name, span_type, status, duration_ms }]` | All spans with optional filtering by type or status |
+| `get_span_detail` | `(span_name: str) → { name, span_type, status, inputs, outputs, duration_ms }` | Full inputs and outputs for a specific span (no truncation) |
+| `get_root_span` | `() → { name, inputs, outputs, duration_ms }` | Entry point span with user request and final response |
+| `search_spans` | `(pattern: str) → [{ span_name, field, match }]` | Regex search across span inputs and outputs |
+
+Tools are registered as PydanticAI tools with the trace context passed via dependency injection.
+
+### Prompt Guidance
+
+The summarization prompts should instruct the agent to extract substance, not narrate flow.
+
+**Executive summary pass:**
+- Use tools to understand what the trace accomplished, not just its structure
+- Focus on: what was the user's goal, what substantive actions were taken, what was the outcome
+- Include actual data: queries run, results found, decisions made
+
+**Milestone pass:**
+- Milestones should describe what was discovered/decided/produced at each phase
+- Quote or reference actual span content: SQL queries, API responses, extracted data, error messages
+- Avoid mechanical flow narration ("step received", "results returned", "response generated")
+- Event data should contain the substantive content from spans, not metadata about the span
+
+**Anti-patterns to avoid:**
+- "The agent processed the query" → "The agent queried `view_spend_active_rate` for issuers with lowest spend active rates"
+- "Results were returned to the agent" → "240 rows returned, showing three US issuers at 0% spend active rate"
+- "The agent synthesized a response" → "Identified ICAs 67311, 12346, 12933 as critical performers and recommended immediate investigation"
 
 ### Agent Output
-A structured JSON object stored on the trace:
+A structured JSON object stored on the trace. The agent produces milestone titles, summaries, and span data references. The system resolves references to actual values from the trace in a post-processing step.
+
+**Agent produces (before resolution):**
 
 ```json
 {
-  "executive_summary": "Created a 5-step plan to extract owner names...",
+  "executive_summary": "Queried issuer spend active rates, found 3 US issuers at 0%, recommended investigation",
   "milestones": [
     {
       "number": 1,
-      "title": "Data Extraction",
-      "summary": "Extracted owner name from TitleFlex (ANDREY V MIRONETS) and searched for seller names in inbound communications (none found).",
-      "events": [
-        {
-          "type": "transfer",
-          "label": "Successfully transferred to generalist_agent",
-          "span_name": "generalist_agent",
-          "data": { "inputs": "...", "outputs": "..." }
-        },
-        {
-          "type": "result",
-          "label": "Plan updated! Explanation: Completed extraction...",
-          "span_name": "update_plan",
-          "data": { "plan_update_explanation": "..." }
-        }
+      "title": "Queried Issuer Spend Active Rates",
+      "summary": "Agent invoked spend_active_recommendation tool which queried view_overall_spend_active_rate, returning 240 rows of issuer performance data ordered by spend active rate ascending.",
+      "inputs": [
+        { "span_name": "spend_active_recommendation", "field": "inputs", "jsonpath": "$.query" }
+      ],
+      "outputs": [
+        { "span_name": "spend_active_recommendation", "field": "outputs", "jsonpath": "$.sql" },
+        { "span_name": "spend_active_recommendation", "field": "outputs", "jsonpath": "$.row_count" }
       ]
     }
   ]
 }
 ```
 
-### Event Types
-The agent selects the most descriptive type for each event:
-- `tool_call` — A tool was invoked
-- `transfer` — Control passed to another agent/component
-- `result` — A significant output or decision point
-- `error` — An error or failure occurred
+**After resolution (stored on trace):**
+
+```json
+{
+  "executive_summary": "Queried issuer spend active rates, found 3 US issuers at 0%, recommended investigation",
+  "milestones": [
+    {
+      "number": 1,
+      "title": "Queried Issuer Spend Active Rates",
+      "summary": "Agent invoked spend_active_recommendation tool which queried view_overall_spend_active_rate, returning 240 rows of issuer performance data ordered by spend active rate ascending.",
+      "inputs": [
+        { "span_name": "spend_active_recommendation", "field": "inputs", "jsonpath": "$.query", "value": "worst performing issuers by spend active rate" }
+      ],
+      "outputs": [
+        { "span_name": "spend_active_recommendation", "field": "outputs", "jsonpath": "$.sql", "value": "SELECT ica, country, overall_spend_active_rate_reported FROM view_overall_spend_active_rate ORDER BY overall_spend_active_rate_reported ASC" },
+        { "span_name": "spend_active_recommendation", "field": "outputs", "jsonpath": "$.row_count", "value": 240 }
+      ]
+    }
+  ]
+}
+```
+
+When `jsonpath` is null, the entire span inputs or outputs field is included as the value.
 
 ### Facilitator Guidance
 The facilitator can provide optional free-text guidance that is injected into the summarization prompt. Examples:
@@ -221,6 +272,28 @@ class SummarizationJob(BaseModel):
         return len(self.failed_traces)
 ```
 
+### Summarization Models (Pydantic)
+
+```python
+class SpanDataRef(BaseModel):
+    """Reference to actual data in a trace span. Agent produces these; system resolves values."""
+    span_name: str
+    field: Literal["inputs", "outputs"]
+    jsonpath: str | None = None  # e.g. "$.query" — full field if omitted
+    value: Any | None = None     # Populated by post-processing, not the agent
+
+class Milestone(BaseModel):
+    number: int
+    title: str
+    summary: str                            # Agent's narrative of what happened
+    inputs: list[SpanDataRef] = []          # Data that flowed into this phase
+    outputs: list[SpanDataRef] = []         # Data that came out of this phase
+
+class TraceSummary(BaseModel):
+    executive_summary: str
+    milestones: list[Milestone]
+```
+
 ## Implementation
 
 ### Files
@@ -240,20 +313,30 @@ class SummarizationJob(BaseModel):
 
 ### Summarization Service
 
-Uses `DatabricksService.call_chat_completion()` (same pattern as `discovery_analysis_service.py`):
+Uses PydanticAI agents with trace inspection tools:
 
 ```python
 class TraceSummarizationService:
-    def __init__(self, databricks_service: DatabricksService):
-        self.databricks_service = databricks_service
+    """Two-pass trace summarization using PydanticAI agents with tools."""
 
-    async def summarize_trace(
+    def __init__(
         self,
-        trace_context: dict,
-        model: str,
+        endpoint_url: str,
+        token: str,
+        model_name: str,
         guidance: str | None = None,
-    ) -> dict | None:
-        """Two-pass summarization: executive summary → milestones."""
+        max_concurrency: int = 5,
+    ):
+        # PydanticAI agents with trace inspection tools registered
+        # Tools: get_trace_overview, list_spans, get_span_detail, get_root_span, search_spans
+        # Trace context passed via PydanticAI dependency injection
+
+    async def summarize_trace(self, trace_context: dict, trace_id: str | None = None) -> TraceSummary | None:
+        """Two-pass summarization with tool-based trace inspection.
+
+        Pass 1: Agent explores trace via tools → executive summary
+        Pass 2: Agent uses executive summary + tools → milestones with span data
+        """
 ```
 
 ### API Endpoints
@@ -294,24 +377,32 @@ POST /workshops/{workshop_id}/ingest-mlflow-traces
 
 ### Summarization Pipeline
 - [ ] Summarization runs at ingestion time when enabled and model is configured
-- [ ] Agent receives full trace context (all spans, inputs, outputs, hierarchy)
+- [ ] Agent accesses trace data through inspection tools (not a full-text dump)
 - [ ] Agent produces an executive summary as the first pass
 - [ ] Agent extracts milestones with relevant span data as the second pass
-- [ ] Each milestone event references actual span data (not purely generated)
+- [ ] Each milestone includes span data references resolved to actual trace values
+- [ ] Span data references are resolved in a post-processing step (not LLM-generated values)
+- [ ] Agent uses trace inspection tools to selectively examine spans (not a full-text dump)
+- [ ] Agent tools include: get_trace_overview, list_spans, get_span_detail, get_root_span, search_spans
+- [ ] Milestone summaries contain substantive content from spans (actual queries, results, decisions)
+- [ ] Milestone summaries avoid mechanical flow narration (not "query received", "results returned")
 - [ ] Summarization failure does not block trace ingestion
 - [ ] Summary is stored as JSON on the trace record
 
 ### Milestone Structure
 - [ ] Each milestone has a number, title, and summary
-- [ ] Each milestone has zero or more events with type, label, span reference, and data
-- [ ] Event types are one of: tool_call, transfer, result, error
+- [ ] Each milestone has zero or more input span data references (span_name, field, optional jsonpath)
+- [ ] Each milestone has zero or more output span data references (span_name, field, optional jsonpath)
+- [ ] Span data references are resolved to actual values from the trace after agent output
+- [ ] When jsonpath is null, the entire span inputs or outputs field is included
+- [ ] Invalid span references (nonexistent span or path) resolve to null without failing the milestone
 - [ ] The agent determines the number of milestones based on trace complexity
 
 ### UI — Milestone View
 - [ ] Milestone view is the default display when a summary exists
 - [ ] User can toggle between milestone view and the existing trace viewer
 - [ ] Milestone view shows executive summary at the top
-- [ ] Milestones are numbered and show title, summary, and expandable events
+- [ ] Milestones are numbered and show title, summary, and resolved span data (inputs → outputs)
 - [ ] When no summary exists, the existing trace viewer is shown (no toggle)
 
 ### Re-ingestion
@@ -377,6 +468,7 @@ POST /workshops/{workshop_id}/ingest-mlflow-traces
 |------|------|--------|---------|
 | 2026-04-11 | [Trace Summarization](../.claude/plans/2026-04-11-trace-summarization.md) | planned | Two-pass LLM summarization with batch orchestration and milestone view UI |
 | 2026-04-13 | [Facilitator UX](../.claude/plans/2026-04-13-summarization-facilitator-ux.md) | complete | DB-backed job tracking, progress UI, re-summarize button, summary indicators |
+| 2026-04-13 | [Tool-Based Agent](../.claude/plans/2026-04-13-summarization-tool-based-agent.md) | planned | Refactor from text-dump to tool-equipped PydanticAI agent with trace inspection tools |
 
 ## Related Specs
 

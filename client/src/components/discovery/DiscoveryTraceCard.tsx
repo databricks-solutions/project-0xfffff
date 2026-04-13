@@ -3,6 +3,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ChevronDown, ChevronRight, AlertTriangle, ArrowUpRight, Sparkles } from 'lucide-react';
+import { MilestoneView } from '@/components/MilestoneView';
 import type { Trace } from '@/client';
 import type { DiscoveryFeedbackWithUser } from '@/client';
 
@@ -105,7 +106,6 @@ export const DiscoveryTraceCard: React.FC<DiscoveryTraceCardProps> = ({
 }) => {
   const [contentExpanded, setContentExpanded] = useState(false);
   const [findingsOpen, setFindingsOpen] = useState(true);
-  const [milestonesOpen, setMilestonesOpen] = useState(false);
   const hasSummary = !!trace.summary?.executive_summary;
   const [showSummary, setShowSummary] = useState(hasSummary);
 
@@ -149,31 +149,11 @@ export const DiscoveryTraceCard: React.FC<DiscoveryTraceCardProps> = ({
 
         {/* Summary view */}
         {showSummary && hasSummary ? (
-          <div className="mb-4 rounded-lg bg-indigo-50 border border-indigo-200 p-4">
-            <p className="text-sm text-slate-800">{trace.summary!.executive_summary}</p>
-
-            {trace.summary!.milestones?.length > 0 && (
-              <>
-                <button
-                  type="button"
-                  className="flex items-center gap-1 mt-3 text-xs font-semibold text-indigo-700 hover:text-indigo-900"
-                  onClick={() => setMilestonesOpen(!milestonesOpen)}
-                >
-                  {milestonesOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-                  {trace.summary!.milestones.length} milestone{trace.summary!.milestones.length !== 1 ? 's' : ''}
-                </button>
-                {milestonesOpen && (
-                  <div className="mt-2 space-y-2 pl-2 border-l-2 border-indigo-200">
-                    {trace.summary!.milestones.map((m: { number: number; title: string; summary: string }) => (
-                      <div key={m.number} className="text-xs">
-                        <span className="font-semibold text-indigo-900">{m.number}. {m.title}</span>
-                        <p className="text-slate-600 mt-0.5">{m.summary}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
+          <div className="mb-4">
+            <MilestoneView
+              executiveSummary={trace.summary!.executive_summary}
+              milestones={trace.summary!.milestones}
+            />
           </div>
         ) : (
           /* Raw user/assistant content */

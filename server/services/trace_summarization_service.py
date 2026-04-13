@@ -1,38 +1,54 @@
-"""Trace summarization service using PydanticAI agents."""
+"""Trace summarization service using PydanticAI agents with trace inspection tools."""
 
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
-from typing import Callable, Literal
+import re
+from dataclasses import dataclass, field as dc_field
+from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, Field
-from pydantic_ai import Agent
+from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 logger = logging.getLogger(__name__)
 
 
-# --- Output models (Pydantic validates LLM output automatically) ---
+# --- Output models ---
+
 
 class ExecutiveSummary(BaseModel):
     executive_summary: str = Field(description="1-3 sentence high-level narrative of what happened")
 
 
-class MilestoneEvent(BaseModel):
-    type: Literal["tool_call", "transfer", "result", "error"]
-    label: str = Field(description="Short description of this event")
-    span_name: str = Field(description="Name of the actual span this event references")
-    data: dict = Field(default_factory=dict, description="Relevant inputs/outputs from the span")
+class SpanDataRef(BaseModel):
+    """Reference to actual data in a trace span. Agent produces these; system resolves values."""
+
+    span_name: str
+    field: Literal["inputs", "outputs"]
+    jsonpath: str | None = Field(
+        default=None,
+        description="JSONPath to select a subfield, e.g. '$.query'. Full field if omitted.",
+    )
+    value: Any | None = Field(
+        default=None,
+        description="Resolved value — populated by post-processing, not the agent",
+    )
 
 
 class Milestone(BaseModel):
     number: int
     title: str
-    summary: str
-    events: list[MilestoneEvent] = Field(default_factory=list)
+    summary: str = Field(description="Agent's narrative of what happened in this phase")
+    inputs: list[SpanDataRef] = Field(
+        default_factory=list, description="Data that flowed into this phase"
+    )
+    outputs: list[SpanDataRef] = Field(
+        default_factory=list, description="Data that came out of this phase"
+    )
 
 
 class TraceSummary(BaseModel):
@@ -40,35 +56,260 @@ class TraceSummary(BaseModel):
     milestones: list[Milestone]
 
 
+# --- Trace context (PydanticAI dependency) ---
+
+
+@dataclass
+class TraceContext:
+    """Trace data passed as PydanticAI dependency. Tools inspect this."""
+
+    spans: list[dict] = dc_field(default_factory=list)
+    status: str = "UNKNOWN"
+    execution_time_ms: float = 0
+    tags: dict = dc_field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> TraceContext:
+        return cls(
+            spans=d.get("spans", []),
+            status=d.get("status", "UNKNOWN"),
+            execution_time_ms=d.get("execution_time_ms", 0),
+            tags=d.get("tags", {}),
+        )
+
+
+# --- Tool functions (plain, testable without PydanticAI) ---
+
+
+def _span_duration_ms(span: dict) -> float | None:
+    start = span.get("start_time_ns")
+    end = span.get("end_time_ns")
+    if start is not None and end is not None:
+        return (end - start) / 1e6
+    return None
+
+
+def get_trace_overview(ctx: TraceContext) -> dict:
+    """Get high-level trace metadata and health check."""
+    error_spans = [s["name"] for s in ctx.spans if s.get("status") == "ERROR"]
+    root = next((s for s in ctx.spans if s.get("parent_span_id") is None), None)
+    return {
+        "status": ctx.status,
+        "execution_time_ms": ctx.execution_time_ms,
+        "span_count": len(ctx.spans),
+        "error_spans": error_spans,
+        "root_span_name": root["name"] if root else None,
+    }
+
+
+def list_spans(
+    ctx: TraceContext,
+    filter_type: str | None = None,
+    filter_status: str | None = None,
+) -> list[dict]:
+    """List all spans with optional filtering by type or status."""
+    results = []
+    for span in ctx.spans:
+        if filter_type and span.get("span_type") != filter_type:
+            continue
+        if filter_status and span.get("status") != filter_status:
+            continue
+        results.append(
+            {
+                "name": span.get("name", "unnamed"),
+                "span_type": span.get("span_type", "UNKNOWN"),
+                "status": span.get("status", "UNKNOWN"),
+                "duration_ms": _span_duration_ms(span),
+            }
+        )
+    return results
+
+
+def get_span_detail(ctx: TraceContext, span_name: str) -> dict:
+    """Get full inputs and outputs for a specific span."""
+    for span in ctx.spans:
+        if span.get("name") == span_name:
+            return {
+                "name": span.get("name"),
+                "span_type": span.get("span_type"),
+                "status": span.get("status"),
+                "inputs": span.get("inputs", {}),
+                "outputs": span.get("outputs", {}),
+                "duration_ms": _span_duration_ms(span),
+            }
+    return {"error": f"Span '{span_name}' not found"}
+
+
+def get_root_span(ctx: TraceContext) -> dict:
+    """Get the entry point span with user request and final response."""
+    root = next((s for s in ctx.spans if s.get("parent_span_id") is None), None)
+    if root is None:
+        return {"error": "No root span found"}
+    return {
+        "name": root.get("name"),
+        "inputs": root.get("inputs", {}),
+        "outputs": root.get("outputs", {}),
+        "duration_ms": _span_duration_ms(root),
+    }
+
+
+def search_spans(ctx: TraceContext, pattern: str) -> list[dict]:
+    """Regex search across span inputs and outputs."""
+    matches = []
+    try:
+        regex = re.compile(pattern, re.IGNORECASE)
+    except re.error:
+        return [{"error": f"Invalid regex: {pattern}"}]
+
+    for span in ctx.spans:
+        span_name = span.get("name", "unnamed")
+        for field_name in ("inputs", "outputs"):
+            text = json.dumps(span.get(field_name, {}), default=str)
+            if regex.search(text):
+                matches.append(
+                    {
+                        "span_name": span_name,
+                        "field": field_name,
+                        "match": regex.findall(text)[:3],
+                    }
+                )
+    return matches
+
+
+# --- Span data reference resolution ---
+
+
+def _resolve_jsonpath(data: Any, path: str) -> Any | None:
+    """Apply a JSONPath expression to data. Returns the raw value, not stringified."""
+    try:
+        from jsonpath_ng import parse
+
+        if isinstance(data, str):
+            data = json.loads(data)
+        expr = parse(path.strip())
+        matches = [m.value for m in expr.find(data)]
+        if not matches:
+            return None
+        return matches[0] if len(matches) == 1 else matches
+    except Exception:
+        return None
+
+
+def resolve_span_data_refs(
+    refs: list[SpanDataRef], ctx: TraceContext
+) -> list[SpanDataRef]:
+    """Resolve SpanDataRef list to actual values from the trace.
+
+    For each ref, finds the named span, extracts the field (inputs/outputs),
+    and optionally applies JSONPath. Returns new SpanDataRef instances with
+    value populated. Invalid refs get value=None.
+    """
+    resolved = []
+    for ref in refs:
+        value = None
+        span = next((s for s in ctx.spans if s.get("name") == ref.span_name), None)
+        if span is not None:
+            field_data = span.get(ref.field, {})
+            if ref.jsonpath is None:
+                value = field_data
+            else:
+                value = _resolve_jsonpath(field_data, ref.jsonpath)
+        resolved.append(ref.model_copy(update={"value": value}))
+    return resolved
+
+
 # --- Prompts ---
 
-EXECUTIVE_SUMMARY_INSTRUCTIONS = """You are a trace analysis agent. You analyze execution traces from AI agents and produce concise executive summaries.
+EXECUTIVE_SUMMARY_INSTRUCTIONS = """\
+You are a trace analysis agent. You analyze execution traces from AI agents \
+by inspecting them with your tools, then produce a concise executive summary.
 
-A trace contains spans — individual steps of execution with names, types, inputs, outputs, and timing. Your job is to read the full trace and write a 1-3 sentence executive summary of what happened.
+Use your tools to understand what happened:
+1. Call get_trace_overview to see the trace status, span count, and any errors
+2. Call list_spans to see all spans and identify the important ones (tool calls, errors, key outputs)
+3. Call get_root_span to see the user's original request and the final response
+4. Call get_span_detail on the most important spans to see their actual inputs and outputs
 
-Focus on:
-- What was the agent's goal?
-- What key actions did it take?
-- What was the outcome?"""
+Then write a 1-3 sentence executive summary focusing on:
+- What was the user's goal?
+- What substantive actions were taken? (name the actual tools, queries, data sources)
+- What was the concrete outcome? (include specific results, numbers, findings)
 
-MILESTONE_INSTRUCTIONS = """You are a trace analysis agent. Given an executive summary and the full trace data, extract logical milestones — phases of execution that tell the story of what happened.
+Include actual data from the spans — not "a query was executed" but \
+"queried view_spend_active_rate, returning 240 rows"."""
+
+MILESTONE_INSTRUCTIONS = """\
+You are a trace analysis agent. Given an executive summary and access to \
+trace inspection tools, extract logical milestones that tell the substantive \
+story of what happened.
+
+Use your tools to drill into specific spans for each milestone:
+1. Call list_spans to see the full span structure
+2. Call get_span_detail on spans relevant to each milestone to extract actual content
+3. Call search_spans if you need to find specific data across the trace
 
 For each milestone:
-- Give it a short, descriptive title
-- Write a 1-2 sentence summary
-- Select the most relevant events from the actual spans (tool calls, transfers, results, errors)
+- Give it a short, descriptive title that reflects the substance \
+(not "Query Executed" but "Queried Issuer Spend Active Rates")
+- Write a 1-2 sentence summary including actual data from the spans
+- Add span data references for the key inputs and outputs of that phase
 
-For each event, select real data from the spans — don't fabricate inputs/outputs. Use the span_name to reference which span the data came from.
+For span data references (inputs and outputs lists):
+- Each ref points to a specific span's inputs or outputs
+- Use jsonpath (e.g. "$.query", "$.sql", "$.result") to select the specific subfield that matters
+- Omit jsonpath to include the entire inputs or outputs object
+- The system will resolve these to actual values — just provide the span_name, field, and jsonpath
 
-Event types:
-- tool_call: A tool was invoked
-- transfer: Control passed to another agent/component
-- result: A significant output or decision point
-- error: An error or failure occurred"""
+Anti-patterns to avoid in summaries:
+- "The agent processed the query" → instead: name the actual query and data source
+- "Results were returned" → instead: state what the results showed
+- "A response was generated" → instead: summarize what the response concluded"""
+
+
+# --- PydanticAI tool wrappers ---
+
+
+def _make_pydantic_ai_tools() -> list:
+    """Create PydanticAI-compatible tool wrappers that extract deps from RunContext."""
+
+    def pai_get_trace_overview(ctx: RunContext[TraceContext]) -> dict:
+        """Get high-level trace metadata and health check."""
+        return get_trace_overview(ctx.deps)
+
+    def pai_list_spans(
+        ctx: RunContext[TraceContext],
+        filter_type: str | None = None,
+        filter_status: str | None = None,
+    ) -> list[dict]:
+        """List all spans with optional filtering by type or status."""
+        return list_spans(ctx.deps, filter_type=filter_type, filter_status=filter_status)
+
+    def pai_get_span_detail(ctx: RunContext[TraceContext], span_name: str) -> dict:
+        """Get full inputs and outputs for a specific span."""
+        return get_span_detail(ctx.deps, span_name=span_name)
+
+    def pai_get_root_span(ctx: RunContext[TraceContext]) -> dict:
+        """Get the entry point span with user request and final response."""
+        return get_root_span(ctx.deps)
+
+    def pai_search_spans(ctx: RunContext[TraceContext], pattern: str) -> list[dict]:
+        """Regex search across span inputs and outputs."""
+        return search_spans(ctx.deps, pattern=pattern)
+
+    return [
+        pai_get_trace_overview,
+        pai_list_spans,
+        pai_get_span_detail,
+        pai_get_root_span,
+        pai_search_spans,
+    ]
+
+
+# --- Service ---
 
 
 class TraceSummarizationService:
-    """Two-pass trace summarization using PydanticAI agents."""
+    """Two-pass trace summarization using PydanticAI agents with tools."""
 
     def __init__(
         self,
@@ -83,19 +324,28 @@ class TraceSummarizationService:
 
         guidance_suffix = ""
         if guidance:
-            guidance_suffix = f"\n\nFacilitator guidance:\n{guidance}\n\nApply this guidance when deciding what to highlight."
+            guidance_suffix = (
+                f"\n\nFacilitator guidance:\n{guidance}\n\n"
+                "Apply this guidance when deciding what to highlight and which spans to inspect."
+            )
 
-        self.summary_agent: Agent[None, ExecutiveSummary] = Agent(
+        tools = _make_pydantic_ai_tools()
+
+        self.summary_agent: Agent[TraceContext, ExecutiveSummary] = Agent(
             model,
+            deps_type=TraceContext,
             output_type=ExecutiveSummary,
             instructions=EXECUTIVE_SUMMARY_INSTRUCTIONS + guidance_suffix,
+            tools=tools,
             retries=2,
         )
 
-        self.milestone_agent: Agent[None, TraceSummary] = Agent(
+        self.milestone_agent: Agent[TraceContext, TraceSummary] = Agent(
             model,
+            deps_type=TraceContext,
             output_type=TraceSummary,
             instructions=MILESTONE_INSTRUCTIONS + guidance_suffix,
+            tools=tools,
             retries=2,
         )
 
@@ -110,6 +360,8 @@ class TraceSummarizationService:
         fail_trace_ids: set[str] | None = None,
     ) -> TraceSummarizationService:
         """Create a service with test model agents for unit testing."""
+        from pydantic_ai.models.test import TestModel
+
         instance = cls.__new__(cls)
         instance.max_concurrency = 5
         instance._test_exec_result = exec_summary_result
@@ -117,19 +369,22 @@ class TraceSummarizationService:
         instance._test_raise_error = raise_error
         instance._test_fail_trace_ids = fail_trace_ids or set()
 
-        # Use PydanticAI TestModel for deterministic testing
-        from pydantic_ai.models.test import TestModel
+        tools = _make_pydantic_ai_tools()
 
         instance.summary_agent = Agent(
             TestModel(custom_output_args=exec_summary_result),
+            deps_type=TraceContext,
             output_type=ExecutiveSummary,
             instructions=EXECUTIVE_SUMMARY_INSTRUCTIONS,
+            tools=tools,
             retries=2,
         )
         instance.milestone_agent = Agent(
             TestModel(custom_output_args=milestone_result),
+            deps_type=TraceContext,
             output_type=TraceSummary,
             instructions=MILESTONE_INSTRUCTIONS,
+            tools=tools,
             retries=2,
         )
         return instance
@@ -139,37 +394,48 @@ class TraceSummarizationService:
         trace_context: dict,
         trace_id: str | None = None,
     ) -> TraceSummary | None:
-        """Summarize a single trace using two-pass approach.
+        """Two-pass summarization with tool-based trace inspection.
 
-        Pass 1: Generate executive summary from full trace.
-        Pass 2: Extract milestones using executive summary + trace data.
-
-        Returns TraceSummary or None on failure.
+        Pass 1: Agent explores trace via tools → executive summary
+        Pass 2: Agent uses executive summary + tools → milestones with span data refs
+        Post-processing: Resolve SpanDataRefs to actual trace values
         """
-        # Check if this is a test failure case
-        if hasattr(self, '_test_raise_error') and self._test_raise_error:
+        if hasattr(self, "_test_raise_error") and self._test_raise_error:
             return None
-        if hasattr(self, '_test_fail_trace_ids') and trace_id in self._test_fail_trace_ids:
+        if hasattr(self, "_test_fail_trace_ids") and trace_id in self._test_fail_trace_ids:
             return None
 
         try:
-            trace_text = self._format_trace_for_prompt(trace_context)
+            deps = TraceContext.from_dict(trace_context)
 
-            # Pass 1: Executive summary
+            # Pass 1: Executive summary (agent uses tools to explore)
             exec_result = await self.summary_agent.run(
-                f"Analyze this trace:\n\n{trace_text}"
+                "Analyze this trace using your tools. Explore the structure, "
+                "inspect key spans, and produce an executive summary.",
+                deps=deps,
             )
             executive_summary = exec_result.output.executive_summary
 
-            # Pass 2: Milestones (with executive summary as context)
+            # Pass 2: Milestones with span data refs
             milestone_result = await self.milestone_agent.run(
-                f"Executive summary: {executive_summary}\n\nFull trace:\n\n{trace_text}"
+                "Using this executive summary as a guide, extract milestones "
+                "with span data references.\n\n"
+                f"Executive summary: {executive_summary}",
+                deps=deps,
             )
 
-            return milestone_result.output
+            # Post-processing: resolve refs to actual trace values
+            summary = milestone_result.output
+            for milestone in summary.milestones:
+                milestone.inputs = resolve_span_data_refs(milestone.inputs, deps)
+                milestone.outputs = resolve_span_data_refs(milestone.outputs, deps)
+
+            return summary
 
         except Exception as e:
-            logger.error(f"Trace summarization failed for {trace_id}: {e}", exc_info=True)
+            logger.error(
+                f"Trace summarization failed for {trace_id}: {e}", exc_info=True
+            )
             return None
 
     async def summarize_batch(
@@ -178,9 +444,6 @@ class TraceSummarizationService:
         on_progress: Callable[[int, int, int], None] | None = None,
     ) -> list[dict]:
         """Summarize a batch of traces concurrently.
-
-        PydanticAI agents handle retries internally. We use asyncio.Semaphore
-        for concurrency control and asyncio.gather for parallelism.
 
         Args:
             traces: List of dicts with 'id' and 'context' keys
@@ -202,7 +465,9 @@ class TraceSummarizationService:
 
             async with semaphore:
                 try:
-                    summary = await self.summarize_trace(trace["context"], trace_id=trace_id)
+                    summary = await self.summarize_trace(
+                        trace["context"], trace_id=trace_id
+                    )
                 except Exception as e:
                     summary = None
                     error_msg = str(e)
@@ -224,32 +489,3 @@ class TraceSummarizationService:
 
         results = await asyncio.gather(*[process_one(t) for t in traces])
         return list(results)
-
-    @staticmethod
-    def _format_trace_for_prompt(context: dict) -> str:
-        """Format trace context into a readable string for the LLM."""
-        lines = []
-        lines.append(f"Status: {context.get('status', 'UNKNOWN')}")
-        lines.append(f"Execution time: {context.get('execution_time_ms', 'N/A')}ms")
-        lines.append("")
-
-        spans = context.get("spans", [])
-        for i, span in enumerate(spans):
-            lines.append(f"--- Span {i + 1}: {span.get('name', 'unnamed')} ---")
-            lines.append(f"  Type: {span.get('span_type', 'UNKNOWN')}")
-            if span.get("inputs"):
-                inputs_str = json.dumps(span["inputs"], indent=2, default=str)
-                if len(inputs_str) > 2000:
-                    inputs_str = inputs_str[:2000] + "... (truncated)"
-                lines.append(f"  Inputs: {inputs_str}")
-            if span.get("outputs"):
-                outputs_str = json.dumps(span["outputs"], indent=2, default=str)
-                if len(outputs_str) > 2000:
-                    outputs_str = outputs_str[:2000] + "... (truncated)"
-                lines.append(f"  Outputs: {outputs_str}")
-            if span.get("start_time_ns") and span.get("end_time_ns"):
-                duration_ms = (span["end_time_ns"] - span["start_time_ns"]) / 1e6
-                lines.append(f"  Duration: {duration_ms:.0f}ms")
-            lines.append("")
-
-        return "\n".join(lines)

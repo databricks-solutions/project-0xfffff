@@ -1,18 +1,19 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, ArrowRight } from 'lucide-react';
 
-interface MilestoneEvent {
-  type: 'tool_call' | 'transfer' | 'result' | 'error';
-  label: string;
+interface SpanDataRef {
   span_name: string;
-  data: Record<string, unknown>;
+  field: 'inputs' | 'outputs';
+  jsonpath?: string | null;
+  value?: unknown;
 }
 
 interface Milestone {
   number: number;
   title: string;
   summary: string;
-  events: MilestoneEvent[];
+  inputs: SpanDataRef[];
+  outputs: SpanDataRef[];
 }
 
 interface MilestoneViewProps {
@@ -20,47 +21,51 @@ interface MilestoneViewProps {
   milestones: Milestone[];
 }
 
-const EVENT_TYPE_STYLES: Record<string, { bg: string; text: string; label: string }> = {
-  tool_call: { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-700 dark:text-blue-300', label: 'tool' },
-  transfer: { bg: 'bg-purple-100 dark:bg-purple-900/30', text: 'text-purple-700 dark:text-purple-300', label: 'transfer' },
-  result: { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-700 dark:text-green-300', label: 'result' },
-  error: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-700 dark:text-red-300', label: 'error' },
-};
+function formatValue(value: unknown): string {
+  if (value === null || value === undefined) return '—';
+  if (typeof value === 'string') return value;
+  return JSON.stringify(value, null, 2);
+}
 
-function EventBadge({ type }: { type: string }) {
-  const style = EVENT_TYPE_STYLES[type] || EVENT_TYPE_STYLES.result;
+function RefLabel({ dataRef }: { dataRef: SpanDataRef }) {
+  const path = dataRef.jsonpath
+    ? `${dataRef.span_name} → ${dataRef.jsonpath}`
+    : `${dataRef.span_name} → ${dataRef.field}`;
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${style.bg} ${style.text}`}>
-      {style.label}
+    <span className="text-xs font-mono text-gray-500 dark:text-gray-400">
+      {path}
     </span>
   );
 }
 
-function MilestoneEventItem({ event }: { event: MilestoneEvent }) {
+function SpanDataItem({ dataRef }: { dataRef: SpanDataRef }) {
   const [expanded, setExpanded] = useState(false);
-  const hasData = event.data && Object.keys(event.data).length > 0;
+  const valueStr = formatValue(dataRef.value);
+  const isLong = valueStr.length > 120;
+  const displayValue = isLong && !expanded ? valueStr.slice(0, 120) + '...' : valueStr;
 
   return (
-    <div className="ml-6 border-l-2 border-gray-200 dark:border-gray-700 pl-4 py-2">
-      <div className="flex items-start gap-2">
-        <EventBadge type={event.type} />
-        <div className="flex-1 min-w-0">
-          <span className="text-sm text-gray-700 dark:text-gray-300">{event.label}</span>
-          {hasData && (
-            <button
-              onClick={() => setExpanded(!expanded)}
-              className="ml-2 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-            >
-              {expanded ? 'See less' : 'See more'}
-            </button>
-          )}
-        </div>
+    <div className="py-1.5">
+      <RefLabel dataRef={dataRef} />
+      <div className="mt-0.5">
+        {dataRef.value === null || dataRef.value === undefined ? (
+          <span className="text-sm text-gray-400 italic">not resolved</span>
+        ) : (
+          <>
+            <pre className="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words font-mono bg-gray-50 dark:bg-gray-800 rounded px-2 py-1 max-h-48 overflow-y-auto">
+              {displayValue}
+            </pre>
+            {isLong && (
+              <button
+                onClick={() => setExpanded(!expanded)}
+                className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 mt-0.5"
+              >
+                {expanded ? 'Show less' : 'Show more'}
+              </button>
+            )}
+          </>
+        )}
       </div>
-      {expanded && hasData && (
-        <pre className="mt-2 ml-0 p-3 bg-gray-50 dark:bg-gray-800 rounded text-xs overflow-x-auto max-h-64 overflow-y-auto">
-          {JSON.stringify(event.data, null, 2)}
-        </pre>
-      )}
     </div>
   );
 }
@@ -87,6 +92,7 @@ export function MilestoneView({ executiveSummary, milestones }: MilestoneViewPro
 
 function MilestoneCard({ milestone }: { milestone: Milestone }) {
   const [expanded, setExpanded] = useState(true);
+  const hasData = milestone.inputs.length > 0 || milestone.outputs.length > 0;
 
   return (
     <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
@@ -111,14 +117,44 @@ function MilestoneCard({ milestone }: { milestone: Milestone }) {
 
       {expanded && (
         <div className="px-3 pb-3">
-          <p className="text-sm text-gray-600 dark:text-gray-400 ml-10 mb-2">
+          <p className="text-sm text-gray-600 dark:text-gray-400 ml-10 mb-3">
             {milestone.summary}
           </p>
-          {milestone.events.length > 0 && (
-            <div className="ml-4">
-              {milestone.events.map((event, i) => (
-                <MilestoneEventItem key={i} event={event} />
-              ))}
+
+          {hasData && (
+            <div className="ml-10 space-y-2">
+              {/* Input → Output flow */}
+              {milestone.inputs.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <span className="text-xs font-medium text-blue-600 dark:text-blue-400 uppercase tracking-wide">Input</span>
+                  </div>
+                  <div className="border-l-2 border-blue-200 dark:border-blue-800 pl-3">
+                    {milestone.inputs.map((ref, i) => (
+                      <SpanDataItem key={i} dataRef={ref} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {milestone.inputs.length > 0 && milestone.outputs.length > 0 && (
+                <div className="flex items-center gap-1 text-gray-400 py-0.5">
+                  <ArrowRight className="h-3 w-3" />
+                </div>
+              )}
+
+              {milestone.outputs.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <span className="text-xs font-medium text-green-600 dark:text-green-400 uppercase tracking-wide">Output</span>
+                  </div>
+                  <div className="border-l-2 border-green-200 dark:border-green-800 pl-3">
+                    {milestone.outputs.map((ref, i) => (
+                      <SpanDataItem key={i} dataRef={ref} />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

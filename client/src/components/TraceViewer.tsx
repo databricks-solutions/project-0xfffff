@@ -1405,11 +1405,17 @@ export interface TraceData {
       number: number;
       title: string;
       summary: string;
-      events: Array<{
-        type: 'tool_call' | 'transfer' | 'result' | 'error';
-        label: string;
+      inputs: Array<{
         span_name: string;
-        data: Record<string, unknown>;
+        field: 'inputs' | 'outputs';
+        jsonpath?: string | null;
+        value?: unknown;
+      }>;
+      outputs: Array<{
+        span_name: string;
+        field: 'inputs' | 'outputs';
+        jsonpath?: string | null;
+        value?: unknown;
       }>;
     }>;
   } | null;
