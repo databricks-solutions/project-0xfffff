@@ -3,6 +3,9 @@
 # SQLAlchemy event listener callbacks require specific parameter names
 # even when not all params are used in the body.
 connection_record  # noqa: F821  # SQLAlchemy @event.listens_for("connect") signature
+dialect  # noqa: F821  # SQLAlchemy @event.listens_for("do_connect") signature
+conn_rec  # noqa: F821  # SQLAlchemy @event.listens_for("do_connect") signature
+cargs  # noqa: F821  # SQLAlchemy @event.listens_for("do_connect") signature
 
 # FastAPI dependency-injection parameters are consumed by the framework,
 # not by user code.  Vulture cannot see that.
