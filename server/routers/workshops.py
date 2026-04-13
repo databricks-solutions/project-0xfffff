@@ -2973,13 +2973,24 @@ async def list_available_models(workshop_id: str, db: Session = Depends(get_db))
         raise HTTPException(status_code=404, detail="Workshop not found")
 
     mlflow_config = db_service.get_mlflow_config(workshop_id)
-    if not mlflow_config or not mlflow_config.databricks_host:
+    databricks_host = (mlflow_config.databricks_host if mlflow_config else None) or os.getenv(
+        "DATABRICKS_HOST"
+    )
+    if not databricks_host:
+        # Fall back to SDK default host (e.g. from databricks CLI profile)
+        try:
+            from databricks.sdk import WorkspaceClient
+
+            databricks_host = WorkspaceClient().config.host
+        except Exception:
+            pass
+    if not databricks_host:
         return []
 
     from server.services.databricks_service import resolve_databricks_token
 
     try:
-        databricks_token = resolve_databricks_token(mlflow_config.databricks_host)
+        databricks_token = resolve_databricks_token(databricks_host)
     except RuntimeError:
         return []
 
@@ -2987,7 +2998,7 @@ async def list_available_models(workshop_id: str, db: Session = Depends(get_db))
         from server.services.databricks_service import DatabricksService
 
         service = DatabricksService(
-            workspace_url=mlflow_config.databricks_host,
+            workspace_url=databricks_host,
             token=databricks_token,
             init_sdk=False,
         )
