@@ -98,6 +98,127 @@ class AlignmentService:
     def __init__(self, db_service: DatabaseService):
         self.db_service = db_service
 
+    # ------------------------------------------------------------------
+    # Evaluation result storage
+    # ------------------------------------------------------------------
+
+    def store_evaluation_results(
+        self,
+        workshop_id: str,
+        evaluations: list[dict],
+        judge_name: str,
+        judge_prompt: str,
+        model_name: str,
+        is_re_evaluation: bool = False,
+        judge_type: str | None = None,
+    ) -> "JudgePrompt":
+        """Store evaluation results, creating a new prompt version for re-evaluations.
+
+        For initial evaluations: reuses the latest existing prompt (or creates v1).
+        For re-evaluations: always creates a new prompt version so pre-align
+        and post-align results are both preserved and directly comparable.
+
+        Args:
+            evaluations: List of dicts with keys: trace_id, predicted_rating,
+                         human_rating, reasoning, (optional) workshop_uuid, confidence
+            judge_type: Explicit judge type. If None, detected from rubric.
+            is_re_evaluation: If True, creates a new prompt version instead of reusing.
+        """
+        import uuid as _uuid
+
+        from server.models import JudgeEvaluation, JudgePromptCreate
+
+        if not evaluations:
+            raise ValueError("No evaluations to store")
+
+        # Detect judge type from rubric if not explicitly provided
+        if judge_type is None:
+            judge_type = get_judge_type_from_rubric(self.db_service, workshop_id)
+        is_binary = judge_type == "binary"
+
+        # Get or create prompt
+        existing_prompts = self.db_service.get_judge_prompts(workshop_id)
+
+        if is_re_evaluation:
+            # Always create new version for re-evaluation (preserves baseline)
+            prompt_data = JudgePromptCreate(prompt_text=judge_prompt, model_name=model_name)
+            prompt = self.db_service.create_judge_prompt(workshop_id, prompt_data)
+            logger.info(
+                "Re-evaluation: created prompt v%d (preserving v%d baseline)",
+                prompt.version,
+                existing_prompts[0].version if existing_prompts else 0,
+            )
+        elif existing_prompts:
+            # Reuse latest prompt for initial evaluation
+            prompt = existing_prompts[0]
+            # Clear old evaluations for this prompt (initial eval replaces previous)
+            self.db_service.clear_judge_evaluations(workshop_id, prompt.id)
+        else:
+            # No prompts exist — create v1
+            prompt_data = JudgePromptCreate(prompt_text=judge_prompt, model_name=model_name)
+            prompt = self.db_service.create_judge_prompt(workshop_id, prompt_data)
+
+        # Build JudgeEvaluation objects with normalized ratings
+        evals_to_store = []
+        for eval_data in evaluations:
+            predicted = eval_data.get("predicted_rating")
+            if predicted is not None:
+                try:
+                    predicted = self._normalize_rating(float(predicted), is_binary)
+                except (ValueError, TypeError):
+                    logger.warning("Could not convert predicted_rating %s to float, skipping", predicted)
+                    continue
+            else:
+                # Skip traces with no predicted rating instead of defaulting
+                logger.warning("Skipping evaluation for trace %s — no predicted rating", eval_data.get("trace_id", "?"))
+                continue
+
+            human = eval_data.get("human_rating")
+            if human is not None:
+                try:
+                    human = int(human)
+                except (ValueError, TypeError):
+                    human = None
+
+            trace_id = eval_data.get("workshop_uuid") or eval_data["trace_id"]
+
+            evals_to_store.append(
+                JudgeEvaluation(
+                    id=str(_uuid.uuid4()),
+                    workshop_id=workshop_id,
+                    prompt_id=prompt.id,
+                    trace_id=trace_id,
+                    predicted_rating=predicted,
+                    human_rating=human,
+                    confidence=eval_data.get("confidence"),
+                    reasoning=eval_data.get("reasoning"),
+                    predicted_feedback=judge_name,
+                )
+            )
+
+        if evals_to_store:
+            self.db_service._insert_judge_evaluations(evals_to_store)
+
+        return prompt
+
+    @staticmethod
+    def _normalize_rating(value: float, is_binary: bool) -> int:
+        """Normalize a rating value based on judge type.
+
+        Binary: threshold at 3.0 for Likert-style values, 0.5 for others.
+        Likert: clamp to [1, 5].
+        """
+        if is_binary:
+            if value in (0.0, 1.0):
+                return int(value)
+            if 1.0 <= value <= 5.0:
+                return 1 if value >= 3.0 else 0
+            return 1 if value > 0.5 else 0
+        else:
+            return max(1, min(5, round(value)))
+
+    # ------------------------------------------------------------------
+
     @staticmethod
     def _normalize_judge_prompt(judge_prompt: str) -> str:
         """Ensure judge prompts use MLflow-compatible placeholders."""
@@ -728,6 +849,7 @@ class AlignmentService:
                     null_prediction_rows = 0
                     rows_without_trace_id = 0
                     skipped_unknown_traces = 0
+                    skipped_unparseable = 0
 
                     # Use the effective judge type determined earlier (explicit > detected)
                     is_binary = effective_judge_type == "binary"
@@ -903,16 +1025,11 @@ class AlignmentService:
                         else:
                             null_prediction_rows += 1
 
-                        # If we still couldn't parse a rating, use a sensible default
+                        # If we still couldn't parse a rating, skip this trace
                         if predicted_rating is None:
-                            if is_binary:
-                                # Default to PASS (1) for binary - matches simple evaluation behavior
-                                predicted_rating = 1.0
-                                yield f"⚠️ Could not parse rating for trace {trace_id[:8]}... - defaulting to 1.0 (PASS)"
-                            else:
-                                # Default to neutral (3) for Likert - matches simple evaluation behavior
-                                predicted_rating = 3.0
-                                yield f"⚠️ Could not parse rating for trace {trace_id[:8]}... - defaulting to 3.0 (neutral)"
+                            skipped_unparseable += 1
+                            yield f"⚠️ Skipping trace {trace_id[:8]}... - could not parse judge output into a rating"
+                            continue
 
                         evaluations.append(
                             {
@@ -928,6 +1045,8 @@ class AlignmentService:
                         yield f"WARNING: {rows_without_trace_id} result rows were missing trace_id values."
                     if skipped_unknown_traces:
                         yield f"WARNING: {skipped_unknown_traces} result rows referenced traces without human labels."
+                    if skipped_unparseable:
+                        yield f"WARNING: {skipped_unparseable} traces skipped — could not parse judge output into a rating"
                     if len(evaluations) < len(trace_ids_for_eval):
                         missing = len(trace_ids_for_eval) - len(evaluations)
                         yield f"WARNING: Missing evaluation scores for {missing} traces."
@@ -935,7 +1054,7 @@ class AlignmentService:
                     valid_count = sum(1 for e in evaluations if e["predicted_rating"] is not None)
                     yield (
                         f"Extracted {valid_count}/{len(evaluations)} evaluations with scores "
-                        f"(null predictions: {null_prediction_rows})"
+                        f"(skipped: {skipped_unparseable}, null predictions: {null_prediction_rows})"
                     )
                 else:
                     yield f"ERROR: Column '{expected_value_col}' not found. Available: {columns_list}"
@@ -950,6 +1069,8 @@ class AlignmentService:
             evaluation_results = {
                 "judge_name": judge_name,
                 "trace_count": len(trace_ids_for_eval),
+                "extracted": len(evaluations),
+                "skipped_count": skipped_unparseable if judge_value_col else 0,
                 "metrics": metrics_payload,
                 "evaluations": evaluations,
                 "success": True,

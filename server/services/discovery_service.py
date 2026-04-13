@@ -1520,46 +1520,36 @@ class DiscoveryService:
         """
         self._get_workshop_or_404(workshop_id)
 
-        # Try to look up the classified finding for text/trace context
-        # and create a draft rubric item. If any part fails (e.g., DB not
-        # fully available), fall back gracefully.
+        # Look up finding text (graceful degradation if finding row not found)
+        finding_text = ""
+        source_trace_ids: list[str] = []
         try:
-            finding_text = ""
-            source_trace_ids: list[str] = []
-            try:
-                from server.database import ClassifiedFindingDB
+            from server.database import ClassifiedFindingDB
 
-                finding_row = (
-                    self.db.query(ClassifiedFindingDB)
-                    .filter(ClassifiedFindingDB.id == finding_id, ClassifiedFindingDB.workshop_id == workshop_id)
-                    .first()
-                )
-                if finding_row:
-                    finding_text = str(finding_row.text or "")
-                    source_trace_ids = [str(finding_row.trace_id)] if finding_row.trace_id else []
-            except Exception:
-                pass
-
-            data = DraftRubricItemCreate(
-                text=finding_text or f"Promoted from finding {finding_id}",
-                source_type="finding",
-                source_trace_ids=source_trace_ids,
+            finding_row = (
+                self.db.query(ClassifiedFindingDB)
+                .filter(ClassifiedFindingDB.id == finding_id, ClassifiedFindingDB.workshop_id == workshop_id)
+                .first()
             )
-            item = self.db_service.add_draft_rubric_item(workshop_id, data, promoted_by=promoter_id)
-            return {
-                "id": item.id,
-                "finding_id": finding_id,
-                "promoted_by": promoter_id,
-                "status": "promoted",
-            }
+            if finding_row:
+                finding_text = str(finding_row.text or "")
+                source_trace_ids = [str(finding_row.trace_id)] if finding_row.trace_id else []
         except Exception:
-            # Fallback for cases where draft rubric table doesn't exist yet
-            return {
-                "id": finding_id,
-                "finding_id": finding_id,
-                "promoted_by": promoter_id,
-                "status": "promoted",
-            }
+            pass  # Finding lookup failure is non-critical
+
+        data = DraftRubricItemCreate(
+            text=finding_text or f"Promoted from finding {finding_id}",
+            source_type="finding",
+            source_trace_ids=source_trace_ids,
+        )
+        # Let DB errors propagate — caller sees 500
+        item = self.db_service.add_draft_rubric_item(workshop_id, data, promoted_by=promoter_id)
+        return {
+            "id": item.id,
+            "finding_id": finding_id,
+            "promoted_by": promoter_id,
+            "status": "promoted",
+        }
 
     # -----------------------------------------------------------------
     # Draft Rubric Items (Step 3)

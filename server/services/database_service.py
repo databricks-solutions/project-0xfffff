@@ -3542,7 +3542,14 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       self.db.commit()
 
   def store_judge_evaluations(self, evaluations: List[JudgeEvaluation]) -> None:
-    """Store judge evaluation results."""
+    """Store judge evaluation results.
+
+    .. deprecated::
+        Use AlignmentService.store_evaluation_results() for re-evaluations.
+        This method deletes all existing evaluations for the prompt before inserting,
+        which destroys pre-alignment baselines. It is still used by initial evaluation
+        call sites where delete-all is the correct behavior.
+    """
     # Clear existing evaluations for this prompt
     if evaluations:
       self.db.query(JudgeEvaluationDB).filter(JudgeEvaluationDB.prompt_id == evaluations[0].prompt_id).delete()
@@ -3667,6 +3674,27 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
   def clear_judge_evaluations(self, workshop_id: str, prompt_id: str) -> None:
     """Clear all evaluation results for a specific judge prompt."""
     self.db.query(JudgeEvaluationDB).filter(and_(JudgeEvaluationDB.workshop_id == workshop_id, JudgeEvaluationDB.prompt_id == prompt_id)).delete()
+    self.db.commit()
+
+  def _insert_judge_evaluations(self, evaluations: list) -> None:
+    """Insert judge evaluations without clearing existing ones.
+
+    Used by AlignmentService.store_evaluation_results() which handles
+    prompt versioning and rating normalization at a higher level.
+    """
+    for evaluation in evaluations:
+      db_eval = JudgeEvaluationDB(
+        id=evaluation.id,
+        workshop_id=evaluation.workshop_id,
+        prompt_id=evaluation.prompt_id,
+        trace_id=evaluation.trace_id,
+        predicted_rating=evaluation.predicted_rating,
+        human_rating=evaluation.human_rating,
+        confidence=evaluation.confidence,
+        reasoning=evaluation.reasoning,
+        predicted_feedback=evaluation.predicted_feedback,
+      )
+      self.db.add(db_eval)
     self.db.commit()
 
   def get_latest_evaluations(self, workshop_id: str) -> List[JudgeEvaluation]:
