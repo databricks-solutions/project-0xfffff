@@ -28,9 +28,10 @@ Before starting the workshop, ensure you have:
 
 - [ ] **At least 2 participants** to provide annotations (required for Judge Alignment)
 - [ ] **At least 10 traces** to enable alignment
-- [ ] Access to a Databricks workspace
+- [ ] Access to a Databricks workspace with **Databricks Apps** enabled
 - [ ] MLflow experiment with traces (if using MLflow ingestion)
 - [ ] MLflow experiment [added as an app resource](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/mlflow) with **Can read** permission (grants the app's service principal access — no personal access token needed)
+- [ ] Model serving endpoint(s) for AI features (evaluation and alignment LLMs)
 
 ---
 
@@ -58,54 +59,99 @@ As the facilitator, you are **not annotating like an SME**. Your responsibilitie
 
 ## Part 1: Deploying the Application
 
-### Step 1: Download the Project
+### Step 1: Set Up a Lakebase Autoscaling Database
 
-1. Go to [https://github.com/databricks-solutions/project-0xfffff/release](https://github.com/databricks-solutions/project-0xfffff/releases)
+The workshop uses a Lakebase (PostgreSQL) database for persistent storage. You need to create a project before deploying the app.
 
-2. Click to download **`project-with-build.zip`**
+1. Open the **apps switcher** (top-right of your Databricks workspace) and select **Lakebase Postgres**
+2. Select **Autoscaling** to open the Lakebase Autoscaling UI
+3. Click **New project**
+4. Enter a project name (e.g., `workshop`) and select your Postgres version
+5. Wait for the compute to activate — this creates a `production` branch with a `databricks_postgres` database automatically
 
-   > ⚠️ **IMPORTANT:** Make sure to click `PROJECT_WITH_BUILD.ZIP` file. Ignore the Source code zip files.
+For detailed setup instructions, see the [Lakebase Autoscaling documentation](https://docs.databricks.com/aws/en/oltp/projects/get-started).
 
-### Step 2: Import into Databricks Workspace
+> **Why Lakebase?** Databricks Apps run in ephemeral containers. A Lakebase database ensures your workshop data (traces, annotations, rubrics) persists across app restarts and redeployments.
 
-1. Go to **Workspace** in Databricks
-2. Click the **three dots** next to Share
-3. Select **Import**
-4. Drag and drop `project-with-build.zip`
-5. Click **Import**
+### Step 2: Create the App
 
-![Import Dialog](facilitator_guide_images/01-workspace-import-dialog.png)
-
-### Step 3: Verify the Import
-
-1. Click into **project-0xfffff**
-2. Navigate to the **client** folder
-3. Verify that the **build** folder is present
-
-### Step 4: Create the App
-
-1. Navigate to **Compute** → **Apps**
-2. Click **Create App**
+1. Click the **Compute** icon in the sidebar, then go to the **Apps** tab
+2. Click **Create app**
 3. Select **Create a custom app**
 4. Enter your app name (e.g., `judge-builder-workshop`)
-5. Click **Create App**
+5. Click **Create app**
 
-### Step 5: Deploy the App
+### Step 3: Configure App Resources
 
-1. Once the app is created, click **Deploy**
-2. In the "Create deployment" popup, click the folder icon
-3. Select **project-0xfffff** as the source folder
-4. Click **Deploy**
+In the **Configure** step, click **"+ Add resource"** in the **App resources** section for each of the following:
 
-![Select Folder Dialog](facilitator_guide_images/02-select-folder-dialog.png)
+#### A. Database (Lakebase)
 
-![Create Deployment Dialog](facilitator_guide_images/03-create-deployment-dialog.png)
+| Field | Value |
+|-------|-------|
+| **Resource type** | Database |
+| **Project** | Select the Lakebase project from Step 1 |
+| **Branch** | `production` |
+| **Database** | `databricks_postgres` |
+| **Permission** | Can connect and create |
+| **Resource key** | `postgres` (default) |
 
-### Step 6: Access the App
+When deployed, Databricks automatically injects these environment variables: `PGHOST`, `PGDATABASE`, `PGUSER`, `PGPORT`, `PGAPPNAME`, and `PGSSLMODE`.
 
-1. Wait for the deployment to complete
+#### B. Serving Endpoints
+
+Add a resource for each model serving endpoint used by the workshop's AI features (evaluation LLM, alignment LLM, etc.):
+
+| Field | Value |
+|-------|-------|
+| **Resource type** | Model serving endpoint |
+| **Endpoint** | Select your serving endpoint |
+| **Permission** | Can query |
+| **Resource key** | e.g., `llm_endpoint` |
+
+> **Tip:** If you use separate endpoints for evaluation and alignment, add each one as its own resource.
+
+#### C. MLflow Experiment
+
+| Field | Value |
+|-------|-------|
+| **Resource type** | MLflow experiment |
+| **Experiment** | Select the experiment containing your traces |
+| **Permission** | Can edit |
+| **Resource key** | e.g., `mlflow_experiment` |
+
+### Step 4: Deploy the App
+
+You can deploy directly from the GitHub repository — no need to download or import source code.
+
+#### Option A: Deploy from Git (Recommended)
+
+1. On the app details page, configure the Git repository:
+   - Enter the repository URL: `https://github.com/databricks-solutions/project-0xfffff`
+   - Select **GitHub** as the Git provider
+   - Click **Save**
+2. Click **Deploy**, then select **From Git**
+3. Enter the **Git reference**: `main` (or a specific release tag like `v1.10.0`)
+4. Select the **Reference type** (branch or tag)
+5. Click **Deploy**
+
+> **Note:** Databricks Apps automatically runs `npm install` and `npm run build` during deployment. No pre-built files are needed.
+
+#### Option B: Deploy from Workspace
+
+If you prefer to deploy from a workspace copy (e.g., for an air-gapped environment):
+
+1. Download the source code zip from the [releases page](https://github.com/databricks-solutions/project-0xfffff/releases)
+2. In Databricks, go to **Workspace** → click the **three dots** → **Import**
+3. Drag and drop the zip file and click **Import**
+4. On the app details page, click **Deploy**
+5. Select the workspace folder containing the app files, then click **Select** → **Deploy**
+
+### Step 5: Access the App
+
+1. Wait for the deployment to complete (this may take a few minutes as dependencies are installed and the frontend is built)
 2. Once the app shows **Running** status, click the link next to it
-3. 🎉 **Congratulations!** The app is deployed successfully!
+3. Congratulations! The app is deployed successfully!
 
 ---
 

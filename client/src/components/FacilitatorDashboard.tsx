@@ -9,7 +9,7 @@ import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTraces, useAllTraces, useRubric, useFacilitatorAnnotations, useFacilitatorAnnotationsWithUserDetails, useWorkshop, useDiscoveryFeedback, useFacilitatorDiscoveryFeedback, useUpdateDiscoveryModel, useAvailableModels } from '@/hooks/useWorkshopApi';
 import type { DiscoveryFeedbackWithUser } from '@/hooks/useWorkshopApi';
-import { Settings, Users, FileText, CheckCircle, Clock, AlertCircle, ChevronRight, Play, Eye, Plus, RotateCcw, Target, TrendingUp, Activity, MessageSquare, ChevronDown, Brain } from 'lucide-react';
+import { Settings, Users, FileText, CheckCircle, Clock, AlertCircle, ChevronRight, Play, Eye, Plus, RotateCcw, Target, TrendingUp, Activity, MessageSquare, ChevronDown, Brain, Sparkles } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { buildModelOptions, getDisplayName } from '@/utils/modelMapping';
 import {
@@ -28,6 +28,7 @@ import { Label } from '@/components/ui/label';
 import { useQueryClient } from '@tanstack/react-query';
 import { PhaseControlButton } from './PhaseControlButton';
 import { JsonPathSettings } from './JsonPathSettings';
+import { SummarizationSettings } from './SummarizationSettings';
 import { DraftRubricPanel } from './DraftRubricPanel';
 import { toast } from 'sonner';
 import { parseRubricQuestions } from '@/utils/rubricUtils';
@@ -71,6 +72,16 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
   const { data: annotationsWithUserDetails } = useFacilitatorAnnotationsWithUserDetails(workshopId!);
   // v2 discovery feedback with user details (for discovery metrics + reviewer names)
   const { data: allDiscoveryFeedback } = useFacilitatorDiscoveryFeedback(workshopId!);
+
+  // Build set of trace IDs that have summaries for indicator badges
+  const tracesWithSummaries = React.useMemo(() => {
+    if (!traces) return new Set<string>();
+    return new Set(
+      (traces as Array<{ id: string; summary?: unknown }>)
+        .filter((t) => t.summary)
+        .map((t) => t.id)
+    );
+  }, [traces]);
 
   // Additional traces functionality - separate state for each phase
   const [discoveryTracesCount, setDiscoveryTracesCount] = React.useState<string>('');
@@ -999,6 +1010,12 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                   <Badge variant="secondary" className="bg-purple-100 text-purple-700 border-purple-200">
                     {traceCoverageDetails.length}
                   </Badge>
+                  {tracesWithSummaries.size > 0 && (
+                    <Badge variant="secondary" className="bg-indigo-100 text-indigo-700 border-indigo-200">
+                      <Sparkles className="w-3 h-3 mr-1" />
+                      {tracesWithSummaries.size}/{traceCoverageDetails.length} summarized
+                    </Badge>
+                  )}
                 </div>
                 {traceCoverageDetails.length > 0 ? (
                   <div className="space-y-3" data-testid="trace-coverage">
@@ -1031,6 +1048,16 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
                                 <Users className="w-3 h-3 mr-1" />
                                 {trace.uniqueReviewers} reviewer{trace.uniqueReviewers !== 1 ? 's' : ''}
                               </Badge>
+                              {tracesWithSummaries.has(trace.traceId) ? (
+                                <Badge className="bg-indigo-100 text-indigo-700 border-indigo-200">
+                                  <Sparkles className="w-3 h-3 mr-1" />
+                                  Summarized
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-gray-400 border-gray-200">
+                                  No summary
+                                </Badge>
+                              )}
                             </div>
                             <p className="text-xs text-slate-600 line-clamp-2 mb-3 leading-relaxed">
                               {trace.input.slice(0, 120)}...
@@ -1415,6 +1442,9 @@ export const FacilitatorDashboard: React.FC<FacilitatorDashboardProps> = ({ onNa
 
         {/* JSONPath Settings - Only show in general dashboard view */}
         {!focusPhase && <JsonPathSettings />}
+
+        {/* Summarization Settings - Only show in general dashboard view */}
+        {!focusPhase && <SummarizationSettings />}
       </div>
     </div>
   );

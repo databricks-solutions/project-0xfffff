@@ -93,7 +93,11 @@ const useDiscoveryResponses = (feedback: DiscoveryFeedbackData[] | undefined, tr
         input: trace.input,
         output: trace.output,
         context: trace.context ?? undefined,
-        mlflow_trace_id: trace.mlflow_trace_id ?? undefined
+        mlflow_trace_id: trace.mlflow_trace_id ?? undefined,
+        mlflow_url: trace.mlflow_url ?? undefined,
+        mlflow_host: trace.mlflow_host ?? undefined,
+        mlflow_experiment_id: trace.mlflow_experiment_id ?? undefined,
+        summary: trace.summary ?? undefined,
       } : null,
       responses: traceFeedback.map((fb) => {
         const label = fb.feedback_label === 'good' ? '[GOOD]' : '[BAD]';

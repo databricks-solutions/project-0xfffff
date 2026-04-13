@@ -372,6 +372,14 @@ class TestApiEndpointConfiguration:
             "app.yaml must specify uvicorn worker class"
         )
 
+    def test_app_yaml_references_gunicorn_conf(self):
+        """app.yaml uses gunicorn_conf.py for server hooks."""
+        app_yaml = PROJECT_ROOT / "app.yaml"
+        content = app_yaml.read_text()
+        assert "gunicorn_conf.py" in content, (
+            "app.yaml must reference gunicorn_conf.py for pre-fork migration hook"
+        )
+
 
 @pytest.mark.spec("BUILD_AND_DEPLOY_SPEC")
 @pytest.mark.req("Database connection established")

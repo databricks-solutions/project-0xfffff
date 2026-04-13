@@ -394,6 +394,15 @@ async def preview_jsonpath(
     }
 
 
+# Summarization Settings Models
+class SummarizationSettingsUpdate(BaseModel):
+    """Request model for updating trace summarization settings."""
+
+    summarization_enabled: bool = False
+    summarization_model: str | None = None
+    summarization_guidance: str | None = None
+
+
 # Span Attribute Filter Models
 class SpanAttributeFilterUpdate(BaseModel):
     """Request model for updating span attribute filter."""
@@ -467,6 +476,188 @@ async def preview_span_filter(
         "output_result": final_output,
         "original_input": first_trace.input[:400] if first_trace.input else None,
         "original_output": first_trace.output[:400] if first_trace.output else None,
+    }
+
+
+@router.put("/{workshop_id}/summarization-settings")
+async def update_summarization_settings(
+    workshop_id: str, body: SummarizationSettingsUpdate, db: Session = Depends(get_db)
+) -> Workshop:
+    """Update trace summarization settings for a workshop."""
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+
+    updated = db_service.update_workshop_summarization_settings(
+        workshop_id,
+        summarization_enabled=body.summarization_enabled,
+        summarization_model=body.summarization_model,
+        summarization_guidance=body.summarization_guidance,
+    )
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to update summarization settings")
+    return updated
+
+
+class ResummarizeRequest(BaseModel):
+    mode: str = "all"  # "all", "unsummarized", or "failed"
+    trace_ids: list[str] | None = None
+
+
+@router.post("/{workshop_id}/resummarize")
+async def resummarize_traces(
+    workshop_id: str,
+    body: ResummarizeRequest | None = None,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Trigger re-summarization of workshop traces.
+
+    Creates a tracked SummarizationJob and returns the job_id for progress polling.
+    Modes: "all" (re-summarize everything), "unsummarized" (only traces without summaries),
+    "failed" (only traces from the last job's failed list).
+    """
+    import asyncio
+
+    from server.services.trace_summarization_service import TraceSummarizationService
+
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+    if not workshop.summarization_enabled or not workshop.summarization_model:
+        raise HTTPException(status_code=400, detail="Summarization not configured")
+
+    traces = db_service.get_traces(workshop_id)
+    if not traces:
+        return {"job_id": None, "total": 0, "message": "No traces to summarize"}
+
+    request = body or ResummarizeRequest()
+
+    # Filter traces based on mode
+    if request.trace_ids:
+        traces = [t for t in traces if t.id in request.trace_ids]
+    elif request.mode == "unsummarized":
+        traces = [t for t in traces if not t.summary]
+    elif request.mode == "failed":
+        last_job = db_service.get_latest_summarization_job(workshop_id)
+        if last_job and last_job.failed_traces:
+            failed_ids = {ft["trace_id"] for ft in last_job.failed_traces}
+            traces = [t for t in traces if t.id in failed_ids]
+        else:
+            return {"job_id": None, "total": 0, "message": "No failed traces to retry"}
+
+    batch = [{"id": t.id, "context": t.context} for t in traces if t.context]
+    if not batch:
+        return {"job_id": None, "total": 0, "message": "No traces with context to summarize"}
+
+    # Create tracked job
+    job = db_service.create_summarization_job(workshop_id=workshop_id, total=len(batch))
+
+    mlflow_config = db_service.get_mlflow_config(workshop_id)
+    if not mlflow_config:
+        raise HTTPException(status_code=400, detail="MLflow config not found")
+
+    workspace_host = mlflow_config.databricks_host.rstrip("/")
+    workspace_url = workspace_host if workspace_host.startswith("https://") else f"https://{workspace_host}"
+    endpoint_url = f"{workspace_url}/serving-endpoints"
+
+    async def run_summarization():
+        from server.database import SessionLocal
+
+        from server.services.databricks_service import resolve_databricks_token
+
+        token = resolve_databricks_token(workspace_url)
+        svc = TraceSummarizationService(
+            endpoint_url=endpoint_url,
+            token=token,
+            model_name=workshop.summarization_model,
+            guidance=workshop.summarization_guidance,
+        )
+
+        with SessionLocal() as bg_db:
+            bg_service = DatabaseService(bg_db)
+            bg_service.update_summarization_job_status(job.id, "running")
+
+            results = await svc.summarize_batch(batch)
+            for result in results:
+                if result["summary"] is not None:
+                    bg_service.update_trace_summary(result["trace_id"], result["summary"])
+                    bg_service.add_summarization_job_completed(job.id, result["trace_id"])
+                else:
+                    bg_service.add_summarization_job_failed(
+                        job.id, result["trace_id"], result.get("error", "Unknown error")
+                    )
+
+            bg_service.update_summarization_job_status(job.id, "completed")
+            logger.info(
+                f"Summarization job {job.id} complete: "
+                f"{len([r for r in results if r['summary']])} succeeded, "
+                f"{len([r for r in results if not r['summary']])} failed"
+            )
+
+    asyncio.create_task(run_summarization())
+
+    return {
+        "job_id": job.id,
+        "total": len(batch),
+        "message": f"Summarization started for {len(batch)} traces",
+    }
+
+
+@router.get("/{workshop_id}/summarization-job/{job_id}")
+async def get_summarization_job_status(
+    workshop_id: str,
+    job_id: str,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Get the status of a summarization job for progress polling."""
+    db_service = DatabaseService(db)
+    job = db_service.get_summarization_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Summarization job not found")
+    if job.workshop_id != workshop_id:
+        raise HTTPException(status_code=403, detail="Job does not belong to this workshop")
+    return {
+        "id": job.id,
+        "workshop_id": job.workshop_id,
+        "status": job.status,
+        "total": job.total,
+        "completed": job.completed,
+        "failed": job.failed,
+        "completed_traces": job.completed_traces,
+        "failed_traces": job.failed_traces,
+        "created_at": job.created_at.isoformat(),
+        "updated_at": job.updated_at.isoformat(),
+    }
+
+
+@router.get("/{workshop_id}/summarization-status")
+async def get_summarization_status(
+    workshop_id: str,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Get summary coverage stats and last job info for a workshop."""
+    db_service = DatabaseService(db)
+    workshop = db_service.get_workshop(workshop_id)
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+    status = db_service.get_summarization_status(workshop_id)
+    last_job = status["last_job"]
+    return {
+        "traces_with_summaries": status["traces_with_summaries"],
+        "traces_without_summaries": status["traces_without_summaries"],
+        "last_job": {
+            "id": last_job.id,
+            "status": last_job.status,
+            "total": last_job.total,
+            "completed": last_job.completed,
+            "failed": last_job.failed,
+            "completed_traces": last_job.completed_traces,
+            "failed_traces": last_job.failed_traces,
+            "created_at": last_job.created_at.isoformat(),
+            "updated_at": last_job.updated_at.isoformat(),
+        } if last_job else None,
     }
 
 
@@ -2782,13 +2973,24 @@ async def list_available_models(workshop_id: str, db: Session = Depends(get_db))
         raise HTTPException(status_code=404, detail="Workshop not found")
 
     mlflow_config = db_service.get_mlflow_config(workshop_id)
-    if not mlflow_config or not mlflow_config.databricks_host:
+    databricks_host = (mlflow_config.databricks_host if mlflow_config else None) or os.getenv(
+        "DATABRICKS_HOST"
+    )
+    if not databricks_host:
+        # Fall back to SDK default host (e.g. from databricks CLI profile)
+        try:
+            from databricks.sdk import WorkspaceClient
+
+            databricks_host = WorkspaceClient().config.host
+        except Exception:
+            pass
+    if not databricks_host:
         return []
 
     from server.services.databricks_service import resolve_databricks_token
 
     try:
-        databricks_token = resolve_databricks_token(mlflow_config.databricks_host)
+        databricks_token = resolve_databricks_token(databricks_host)
     except RuntimeError:
         return []
 
@@ -2796,7 +2998,7 @@ async def list_available_models(workshop_id: str, db: Session = Depends(get_db))
         from server.services.databricks_service import DatabricksService
 
         service = DatabricksService(
-            workspace_url=mlflow_config.databricks_host,
+            workspace_url=databricks_host,
             token=databricks_token,
             init_sdk=False,
         )
@@ -2897,10 +3099,69 @@ async def ingest_mlflow_traces(workshop_id: str, ingest_request: dict, db: Sessi
         # Update ingestion status
         db_service.update_mlflow_ingestion_status(workshop_id, trace_count)
 
+        # Trigger background summarization if enabled
+        summarization_job_id = None
+        if workshop.summarization_enabled and workshop.summarization_model:
+            try:
+                import asyncio
+
+                from server.services.trace_summarization_service import TraceSummarizationService
+
+                traces = db_service.get_traces(workshop_id)
+                unsummarized = [t for t in traces if t.context and not t.summary]
+                if unsummarized:
+                    batch = [{"id": t.id, "context": t.context} for t in unsummarized]
+                    ingest_host = config_with_token.databricks_host.rstrip("/")
+                    ingest_url = ingest_host if ingest_host.startswith("https://") else f"https://{ingest_host}"
+                    endpoint_url = f"{ingest_url}/serving-endpoints"
+
+                    # Create tracked job
+                    summ_job = db_service.create_summarization_job(workshop_id=workshop_id, total=len(batch))
+                    summarization_job_id = summ_job.id
+
+                    async def run_summarization():
+                        from server.database import SessionLocal
+
+                        from server.services.databricks_service import resolve_databricks_token
+
+                        token = resolve_databricks_token(ingest_url)
+                        svc = TraceSummarizationService(
+                            endpoint_url=endpoint_url,
+                            token=token,
+                            model_name=workshop.summarization_model,
+                            guidance=workshop.summarization_guidance,
+                        )
+
+                        with SessionLocal() as bg_db:
+                            bg_service = DatabaseService(bg_db)
+                            bg_service.update_summarization_job_status(summ_job.id, "running")
+
+                            results = await svc.summarize_batch(batch)
+                            for r in results:
+                                if r["summary"] is not None:
+                                    bg_service.update_trace_summary(r["trace_id"], r["summary"])
+                                    bg_service.add_summarization_job_completed(summ_job.id, r["trace_id"])
+                                else:
+                                    bg_service.add_summarization_job_failed(
+                                        summ_job.id, r["trace_id"], r.get("error", "Unknown error")
+                                    )
+
+                            bg_service.update_summarization_job_status(summ_job.id, "completed")
+                            logger.info(
+                                f"Background summarization job {summ_job.id} complete: "
+                                f"{len([r for r in results if r['summary']])} succeeded, "
+                                f"{len([r for r in results if not r['summary']])} failed"
+                            )
+
+                    asyncio.create_task(run_summarization())
+            except Exception as e:
+                logger.warning(f"Failed to start background summarization: {e}")
+
         return {
             "message": f"Successfully ingested {trace_count} traces from MLflow",
             "trace_count": trace_count,
             "workshop_id": workshop_id,
+            "summarization_job_id": summarization_job_id,
         }
     except Exception as e:
         # Roll back the failed transaction so the session is usable again

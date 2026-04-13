@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ChevronDown, ChevronRight, AlertTriangle, ArrowUpRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, AlertTriangle, ArrowUpRight, Sparkles } from 'lucide-react';
+import { MilestoneView } from '@/components/MilestoneView';
 import type { Trace } from '@/client';
 import type { DiscoveryFeedbackWithUser } from '@/client';
 
@@ -105,6 +106,8 @@ export const DiscoveryTraceCard: React.FC<DiscoveryTraceCardProps> = ({
 }) => {
   const [contentExpanded, setContentExpanded] = useState(false);
   const [findingsOpen, setFindingsOpen] = useState(true);
+  const hasSummary = !!trace.summary?.executive_summary;
+  const [showSummary, setShowSummary] = useState(hasSummary);
 
   const inputText = tryParseContent(trace.input);
   const outputText = tryParseContent(trace.output);
@@ -115,30 +118,69 @@ export const DiscoveryTraceCard: React.FC<DiscoveryTraceCardProps> = ({
   return (
     <Card className="overflow-hidden">
       <CardContent className="p-5">
-        {/* Trace content */}
-        <div className="mb-4 rounded-lg bg-slate-50 p-4 space-y-2">
-          <div>
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">User</span>
-            <p className="text-sm text-slate-800 mt-0.5">{inputText}</p>
+        {/* Toggle between summary and raw content */}
+        {hasSummary && (
+          <div className="flex items-center gap-1 mb-2">
+            <button
+              type="button"
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                showSummary
+                  ? 'bg-indigo-100 text-indigo-800'
+                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
+              }`}
+              onClick={() => setShowSummary(true)}
+            >
+              <Sparkles className="w-3 h-3 inline mr-1" />
+              Summary
+            </button>
+            <button
+              type="button"
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                !showSummary
+                  ? 'bg-slate-200 text-slate-800'
+                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
+              }`}
+              onClick={() => setShowSummary(false)}
+            >
+              Raw
+            </button>
           </div>
-          <div>
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Assistant</span>
-            <p className="text-sm text-slate-800 mt-0.5">
-              {contentExpanded || outputText.length <= truncateAt
-                ? outputText
-                : outputText.slice(0, truncateAt) + '...'}
-            </p>
-            {outputText.length > truncateAt && (
-              <button
-                type="button"
-                className="text-xs text-blue-600 hover:text-blue-800 mt-1"
-                onClick={() => setContentExpanded(!contentExpanded)}
-              >
-                {contentExpanded ? 'Show less' : 'Show more'}
-              </button>
-            )}
+        )}
+
+        {/* Summary view */}
+        {showSummary && hasSummary ? (
+          <div className="mb-4">
+            <MilestoneView
+              executiveSummary={trace.summary!.executive_summary}
+              milestones={trace.summary!.milestones}
+            />
           </div>
-        </div>
+        ) : (
+          /* Raw user/assistant content */
+          <div className="mb-4 rounded-lg bg-slate-50 p-4 space-y-2">
+            <div>
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">User</span>
+              <p className="text-sm text-slate-800 mt-0.5">{inputText}</p>
+            </div>
+            <div>
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Assistant</span>
+              <p className="text-sm text-slate-800 mt-0.5">
+                {contentExpanded || outputText.length <= truncateAt
+                  ? outputText
+                  : outputText.slice(0, truncateAt) + '...'}
+              </p>
+              {outputText.length > truncateAt && (
+                <button
+                  type="button"
+                  className="text-xs text-blue-600 hover:text-blue-800 mt-1"
+                  onClick={() => setContentExpanded(!contentExpanded)}
+                >
+                  {contentExpanded ? 'Show less' : 'Show more'}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Analysis findings — pinned above feedback */}
         {hasAnalysis && (

@@ -15,6 +15,7 @@ export type Trace = {
     mlflow_experiment_id?: (string | null);
     include_in_alignment?: boolean;
     sme_feedback?: (string | null);
+    summary?: (Record<string, any> | null);
     created_at?: string;
 };
 

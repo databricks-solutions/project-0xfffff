@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { TraceViewer, TraceData } from '@/components/TraceViewer';
+import { TraceViewer, type TraceData } from '@/components/TraceViewer';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -22,18 +22,7 @@ import { DiscoveryFeedbackView } from '@/components/DiscoveryFeedbackView';
 import { useQueryClient } from '@tanstack/react-query';
 import { WorkshopsService, DiscoveryService } from '@/client';
 import type { Trace } from '@/client';
-
-// Convert API trace to TraceData format
-const convertTraceToTraceData = (trace: Trace): TraceData => ({
-  id: trace.id,
-  input: trace.input,
-  output: trace.output,
-  context: trace.context || undefined,
-  mlflow_trace_id: trace.mlflow_trace_id || undefined,
-  mlflow_url: trace.mlflow_url || undefined,
-  mlflow_host: trace.mlflow_host || undefined,
-  mlflow_experiment_id: trace.mlflow_experiment_id || undefined
-});
+import { convertTraceToTraceData } from '@/utils/traceUtils';
 
 export function TraceViewerDemo() {
   const { workshopId } = useWorkshopContext();

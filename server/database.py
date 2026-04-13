@@ -165,6 +165,9 @@ class WorkshopDB(Base):
     auto_evaluation_model = Column(String, nullable=True)  # Model used for auto-evaluation
     show_participant_notes = Column(Boolean, default=False)  # Facilitator toggle: show notepad to SMEs
     span_attribute_filter = Column(JSON, nullable=True)  # Filter config for selecting a span's inputs/outputs
+    summarization_enabled = Column(Boolean, default=False)
+    summarization_model = Column(String, nullable=True)
+    summarization_guidance = Column(Text, nullable=True)
     created_at = Column(DateTime, default=func.now())
 
     # Relationships
@@ -216,6 +219,7 @@ class TraceDB(Base):
     mlflow_experiment_id = Column(String, nullable=True)  # Optional MLflow experiment ID
     include_in_alignment = Column(Boolean, default=True)  # Whether to include in judge alignment
     sme_feedback = Column(Text, nullable=True)  # Concatenated SME feedback for alignment
+    summary = Column(JSON, nullable=True)  # Structured milestone view from LLM summarization
     created_at = Column(DateTime, default=func.now())
 
     # Relationships
@@ -227,6 +231,21 @@ class TraceDB(Base):
     disagreements = relationship("DisagreementDB", back_populates="trace", cascade="all, delete-orphan")
     trace_discovery_questions = relationship("TraceDiscoveryQuestionDB", back_populates="trace", cascade="all, delete-orphan")
     trace_discovery_thresholds = relationship("TraceDiscoveryThresholdDB", back_populates="trace", cascade="all, delete-orphan")
+
+
+class SummarizationJobDB(Base):
+    """Database model for tracking summarization batch jobs."""
+
+    __tablename__ = "summarization_jobs"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id", ondelete="CASCADE"), nullable=False, index=True)
+    status = Column(String, default="pending")  # pending, running, completed, failed
+    total = Column(Integer, default=0)
+    completed_traces = Column(JSON, default=list)  # [trace_id, ...]
+    failed_traces = Column(JSON, default=list)  # [{ trace_id, error }, ...]
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
 
 class DiscoveryFindingDB(Base):

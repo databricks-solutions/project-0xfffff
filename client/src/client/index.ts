@@ -71,6 +71,7 @@ export type { ParticipantNote } from './models/ParticipantNote';
 export type { ParticipantNoteCreate } from './models/ParticipantNoteCreate';
 export type { PromoteFindingRequest } from './models/PromoteFindingRequest';
 export type { ProposedGroup } from './models/ProposedGroup';
+export type { ResummarizeRequest } from './models/ResummarizeRequest';
 export type { Rubric } from './models/Rubric';
 export type { RubricCreate } from './models/RubricCreate';
 export type { RubricGenerationRequest } from './models/RubricGenerationRequest';
@@ -80,6 +81,7 @@ export type { SpanAttributeFilterUpdate } from './models/SpanAttributeFilterUpda
 export type { SubmitFindingV2Request } from './models/SubmitFindingV2Request';
 export type { SubmitFollowUpAnswerRequest } from './models/SubmitFollowUpAnswerRequest';
 export type { SuggestGroupsResponse } from './models/SuggestGroupsResponse';
+export type { SummarizationSettingsUpdate } from './models/SummarizationSettingsUpdate';
 export type { Trace } from './models/Trace';
 export type { TraceUpload } from './models/TraceUpload';
 export type { UpdateDraftRubricItemRequest } from './models/UpdateDraftRubricItemRequest';

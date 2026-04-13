@@ -53,6 +53,7 @@ import type { MLflowTraceInfo } from '../models/MLflowTraceInfo';
 import type { ParticipantNote } from '../models/ParticipantNote';
 import type { ParticipantNoteCreate } from '../models/ParticipantNoteCreate';
 import type { PromoteFindingRequest } from '../models/PromoteFindingRequest';
+import type { ResummarizeRequest } from '../models/ResummarizeRequest';
 import type { Rubric } from '../models/Rubric';
 import type { RubricCreate } from '../models/RubricCreate';
 import type { RubricGenerationRequest } from '../models/RubricGenerationRequest';
@@ -62,6 +63,7 @@ import type { SpanAttributeFilterUpdate } from '../models/SpanAttributeFilterUpd
 import type { SubmitFindingV2Request } from '../models/SubmitFindingV2Request';
 import type { SubmitFollowUpAnswerRequest } from '../models/SubmitFollowUpAnswerRequest';
 import type { SuggestGroupsResponse } from '../models/SuggestGroupsResponse';
+import type { SummarizationSettingsUpdate } from '../models/SummarizationSettingsUpdate';
 import type { Trace } from '../models/Trace';
 import type { TraceUpload } from '../models/TraceUpload';
 import type { UpdateDraftRubricItemRequest } from '../models/UpdateDraftRubricItemRequest';
@@ -285,6 +287,105 @@ export class ApiService {
             },
             body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Update Summarization Settings
+     * Update trace summarization settings for a workshop.
+     * @param workshopId
+     * @param requestBody
+     * @returns Workshop Successful Response
+     * @throws ApiError
+     */
+    public static updateSummarizationSettingsWorkshopsWorkshopIdSummarizationSettingsPut(
+        workshopId: string,
+        requestBody: SummarizationSettingsUpdate,
+    ): CancelablePromise<Workshop> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/workshops/{workshop_id}/summarization-settings',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Resummarize Traces
+     * Trigger re-summarization of workshop traces.
+     *
+     * Creates a tracked SummarizationJob and returns the job_id for progress polling.
+     * Modes: "all" (re-summarize everything), "unsummarized" (only traces without summaries),
+     * "failed" (only traces from the last job's failed list).
+     * @param workshopId
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static resummarizeTracesWorkshopsWorkshopIdResummarizePost(
+        workshopId: string,
+        requestBody?: (ResummarizeRequest | null),
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/resummarize',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Summarization Job Status
+     * Get the status of a summarization job for progress polling.
+     * @param workshopId
+     * @param jobId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getSummarizationJobStatusWorkshopsWorkshopIdSummarizationJobJobIdGet(
+        workshopId: string,
+        jobId: string,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/summarization-job/{job_id}',
+            path: {
+                'workshop_id': workshopId,
+                'job_id': jobId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Summarization Status
+     * Get summary coverage stats and last job info for a workshop.
+     * @param workshopId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getSummarizationStatusWorkshopsWorkshopIdSummarizationStatusGet(
+        workshopId: string,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/summarization-status',
+            path: {
+                'workshop_id': workshopId,
+            },
             errors: {
                 422: `Validation Error`,
             },
