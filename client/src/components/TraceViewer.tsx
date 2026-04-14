@@ -793,6 +793,15 @@ const extractLLMResponseContent = (output: unknown): { content: string | null; m
     return { content: null, metadata: null };
   }
 
+  // Bail out for bare messages arrays ([{role, content}, ...]) so SmartValueRenderer
+  // can render them as individual cards instead of extracting a single message.
+  if (Array.isArray(output) && output.length > 0 &&
+      output.every((item: unknown) =>
+        typeof item === 'object' && item !== null && 'role' in item && 'content' in item
+      )) {
+    return { content: null, metadata: null };
+  }
+
   // After the type guard above, narrow to a record for property access.
   const out = output as Record<string, unknown>;
 
