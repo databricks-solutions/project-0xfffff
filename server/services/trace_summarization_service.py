@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from dataclasses import field as dc_field
 from typing import Any, Literal
 
+import httpx
+
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -230,7 +232,7 @@ You are a CTO providing an executive summary of an AI agent's execution \
 trajectory to non-technical subject matter experts. Your audience evaluates \
 the quality of AI agent behavior — they need to understand what the agent \
 did and whether it did it well, not the technical plumbing.
-
+{use_case_section}\
 Use your tools to understand what happened:
 1. Call get_trace_overview to see the trace status, span count, and any errors
 2. Call list_spans to see all spans and identify the important ones (tool calls, errors, key outputs)
@@ -251,7 +253,7 @@ You are a CTO providing a milestone breakdown of an AI agent's execution \
 trajectory to non-technical subject matter experts who evaluate agent quality. \
 They need to see what the agent did at each step and the actual data that \
 flowed through — but presented in a readable, non-technical way.
-
+{use_case_section}\
 Use your tools to drill into specific spans for each milestone:
 1. Call list_spans to see the full span structure
 2. Call get_span_detail on spans relevant to each milestone to extract actual content
@@ -326,16 +328,32 @@ def _make_pydantic_ai_tools() -> list:
 class TraceSummarizationService:
     """Two-pass trace summarization using PydanticAI agents with tools."""
 
+    # Retry settings for 429 rate limit errors
+    MAX_429_RETRIES = 4
+    INITIAL_BACKOFF_S = 2.0
+
     def __init__(
         self,
         endpoint_url: str,
         token: str,
         model_name: str,
         guidance: str | None = None,
-        max_concurrency: int = 5,
+        use_case_description: str | None = None,
+        max_concurrency: int = 3,
     ):
         provider = OpenAIProvider(base_url=endpoint_url, api_key=token)
         model = OpenAIChatModel(model_name, provider=provider)
+
+        use_case_section = ""
+        if use_case_description:
+            use_case_section = (
+                f"\nUse case context: {use_case_description}\n"
+                "Ground your analysis in this use case — focus on domain-relevant "
+                "observations rather than generic quality assessments.\n\n"
+            )
+
+        exec_instructions = EXECUTIVE_SUMMARY_INSTRUCTIONS.format(use_case_section=use_case_section)
+        milestone_instructions = MILESTONE_INSTRUCTIONS.format(use_case_section=use_case_section)
 
         guidance_suffix = ""
         if guidance:
@@ -350,7 +368,7 @@ class TraceSummarizationService:
             model,
             deps_type=TraceContext,
             output_type=ExecutiveSummary,
-            instructions=EXECUTIVE_SUMMARY_INSTRUCTIONS + guidance_suffix,
+            instructions=exec_instructions + guidance_suffix,
             tools=tools,
             retries=2,
         )
@@ -359,7 +377,7 @@ class TraceSummarizationService:
             model,
             deps_type=TraceContext,
             output_type=TraceSummary,
-            instructions=MILESTONE_INSTRUCTIONS + guidance_suffix,
+            instructions=milestone_instructions + guidance_suffix,
             tools=tools,
             retries=2,
         )
@@ -404,6 +422,41 @@ class TraceSummarizationService:
         )
         return instance
 
+    @staticmethod
+    def _is_rate_limit_error(exc: Exception) -> bool:
+        """Check if an exception is a 429 rate limit error."""
+        # httpx response errors (PydanticAI → openai SDK → httpx)
+        if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
+            return True
+        # openai SDK wraps 429 as RateLimitError
+        try:
+            from openai import RateLimitError
+
+            if isinstance(exc, RateLimitError):
+                return True
+        except ImportError:
+            pass
+        # Check nested cause
+        if exc.__cause__ and exc.__cause__ is not exc:
+            return TraceSummarizationService._is_rate_limit_error(exc.__cause__)
+        return False
+
+    async def _run_with_429_retry(self, coro_factory, trace_id: str | None = None):
+        """Run an async callable with retry on 429 rate limit errors."""
+        for attempt in range(self.MAX_429_RETRIES + 1):
+            try:
+                return await coro_factory()
+            except Exception as e:
+                if self._is_rate_limit_error(e) and attempt < self.MAX_429_RETRIES:
+                    backoff = self.INITIAL_BACKOFF_S * (2 ** attempt)
+                    logger.warning(
+                        "Rate limited (429) on trace %s, attempt %d/%d — retrying in %.1fs",
+                        trace_id, attempt + 1, self.MAX_429_RETRIES, backoff,
+                    )
+                    await asyncio.sleep(backoff)
+                    continue
+                raise
+
     async def summarize_trace(
         self,
         trace_context: dict,
@@ -424,19 +477,25 @@ class TraceSummarizationService:
             deps = TraceContext.from_dict(trace_context)
 
             # Pass 1: Executive summary (agent uses tools to explore)
-            exec_result = await self.summary_agent.run(
-                "Analyze this trace using your tools. Explore the structure, "
-                "inspect key spans, and produce an executive summary.",
-                deps=deps,
+            exec_result = await self._run_with_429_retry(
+                lambda: self.summary_agent.run(
+                    "Analyze this trace using your tools. Explore the structure, "
+                    "inspect key spans, and produce an executive summary.",
+                    deps=deps,
+                ),
+                trace_id=trace_id,
             )
             executive_summary = exec_result.output.executive_summary
 
             # Pass 2: Milestones with span data refs
-            milestone_result = await self.milestone_agent.run(
-                "Using this executive summary as a guide, extract milestones "
-                "with span data references.\n\n"
-                f"Executive summary: {executive_summary}",
-                deps=deps,
+            milestone_result = await self._run_with_429_retry(
+                lambda: self.milestone_agent.run(
+                    "Using this executive summary as a guide, extract milestones "
+                    "with span data references.\n\n"
+                    f"Executive summary: {executive_summary}",
+                    deps=deps,
+                ),
+                trace_id=trace_id,
             )
 
             # Post-processing: resolve refs to actual trace values
@@ -470,11 +529,21 @@ class TraceSummarizationService:
         completed = 0
         failed = 0
         lock = asyncio.Lock()
+        # Stagger task starts so we don't burst all concurrent tasks at once
+        task_index = 0
+        index_lock = asyncio.Lock()
 
         async def process_one(trace: dict) -> dict:
-            nonlocal completed, failed
+            nonlocal completed, failed, task_index
             trace_id = trace["id"]
             error_msg = None
+
+            # Stagger: each task waits a bit before acquiring the semaphore
+            async with index_lock:
+                my_index = task_index
+                task_index += 1
+            if my_index > 0:
+                await asyncio.sleep(min(my_index * 0.5, 3.0))
 
             async with semaphore:
                 try:

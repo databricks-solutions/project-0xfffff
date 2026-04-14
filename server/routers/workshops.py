@@ -522,6 +522,7 @@ async def _run_summarization_background(
     endpoint_url: str,
     model_name: str,
     guidance: str | None,
+    use_case_description: str | None,
     batch: list[dict],
 ) -> None:
     """Run batch summarization in the background with proper error handling.
@@ -540,6 +541,7 @@ async def _run_summarization_background(
             token=token,
             model_name=model_name,
             guidance=guidance,
+            use_case_description=use_case_description,
         )
 
         with SessionLocal() as bg_db:
@@ -629,6 +631,7 @@ async def resummarize_traces(
             endpoint_url=endpoint_url,
             model_name=workshop.summarization_model,
             guidance=workshop.summarization_guidance,
+            use_case_description=workshop.description,
             batch=batch,
         )
     )
