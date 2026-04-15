@@ -10,9 +10,7 @@ async def test_dbsql_export_success(async_client, override_get_db, monkeypatch):
 
     class FakeDBSQLExportService:
         def __init__(self, **kwargs):
-            # Basic sanity that we wired the request fields
-            assert kwargs["databricks_host"] == "https://example.cloud.databricks.com"
-            assert kwargs["databricks_token"] == "tok"
+            # Auth resolved from environment now — just check non-auth fields
             assert kwargs["http_path"] == "/sql/1.0/warehouses/abc"
             assert kwargs["catalog"] == "cat"
             assert kwargs["schema_name"] == "sch"
@@ -26,8 +24,6 @@ async def test_dbsql_export_success(async_client, override_get_db, monkeypatch):
     resp = await async_client.post(
         "/dbsql-export/w1/export",
         json={
-            "databricks_host": "https://example.cloud.databricks.com",
-            "databricks_token": "tok",
             "http_path": "/sql/1.0/warehouses/abc",
             "catalog": "cat",
             "schema_name": "sch",

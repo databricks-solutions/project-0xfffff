@@ -18,12 +18,7 @@ async def test_databricks_test_connection_success(async_client, monkeypatch):
                 "message": "ok",
             }
 
-    def fake_create(*, workspace_url: str, token: str):
-        assert workspace_url == "https://example.cloud.databricks.com"
-        assert token == "tok"
-        return FakeService()
-
-    monkeypatch.setattr(databricks_router, "create_databricks_service", fake_create)
+    monkeypatch.setattr(databricks_router, "create_databricks_service", lambda: FakeService())
 
     resp = await async_client.post(
         "/databricks/test-connection",
@@ -49,11 +44,7 @@ async def test_databricks_call_endpoint_success(async_client, monkeypatch):
             assert params["temperature"] == 0.0
             return {"choices": [{"text": "ok"}]}
 
-    monkeypatch.setattr(
-        databricks_router,
-        "create_databricks_service",
-        lambda *, workspace_url, token: FakeService(),
-    )
+    monkeypatch.setattr(databricks_router, "create_databricks_service", lambda: FakeService())
 
     resp = await async_client.post(
         "/databricks/call",
@@ -82,11 +73,7 @@ async def test_databricks_chat_endpoint_success(async_client, monkeypatch):
             assert params["messages"] == [{"role": "user", "content": "hi"}]
             return {"choices": [{"message": {"content": "ok"}}]}
 
-    monkeypatch.setattr(
-        databricks_router,
-        "create_databricks_service",
-        lambda *, workspace_url, token: FakeService(),
-    )
+    monkeypatch.setattr(databricks_router, "create_databricks_service", lambda: FakeService())
 
     resp = await async_client.post(
         "/databricks/chat",
