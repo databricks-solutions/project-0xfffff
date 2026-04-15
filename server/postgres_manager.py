@@ -186,7 +186,6 @@ _TABLE_DDL: list[str] = [
     CREATE TABLE IF NOT EXISTS mlflow_intake_config (
         id                  VARCHAR PRIMARY KEY,
         workshop_id         VARCHAR NOT NULL UNIQUE REFERENCES workshops(id),
-        databricks_host     VARCHAR NOT NULL,
         experiment_id       VARCHAR NOT NULL,
         max_traces          INTEGER DEFAULT 100,
         filter_string       TEXT,

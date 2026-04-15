@@ -376,7 +376,6 @@ class MLflowIntakeConfigDB(Base):
 
     id = Column(String, primary_key=True)
     workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False, unique=True)
-    databricks_host = Column(String, nullable=False)
     experiment_id = Column(String, nullable=False)
     max_traces = Column(Integer, default=100)
     filter_string = Column(Text, nullable=True)
