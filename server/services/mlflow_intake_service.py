@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Literal
 
 from server.models import MLflowIntakeConfig, MLflowTraceInfo, TraceUpload
 from server.services.database_service import DatabaseService
+from server.services.databricks_service import get_databricks_host
 
 
 def sanitize_for_json(obj: Any) -> Any:
@@ -46,7 +47,7 @@ class MLflowIntakeService:
     """Search for traces in MLflow experiment with proper error handling."""
     try:
       # Configure MLflow
-      self.configure_mlflow(config)
+      self.configure_mlflow()
 
       # Search for traces with error handling
       traces = mlflow.search_traces(
@@ -79,7 +80,7 @@ class MLflowIntakeService:
               status=getattr(trace.info, 'status', 'UNKNOWN'),
               timestamp_ms=getattr(trace.info, 'timestamp_ms', 0),
               tags=dict(trace.info.tags) if hasattr(trace.info, 'tags') and trace.info.tags else None,
-              mlflow_url=self._generate_mlflow_url(config.databricks_host, config.experiment_id, trace.info.request_id),
+              mlflow_url=self._generate_mlflow_url(get_databricks_host(), config.experiment_id, trace.info.request_id),
             )
             trace_info_list.append(trace_info)
         except Exception as trace_error:
@@ -152,12 +153,12 @@ class MLflowIntakeService:
             },
             trace_metadata={
               'mlflow_trace_id': trace_info.trace_id,
-              'mlflow_host': config.databricks_host,
+              'mlflow_host': get_databricks_host(),
               'mlflow_experiment_id': config.experiment_id,
             },
             mlflow_trace_id=trace_info.trace_id,
-            mlflow_url=self._generate_mlflow_url(config.databricks_host, config.experiment_id, trace_info.trace_id),
-            mlflow_host=config.databricks_host,
+            mlflow_url=self._generate_mlflow_url(get_databricks_host(), config.experiment_id, trace_info.trace_id),
+            mlflow_host=get_databricks_host(),
             mlflow_experiment_id=config.experiment_id,
           )
           trace_uploads.append(trace_upload)
@@ -419,7 +420,7 @@ class MLflowIntakeService:
     """Test MLflow connection and return experiment info."""
     try:
       # Configure MLflow
-      self.configure_mlflow(config)
+      self.configure_mlflow()
 
       # Try to get experiment info
       experiment = mlflow.get_experiment(config.experiment_id)

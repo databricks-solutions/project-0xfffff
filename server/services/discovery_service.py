@@ -281,10 +281,10 @@ class DiscoveryService:
                 "coverage": coverage,
             }
 
-        from server.services.databricks_service import resolve_databricks_token
+        from server.services.databricks_service import get_databricks_host, resolve_databricks_token
 
         try:
-            databricks_token = resolve_databricks_token(mlflow_config.databricks_host if mlflow_config else None)
+            databricks_token = resolve_databricks_token()
         except RuntimeError:
             databricks_token = None
         if not databricks_token:
@@ -309,7 +309,7 @@ class DiscoveryService:
             GenerateDiscoveryQuestion = get_question_signature()
             lm = build_databricks_lm(
                 endpoint_name=model_name,
-                workspace_url=mlflow_config.databricks_host,
+                workspace_url=get_databricks_host(),
                 token=databricks_token,
                 temperature=0.2,
             )
@@ -321,14 +321,17 @@ class DiscoveryService:
                 self._trim(txt, 600) for txt in other_findings_texts if txt and self._trim(txt, 600)
             ]
 
+            workshop = self.db_service.get_workshop(workshop_id)
+            display_input, display_output = get_display_text(trace, workshop)
+
             result = run_predict(
                 predictor,
                 lm,
                 workshop_id=workshop_id,
                 user_id=user_id,
                 trace_id=trace_id,
-                trace_input=self._trim(trace.input or "", 2000),
-                trace_output=self._trim(trace.output or "", 2000),
+                trace_input=self._trim(display_input, 2000),
+                trace_output=self._trim(display_output, 2000),
                 trace_context_json=self._trim(trace_context_json, 2000),
                 user_prior_finding=self._trim(user_prior_finding_text, 1200),
                 previous_questions=previous_prompts,
@@ -558,10 +561,10 @@ class DiscoveryService:
         if not mlflow_config:
             raise HTTPException(status_code=400, detail="MLflow/Databricks configuration not found for workshop")
 
-        from server.services.databricks_service import resolve_databricks_token
+        from server.services.databricks_service import get_databricks_host, resolve_databricks_token
 
         try:
-            databricks_token = resolve_databricks_token(mlflow_config.databricks_host if mlflow_config else None)
+            databricks_token = resolve_databricks_token()
         except RuntimeError:
             databricks_token = None
         if not databricks_token:
@@ -580,7 +583,7 @@ class DiscoveryService:
             sigs = get_signatures()
             lm = build_databricks_lm(
                 endpoint_name=model_name,
-                workspace_url=mlflow_config.databricks_host,
+                workspace_url=get_databricks_host(),
                 token=databricks_token,
                 temperature=0.2,
             )
@@ -998,11 +1001,11 @@ class DiscoveryService:
 
         mlflow_config = self.db_service.get_mlflow_config(workshop_id)
         if mlflow_config:
-            workspace_url = mlflow_config.databricks_host
-            from server.services.databricks_service import resolve_databricks_token
+            workspace_url = get_databricks_host()
+            from server.services.databricks_service import get_databricks_host, resolve_databricks_token
 
             try:
-                databricks_token = resolve_databricks_token(mlflow_config.databricks_host)
+                databricks_token = resolve_databricks_token()
             except RuntimeError:
                 databricks_token = None
 
@@ -1141,7 +1144,7 @@ class DiscoveryService:
     ) -> str:
         """Classify finding using LLM if configured, otherwise fall back to keyword-based."""
         from server.services.classification_service import ClassificationService
-        from server.services.databricks_service import resolve_databricks_token
+        from server.services.databricks_service import get_databricks_host, resolve_databricks_token
 
         # Get LLM configuration
         mlflow_config = self.db_service.get_mlflow_config(workshop_id)
@@ -1154,7 +1157,7 @@ class DiscoveryService:
 
         # Get token via SDK auth
         try:
-            databricks_token = resolve_databricks_token(mlflow_config.databricks_host if mlflow_config else None)
+            databricks_token = resolve_databricks_token()
         except RuntimeError:
             databricks_token = None
 
@@ -1178,8 +1181,6 @@ class DiscoveryService:
                 trace_output=trace_output,
                 workshop_id=workshop_id,
                 model_name=model_name.strip(),
-                databricks_host=mlflow_config.databricks_host,
-                databricks_token=databricks_token,
             )
             return category
         except Exception as e:
@@ -1192,7 +1193,7 @@ class DiscoveryService:
         """Detect disagreements using LLM if configured."""
         from server.models import ClassifiedFinding
         from server.services.classification_service import ClassificationService
-        from server.services.databricks_service import resolve_databricks_token
+        from server.services.databricks_service import get_databricks_host, resolve_databricks_token
 
         if not findings or len(findings) < 2:
             return
@@ -1209,7 +1210,7 @@ class DiscoveryService:
 
         # Get token via SDK auth
         try:
-            databricks_token = resolve_databricks_token(mlflow_config.databricks_host if mlflow_config else None)
+            databricks_token = resolve_databricks_token()
         except RuntimeError:
             databricks_token = None
 
@@ -1238,8 +1239,6 @@ class DiscoveryService:
                 findings=classified_findings,
                 workshop_id=workshop_id,
                 model_name=model_name.strip(),
-                databricks_host=mlflow_config.databricks_host,
-                databricks_token=databricks_token,
             )
 
             # Persist disagreements to database
@@ -1319,10 +1318,10 @@ class DiscoveryService:
             logger.debug("Disagreement detection skipped: no MLflow config")
             return []
 
-        from server.services.databricks_service import resolve_databricks_token
+        from server.services.databricks_service import get_databricks_host, resolve_databricks_token
 
         try:
-            databricks_token = resolve_databricks_token(mlflow_config.databricks_host if mlflow_config else None)
+            databricks_token = resolve_databricks_token()
         except RuntimeError:
             databricks_token = None
         if not databricks_token:
@@ -1345,7 +1344,7 @@ class DiscoveryService:
             DetectFindingDisagreements = get_disagreement_signature()
             lm = build_databricks_lm(
                 endpoint_name=model_name,
-                workspace_url=mlflow_config.databricks_host,
+                workspace_url=get_databricks_host(),
                 token=databricks_token,
                 temperature=0.1,  # Low temperature for consistent detection
             )
@@ -1363,12 +1362,14 @@ class DiscoveryService:
             if len(findings_with_users) < 2:
                 return []
 
+            display_input, display_output = get_display_text(trace, workshop)
+
             result = run_predict(
                 predictor,
                 lm,
                 trace_id=trace_id,
-                trace_input=self._trim(trace.input or "", 1000),
-                trace_output=self._trim(trace.output or "", 1000),
+                trace_input=self._trim(display_input, 1000),
+                trace_output=self._trim(display_output, 1000),
                 findings_with_users=findings_with_users,
             )
 
