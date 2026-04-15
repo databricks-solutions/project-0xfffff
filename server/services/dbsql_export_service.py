@@ -18,8 +18,6 @@ class DBSQLExportService:
 
     def __init__(
         self,
-        databricks_host: str,
-        databricks_token: str,
         http_path: str,
         catalog: str,
         schema_name: str,
@@ -27,22 +25,17 @@ class DBSQLExportService:
         """Initialize DBSQL export service.
 
         Args:
-            databricks_host: Databricks workspace URL
-            databricks_token: Databricks access token
             http_path: DBSQL warehouse HTTP path
             catalog: Unity Catalog catalog name
             schema_name: Unity Catalog schema name
         """
-        self.databricks_host = databricks_host
-        self.databricks_token = databricks_token
+        from server.services.databricks_service import get_databricks_host, resolve_databricks_token
+
+        self.databricks_host = get_databricks_host()
+        self.databricks_token = resolve_databricks_token()
         self.http_path = http_path
         self.catalog = catalog
         self.schema_name = schema_name
-
-        # Set host for SDK auth (service principal on Apps, CLI profile locally)
-        import os
-
-        os.environ["DATABRICKS_HOST"] = databricks_host
 
         logger.info(f"DBSQL Export Service initialized for {catalog}.{schema_name}")
 

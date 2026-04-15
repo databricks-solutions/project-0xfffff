@@ -560,9 +560,7 @@ class AlignmentService:
                     mlflow_to_workshop_trace_map[trace.mlflow_trace_id] = trace.id
             yield f"Built MLflow-to-workshop trace mapping ({len(mlflow_to_workshop_trace_map)} traces)"
 
-        # Set up MLflow environment — SDK handles auth
-        # (service principal on Apps, CLI profile locally)
-        os.environ["DATABRICKS_HOST"] = mlflow_config.databricks_host.rstrip("/")
+        # SDK handles auth (service principal on Apps, CLI profile locally)
         mlflow.set_tracking_uri("databricks")
 
         # Prepare the evaluation data
@@ -1132,8 +1130,7 @@ class AlignmentService:
             return
 
         try:
-            # Set up MLflow environment — SDK handles auth
-            os.environ["DATABRICKS_HOST"] = mlflow_config.databricks_host.rstrip("/")
+            # SDK handles auth (service principal on Apps, CLI profile locally)
             mlflow.set_tracking_uri("databricks")
 
             # Enable MemAlign debug logging

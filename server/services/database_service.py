@@ -2122,7 +2122,7 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       .filter(MLflowIntakeConfigDB.workshop_id == workshop_id)
       .first()
     )
-    if not config or not config.databricks_host or not config.experiment_id:
+    if not config or not config.experiment_id:
       logger.debug('Skipping MLflow sync: config missing for workshop %s', workshop_id)
       result['error'] = 'config missing'
       return result
@@ -2130,7 +2130,7 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
     from server.services.databricks_service import resolve_databricks_token
 
     try:
-      databricks_token = resolve_databricks_token(config.databricks_host if config else None)
+      databricks_token = resolve_databricks_token()
     except RuntimeError:
       databricks_token = None
     if not databricks_token:
@@ -2145,9 +2145,6 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       logger.warning('MLflow is not available; cannot sync annotation feedback.')
       result['error'] = 'mlflow not available'
       return result
-
-    os.environ['DATABRICKS_HOST'] = config.databricks_host.rstrip('/')
-    # SDK handles auth (service principal on Apps, CLI profile locally)
 
     mlflow.set_tracking_uri('databricks')
 
@@ -2461,14 +2458,14 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       .filter(MLflowIntakeConfigDB.workshop_id == workshop_id)
       .first()
     )
-    if not config or not config.databricks_host or not config.experiment_id:
+    if not config or not config.experiment_id:
       logger.warning('Skipping MLflow eval sync: config missing for workshop %s', workshop_id)
       return {'synced': 0, 'error': 'MLflow config missing'}
 
     from server.services.databricks_service import resolve_databricks_token
 
     try:
-      databricks_token = resolve_databricks_token(config.databricks_host if config else None)
+      databricks_token = resolve_databricks_token()
     except RuntimeError:
       databricks_token = None
     if not databricks_token:
@@ -2481,9 +2478,6 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
     except ImportError:
       logger.warning('MLflow is not available; cannot sync evaluation feedback.')
       return {'synced': 0, 'error': 'MLflow not available'}
-
-    os.environ['DATABRICKS_HOST'] = config.databricks_host.rstrip('/')
-    # SDK handles auth (service principal on Apps, CLI profile locally)
 
     mlflow.set_tracking_uri('databricks')
 
@@ -2614,7 +2608,7 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
     from server.services.databricks_service import resolve_databricks_token
 
     try:
-      databricks_token = resolve_databricks_token(config.databricks_host if config else None)
+      databricks_token = resolve_databricks_token()
     except RuntimeError:
       databricks_token = None
     if not databricks_token:
@@ -2626,10 +2620,6 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
     except ImportError:
       logger.warning('MLflow is not available; cannot tag traces.')
       return {'tagged': 0, 'failed': trace_ids, 'error': 'MLflow not available'}
-
-    # Set up MLflow credentials
-    os.environ['DATABRICKS_HOST'] = config.databricks_host.rstrip('/')
-    # SDK handles auth (service principal on Apps, CLI profile locally)
 
     mlflow.set_tracking_uri('databricks')
 
@@ -3475,7 +3465,6 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
 
     if existing_config:
       # Update existing config
-      existing_config.databricks_host = config_data.databricks_host
       existing_config.experiment_id = config_data.experiment_id
       existing_config.max_traces = config_data.max_traces
       existing_config.filter_string = config_data.filter_string
@@ -3488,8 +3477,6 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       self.db.refresh(existing_config)
 
       return MLflowIntakeConfig(
-        databricks_host=existing_config.databricks_host,
-        databricks_token=config_data.databricks_token,  # Return the provided token, not from DB
         experiment_id=existing_config.experiment_id,
         max_traces=existing_config.max_traces,
         filter_string=existing_config.filter_string,
@@ -3500,7 +3487,6 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       db_config = MLflowIntakeConfigDB(
         id=config_id,
         workshop_id=workshop_id,
-        databricks_host=config_data.databricks_host,
         experiment_id=config_data.experiment_id,
         max_traces=config_data.max_traces,
         filter_string=config_data.filter_string,
@@ -3511,23 +3497,19 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       self.db.refresh(db_config)
 
       return MLflowIntakeConfig(
-        databricks_host=db_config.databricks_host,
-        databricks_token=config_data.databricks_token,  # Return the provided token, not from DB
         experiment_id=db_config.experiment_id,
         max_traces=db_config.max_traces,
         filter_string=db_config.filter_string,
       )
 
   def get_mlflow_config(self, workshop_id: str) -> Optional[MLflowIntakeConfig]:
-    """Get MLflow intake configuration for a workshop (without token)."""
+    """Get MLflow intake configuration for a workshop."""
     db_config = self.db.query(MLflowIntakeConfigDB).filter(MLflowIntakeConfigDB.workshop_id == workshop_id).first()
 
     if not db_config:
       return None
 
     return MLflowIntakeConfig(
-      databricks_host=db_config.databricks_host,
-      databricks_token='',  # Token is not stored in database
       experiment_id=db_config.experiment_id,
       max_traces=db_config.max_traces,
       filter_string=db_config.filter_string,
@@ -3558,8 +3540,6 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       return MLflowIntakeStatus(workshop_id=workshop_id, is_configured=False, is_ingested=False, trace_count=0)
 
     config = MLflowIntakeConfig(
-      databricks_host=db_config.databricks_host,
-      databricks_token='',  # Token is not stored in database
       experiment_id=db_config.experiment_id,
       max_traces=db_config.max_traces,
       filter_string=db_config.filter_string,
@@ -4025,30 +4005,34 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
     # Import all related models
     from server.database import (
       AnnotationDB, UserTraceOrderDB, RubricDB, MLflowIntakeConfigDB,
-      DiscoveryFindingDB, UserDiscoveryCompletionDB, JudgePromptDB, JudgeEvaluationDB
+      DiscoveryFindingDB, UserDiscoveryCompletionDB, JudgePromptDB, JudgeEvaluationDB,
+      DiscoveryFeedbackDB, DiscoveryQuestionDB, ParticipantNoteDB,
+      ClassifiedFindingDB, DisagreementDB, TraceDiscoveryQuestionDB,
+      TraceDiscoveryThresholdDB, DraftRubricItemDB
     )
-    
+
     # Get trace IDs first
     trace_ids = [t.id for t in self.db.query(TraceDB).filter(TraceDB.workshop_id == workshop_id).all()]
-    
+
     if trace_ids:
-      # Delete annotations for these traces
+      # Delete all child rows that reference traces via FK
       self.db.query(AnnotationDB).filter(AnnotationDB.trace_id.in_(trace_ids)).delete(synchronize_session=False)
-      # Delete judge evaluations for these traces
       self.db.query(JudgeEvaluationDB).filter(JudgeEvaluationDB.trace_id.in_(trace_ids)).delete(synchronize_session=False)
-    
-    # Delete user trace orders for this workshop
+      self.db.query(DiscoveryFindingDB).filter(DiscoveryFindingDB.trace_id.in_(trace_ids)).delete(synchronize_session=False)
+      self.db.query(DiscoveryFeedbackDB).filter(DiscoveryFeedbackDB.trace_id.in_(trace_ids)).delete(synchronize_session=False)
+      self.db.query(DiscoveryQuestionDB).filter(DiscoveryQuestionDB.trace_id.in_(trace_ids)).delete(synchronize_session=False)
+      self.db.query(ParticipantNoteDB).filter(ParticipantNoteDB.trace_id.in_(trace_ids)).delete(synchronize_session=False)
+      self.db.query(ClassifiedFindingDB).filter(ClassifiedFindingDB.trace_id.in_(trace_ids)).delete(synchronize_session=False)
+      self.db.query(DisagreementDB).filter(DisagreementDB.trace_id.in_(trace_ids)).delete(synchronize_session=False)
+      self.db.query(TraceDiscoveryQuestionDB).filter(TraceDiscoveryQuestionDB.trace_id.in_(trace_ids)).delete(synchronize_session=False)
+      self.db.query(TraceDiscoveryThresholdDB).filter(TraceDiscoveryThresholdDB.trace_id.in_(trace_ids)).delete(synchronize_session=False)
+
+    # Delete workshop-level child data (no trace FK, just workshop FK)
     self.db.query(UserTraceOrderDB).filter(UserTraceOrderDB.workshop_id == workshop_id).delete(synchronize_session=False)
-    
-    # Delete discovery findings for this workshop
-    self.db.query(DiscoveryFindingDB).filter(DiscoveryFindingDB.workshop_id == workshop_id).delete(synchronize_session=False)
-    
-    # Delete user discovery completions for this workshop
     self.db.query(UserDiscoveryCompletionDB).filter(UserDiscoveryCompletionDB.workshop_id == workshop_id).delete(synchronize_session=False)
-    
-    # Delete judge prompts for this workshop (after evaluations are deleted)
     self.db.query(JudgePromptDB).filter(JudgePromptDB.workshop_id == workshop_id).delete(synchronize_session=False)
-    
+    self.db.query(DraftRubricItemDB).filter(DraftRubricItemDB.workshop_id == workshop_id).delete(synchronize_session=False)
+
     # Delete all traces
     deleted_count = self.db.query(TraceDB).filter(TraceDB.workshop_id == workshop_id).delete(synchronize_session=False)
     

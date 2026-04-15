@@ -282,13 +282,6 @@ class JudgeService:
         self, workshop_id: str, prompt: JudgePrompt, input_text: str, output_text: str, mlflow_config
     ) -> tuple[int, str]:
         """Evaluate using real MLflow LLM judge."""
-        # Set up MLflow — SDK handles auth (service principal on Apps, CLI profile locally)
-        os.environ["DATABRICKS_HOST"] = mlflow_config.databricks_host.rstrip("/")
-
-        # Validate host format
-        if not mlflow_config.databricks_host.startswith("https://"):
-            raise ValueError("Databricks host must start with https://")
-
         # Initialize MLflow with proper experiment context
         try:
             # Use same method as intake service - "databricks" URI with environment variables

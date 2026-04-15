@@ -33,33 +33,14 @@ class MLflowIntakeService:
   def __init__(self, db_service: DatabaseService):
     self.db_service = db_service
 
-  def configure_mlflow(self, config: MLflowIntakeConfig) -> None:
-    """Configure MLflow with Databricks credentials.
+  def configure_mlflow(self) -> None:
+    """Configure MLflow for Databricks.
 
-    Auth is handled by the Databricks SDK (service principal on Apps,
-    CLI profile locally).  We only need to set DATABRICKS_HOST so the
-    SDK knows which workspace to talk to.
+    Auth is handled by the Databricks SDK — service principal on Apps,
+    CLI profile locally.  DATABRICKS_HOST and auth credentials are
+    already in the environment.
     """
-    try:
-      if not config.databricks_host:
-        raise ValueError('Databricks host is required')
-
-      if not config.databricks_host.startswith('https://'):
-        raise ValueError('Databricks host must start with https://')
-
-      mlflow.set_tracking_uri('databricks')
-
-      # Set host for SDK; clear profile vars that would override SDK auth
-      import os
-
-      os.environ['DATABRICKS_HOST'] = config.databricks_host.rstrip('/')
-      os.environ.pop('DATABRICKS_CONFIG_PROFILE', None)
-      os.environ.pop('DATABRICKS_AUTH_TYPE', None)
-      # Don't set DATABRICKS_TOKEN — let the SDK handle auth
-      # (service principal on Apps, CLI profile locally)
-
-    except Exception as e:
-      raise ValueError(f'Failed to configure MLflow: {str(e)}')
+    mlflow.set_tracking_uri('databricks')
 
   def search_traces(self, config: MLflowIntakeConfig) -> List[MLflowTraceInfo]:
     """Search for traces in MLflow experiment with proper error handling."""
