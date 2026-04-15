@@ -334,7 +334,7 @@ class MLflowIntakeConfig(BaseModel):
 class MLflowIntakeConfigCreate(BaseModel):
     """Request model for creating MLflow intake configuration."""
 
-    experiment_id: str = Field(..., description="MLflow experiment ID to pull traces from")
+    experiment_id: str | None = Field(None, description="MLflow experiment ID — resolved from MLFLOW_EXPERIMENT_ID env var if not provided")
     max_traces: int | None = Field(100, description="Maximum number of traces to pull")
     filter_string: str | None = Field(None, description="Optional filter string for traces")
 

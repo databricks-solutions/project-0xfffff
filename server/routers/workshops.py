@@ -2969,8 +2969,12 @@ async def configure_mlflow_intake(
         raise HTTPException(status_code=404, detail="Workshop not found")
 
     try:
+        from server.services.databricks_service import get_experiment_id
+
+        experiment_id = config.experiment_id or get_experiment_id()
+
         config_to_save = MLflowIntakeConfig(
-            experiment_id=config.experiment_id,
+            experiment_id=experiment_id,
             max_traces=config.max_traces,
             filter_string=config.filter_string,
         )
