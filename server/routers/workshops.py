@@ -175,12 +175,18 @@ from server.services.irr_service import calculate_irr_for_workshop
 # before completion.  Tasks remove themselves from this set when done.
 _background_tasks: set[asyncio.Task] = set()
 
+# Map summarization job IDs to their asyncio tasks so they can be cancelled.
+_job_tasks: dict[str, asyncio.Task] = {}
 
-def _fire_background_task(coro) -> asyncio.Task:
+
+def _fire_background_task(coro, job_id: str | None = None) -> asyncio.Task:
     """Schedule a coroutine as a background task with GC protection."""
     task = asyncio.create_task(coro)
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
+    if job_id is not None:
+        _job_tasks[job_id] = task
+        task.add_done_callback(lambda _t: _job_tasks.pop(job_id, None))
     return task
 
 
@@ -563,6 +569,13 @@ async def _run_summarization_background(
             succeeded = len([r for r in results if r["summary"]])
             failed = len([r for r in results if not r["summary"]])
             logger.info("Summarization job %s complete: %d succeeded, %d failed", job_id, succeeded, failed)
+    except asyncio.CancelledError:
+        logger.info("Summarization job %s was cancelled", job_id)
+        try:
+            with SessionLocal() as cancel_db:
+                DatabaseService(cancel_db).update_summarization_job_status(job_id, "cancelled")
+        except Exception:
+            logger.exception("Could not mark job %s as cancelled", job_id)
     except Exception:
         logger.exception("Summarization job %s failed", job_id)
         try:
@@ -635,7 +648,8 @@ async def resummarize_traces(
             guidance=workshop.summarization_guidance,
             use_case_description=workshop.description,
             batch=batch,
-        )
+        ),
+        job_id=job.id,
     )
 
     return {
@@ -670,6 +684,32 @@ async def get_summarization_job_status(
         "created_at": job.created_at.isoformat(),
         "updated_at": job.updated_at.isoformat(),
     }
+
+
+@router.post("/{workshop_id}/cancel-summarization-job/{job_id}")
+async def cancel_summarization_job(
+    workshop_id: str,
+    job_id: str,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Cancel a running summarization job."""
+    db_service = DatabaseService(db)
+    job = db_service.get_summarization_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Summarization job not found")
+    if job.workshop_id != workshop_id:
+        raise HTTPException(status_code=403, detail="Job does not belong to this workshop")
+    if job.status not in ("pending", "running"):
+        raise HTTPException(status_code=400, detail=f"Job is already {job.status}")
+
+    task = _job_tasks.get(job_id)
+    if task and not task.done():
+        task.cancel()
+    else:
+        # Task not found in memory (e.g. server restarted) — just mark it cancelled
+        db_service.update_summarization_job_status(job_id, "cancelled")
+
+    return {"status": "cancelled", "job_id": job_id}
 
 
 @router.get("/{workshop_id}/summarization-status")
@@ -3108,7 +3148,8 @@ async def ingest_mlflow_traces(workshop_id: str, ingest_request: dict, db: Sessi
                             model_name=workshop.summarization_model,
                             guidance=workshop.summarization_guidance,
                             batch=batch,
-                        )
+                        ),
+                        job_id=summ_job.id,
                     )
             except Exception as e:
                 logger.warning(f"Failed to start background summarization: {e}")

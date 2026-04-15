@@ -202,7 +202,7 @@ class Trace(BaseModel):
 class SummarizationJob(BaseModel):
     id: str
     workshop_id: str
-    status: str = "pending"  # pending, running, completed, failed
+    status: str = "pending"  # pending, running, completed, failed, cancelled
     total: int = 0
     completed_traces: list[str] = Field(default_factory=list)
     failed_traces: list[dict] = Field(default_factory=list)

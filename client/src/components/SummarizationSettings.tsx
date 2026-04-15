@@ -14,7 +14,7 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Sparkles, Save, CheckCircle, RefreshCw, BarChart3 } from 'lucide-react';
+import { Sparkles, Save, CheckCircle, RefreshCw, BarChart3, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import {
@@ -24,6 +24,7 @@ import {
   useSummarizationJob,
   useSummarizationStatus,
   useResummarize,
+  useCancelSummarizationJob,
 } from '@/hooks/useWorkshopApi';
 import { buildModelOptions } from '@/utils/modelMapping';
 
@@ -34,6 +35,7 @@ export const SummarizationSettings: React.FC = () => {
   const updateSettings = useUpdateSummarizationSettings(workshopId!);
   const { data: summaryStatus } = useSummarizationStatus(workshopId!);
   const resummarize = useResummarize(workshopId!);
+  const cancelJob = useCancelSummarizationJob(workshopId!);
 
   const [enabled, setEnabled] = useState(false);
   const [model, setModel] = useState<string>('');
@@ -104,6 +106,17 @@ export const SummarizationSettings: React.FC = () => {
       toast.error(message);
     }
     setShowConfirmDialog(false);
+  };
+
+  const handleCancel = async () => {
+    if (!activeJobId) return;
+    try {
+      await cancelJob.mutateAsync(activeJobId);
+      toast.success('Summarization job cancelled');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to cancel job';
+      toast.error(message);
+    }
   };
 
   const totalTraces = summaryStatus
@@ -226,12 +239,24 @@ export const SummarizationSettings: React.FC = () => {
                     <div className="w-3.5 h-3.5 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin" />
                     Summarizing traces...
                   </span>
-                  <span className="text-indigo-700">
-                    {activeJob.completed}/{activeJob.total} complete
-                    {activeJob.failed > 0 && (
-                      <span className="text-red-600 ml-1">({activeJob.failed} failed)</span>
-                    )}
-                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-indigo-700">
+                      {activeJob.completed}/{activeJob.total} complete
+                      {activeJob.failed > 0 && (
+                        <span className="text-red-600 ml-1">({activeJob.failed} failed)</span>
+                      )}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+                      onClick={handleCancel}
+                      disabled={cancelJob.isPending}
+                    >
+                      <XCircle className="w-3.5 h-3.5 mr-1" />
+                      Cancel
+                    </Button>
+                  </div>
                 </div>
                 <div className="w-full bg-indigo-200 rounded-full h-1.5">
                   <div
@@ -283,6 +308,21 @@ export const SummarizationSettings: React.FC = () => {
                     </Button>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Cancelled job result */}
+            {activeJob && activeJob.status === 'cancelled' && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium text-amber-900 flex items-center gap-2">
+                    <XCircle className="w-3.5 h-3.5 text-amber-600" />
+                    Summarization cancelled
+                  </span>
+                  <span className="text-amber-700">
+                    {activeJob.completed}/{activeJob.total} completed before cancellation
+                  </span>
+                </div>
               </div>
             )}
 

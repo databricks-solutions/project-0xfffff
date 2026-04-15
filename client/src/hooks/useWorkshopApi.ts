@@ -979,7 +979,7 @@ export function useSummarizationJob(workshopId: string, jobId: string | null) {
     enabled: !!jobId,
     refetchInterval: (query) => {
       const status = query.state.data?.status;
-      if (status === 'completed' || status === 'failed') return false;
+      if (status === 'completed' || status === 'failed' || status === 'cancelled') return false;
       return 2000;
     },
   });
@@ -1025,6 +1025,27 @@ export function useResummarize(workshopId: string) {
       return response.json();
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.summarizationStatus(workshopId) });
+    },
+  });
+}
+
+export function useCancelSummarizationJob(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (jobId: string): Promise<{ status: string; job_id: string }> => {
+      const response = await fetch(`/workshops/${workshopId}/cancel-summarization-job/${jobId}`, {
+        method: 'POST',
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to cancel job' }));
+        throw new Error(error.detail || 'Failed to cancel job');
+      }
+      return response.json();
+    },
+    onSuccess: (_data, jobId) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.summarizationJob(workshopId, jobId) });
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.summarizationStatus(workshopId) });
     },
   });
