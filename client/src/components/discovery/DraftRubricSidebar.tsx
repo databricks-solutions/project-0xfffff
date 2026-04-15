@@ -1,7 +1,7 @@
 import React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { FileText, Trash2, Plus, Sparkles, Check, X, Pencil } from 'lucide-react';
+import { FileText, Trash2, Plus, Sparkles, Check, X, Pencil, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import {
   useCreateDraftRubricItem,
   useUpdateDraftRubricItem,
@@ -19,6 +19,8 @@ interface DraftRubricSidebarProps {
   onCreateRubric: () => void;
   newItemIds?: Set<string>;
   onFocusWithinChange?: (isFocused: boolean) => void;
+  isModal?: boolean;
+  onTogglePopout?: () => void;
 }
 
 const CREATE_GROUP_OPTION = '__create_new_group__';
@@ -30,6 +32,8 @@ export const DraftRubricSidebar: React.FC<DraftRubricSidebarProps> = ({
   onCreateRubric,
   newItemIds = new Set(),
   onFocusWithinChange,
+  isModal = false,
+  onTogglePopout,
 }) => {
   const createMutation = useCreateDraftRubricItem(workshopId);
   const updateMutation = useUpdateDraftRubricItem(workshopId);
@@ -328,16 +332,19 @@ export const DraftRubricSidebar: React.FC<DraftRubricSidebarProps> = ({
             Draft Rubric
           </h3>
           <div className="flex gap-1">
-            {items.length >= 2 && (
+            {onTogglePopout && (
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleSuggestGroups}
-                disabled={suggestMutation.isPending}
+                onClick={onTogglePopout}
                 className="h-7 text-xs"
               >
-                <Sparkles className="w-3 h-3 mr-1" />
-                {suggestMutation.isPending ? 'Suggesting...' : 'Suggest Groups'}
+                {isModal ? (
+                  <PanelRightClose className="w-3 h-3 mr-1" />
+                ) : (
+                  <PanelRightOpen className="w-3 h-3 mr-1" />
+                )}
+                {isModal ? 'Dock' : 'Pop out'}
               </Button>
             )}
             <Button
@@ -358,6 +365,24 @@ export const DraftRubricSidebar: React.FC<DraftRubricSidebarProps> = ({
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+        {items.length >= 2 && (
+          <div className="border rounded bg-white p-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-slate-600">Need clustering help?</p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSuggestGroups}
+                disabled={suggestMutation.isPending}
+                className="h-7 text-xs"
+              >
+                <Sparkles className="w-3 h-3 mr-1" />
+                {suggestMutation.isPending ? 'Suggesting...' : 'Suggest Groups'}
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Group proposal is shown first so facilitator sees it immediately */}
         {proposedGroups && (
           <div className="border border-blue-200 rounded bg-blue-50 p-3">

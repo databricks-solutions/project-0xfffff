@@ -63,6 +63,7 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
   const [tracesCountInput, setTracesCountInput] = useState('');
   const [isAddingTraces, setIsAddingTraces] = useState(false);
   const [isDraftPaneExpanded, setIsDraftPaneExpanded] = useState(false);
+  const [isDraftPaneModalOpen, setIsDraftPaneModalOpen] = useState(false);
 
   const modelOptions = useMemo(() => availableModels ? buildModelOptions(availableModels) : [], [availableModels]);
   const currentModel = discoveryConfig?.discovery_questions_model_name || 'demo';
@@ -317,17 +318,34 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
         )}
       </div>
 
-      {/* Draft Rubric Sidebar: expands while inputs are focused */}
-      <div className={`${isDraftPaneExpanded ? 'w-[40rem]' : 'w-80'} transition-[width] duration-200 border-l bg-slate-50 overflow-y-auto shrink-0`}>
-        <DraftRubricSidebar
-          items={draftItems}
-          workshopId={workshopId!}
-          userId={user?.id || ''}
-          onCreateRubric={handleCreateRubric}
-          newItemIds={newItemIds}
-          onFocusWithinChange={setIsDraftPaneExpanded}
-        />
-      </div>
+      {/* Draft Rubric Sidebar: docked by default, can pop out into a modal */}
+      {!isDraftPaneModalOpen && (
+        <div className={`${isDraftPaneExpanded ? 'w-[40rem]' : 'w-80'} transition-[width] duration-200 border-l bg-slate-50 overflow-y-auto shrink-0`}>
+          <DraftRubricSidebar
+            items={draftItems}
+            workshopId={workshopId!}
+            userId={user?.id || ''}
+            onCreateRubric={handleCreateRubric}
+            newItemIds={newItemIds}
+            onFocusWithinChange={setIsDraftPaneExpanded}
+            onTogglePopout={() => setIsDraftPaneModalOpen(true)}
+          />
+        </div>
+      )}
+
+      <Dialog open={isDraftPaneModalOpen} onOpenChange={setIsDraftPaneModalOpen}>
+        <DialogContent className="w-[95vw] max-w-5xl h-[85vh] p-0">
+          <DraftRubricSidebar
+            items={draftItems}
+            workshopId={workshopId!}
+            userId={user?.id || ''}
+            onCreateRubric={handleCreateRubric}
+            newItemIds={newItemIds}
+            isModal
+            onTogglePopout={() => setIsDraftPaneModalOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showAddTracesDialog} onOpenChange={setShowAddTracesDialog}>
         <DialogContent className="sm:max-w-sm">
