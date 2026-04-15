@@ -1850,11 +1850,8 @@ export class WorkshopsService {
      * 2. For each row, create an MLflow trace with the request/response
      * 3. Store the traces locally with their MLflow trace IDs
      *
-     * Environment variables used if parameters not provided:
-     * - DATABRICKS_HOST
-     * - MLFLOW_EXPERIMENT_ID
-     *
      * Authentication is resolved via Databricks SDK (service principal or CLI profile).
+     * DATABRICKS_HOST and MLFLOW_EXPERIMENT_ID come from the environment.
      * @param workshopId
      * @param formData
      * @returns any Successful Response

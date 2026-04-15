@@ -4,6 +4,8 @@
 
 This specification defines the annotation system for the Human Evaluation Workshop, including how users submit ratings, edit previous annotations, handle multi-line comments, and receive appropriate feedback through notifications.
 
+The primary goal of annotation is to get human scores for inter-rater reliability or agreement calculation and for further use in judge alignment.
+
 ## MLflow Integration Context
 
 ### Annotations as MLflow Feedback
@@ -23,6 +25,7 @@ Workshop annotations are the human-generated ground truth that ultimately become
 - MLflow Feedback enables judge alignment via `mlflow.genai.align()`
 - The `include_in_alignment` tag on traces marks which feedback to use for training
 - Multiple annotators on the same trace enable inter-rater reliability (IRR) measurement
+- Judge scores are also stored as feedback in MLflow 
 
 ### MLflow Feedback Schema Alignment
 
@@ -33,7 +36,7 @@ Workshop annotations map to MLflow Feedback fields:
 | `ratings[question_id]` | `value` | Numeric score (Likert 1-5 or Binary 0/1) |
 | `comment` | `rationale` | Free-text explanation |
 | `user_id` | `source.id` | Annotator identifier |
-| `trace_id` | Associated trace | Links feedback to trace |
+| `trace_id` | Associated trace | Links feedback to trace, MLflow stores this natively |
 | Rubric question | `name` | What aspect is being evaluated |
 
 See [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md) for details on how feedback is used in judge alignment.
@@ -60,19 +63,29 @@ See [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md) for details on how feedb
 
 ## Annotation Lifecycle
 
+
+Annotation completes after some number of SME users have labeled all the selected traces. 
+
+### Start Annotation 
+
+Prerequisite: At least 1 SME and 1 Rubric Question. 
+
+Annotation is begun by the Facilitator [Role Permissions Spec](./ROLE_PERMISSIONS_SPEC.md) when a rubric has been created. Rubrics provide the actual labeling schema and instructions for both humans and judges.
+
+1. Facilitator selects number of traces (10 recommended)
+2. The facilitator selects which rubric questions to use for annotation (default all). Some teams will want to create more rubric questions in the earlier phase but annotating a single one at a time is faster. 
+
 ### New Annotation Flow
 
-```
+
 New Annotation:
 1. User views unannotated trace
 2. User provides ratings for each rubric question
 3. User optionally adds comment
 4. User clicks Next or Previous to navigate
 5. System detects this is new (not in submittedAnnotations)
-6. System saves annotation to database
-7. Toast shows: "Annotation saved!"
-8. Trace marked as submitted
-```
+6. System saves annotation to database & writes to MLflow
+7. Trace marked as submitted
 
 ### Edit Annotation Flow
 

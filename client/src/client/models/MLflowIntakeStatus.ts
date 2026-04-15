@@ -14,5 +14,6 @@ export type MLflowIntakeStatus = {
     last_ingestion_time?: (string | null);
     error_message?: (string | null);
     config?: (MLflowIntakeConfig | null);
+    databricks_host?: (string | null);
 };
 

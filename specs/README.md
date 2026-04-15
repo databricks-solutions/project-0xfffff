@@ -14,6 +14,7 @@ This directory contains declarative specifications for the Human Evaluation Work
 | [ROLE_PERMISSIONS_SPEC](./ROLE_PERMISSIONS_SPEC.md) | Roles & Permissions | role, facilitator, SME, participant, permission, for_role, phase advancement |
 | [RUBRIC_SPEC](./RUBRIC_SPEC.md) | Rubric Management | rubric, question, parsing, delimiter, scale, binary, Likert |
 | [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md) | Judge & Alignment | judge, evaluation, MLflow, binary, SIMBA, IRR, alignment |
+| [EVAL_MODE_SPEC](./EVAL_MODE_SPEC.md) | Eval Mode | per-example rubric, benchmark, hurdle, weighted criteria, offline eval, per-trace criteria |
 | [CUSTOM_LLM_PROVIDER_SPEC](./CUSTOM_LLM_PROVIDER_SPEC.md) | Custom LLM Providers | custom provider, OpenAI-compatible, proxy_url, Azure, vLLM |
 | [UI_COMPONENTS_SPEC](./UI_COMPONENTS_SPEC.md) | UI Components | pagination, trace viewer, table, export, keyboard shortcuts |
 | [BUILD_AND_DEPLOY_SPEC](./BUILD_AND_DEPLOY_SPEC.md) | Build & Deploy | build, deploy, Alembic, migrations, database, bootstrap |
@@ -288,6 +289,25 @@ Use this index to find relevant specs by keyword.
 - **summary indicator** → [TRACE_SUMMARIZATION_SPEC](./TRACE_SUMMARIZATION_SPEC.md)
 - **summarization-status** → [TRACE_SUMMARIZATION_SPEC](./TRACE_SUMMARIZATION_SPEC.md)
 - **DiscoveryTraceCard summary** → [TRACE_SUMMARIZATION_SPEC](./TRACE_SUMMARIZATION_SPEC.md)
+
+### Eval Mode & Benchmarking
+- **eval mode** → [EVAL_MODE_SPEC](./EVAL_MODE_SPEC.md)
+- **benchmark mode** → [EVAL_MODE_SPEC](./EVAL_MODE_SPEC.md)
+- **per-example rubric** → [EVAL_MODE_SPEC](./EVAL_MODE_SPEC.md)
+- **per-trace criteria** → [EVAL_MODE_SPEC](./EVAL_MODE_SPEC.md)
+- **hurdle** → [EVAL_MODE_SPEC](./EVAL_MODE_SPEC.md)
+- **hurdle criterion** → [EVAL_MODE_SPEC](./EVAL_MODE_SPEC.md)
+- **weighted criteria** → [EVAL_MODE_SPEC](./EVAL_MODE_SPEC.md)
+- **criterion_type** → [EVAL_MODE_SPEC](./EVAL_MODE_SPEC.md)
+- **TraceCriterion** → [EVAL_MODE_SPEC](./EVAL_MODE_SPEC.md)
+- **CriterionEvaluation** → [EVAL_MODE_SPEC](./EVAL_MODE_SPEC.md)
+- **TraceEvalScore** → [EVAL_MODE_SPEC](./EVAL_MODE_SPEC.md)
+- **offline eval** → [EVAL_MODE_SPEC](./EVAL_MODE_SPEC.md)
+- **eval export** → [EVAL_MODE_SPEC](./EVAL_MODE_SPEC.md)
+- **scoring aggregation** → [EVAL_MODE_SPEC](./EVAL_MODE_SPEC.md)
+- **HealthBench** → [EVAL_MODE_SPEC](./EVAL_MODE_SPEC.md)
+- **ACE benchmark** → [EVAL_MODE_SPEC](./EVAL_MODE_SPEC.md)
+- **workshop mode** → [EVAL_MODE_SPEC](./EVAL_MODE_SPEC.md)
 
 ### Build and Deployment
 - **SQLite rescue** → [BUILD_AND_DEPLOY_SPEC](./BUILD_AND_DEPLOY_SPEC.md)
