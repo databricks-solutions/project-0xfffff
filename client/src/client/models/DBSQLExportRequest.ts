@@ -7,14 +7,6 @@
  */
 export type DBSQLExportRequest = {
     /**
-     * Databricks workspace URL (e.g., https://your-workspace.cloud.databricks.com)
-     */
-    databricks_host: string;
-    /**
-     * Deprecated — SDK auth used instead
-     */
-    databricks_token?: string;
-    /**
      * DBSQL warehouse HTTP path (e.g., /sql/1.0/warehouses/xxxxxx)
      */
     http_path: string;
@@ -27,4 +19,3 @@ export type DBSQLExportRequest = {
      */
     schema_name: string;
 };
-

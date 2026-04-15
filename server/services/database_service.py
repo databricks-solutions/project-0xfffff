@@ -3545,6 +3545,13 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       filter_string=db_config.filter_string,
     )
 
+    from server.services.databricks_service import get_databricks_host
+
+    try:
+      host = get_databricks_host()
+    except RuntimeError:
+      host = None
+
     return MLflowIntakeStatus(
       workshop_id=workshop_id,
       is_configured=True,
@@ -3553,6 +3560,7 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       last_ingestion_time=db_config.last_ingestion_time,
       error_message=db_config.error_message,
       config=config,
+      databricks_host=host,
     )
 
   # Judge Tuning operations

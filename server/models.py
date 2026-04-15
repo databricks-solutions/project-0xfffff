@@ -349,6 +349,7 @@ class MLflowIntakeStatus(BaseModel):
     last_ingestion_time: datetime | None = None
     error_message: str | None = None
     config: MLflowIntakeConfig | None = None
+    databricks_host: str | None = None  # From environment, for frontend URL construction
 
 
 class MLflowTraceInfo(BaseModel):
