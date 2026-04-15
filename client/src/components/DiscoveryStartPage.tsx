@@ -10,7 +10,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useWorkflowContext } from '@/context/WorkflowContext';
 import { WorkshopsService } from '@/client';
-import { useAllTraces, useWorkshop, useMLflowConfig, useUpdateDiscoveryModel, useAvailableModels } from '@/hooks/useWorkshopApi';
+import { useAllTraces, useWorkshopDiscoveryConfig, useMLflowConfig, useUpdateDiscoveryModel, useAvailableModels } from '@/hooks/useWorkshopApi';
 import { buildModelOptions, getDisplayName } from '@/utils/modelMapping';
 import { Play, Users, Search, Lightbulb, Database, Settings, Shuffle, Brain } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
@@ -33,7 +33,7 @@ export const DiscoveryStartPage: React.FC<DiscoveryStartPageProps> = ({ onStartD
   const totalTraces = traces?.length || 0;
 
   // Model selection
-  const { data: workshop } = useWorkshop(workshopId!);
+  const { data: workshop } = useWorkshopDiscoveryConfig(workshopId!);
   const { data: mlflowConfig } = useMLflowConfig(workshopId!);
   const { data: availableModels } = useAvailableModels(workshopId!);
   const updateModelMutation = useUpdateDiscoveryModel(workshopId!);

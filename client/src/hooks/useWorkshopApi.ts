@@ -2,7 +2,7 @@
  * React Query hooks for workshop API operations
  */
 
-import { useQuery, useMutation, useQueryClient, QueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, QueryClient, queryOptions } from '@tanstack/react-query';
 import type { Query } from '@tanstack/react-query';
 import { WorkshopsService, ApiError, DiscoveryService } from '@/client';
 import { useRoleCheck } from '@/context/UserContext';
@@ -103,18 +103,17 @@ export function useListWorkshops(options?: { userId?: string; facilitatorId?: st
     queryKey: ['workshops', userId, facilitatorId],
     queryFn: () => listWorkshopsApi(userId, facilitatorId),
     enabled,
-    staleTime: 30000, // Consider data stale after 30 seconds
-    refetchOnMount: true,
-    refetchOnWindowFocus: true,
   });
 }
 
-export function useWorkshop(workshopId: string) {
-  return useQuery({
+// Shared workshop query options — all selector hooks share the same key+fetch+retry
+// so TanStack Query deduplicates them into a single cache entry.
+// Using queryOptions() preserves TQueryFnData / TError inference when spread.
+function workshopQueryOpts(workshopId: string) {
+  return queryOptions({
     queryKey: QUERY_KEYS.workshop(workshopId),
     queryFn: () => WorkshopsService.getWorkshopWorkshopsWorkshopIdGet(workshopId),
     enabled: !!workshopId,
-    staleTime: 10000, // Consider data stale after 10 seconds
     // Stop polling when the query is in an error state to avoid triggering
     // error-recovery side effects repeatedly. Polling resumes on next success.
     refetchInterval: (query) => query.state.status === 'error' ? false : 30000,
@@ -122,18 +121,111 @@ export function useWorkshop(workshopId: string) {
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
     retry: (failureCount, error) => {
-      // Don't retry on 404 errors - workshop doesn't exist
-      if (error && typeof error === 'object' && 'status' in error && error.status === 404) {
+      if (error && typeof error === 'object' && 'status' in error && (error as { status?: number }).status === 404) {
         return false;
       }
-      // Don't retry on 503 - backend is restarting, polling will pick it up
-      if (error && typeof error === 'object' && 'status' in error && error.status === 503) {
+      if (error && typeof error === 'object' && 'status' in error && (error as { status?: number }).status === 503) {
         return false;
       }
-      // Retry other errors up to 2 times
       return failureCount < 2;
     },
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
+  });
+}
+
+/** Full workshop object — use only when the component genuinely needs all fields. */
+export function useWorkshop(workshopId: string) {
+  return useQuery(workshopQueryOpts(workshopId));
+}
+
+// --- Selector hooks ---
+// Each shares the same cache entry as useWorkshop (same queryKey + queryFn).
+// Components only re-render when their selected slice changes.
+
+/** Phase/workflow state */
+export function useWorkshopPhase(workshopId: string) {
+  return useQuery({
+    ...workshopQueryOpts(workshopId),
+    select: (w: Workshop) => ({
+      current_phase: w.current_phase,
+      completed_phases: w.completed_phases,
+      discovery_started: w.discovery_started,
+      annotation_started: w.annotation_started,
+    }),
+  });
+}
+
+/** Display config — JSONPath and span filters */
+export function useWorkshopDisplayConfig(workshopId: string) {
+  return useQuery({
+    ...workshopQueryOpts(workshopId),
+    select: (w: Workshop) => ({
+      input_jsonpath: w.input_jsonpath,
+      output_jsonpath: w.output_jsonpath,
+      span_attribute_filter: w.span_attribute_filter,
+    }),
+  });
+}
+
+/** Workshop identity/metadata */
+export function useWorkshopMeta(workshopId: string) {
+  return useQuery({
+    ...workshopQueryOpts(workshopId),
+    select: (w: Workshop) => ({
+      id: w.id,
+      name: w.name,
+      description: w.description,
+      judge_name: w.judge_name,
+      created_at: w.created_at,
+    }),
+  });
+}
+
+/** Discovery question generation config */
+export function useWorkshopDiscoveryConfig(workshopId: string) {
+  return useQuery({
+    ...workshopQueryOpts(workshopId),
+    select: (w: Workshop) => ({
+      discovery_questions_model_name: w.discovery_questions_model_name,
+      discovery_randomize_traces: w.discovery_randomize_traces,
+      active_discovery_trace_ids: w.active_discovery_trace_ids,
+    }),
+  });
+}
+
+/** Annotation workflow config */
+export function useWorkshopAnnotationConfig(workshopId: string) {
+  return useQuery({
+    ...workshopQueryOpts(workshopId),
+    select: (w: Workshop) => ({
+      annotation_randomize_traces: w.annotation_randomize_traces,
+      show_participant_notes: w.show_participant_notes,
+      active_annotation_trace_ids: w.active_annotation_trace_ids,
+    }),
+  });
+}
+
+/** Auto-evaluation / judge config */
+export function useWorkshopEvalConfig(workshopId: string) {
+  return useQuery({
+    ...workshopQueryOpts(workshopId),
+    select: (w: Workshop) => ({
+      auto_evaluation_model: w.auto_evaluation_model,
+      auto_evaluation_prompt: w.auto_evaluation_prompt,
+      judge_name: w.judge_name,
+    }),
+  });
+}
+
+/** Summarization config */
+export function useWorkshopSummarizationConfig(workshopId: string) {
+  return useQuery({
+    ...workshopQueryOpts(workshopId),
+    select: (w: Workshop) => ({
+      summarization_enabled: w.summarization_enabled,
+      summarization_model: w.summarization_model,
+      summarization_guidance: w.summarization_guidance,
+    }),
   });
 }
 
@@ -166,8 +258,6 @@ export function useTraces(workshopId: string, userId: string) {
       return response.json();
     },
     enabled: !!workshopId && !!userId,
-    // Balanced settings for real-time updates without causing performance issues
-    staleTime: 10 * 1000, // Data is fresh for 10 seconds
     gcTime: 5 * 60 * 1000, // Cache for 5 minutes
     retry: 3, // Retry failed requests 3 times
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
@@ -188,8 +278,6 @@ export function useAllTraces(workshopId: string) {
       return response.json();
     },
     enabled: !!workshopId,
-    // Optimized caching for better performance
-    staleTime: 30 * 1000, // Data is fresh for 30 seconds
     gcTime: 10 * 60 * 1000, // Cache for 10 minutes
     retry: 3,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
@@ -244,7 +332,6 @@ export function useUserFindings(workshopId: string, user: Pick<User, 'id'> | nul
       user?.id  // EVERYONE (including facilitators) gets only their own findings for personal progress
     ),
     enabled: !!workshopId && !!user?.id, // REQUIRE user to be logged in
-    staleTime: 30 * 1000, // Data is fresh for 30 seconds  
     refetchInterval: false, // DISABLED: Was causing Chrome hangs with excessive refetching
     refetchOnWindowFocus: false, // Disabled to prevent excessive refetching
   });
@@ -396,7 +483,6 @@ export function useUserAnnotations(workshopId: string, user: Pick<User, 'id'> | 
       );
     },
     enabled: !!workshopId && !!user?.id, // REQUIRE user to be logged in
-    staleTime: 10 * 1000, // Short stale time so navigation picks up recently saved scores
     refetchInterval: false, // Disable automatic refetching to avoid issues
     retry: 3, // Retry failed requests 3 times
   });
@@ -505,12 +591,10 @@ export function useSubmitAnnotation(workshopId: string) {
     onSuccess: (_, annotation) => {
       // Only invalidate THIS USER's annotation queries, not all users
       queryClient.invalidateQueries({ queryKey: ['annotations', workshopId, annotation.user_id] });
-      
-      // Invalidate workshop-level queries that don't include user-specific data
-      queryClient.invalidateQueries({ queryKey: ['workshop', workshopId] });
+
+      // IRR scores depend on annotations
       queryClient.invalidateQueries({ queryKey: ['irr', workshopId] });
-      queryClient.invalidateQueries({ queryKey: ['findings', workshopId] });
-      
+
       // Force immediate refetch for this user's annotations only
       queryClient.refetchQueries({ queryKey: ['annotations', workshopId, annotation.user_id] });
     },
@@ -635,9 +719,8 @@ export function useToggleParticipantNotes(workshopId: string) {
       }
       return response.json();
     },
-    onSuccess: (workshop) => {
-      queryClient.setQueryData(QUERY_KEYS.workshop(workshopId), workshop);
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.workshop(workshopId) });
+    onSuccess: () => {
+      return queryClient.invalidateQueries({ queryKey: QUERY_KEYS.workshop(workshopId) });
     },
   });
 }
@@ -679,7 +762,6 @@ export function useParticipantNotes(workshopId: string, userId?: string, phase?:
       return response.json();
     },
     enabled: !!workshopId,
-    staleTime: 10 * 1000,
     refetchInterval: (query) => query.state.status === 'error' ? false : 30_000,
   });
 }
@@ -699,7 +781,6 @@ export function useAllParticipantNotes(workshopId: string, phase?: string) {
       return response.json();
     },
     enabled: !!workshopId,
-    staleTime: 5 * 1000,
     refetchInterval: (query) => query.state.status === 'error' ? false : 15_000,
   });
 }
@@ -777,10 +858,8 @@ export function useUpdateJsonPathSettings(workshopId: string) {
       }
       return response.json();
     },
-    onSuccess: (workshop) => {
-      // Update workshop cache with new settings
-      queryClient.setQueryData(QUERY_KEYS.workshop(workshopId), workshop);
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.workshop(workshopId) });
+    onSuccess: () => {
+      return queryClient.invalidateQueries({ queryKey: QUERY_KEYS.workshop(workshopId) });
     },
   });
 }
@@ -834,9 +913,8 @@ export function useUpdateSpanAttributeFilter(workshopId: string) {
       }
       return response.json();
     },
-    onSuccess: (workshop) => {
-      queryClient.setQueryData(QUERY_KEYS.workshop(workshopId), workshop);
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.workshop(workshopId) });
+    onSuccess: () => {
+      return queryClient.invalidateQueries({ queryKey: QUERY_KEYS.workshop(workshopId) });
     },
   });
 }
@@ -882,9 +960,8 @@ export function useUpdateSummarizationSettings(workshopId: string) {
       }
       return response.json();
     },
-    onSuccess: (workshop) => {
-      queryClient.setQueryData(QUERY_KEYS.workshop(workshopId), workshop);
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.workshop(workshopId) });
+    onSuccess: () => {
+      return queryClient.invalidateQueries({ queryKey: QUERY_KEYS.workshop(workshopId) });
     },
   });
 }
@@ -1018,7 +1095,6 @@ export function useDiscoveryAnalyses(workshopId: string, template?: string) {
       return response.json();
     },
     enabled: !!workshopId,
-    staleTime: 30 * 1000,
   });
 }
 
@@ -1035,7 +1111,6 @@ export function useDiscoveryFeedback(workshopId: string, userId?: string) {
       return response.json();
     },
     enabled: !!workshopId,
-    staleTime: 10_000,
   });
 }
 
@@ -1057,7 +1132,6 @@ export function useFacilitatorDiscoveryFeedback(workshopId: string) {
         workshopId,
       ) as unknown as Promise<DiscoveryFeedbackWithUser[]>,
     enabled: !!workshopId && isFacilitator,
-    staleTime: 10_000,
     refetchInterval: (query) => query.state.status === 'error' ? false : 30_000,
   });
 }

@@ -10,7 +10,8 @@ import {
   useDraftRubricItems,
   useCreateDraftRubricItem,
   useDeleteDraftRubricItem,
-  useWorkshop,
+  useWorkshopDiscoveryConfig,
+  useWorkshopPhase,
   useUpdateDiscoveryModel,
   useCreateRubricFromDraft,
   useAvailableModels,
@@ -40,7 +41,8 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
   const queryClient = useQueryClient();
 
   // Data
-  const { data: workshop } = useWorkshop(workshopId!);
+  const { data: discoveryConfig } = useWorkshopDiscoveryConfig(workshopId!);
+  const { data: phaseData } = useWorkshopPhase(workshopId!);
   const { data: traces } = useAllTraces(workshopId!) as { data: Trace[] | undefined };
   const { data: allFeedback } = useFacilitatorDiscoveryFeedback(workshopId!);
   const { data: analyses } = useDiscoveryAnalyses(workshopId!);
@@ -62,7 +64,7 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
   const [isAddingTraces, setIsAddingTraces] = useState(false);
 
   const modelOptions = useMemo(() => availableModels ? buildModelOptions(availableModels) : [], [availableModels]);
-  const currentModel = workshop?.discovery_questions_model_name || 'demo';
+  const currentModel = discoveryConfig?.discovery_questions_model_name || 'demo';
 
   const currentAnalysis = analyses?.[0] ?? null;
 
@@ -80,12 +82,12 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
   // Filter traces to active discovery traces
   const activeTraces = useMemo(() => {
     if (!traces) return [];
-    const activeIds = workshop?.active_discovery_trace_ids;
+    const activeIds = discoveryConfig?.active_discovery_trace_ids;
     if (activeIds?.length) {
       return traces.filter((t) => activeIds.includes(t.id));
     }
     return traces;
-  }, [traces, workshop?.active_discovery_trace_ids]);
+  }, [traces, discoveryConfig?.active_discovery_trace_ids]);
 
   // Split analysis findings: trace-specific vs cross-trace
   const findingsByTrace = useMemo(() => {
@@ -206,7 +208,7 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
     }
   }, [createRubricFromDraft, user?.id, onNavigate]);
 
-  const isPaused = workshop?.completed_phases?.includes('discovery') ?? false;
+  const isPaused = phaseData?.completed_phases?.includes('discovery') ?? false;
 
   const handlePauseToggle = async () => {
     if (!workshopId) return;

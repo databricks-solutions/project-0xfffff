@@ -29,6 +29,7 @@ const mockAllTraces = { data: [] as unknown[] };
 
 vi.mock('@/hooks/useWorkshopApi', () => ({
   useWorkshop: () => mockWorkshop,
+  useWorkshopDiscoveryConfig: () => mockWorkshop,
   useMLflowConfig: () => mockMlflowConfig,
   useAvailableModels: () => mockAvailableModels,
   useUpdateDiscoveryModel: () => mockUpdateModel,

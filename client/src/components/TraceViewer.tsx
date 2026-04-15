@@ -34,7 +34,7 @@ import {
   Check
 } from "lucide-react";
 import { toast } from 'sonner';
-import { useInvalidateTraces, useWorkshop } from '@/hooks/useWorkshopApi';
+import { useInvalidateTraces, useWorkshopDisplayConfig } from '@/hooks/useWorkshopApi';
 import { useMLflowConfig } from '@/hooks/useWorkshopApi';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useJsonPathExtraction } from '@/hooks/useJsonPathExtraction';
@@ -1631,7 +1631,7 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({
   const invalidateTraces = useInvalidateTraces();
   const { workshopId } = useWorkshopContext();
   const { data: mlflowConfig } = useMLflowConfig(workshopId!);
-  const { data: workshop } = useWorkshop(workshopId!);
+  const { data: workshop } = useWorkshopDisplayConfig(workshopId!);
 
   const hasSummary = !!trace.summary?.milestones?.length;
   const [viewMode, setViewMode] = useState<'milestone' | 'trace'>(

@@ -7,7 +7,7 @@ import { WorkshopHeader } from '@/components/WorkshopHeader';
 import { useUser, useRoleCheck } from '@/context/UserContext';
 import { useWorkflowContext } from '@/context/WorkflowContext';
 import { useWorkshopContext } from '@/context/WorkshopContext';
-import { useWorkshop, useRubric, useCreateWorkshop } from '@/hooks/useWorkshopApi';
+import { useWorkshopPhase, useRubric, useCreateWorkshop } from '@/hooks/useWorkshopApi';
 import { WorkshopsService } from '@/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -59,7 +59,7 @@ export function WorkshopDemoLanding() {
   const { isFacilitator, isSME, canCreateRubric, canAnnotate, canViewResults, canViewRubric, canViewAllAnnotations } = useRoleCheck();
   const queryClient = useQueryClient();
   
-  const { data: workshop, error: workshopError } = useWorkshop(workshopId || '');
+  const { data: workshop, error: workshopError } = useWorkshopPhase(workshopId || '');
   const { data: rubric } = useRubric(workshopId || '');
   
   // State hooks - MUST be before any conditional returns

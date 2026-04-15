@@ -6,7 +6,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useWorkshopContext } from './WorkshopContext';
-import { useAllTraces, useFindings, useRubric, useAnnotations, useWorkshop } from '@/hooks/useWorkshopApi';
+import { useAllTraces, useFindings, useRubric, useAnnotations, useWorkshopPhase } from '@/hooks/useWorkshopApi';
 import { useQuery } from '@tanstack/react-query';
 import { useUser } from './UserContext';
 
@@ -37,7 +37,7 @@ export function WorkflowProvider({ children }: WorkflowProviderProps) {
   // Without the user gate, stale workshopId from localStorage causes polling
   // on the login page, hammering the backend with requests (503 storms).
   const isAuthenticated = !!workshopId && !!user;
-  const { data: workshop } = useWorkshop(isAuthenticated ? workshopId : '');
+  const { data: workshop } = useWorkshopPhase(isAuthenticated ? workshopId : '');
   const { data: participants } = useQuery({
     queryKey: ['workshop-participants', workshopId],
     queryFn: async () => {
