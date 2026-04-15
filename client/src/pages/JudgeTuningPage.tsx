@@ -27,7 +27,7 @@ import {
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useUser, useRoleCheck } from '@/context/UserContext';
 import { WorkshopsService } from '@/client';
-import { useWorkshop, useOriginalTraces, useAggregateAllFeedback, useFacilitatorAnnotations, useAvailableModels } from '@/hooks/useWorkshopApi';
+import { useWorkshopEvalConfig, useOriginalTraces, useAggregateAllFeedback, useFacilitatorAnnotations, useAvailableModels } from '@/hooks/useWorkshopApi';
 import { buildModelOptions, getDisplayName } from '@/utils/modelMapping';
 import { parseRubricQuestions } from '@/utils/rubricUtils';
 import { Pagination } from '@/components/Pagination';
@@ -96,7 +96,7 @@ export function JudgeTuningPage() {
   const { workshopId } = useWorkshopContext();
   const { user } = useUser();
   const { isFacilitator } = useRoleCheck();
-  const { data: workshop } = useWorkshop(workshopId!);
+  const { data: workshop } = useWorkshopEvalConfig(workshopId!);
   const { data: traces } = useOriginalTraces(workshopId!);
   const aggregateAllFeedback = useAggregateAllFeedback(workshopId!);
   const { data: annotations = [], refetch: refetchAnnotations } = useFacilitatorAnnotations(workshopId!);

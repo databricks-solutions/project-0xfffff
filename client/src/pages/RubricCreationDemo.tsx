@@ -42,7 +42,7 @@ import {
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useWorkflowContext } from '@/context/WorkflowContext';
 import { useUser, useRoleCheck } from '@/context/UserContext';
-import { useRubric, useCreateRubric, useUpdateRubric, useDiscoveryFeedback, useFacilitatorDiscoveryFeedback, useAllTraces, useAllParticipantNotes, useWorkshop, useToggleParticipantNotes, type DiscoveryFeedbackData, type DiscoveryFeedbackWithUser } from '@/hooks/useWorkshopApi';
+import { useRubric, useCreateRubric, useUpdateRubric, useDiscoveryFeedback, useFacilitatorDiscoveryFeedback, useAllTraces, useAllParticipantNotes, useWorkshopAnnotationConfig, useToggleParticipantNotes, type DiscoveryFeedbackData, type DiscoveryFeedbackWithUser } from '@/hooks/useWorkshopApi';
 import { FocusedAnalysisView, ScratchPadEntry } from '@/components/FocusedAnalysisView';
 import { RubricSuggestionPanel, type RubricSuggestion } from '@/components/RubricSuggestionPanel';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -222,7 +222,7 @@ export function RubricCreationDemo() {
   // Fetch all participant notes for the scratch pad (facilitator sees all)
   const { data: participantNotes } = useAllParticipantNotes(workshopId || '');
   // Workshop data for show_participant_notes toggle
-  const { data: workshopData } = useWorkshop(workshopId || '');
+  const { data: workshopData } = useWorkshopAnnotationConfig(workshopId || '');
   const toggleParticipantNotes = useToggleParticipantNotes(workshopId || '');
 
   // Get discovery responses from feedback data, enriched with trace information

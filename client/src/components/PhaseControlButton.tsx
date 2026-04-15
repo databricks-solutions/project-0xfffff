@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Play, Pause } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useWorkshopContext } from '@/context/WorkshopContext';
-import { useWorkshop } from '@/hooks/useWorkshopApi';
+import { useWorkshopPhase } from '@/hooks/useWorkshopApi';
 import type { Workshop } from '@/client';
 import { toast } from 'sonner';
 
@@ -17,7 +17,7 @@ export const PhaseControlButton: React.FC<PhaseControlButtonProps> = ({
   onStatusChange 
 }) => {
   const { workshopId } = useWorkshopContext();
-  const { data: workshop } = useWorkshop(workshopId!);
+  const { data: workshop } = useWorkshopPhase(workshopId!);
   const queryClient = useQueryClient();
   const [isLoading, setIsLoading] = React.useState(false);
   

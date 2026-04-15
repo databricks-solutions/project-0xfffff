@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useUser, useRoleCheck } from '@/context/UserContext';
-import { useTraces, useRubric, useUserAnnotations, useSubmitAnnotation, useMLflowConfig, refetchAllWorkshopQueries, useWorkshop, useParticipantNotes, useSubmitParticipantNote, useDeleteParticipantNote } from '@/hooks/useWorkshopApi';
+import { useTraces, useRubric, useUserAnnotations, useSubmitAnnotation, useMLflowConfig, refetchAllWorkshopQueries, useWorkshopAnnotationConfig, useParticipantNotes, useSubmitParticipantNote, useDeleteParticipantNote } from '@/hooks/useWorkshopApi';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Trace, Rubric, Annotation } from '@/client';
 import { parseRubricQuestions as parseQuestions } from '@/utils/rubricUtils';
@@ -220,7 +220,7 @@ export function AnnotationDemo() {
   const queryClient = useQueryClient();
 
   // Workshop data (for show_participant_notes flag)
-  const { data: workshopData } = useWorkshop(workshopId || '');
+  const { data: workshopData } = useWorkshopAnnotationConfig(workshopId || '');
   const notesEnabled = workshopData?.show_participant_notes ?? false;
 
   // Annotation notes (only fetch when enabled)

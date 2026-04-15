@@ -17,7 +17,7 @@ import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useWorkflowContext } from '@/context/WorkflowContext';
 import { toast } from 'sonner';
 import { useUser, useRoleCheck } from '@/context/UserContext';
-import { useTraces, useUserFindings, useSubmitFinding, useParticipantNotes, useSubmitParticipantNote, useDeleteParticipantNote, useWorkshop, refetchAllWorkshopQueries, useDiscoveryFeedback } from '@/hooks/useWorkshopApi';
+import { useTraces, useUserFindings, useSubmitFinding, useParticipantNotes, useSubmitParticipantNote, useDeleteParticipantNote, useWorkshopAnnotationConfig, refetchAllWorkshopQueries, useDiscoveryFeedback } from '@/hooks/useWorkshopApi';
 import { DiscoveryFeedbackView } from '@/components/DiscoveryFeedbackView';
 import { useQueryClient } from '@tanstack/react-query';
 import { WorkshopsService, DiscoveryService } from '@/client';
@@ -51,7 +51,7 @@ export function TraceViewerDemo() {
   const queryClient = useQueryClient();
   
   // Workshop data (for show_participant_notes flag)
-  const { data: workshopData } = useWorkshop(workshopId!);
+  const { data: workshopData } = useWorkshopAnnotationConfig(workshopId!);
   const notesEnabled = workshopData?.show_participant_notes ?? false;
 
   // Discovery feedback (v2 Structured Feedback) - fetch existing for this user

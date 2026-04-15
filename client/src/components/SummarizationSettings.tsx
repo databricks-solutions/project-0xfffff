@@ -18,7 +18,7 @@ import { Sparkles, Save, CheckCircle, RefreshCw, BarChart3 } from 'lucide-react'
 import { toast } from 'sonner';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import {
-  useWorkshop,
+  useWorkshopSummarizationConfig,
   useAvailableModels,
   useUpdateSummarizationSettings,
   useSummarizationJob,
@@ -29,7 +29,7 @@ import { buildModelOptions } from '@/utils/modelMapping';
 
 export const SummarizationSettings: React.FC = () => {
   const { workshopId } = useWorkshopContext();
-  const { data: workshop } = useWorkshop(workshopId!);
+  const { data: workshop } = useWorkshopSummarizationConfig(workshopId!);
   const { data: availableModels } = useAvailableModels(workshopId!);
   const updateSettings = useUpdateSummarizationSettings(workshopId!);
   const { data: summaryStatus } = useSummarizationStatus(workshopId!);
