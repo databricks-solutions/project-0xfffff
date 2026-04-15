@@ -25,7 +25,7 @@ def _get_token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()[:16]
 
 
-def _get_sdk_token(workspace_url: str | None = None) -> str | None:
+def _get_sdk_token() -> str | None:
     """Get an OAuth token via the Databricks SDK (unified auth).
 
     On Databricks Apps the platform injects ``DATABRICKS_CLIENT_ID`` /
@@ -39,22 +39,13 @@ def _get_sdk_token(workspace_url: str | None = None) -> str | None:
         headers = w.config.authenticate()
         auth_header = headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
-            sdk_host = (w.config.host or "").rstrip("/")
-            target_host = (workspace_url or "").rstrip("/")
-            if target_host and sdk_host and sdk_host.lower() != target_host.lower():
-                w2 = WorkspaceClient(host=workspace_url)
-                headers2 = w2.config.authenticate()
-                auth2 = headers2.get("Authorization", "")
-                if auth2.startswith("Bearer "):
-                    return auth2[len("Bearer ") :]
-                return None
-            return auth_header[len("Bearer ") :]
+            return auth_header[len("Bearer "):]
     except Exception as exc:
-        logger.warning("Databricks SDK auth failed in DatabricksService: %s", exc)
+        logger.warning("Databricks SDK auth failed: %s", exc)
     return None
 
 
-def resolve_databricks_token(workspace_url: str | None = None) -> str:
+def resolve_databricks_token() -> str:
     """Resolve a Databricks auth token via the SDK.
 
     On Databricks Apps the platform injects service principal credentials.
@@ -66,7 +57,7 @@ def resolve_databricks_token(workspace_url: str | None = None) -> str:
     Raises:
         RuntimeError: If no valid token can be resolved.
     """
-    token = _get_sdk_token(workspace_url)
+    token = _get_sdk_token()
     if token:
         return token
     # Fallback: explicit env var (useful for CI / containers without SDK config)
@@ -81,52 +72,61 @@ def resolve_databricks_token(workspace_url: str | None = None) -> str:
     )
 
 
+def get_databricks_host() -> str:
+    """Get the Databricks workspace host URL.
+
+    On Databricks Apps, DATABRICKS_HOST is set by the platform.
+    Locally, it comes from .env.local or the SDK config.
+
+    Raises:
+        RuntimeError: If no host can be resolved.
+    """
+    host = os.getenv("DATABRICKS_HOST")
+    if host:
+        return host.rstrip("/")
+    try:
+        from databricks.sdk import WorkspaceClient
+
+        w = WorkspaceClient()
+        if w.config.host:
+            return w.config.host.rstrip("/")
+    except Exception:
+        pass
+    raise RuntimeError(
+        "DATABRICKS_HOST not set. "
+        "On Databricks Apps this is automatic. "
+        "Locally, set DATABRICKS_HOST or configure a CLI profile."
+    )
+
+
+def get_experiment_id() -> str:
+    """Get the MLflow experiment ID from the environment.
+
+    Set via app.yaml resource declaration (value_from key: MLFLOW_EXPERIMENT_ID).
+
+    Raises:
+        RuntimeError: If MLFLOW_EXPERIMENT_ID is not set.
+    """
+    exp_id = os.getenv("MLFLOW_EXPERIMENT_ID")
+    if exp_id:
+        return exp_id
+    raise RuntimeError(
+        "MLFLOW_EXPERIMENT_ID not set. "
+        "On Databricks Apps, declare an mlflow_experiment resource in app.yaml. "
+        "Locally, set MLFLOW_EXPERIMENT_ID in .env.local."
+    )
+
+
 class DatabricksService:
     """Service for interacting with Databricks model serving endpoints."""
 
-    def __init__(
-        self,
-        workspace_url: str | None = None,
-        token: str | None = None,
-        workshop_id: str | None = None,
-        db_service=None,
-        init_sdk: bool = True,
-    ):
+    def __init__(self):
         """Initialize the Databricks service.
 
-        Args:
-            workspace_url: Databricks workspace URL (e.g., https://adb-1234567890123456.7.azuredatabricks.net)
-            token: Databricks API token
-            workshop_id: Workshop ID to get MLflow config from database
-            db_service: Database service instance to fetch MLflow config
-            init_sdk: Whether to initialize the Databricks SDK (set False for direct HTTP calls only)
+        Uses environment-based host and SDK-resolved token.
         """
-        # Resolve workspace URL first
-        if workshop_id and db_service:
-            try:
-                mlflow_config = db_service.get_mlflow_config(workshop_id)
-                if mlflow_config:
-                    self.workspace_url = workspace_url or mlflow_config.databricks_host
-                else:
-                    self.workspace_url = workspace_url or os.getenv("DATABRICKS_HOST")
-            except Exception:
-                self.workspace_url = workspace_url or os.getenv("DATABRICKS_HOST")
-        else:
-            self.workspace_url = workspace_url or os.getenv("DATABRICKS_HOST")
-
-        # Resolve token: prefer SDK OAuth token (service principal on Apps,
-        # CLI profile locally).  Fall back to explicit token / env var.
-        sdk_token = _get_sdk_token(self.workspace_url)
-        if sdk_token:
-            self.token = sdk_token
-            logger.info("Using Databricks SDK OAuth token for serving endpoint auth")
-        elif token:
-            self.token = token
-        else:
-            self.token = os.getenv("DATABRICKS_TOKEN")
-
-        if not self.workspace_url or not self.token:
-            raise ValueError("Databricks workspace URL and token are required")
+        self.workspace_url = get_databricks_host()
+        self.token = resolve_databricks_token()
 
         # Initialize the OpenAI client for calling serving endpoints
         # Use cached client if available to avoid reinitializing for every request
@@ -135,19 +135,12 @@ class DatabricksService:
 
             if cache_key in _client_cache:
                 self.client = _client_cache[cache_key]
-                logger.info(f"✅ Reusing cached OpenAI client for Databricks workspace: {self.workspace_url}")
             else:
-                logger.info(f"Initializing OpenAI client for Databricks workspace: {self.workspace_url}")
-
-                # Create OpenAI client configured for Databricks serving endpoints
-                self.client = OpenAI(api_key=self.token, base_url=f"{self.workspace_url}/serving-endpoints")
-
-                # Cache the client for future requests
-                _client_cache[cache_key] = self.client
-
-                logger.info(
-                    f"Successfully initialized and cached OpenAI client for Databricks workspace: {self.workspace_url}"
+                self.client = OpenAI(
+                    api_key=self.token,
+                    base_url=f"{self.workspace_url}/serving-endpoints",
                 )
+                _client_cache[cache_key] = self.client
         except Exception as e:
             logger.error(f"Failed to initialize OpenAI client: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to initialize OpenAI client: {e!s}") from e
@@ -498,21 +491,6 @@ class DatabricksService:
 
 
 # Factory function to create Databricks service instance
-def create_databricks_service(
-    workspace_url: str | None = None,
-    token: str | None = None,
-    workshop_id: str | None = None,
-    db_service=None,
-) -> DatabricksService:
-    """Create a Databricks service instance.
-
-    Args:
-        workspace_url: Databricks workspace URL
-        token: Databricks API token
-        workshop_id: Workshop ID to get MLflow config from database
-        db_service: Database service instance to fetch MLflow config
-
-    Returns:
-        DatabricksService instance
-    """
-    return DatabricksService(workspace_url=workspace_url, token=token, workshop_id=workshop_id, db_service=db_service)
+def create_databricks_service() -> DatabricksService:
+    """Create a Databricks service instance."""
+    return DatabricksService()
