@@ -11,8 +11,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = "0017_remove_databricks_host"
-down_revision = "0016_add_span_attribute_filter"
+revision = "0019_remove_databricks_host"
+down_revision = "0018_add_summarization_jobs"
 branch_labels = None
 depends_on = None
 
