@@ -4,6 +4,7 @@ Exercises real DiscoveryService logic with in-memory SQLite instead of
 mocking the entire service layer. Only the LLM call boundary is mocked.
 """
 
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -212,6 +213,55 @@ def test_generate_followup_with_demo_model(discovery_service, workshop_with_trac
     assert len(result["question"]) > 0
     # Demo model should produce a fallback
     assert result["is_fallback"] is True
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("AI generates 3 follow-up questions per trace based on feedback")
+@pytest.mark.unit
+def test_generate_followup_uses_sdk_auth_without_mlflow_config(
+    discovery_service, workshop_with_traces, monkeypatch
+):
+    """Regression: follow-up generation should rely on SDK auth, not MLflow config."""
+    discovery_service.submit_discovery_feedback(
+        "ws-1",
+        DiscoveryFeedbackCreate(
+            trace_id="t-1",
+            user_id="u-1",
+            feedback_label=FeedbackLabel.GOOD,
+            comment="Good answer",
+        ),
+    )
+
+    monkeypatch.setattr(
+        discovery_service,
+        "_get_workshop_or_404",
+        lambda _workshop_id: SimpleNamespace(discovery_questions_model_name="databricks-llm-endpoint"),
+    )
+
+    monkeypatch.setattr(
+        discovery_service.db_service,
+        "get_mlflow_config",
+        lambda _workshop_id: None,
+    )
+
+    with patch("server.services.discovery_service.get_databricks_host", return_value="https://example.databricks.com"), patch(
+        "server.services.discovery_service.resolve_databricks_token",
+        return_value="dapi_test_token",
+    ), patch(
+        "server.services.followup_question_service.FollowUpQuestionService.generate",
+        return_value=("Q?", False),
+    ) as mock_generate:
+        result = discovery_service.generate_followup_question(
+            workshop_id="ws-1", trace_id="t-1", user_id="u-1", question_number=1
+        )
+
+    _, kwargs = mock_generate.call_args
+    assert kwargs["workspace_url"] == "https://example.databricks.com"
+    assert kwargs["databricks_token"] == "dapi_test_token"
+    assert kwargs["model_name"] == "databricks-llm-endpoint"
+    assert result["question"] == "Q?"
+    assert result["question_number"] == 1
+    assert result["is_fallback"] is False
 
 
 # ============================================================================

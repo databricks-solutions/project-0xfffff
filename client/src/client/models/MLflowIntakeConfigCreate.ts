@@ -7,9 +7,9 @@
  */
 export type MLflowIntakeConfigCreate = {
     /**
-     * MLflow experiment ID to pull traces from
+     * MLflow experiment ID — resolved from MLFLOW_EXPERIMENT_ID env var if not provided
      */
-    experiment_id: string;
+    experiment_id?: (string | null);
     /**
      * Maximum number of traces to pull
      */
@@ -19,3 +19,4 @@ export type MLflowIntakeConfigCreate = {
      */
     filter_string?: (string | null);
 };
+

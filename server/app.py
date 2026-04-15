@@ -29,10 +29,26 @@ from server.sqlite_rescue import (
 logger = logging.getLogger(__name__)
 
 
+def _configure_app_log_levels() -> None:
+    """Set app logger levels for non-uvicorn modules.
+
+    Uvicorn config controls access/error logger verbosity, but app module
+    loggers (`server.*`) can still remain too restrictive. Mirror uvicorn
+    verbosity unless APP_LOG_LEVEL is explicitly set.
+    """
+    requested = os.getenv("APP_LOG_LEVEL") or os.getenv("UVICORN_LOG_LEVEL") or "INFO"
+    level = getattr(logging, requested.upper(), logging.INFO)
+    logging.getLogger().setLevel(level)
+    logging.getLogger("server").setLevel(level)
+    logging.getLogger("uvicorn.error").setLevel(level)
+    logger.info("Configured app logger level level=%s", logging.getLevelName(level))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan with proper startup and shutdown."""
     print("🚀 Application startup - lifespan function called!")
+    _configure_app_log_levels()
 
     # Detect database backend
     db_backend = detect_database_backend()

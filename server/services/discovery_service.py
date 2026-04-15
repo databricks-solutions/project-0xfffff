@@ -25,6 +25,7 @@ from server.models import (
     RubricCreate,
     WorkshopPhase,
 )
+from server.services.databricks_service import get_databricks_host, resolve_databricks_token
 from server.services.database_service import DatabaseService
 from server.services.discovery_dspy import QUESTION_CATEGORIES
 
@@ -110,6 +111,20 @@ class DiscoveryService:
         if not workshop:
             raise HTTPException(status_code=404, detail="Workshop not found")
         return workshop
+
+    def _resolve_databricks_llm_auth(self) -> tuple[str | None, str | None]:
+        """Resolve Databricks host + token for LLM calls using SDK auth."""
+        try:
+            workspace_url = get_databricks_host()
+        except RuntimeError:
+            workspace_url = None
+
+        try:
+            databricks_token = resolve_databricks_token()
+        except RuntimeError:
+            databricks_token = None
+
+        return workspace_url, databricks_token
 
     # ---------------------------------------------------------------------
     # Discovery questions
@@ -281,7 +296,7 @@ class DiscoveryService:
                 "coverage": coverage,
             }
 
-        from server.services.databricks_service import get_databricks_host, resolve_databricks_token
+        from server.services.databricks_service import resolve_databricks_token
 
         try:
             databricks_token = resolve_databricks_token()
@@ -561,7 +576,7 @@ class DiscoveryService:
         if not mlflow_config:
             raise HTTPException(status_code=400, detail="MLflow/Databricks configuration not found for workshop")
 
-        from server.services.databricks_service import get_databricks_host, resolve_databricks_token
+        from server.services.databricks_service import resolve_databricks_token
 
         try:
             databricks_token = resolve_databricks_token()
@@ -999,15 +1014,9 @@ class DiscoveryService:
         databricks_token = None
         model_name = (getattr(workshop, "discovery_questions_model_name", None) or "demo").strip()
 
-        mlflow_config = self.db_service.get_mlflow_config(workshop_id)
-        if mlflow_config:
-            workspace_url = get_databricks_host()
-            from server.services.databricks_service import get_databricks_host, resolve_databricks_token
-
-            try:
-                databricks_token = resolve_databricks_token()
-            except RuntimeError:
-                databricks_token = None
+        # Databricks LLM calls should use unified SDK auth (no MLflow config dependency).
+        if model_name not in {"demo", "custom"}:
+            workspace_url, databricks_token = self._resolve_databricks_llm_auth()
 
         # Check for custom LLM provider configuration
         custom_base_url = None
@@ -1144,7 +1153,7 @@ class DiscoveryService:
     ) -> str:
         """Classify finding using LLM if configured, otherwise fall back to keyword-based."""
         from server.services.classification_service import ClassificationService
-        from server.services.databricks_service import get_databricks_host, resolve_databricks_token
+        from server.services.databricks_service import resolve_databricks_token
 
         # Get LLM configuration
         mlflow_config = self.db_service.get_mlflow_config(workshop_id)
@@ -1193,7 +1202,7 @@ class DiscoveryService:
         """Detect disagreements using LLM if configured."""
         from server.models import ClassifiedFinding
         from server.services.classification_service import ClassificationService
-        from server.services.databricks_service import get_databricks_host, resolve_databricks_token
+        from server.services.databricks_service import resolve_databricks_token
 
         if not findings or len(findings) < 2:
             return

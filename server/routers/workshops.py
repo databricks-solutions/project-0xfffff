@@ -187,6 +187,7 @@ def _fire_background_task(coro, job_id: str | None = None) -> asyncio.Task:
     if job_id is not None:
         _job_tasks[job_id] = task
         task.add_done_callback(lambda _t: _job_tasks.pop(job_id, None))
+        logger.info("Registered background summarization task job_id=%s", job_id)
     return task
 
 
@@ -541,6 +542,13 @@ async def _run_summarization_background(
     from server.services.databricks_service import resolve_databricks_token
     from server.services.trace_summarization_service import TraceSummarizationService
 
+    started_at = time.perf_counter()
+    logger.info(
+        "Summarization background job starting job_id=%s traces=%d model=%s",
+        job_id,
+        len(batch),
+        model_name,
+    )
     try:
         token = resolve_databricks_token()
         svc = TraceSummarizationService(
@@ -554,8 +562,18 @@ async def _run_summarization_background(
         with SessionLocal() as bg_db:
             bg_service = DatabaseService(bg_db)
             bg_service.update_summarization_job_status(job_id, "running")
+            logger.info("Summarization job status updated job_id=%s status=running", job_id)
 
-            results = await svc.summarize_batch(batch)
+            def _on_progress(completed: int, total: int, failed: int) -> None:
+                logger.info(
+                    "Summarization job progress job_id=%s completed=%d total=%d failed=%d",
+                    job_id,
+                    completed,
+                    total,
+                    failed,
+                )
+
+            results = await svc.summarize_batch(batch, on_progress=_on_progress)
             for result in results:
                 if result["summary"] is not None:
                     bg_service.update_trace_summary(result["trace_id"], result["summary"])
@@ -568,19 +586,31 @@ async def _run_summarization_background(
             bg_service.update_summarization_job_status(job_id, "completed")
             succeeded = len([r for r in results if r["summary"]])
             failed = len([r for r in results if not r["summary"]])
-            logger.info("Summarization job %s complete: %d succeeded, %d failed", job_id, succeeded, failed)
+            logger.info(
+                "Summarization job completed job_id=%s succeeded=%d failed=%d elapsed_s=%.2f",
+                job_id,
+                succeeded,
+                failed,
+                time.perf_counter() - started_at,
+            )
     except asyncio.CancelledError:
-        logger.info("Summarization job %s was cancelled", job_id)
+        logger.info(
+            "Summarization job cancelled job_id=%s elapsed_s=%.2f",
+            job_id,
+            time.perf_counter() - started_at,
+        )
         try:
             with SessionLocal() as cancel_db:
                 DatabaseService(cancel_db).update_summarization_job_status(job_id, "cancelled")
+                logger.info("Summarization job status updated job_id=%s status=cancelled", job_id)
         except Exception:
             logger.exception("Could not mark job %s as cancelled", job_id)
     except Exception:
-        logger.exception("Summarization job %s failed", job_id)
+        logger.exception("Summarization job failed job_id=%s", job_id)
         try:
             with SessionLocal() as err_db:
                 DatabaseService(err_db).update_summarization_job_status(job_id, "failed")
+                logger.info("Summarization job status updated job_id=%s status=failed", job_id)
         except Exception:
             logger.exception("Could not mark job %s as failed", job_id)
 
@@ -693,6 +723,7 @@ async def cancel_summarization_job(
     db: Session = Depends(get_db),
 ) -> dict:
     """Cancel a running summarization job."""
+    logger.info("Summarization cancel requested workshop_id=%s job_id=%s", workshop_id, job_id)
     db_service = DatabaseService(db)
     job = db_service.get_summarization_job(job_id)
     if not job:
@@ -705,9 +736,14 @@ async def cancel_summarization_job(
     task = _job_tasks.get(job_id)
     if task and not task.done():
         task.cancel()
+        logger.info("Summarization task cancellation signaled job_id=%s", job_id)
     else:
         # Task not found in memory (e.g. server restarted) — just mark it cancelled
         db_service.update_summarization_job_status(job_id, "cancelled")
+        logger.warning(
+            "Summarization task missing in memory; marked cancelled in DB job_id=%s",
+            job_id,
+        )
 
     return {"status": "cancelled", "job_id": job_id}
 

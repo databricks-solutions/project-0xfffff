@@ -19,3 +19,4 @@ export type MLflowIntakeConfig = {
      */
     filter_string?: (string | null);
 };
+

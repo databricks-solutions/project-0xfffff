@@ -6,13 +6,13 @@ import asyncio
 import json
 import logging
 import re
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import field as dc_field
 from typing import Any, Literal
 
 import httpx
-
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -455,7 +455,14 @@ class TraceSummarizationService:
                     )
                     await asyncio.sleep(backoff)
                     continue
+                if self._is_rate_limit_error(e):
+                    logger.error(
+                        "Rate limit retries exhausted for trace %s after %d attempts",
+                        trace_id,
+                        self.MAX_429_RETRIES + 1,
+                    )
                 raise
+        raise RuntimeError("Unreachable retry loop exit")
 
     async def summarize_trace(
         self,
@@ -473,8 +480,14 @@ class TraceSummarizationService:
         if hasattr(self, "_test_fail_trace_ids") and trace_id in self._test_fail_trace_ids:
             return None
 
+        started_at = time.perf_counter()
         try:
             deps = TraceContext.from_dict(trace_context)
+            logger.info(
+                "Trace summarization started trace_id=%s spans=%d",
+                trace_id,
+                len(deps.spans),
+            )
 
             # Pass 1: Executive summary (agent uses tools to explore)
             exec_result = await self._run_with_429_retry(
@@ -486,6 +499,11 @@ class TraceSummarizationService:
                 trace_id=trace_id,
             )
             executive_summary = exec_result.output.executive_summary
+            logger.debug(
+                "Trace summarization pass1 complete trace_id=%s elapsed_s=%.2f",
+                trace_id,
+                time.perf_counter() - started_at,
+            )
 
             # Pass 2: Milestones with span data refs
             milestone_result = await self._run_with_429_retry(
@@ -497,6 +515,11 @@ class TraceSummarizationService:
                 ),
                 trace_id=trace_id,
             )
+            logger.debug(
+                "Trace summarization pass2 complete trace_id=%s elapsed_s=%.2f",
+                trace_id,
+                time.perf_counter() - started_at,
+            )
 
             # Post-processing: resolve refs to actual trace values
             summary = milestone_result.output
@@ -504,10 +527,30 @@ class TraceSummarizationService:
                 milestone.inputs = resolve_span_data_refs(milestone.inputs, deps)
                 milestone.outputs = resolve_span_data_refs(milestone.outputs, deps)
 
+            logger.info(
+                "Trace summarization succeeded trace_id=%s milestones=%d elapsed_s=%.2f",
+                trace_id,
+                len(summary.milestones),
+                time.perf_counter() - started_at,
+            )
             return summary
 
+        except asyncio.CancelledError:
+            logger.warning(
+                "Trace summarization cancelled trace_id=%s elapsed_s=%.2f",
+                trace_id,
+                time.perf_counter() - started_at,
+            )
+            raise
         except Exception as e:
-            logger.error(f"Trace summarization failed for {trace_id}: {e}", exc_info=True)
+            logger.error(
+                "Trace summarization failed trace_id=%s error_type=%s error=%s elapsed_s=%.2f",
+                trace_id,
+                type(e).__name__,
+                e,
+                time.perf_counter() - started_at,
+                exc_info=True,
+            )
             return None
 
     async def summarize_batch(
@@ -528,15 +571,22 @@ class TraceSummarizationService:
         total = len(traces)
         completed = 0
         failed = 0
+        batch_started_at = time.perf_counter()
         lock = asyncio.Lock()
         # Stagger task starts so we don't burst all concurrent tasks at once
         task_index = 0
         index_lock = asyncio.Lock()
+        logger.info(
+            "Batch summarization started traces=%d max_concurrency=%d",
+            total,
+            self.max_concurrency,
+        )
 
         async def process_one(trace: dict) -> dict:
             nonlocal completed, failed, task_index
             trace_id = trace["id"]
             error_msg = None
+            trace_started_at = time.perf_counter()
 
             # Stagger: each task waits a bit before acquiring the semaphore
             async with index_lock:
@@ -548,14 +598,36 @@ class TraceSummarizationService:
             async with semaphore:
                 try:
                     summary = await self.summarize_trace(trace["context"], trace_id=trace_id)
+                except asyncio.CancelledError:
+                    logger.warning(
+                        "Batch trace task cancelled trace_id=%s elapsed_s=%.2f",
+                        trace_id,
+                        time.perf_counter() - trace_started_at,
+                    )
+                    raise
                 except Exception as e:
                     summary = None
                     error_msg = str(e)
+                    logger.error(
+                        "Unhandled trace exception trace_id=%s error_type=%s error=%s",
+                        trace_id,
+                        type(e).__name__,
+                        e,
+                        exc_info=True,
+                    )
 
             async with lock:
                 if summary is None:
                     failed += 1
                 completed += 1
+                logger.info(
+                    "Batch summarization progress completed=%d/%d failed=%d trace_id=%s trace_elapsed_s=%.2f",
+                    completed,
+                    total,
+                    failed,
+                    trace_id,
+                    time.perf_counter() - trace_started_at,
+                )
                 if on_progress:
                     on_progress(completed, total, failed)
 
@@ -568,4 +640,11 @@ class TraceSummarizationService:
             return result
 
         results = await asyncio.gather(*[process_one(t) for t in traces])
+        logger.info(
+            "Batch summarization finished completed=%d failed=%d total=%d elapsed_s=%.2f",
+            completed,
+            failed,
+            total,
+            time.perf_counter() - batch_started_at,
+        )
         return list(results)

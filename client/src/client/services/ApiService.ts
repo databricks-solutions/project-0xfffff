@@ -371,6 +371,30 @@ export class ApiService {
         });
     }
     /**
+     * Cancel Summarization Job
+     * Cancel a running summarization job.
+     * @param workshopId
+     * @param jobId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static cancelSummarizationJobWorkshopsWorkshopIdCancelSummarizationJobJobIdPost(
+        workshopId: string,
+        jobId: string,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/cancel-summarization-job/{job_id}',
+            path: {
+                'workshop_id': workshopId,
+                'job_id': jobId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * Get Summarization Status
      * Get summary coverage stats and last job info for a workshop.
      * @param workshopId
