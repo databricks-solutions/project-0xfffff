@@ -369,9 +369,9 @@ MemAlign uses two types of memory to improve judge alignment:
 from mlflow.genai.judges.optimizers import MemAlignOptimizer
 
 optimizer = MemAlignOptimizer(
-    reflection_lm="openai:/gpt-4o-mini",  # Model for guideline distillation
+    reflection_lm=alignment_model_uri,  # Same model used for judge evaluation
     retrieval_k=5,  # Examples to retrieve
-    embedding_model="databricks:/databricks-gte-large-en",
+    embedding_model="databricks:/databricks-gte-large-en",  # Configurable, defaults to GTE Large
 )
 
 aligned_judge = judge.align(traces, optimizer)
@@ -649,10 +649,10 @@ Check that:
 
 ### Guideline Distillation Fails
 
-Databricks models may not support the JSON schema format required for guideline distillation. Options:
-1. Use OpenAI model (gpt-4o-mini) for `reflection_lm`
-2. Alignment will still work using episodic memory only
-3. Set `OPENAI_API_KEY` environment variable for automatic fallback
+Databricks models may not support the JSON schema format required for guideline distillation. In this case:
+1. Alignment still succeeds using episodic memory (example-based learning)
+2. Semantic memory (distilled guidelines) will be empty
+3. The aligned judge uses original instructions + retrieved examples at evaluation time
 
 ## Implementation Log
 

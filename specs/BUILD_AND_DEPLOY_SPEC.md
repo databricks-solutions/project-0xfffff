@@ -220,8 +220,9 @@ uv run gunicorn server.app:app \
 | `DATABASE_URL` | Database connection string (SQLite only) | `sqlite:///workshop.db` |
 | `DATABASE_ENV` | Database backend: `postgres` (Lakebase) or `sqlite` | `sqlite` |
 | `DB_BOOTSTRAP_ON_STARTUP` | Auto-run migrations on startup | `false` |
-| `MLFLOW_TRACKING_URI` | MLflow server URL | (required) |
-| `DATABRICKS_HOST` | Databricks workspace URL | (required) |
+| `MLFLOW_TRACKING_URI` | MLflow server URL (set to `databricks` on Apps) | (required) |
+| `DATABRICKS_HOST` | Databricks workspace URL (set by platform on Apps, developer locally) | (required) |
+| `MLFLOW_EXPERIMENT_ID` | MLflow experiment ID (from app.yaml resource declaration) | (required) |
 | `DATABRICKS_TOKEN` | Databricks access token (fallback — SDK auth preferred) | (optional) |
 | `PGHOST` | Lakebase endpoint hostname | (required for Lakebase) |
 | `PGDATABASE` | Lakebase database name | `databricks_postgres` |

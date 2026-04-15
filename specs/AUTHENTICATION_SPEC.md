@@ -60,7 +60,7 @@ Token Resolution Order:
 
 ### MLflow Auth
 
-MLflow operations (`search_traces`, `log_feedback`, `set_experiment`) use whatever auth the Databricks SDK provides. The backend sets `DATABRICKS_HOST` so the SDK knows which workspace, then calls `mlflow.set_tracking_uri('databricks')`. No explicit token is passed — the SDK handles it.
+MLflow operations (`search_traces`, `log_feedback`, `set_experiment`) use whatever auth the Databricks SDK provides. `DATABRICKS_HOST` is set by the platform (Databricks Apps) or the developer (`.env.local`). `MLFLOW_EXPERIMENT_ID` is provided via the app.yaml resource declaration. The backend calls `mlflow.set_tracking_uri('databricks')` — the SDK handles auth automatically. No user-configurable host or token is stored.
 
 ### Required Service Principal Permissions
 
@@ -71,8 +71,8 @@ The app's service principal needs access to these Databricks resources. On Datab
 | Resource | Operations | Required Permission |
 |----------|-----------|-------------------|
 | **Lakebase (PostgreSQL)** | Primary production database. OAuth tokens injected per-connection via `do_connect` event. Configured via `DATABASE_ENV=postgres` + `PGHOST`/`PGDATABASE`/`PGUSER`/`ENDPOINT_NAME` env vars. | Postgres role with `databricks_auth` extension ([docs](https://docs.databricks.com/aws/en/lakebase/admin/authentication.html)) |
-| **MLflow Experiment** | `search_traces`, `get_experiment`, `set_experiment`, `log_feedback`, `set_trace_tag` | Can edit |
-| **Model Serving Endpoints** | `chat.completions.create` (judge evaluation, rubric generation, discovery) | Can query |
+| **MLflow Experiment** | `search_traces`, `get_experiment`, `set_experiment`, `log_feedback`, `set_trace_tag`. Declared as app.yaml resource (`MLFLOW_EXPERIMENT_ID`). | Can edit |
+| **Model Serving Endpoints** | `chat.completions.create` (judge evaluation, rubric generation, discovery). Includes embedding endpoints (e.g. `databricks-gte-large-en`) used by MemAlign. | Can query |
 
 #### Optional Resources
 
@@ -358,6 +358,12 @@ Key implementation points:
 - [ ] Databricks Apps deployment works via platform-injected service principal
 - [ ] `DATABRICKS_TOKEN` env var works as fallback for CI/containers
 - [ ] `resolve_databricks_token()` raises `RuntimeError` with actionable message when no auth available
+- [ ] No user-configurable `databricks_host` — app always uses its own workspace
+- [ ] `DATABRICKS_HOST` comes from environment (Databricks Apps platform or developer), not stored config
+- [ ] `MLFLOW_EXPERIMENT_ID` comes from app.yaml resource declaration
+- [ ] `DatabricksService` does not accept `workspace_url` parameter — uses env-based host only
+- [ ] MemAlign embedding model is selectable with default to `databricks-gte-large-en`
+- [ ] No dead `OPENAI_API_KEY` code paths in alignment service
 
 ### Lakebase Connection Pool
 - [ ] Token injection uses `do_connect` event listener, not `creator` callable or baked-in URL
@@ -413,3 +419,4 @@ Key implementation points:
 |------|------|--------|---------|
 | 2026-04-10 | [SDK Auth Migration](../.claude/plans/2026-04-10-sdk-auth-migration.md) | complete | Replace PAT token auth with Databricks SDK unified auth |
 | 2026-04-11 | (inline) | complete | Fix Lakebase connection pool: switch to `do_connect` + `generate_database_credential()`, fix pool settings to match Databricks docs |
+| 2026-04-15 | [Remove databricks_host](../.claude/plans/2026-04-15-remove-databricks-host-app-yaml-resources.md) | in-progress | Remove user-configurable host, use app.yaml resources for MLflow experiment, fix MemAlign embedding model |
