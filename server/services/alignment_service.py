@@ -1101,6 +1101,7 @@ class AlignmentService:
         evaluation_model_name: str,  # Model for judge creation
         alignment_model_name: str,  # Model for MemAlign optimizer (reflection/distillation)
         mlflow_config: Any,
+        embedding_model_name: str = "databricks-gte-large-en",
     ) -> Generator[str, None, dict[str, Any]]:
         """Run judge alignment using MemAlignOptimizer.
 
@@ -1259,43 +1260,22 @@ class AlignmentService:
             logger.info("Detected judge type from rubric: %s", judge_type)
             yield f"Detected judge type: {judge_type}"
 
-            # Create MemAlignOptimizer - works universally for all judge types
-            # MemAlign uses dual memory systems:
-            # - Semantic Memory: Distills general guidelines from feedback
-            # - Episodic Memory: Retrieves similar past examples during evaluation
+            # Create MemAlignOptimizer
             yield "Creating MemAlign optimizer..."
 
             try:
                 from mlflow.genai.judges.optimizers import MemAlignOptimizer
 
-                # IMPORTANT: Databricks models don't support the JSON schema format required
-                # for guideline distillation (additionalProperties: false). OpenAI and Claude models
-                # support this, so we prefer those for the reflection_lm.
-                openai_api_key = os.environ.get("OPENAI_API_KEY")
-                is_openai_model = alignment_model.startswith("openai-") or alignment_model.startswith("gpt-")
-                is_claude_model = alignment_model.startswith("claude-") or "claude" in alignment_model.lower()
+                reflection_model = optimizer_model_uri
+                yield f"Using {alignment_model} for reflection/distillation"
 
-                if is_openai_model or is_claude_model:
-                    # User selected OpenAI/Claude model - use it for reflection (supports JSON schema)
-                    reflection_model = optimizer_model_uri
-                    yield f"Using {alignment_model} for guideline distillation"
-                elif openai_api_key:
-                    # Databricks model selected but OpenAI key available - use OpenAI for reflection
-                    reflection_model = "openai:/gpt-4o-mini"
-                    yield "Using OpenAI (gpt-4o-mini) for guideline distillation (Databricks doesn't support required JSON schema)"
-                else:
-                    # Fall back to Databricks - guideline distillation will fail but episodic memory will work
-                    reflection_model = optimizer_model_uri
-                    yield "WARNING: Using Databricks model for reflection."
-                    yield "Guideline distillation may fail (Databricks doesn't support required JSON schema)."
-                    yield "Alignment will still work using episodic memory (example-based learning)."
-
+                embedding_uri = f"databricks:/{embedding_model_name}"
                 optimizer = MemAlignOptimizer(
-                    reflection_lm=reflection_model,  # Model for distilling guidelines
-                    retrieval_k=5,  # Number of similar examples to retrieve
-                    embedding_model="databricks:/databricks-gte-large-en",  # Databricks embedding model
+                    reflection_lm=reflection_model,
+                    retrieval_k=5,
+                    embedding_model=embedding_uri,
                 )
-                yield f"MemAlign optimizer created with reflection_lm={reflection_model}, retrieval_k=5"
+                yield f"MemAlign optimizer created with reflection_lm={reflection_model}, embedding_model={embedding_uri}"
                 yield "Using MemAlign dual memory system (semantic + episodic memory)"
             except ImportError as e:
                 error_msg = f"MemAlign optimizer not available: {e}. Ensure mlflow>=3.9 is installed."

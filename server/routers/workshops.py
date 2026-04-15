@@ -228,6 +228,7 @@ class AlignmentRequest(BaseModel):
     alignment_model_name: str | None = None  # Model for SIMBA optimizer (judge_model_uri), required for alignment
     prompt_id: str | None = None  # Existing prompt ID to update (instead of creating a new one)
     judge_type: str | None = None  # Explicit judge type: 'likert', 'binary', 'freeform'
+    embedding_model_name: str = "databricks-gte-large-en"  # Embedding model for MemAlign episodic memory
 
 
 class SimpleEvaluationRequest(BaseModel):
@@ -3864,6 +3865,7 @@ async def start_alignment_job(
                     evaluation_model_name=request.evaluation_model_name,
                     alignment_model_name=request.alignment_model_name,
                     mlflow_config=mlflow_config,
+                    embedding_model_name=request.embedding_model_name,
                 ):
                     if isinstance(message, dict):
                         # This is the final result
