@@ -629,7 +629,7 @@ async def resummarize_traces(
     _fire_background_task(
         _run_summarization_background(
             job_id=job.id,
-            workspace_url=workspace_url,
+            workspace_url=workspace_host,
             endpoint_url=endpoint_url,
             model_name=workshop.summarization_model,
             guidance=workshop.summarization_guidance,
