@@ -18,6 +18,7 @@ interface DraftRubricSidebarProps {
   userId: string;
   onCreateRubric: () => void;
   newItemIds?: Set<string>;
+  onFocusWithinChange?: (isFocused: boolean) => void;
 }
 
 const CREATE_GROUP_OPTION = '__create_new_group__';
@@ -28,6 +29,7 @@ export const DraftRubricSidebar: React.FC<DraftRubricSidebarProps> = ({
   userId,
   onCreateRubric,
   newItemIds = new Set(),
+  onFocusWithinChange,
 }) => {
   const createMutation = useCreateDraftRubricItem(workshopId);
   const updateMutation = useUpdateDraftRubricItem(workshopId);
@@ -40,6 +42,7 @@ export const DraftRubricSidebar: React.FC<DraftRubricSidebarProps> = ({
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [editText, setEditText] = React.useState('');
   const [proposedGroups, setProposedGroups] = React.useState<ProposedGroup[] | null>(null);
+  const rootRef = React.useRef<HTMLDivElement | null>(null);
 
   const groupsByName = React.useMemo(() => {
     const map = new Map<string, string>();
@@ -287,8 +290,36 @@ export const DraftRubricSidebar: React.FC<DraftRubricSidebarProps> = ({
     );
   };
 
+  const notifyFocusWithinChange = React.useCallback((isFocused: boolean) => {
+    onFocusWithinChange?.(isFocused);
+  }, [onFocusWithinChange]);
+
+  const handleFocusCapture = () => {
+    notifyFocusWithinChange(true);
+  };
+
+  const handleBlurCapture = () => {
+    window.setTimeout(() => {
+      const root = rootRef.current;
+      if (!root) return;
+      const active = document.activeElement;
+      if (!active || !root.contains(active)) {
+        notifyFocusWithinChange(false);
+      }
+    }, 0);
+  };
+
+  React.useEffect(() => {
+    return () => notifyFocusWithinChange(false);
+  }, [notifyFocusWithinChange]);
+
   return (
-    <div className="flex flex-col h-full">
+    <div
+      ref={rootRef}
+      className="flex flex-col h-full"
+      onFocusCapture={handleFocusCapture}
+      onBlurCapture={handleBlurCapture}
+    >
       {/* Header */}
       <div className="px-4 py-3 border-b bg-white">
         <div className="flex items-center justify-between mb-1">
@@ -327,6 +358,52 @@ export const DraftRubricSidebar: React.FC<DraftRubricSidebarProps> = ({
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+        {/* Group proposal is shown first so facilitator sees it immediately */}
+        {proposedGroups && (
+          <div className="border border-blue-200 rounded bg-blue-50 p-3">
+            <h4 className="text-xs font-semibold flex items-center gap-1 mb-2">
+              <Sparkles className="w-3 h-3 text-blue-600" />
+              Suggested Grouping
+            </h4>
+            <div className="space-y-2">
+              {proposedGroups.map((group, idx) => (
+                <div key={idx} className="border rounded p-2 bg-white">
+                  <h5 className="text-xs font-semibold text-slate-800 mb-1">{group.name}</h5>
+                  <p className="text-xs text-slate-500 mb-1">{group.rationale}</p>
+                  <div className="flex flex-wrap gap-1">
+                    {group.item_ids.map((id) => {
+                      const item = items.find((i) => i.id === id);
+                      return item ? (
+                        <Badge key={id} variant="outline" className="text-xs max-w-[160px] truncate">
+                          {item.text}
+                        </Badge>
+                      ) : null;
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2 mt-3">
+              <Button
+                size="sm"
+                onClick={handleApplyGroups}
+                disabled={applyMutation.isPending}
+                className="h-7 text-xs"
+              >
+                {applyMutation.isPending ? 'Applying...' : 'Apply Groups'}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setProposedGroups(null)}
+                className="h-7 text-xs"
+              >
+                Dismiss
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Add form */}
         {showAddForm && (
           <div className="p-3 border rounded bg-slate-50">
@@ -406,51 +483,6 @@ export const DraftRubricSidebar: React.FC<DraftRubricSidebarProps> = ({
           </div>
         )}
 
-        {/* Group proposal overlay */}
-        {proposedGroups && (
-          <div className="border border-blue-200 rounded bg-blue-50 p-3">
-            <h4 className="text-xs font-semibold flex items-center gap-1 mb-2">
-              <Sparkles className="w-3 h-3 text-blue-600" />
-              Suggested Grouping
-            </h4>
-            <div className="space-y-2">
-              {proposedGroups.map((group, idx) => (
-                <div key={idx} className="border rounded p-2 bg-white">
-                  <h5 className="text-xs font-semibold text-slate-800 mb-1">{group.name}</h5>
-                  <p className="text-xs text-slate-500 mb-1">{group.rationale}</p>
-                  <div className="flex flex-wrap gap-1">
-                    {group.item_ids.map((id) => {
-                      const item = items.find((i) => i.id === id);
-                      return item ? (
-                        <Badge key={id} variant="outline" className="text-xs max-w-[160px] truncate">
-                          {item.text}
-                        </Badge>
-                      ) : null;
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-2 mt-3">
-              <Button
-                size="sm"
-                onClick={handleApplyGroups}
-                disabled={applyMutation.isPending}
-                className="h-7 text-xs"
-              >
-                {applyMutation.isPending ? 'Applying...' : 'Apply Groups'}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setProposedGroups(null)}
-                className="h-7 text-xs"
-              >
-                Dismiss
-              </Button>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Sticky footer */}

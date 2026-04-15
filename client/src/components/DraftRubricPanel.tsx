@@ -344,6 +344,50 @@ export const DraftRubricPanel: React.FC<DraftRubricPanelProps> = ({
           </div>
         </CardHeader>
         <CardContent>
+          {/* Group proposal appears first for faster review/apply */}
+          {proposedGroups && (
+            <div className="mb-4 border border-blue-200 rounded p-3 bg-blue-50">
+              <h4 className="text-sm font-semibold flex items-center gap-2 mb-2">
+                <Sparkles className="w-4 h-4 text-blue-600" />
+                Suggested Grouping
+              </h4>
+              <div className="space-y-3">
+                {proposedGroups.map((group, idx) => (
+                  <div key={idx} className="border rounded p-3 bg-white">
+                    <h5 className="text-sm font-semibold text-slate-800 mb-1">{group.name}</h5>
+                    <p className="text-xs text-slate-500 mb-2">{group.rationale}</p>
+                    <div className="flex flex-wrap gap-1">
+                      {group.item_ids.map((id) => {
+                        const item = items.find((i) => i.id === id);
+                        return item ? (
+                          <Badge key={id} variant="outline" className="text-xs max-w-[200px] truncate">
+                            {item.text}
+                          </Badge>
+                        ) : null;
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2 mt-4">
+                <Button
+                  size="sm"
+                  onClick={handleApplyGroups}
+                  disabled={applyMutation.isPending}
+                >
+                  {applyMutation.isPending ? 'Applying...' : 'Apply Groups'}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setProposedGroups(null)}
+                >
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Add form */}
           {showAddForm && (
             <div className="mb-4 p-3 border rounded-lg bg-slate-50">
@@ -423,54 +467,6 @@ export const DraftRubricPanel: React.FC<DraftRubricPanelProps> = ({
           )}
         </CardContent>
       </Card>
-
-      {/* Group proposal overlay */}
-      {proposedGroups && (
-        <Card className="border-blue-200 bg-blue-50">
-          <CardHeader>
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-blue-600" />
-              Suggested Grouping
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {proposedGroups.map((group, idx) => (
-                <div key={idx} className="border rounded p-3 bg-white">
-                  <h5 className="text-sm font-semibold text-slate-800 mb-1">{group.name}</h5>
-                  <p className="text-xs text-slate-500 mb-2">{group.rationale}</p>
-                  <div className="flex flex-wrap gap-1">
-                    {group.item_ids.map((id) => {
-                      const item = items.find((i) => i.id === id);
-                      return item ? (
-                        <Badge key={id} variant="outline" className="text-xs max-w-[200px] truncate">
-                          {item.text}
-                        </Badge>
-                      ) : null;
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-2 mt-4">
-              <Button
-                size="sm"
-                onClick={handleApplyGroups}
-                disabled={applyMutation.isPending}
-              >
-                {applyMutation.isPending ? 'Applying...' : 'Apply Groups'}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setProposedGroups(null)}
-              >
-                Dismiss
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 };
