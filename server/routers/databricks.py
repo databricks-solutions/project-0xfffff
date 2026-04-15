@@ -23,7 +23,7 @@ router = APIRouter()
 def get_databricks_service(config: DatabricksConfig) -> DatabricksService:
     """Create a Databricks service instance from configuration."""
     try:
-        return create_databricks_service(workspace_url=config.workspace_url, token=config.token or None)
+        return create_databricks_service()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to initialize Databricks service: {e!s}") from e
 
@@ -179,17 +179,7 @@ async def evaluate_judge_prompt(request: dict, db: Session = Depends(get_db)) ->
 
         # Resolve workspace URL from MLflow config or request config
         workspace_url = config_data.get("workspace_url")
-        if workshop_id:
-            db_service = DatabaseService(db)
-            mlflow_config = db_service.get_mlflow_config(workshop_id)
-            if mlflow_config:
-                workspace_url = mlflow_config.databricks_host
-
-        # Use SDK auth via create_databricks_service (token from request is fallback)
-        service = create_databricks_service(
-            workspace_url=workspace_url,
-            token=config_data.get("token") or None,
-        )
+        service = create_databricks_service()
 
         # Call the serving endpoint with judge-specific parameters using SDK (same as intake)
         result = service.call_serving_endpoint(

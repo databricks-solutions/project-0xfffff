@@ -535,7 +535,7 @@ async def _run_summarization_background(
     from server.services.trace_summarization_service import TraceSummarizationService
 
     try:
-        token = resolve_databricks_token(workspace_url)
+        token = resolve_databricks_token()
         svc = TraceSummarizationService(
             endpoint_url=endpoint_url,
             token=token,
@@ -620,9 +620,10 @@ async def resummarize_traces(
     if not mlflow_config:
         raise HTTPException(status_code=400, detail="MLflow config not found")
 
-    workspace_host = mlflow_config.databricks_host.rstrip("/")
-    workspace_url = workspace_host if workspace_host.startswith("https://") else f"https://{workspace_host}"
-    endpoint_url = f"{workspace_url}/serving-endpoints"
+    from server.services.databricks_service import get_databricks_host
+
+    workspace_host = get_databricks_host()
+    endpoint_url = f"{workspace_host}/serving-endpoints"
 
     _fire_background_task(
         _run_summarization_background(
@@ -1390,16 +1391,6 @@ async def add_traces(workshop_id: str, request: dict, db: Session = Depends(get_
                 logger.info("No auto-evaluation prompt stored - skipping auto-evaluation for added traces")
 
             if derived_prompt:
-                # Get Databricks token
-                from server.services.databricks_service import resolve_databricks_token
-
-                try:
-                    databricks_token = resolve_databricks_token(mlflow_config.databricks_host)
-                except RuntimeError:
-                    databricks_token = None
-
-                logger.info("Add traces - Databricks token available: %s", databricks_token is not None)
-                if databricks_token:
                     # Create auto-evaluation job for the new traces
                     auto_eval_job_id = str(uuid.uuid4())
                     logger.info("Add traces - Creating auto-evaluation job: %s", auto_eval_job_id)
@@ -1715,16 +1706,6 @@ async def begin_annotation_phase(workshop_id: str, request: dict | None = None, 
         logger.info("Derived prompt length: %s", len(derived_prompt) if derived_prompt else 0)
 
         if derived_prompt:
-            # Get Databricks token
-            from server.services.databricks_service import resolve_databricks_token
-
-            try:
-                databricks_token = resolve_databricks_token(mlflow_config.databricks_host)
-            except RuntimeError:
-                databricks_token = None
-
-            logger.info("Databricks token available: %s", databricks_token is not None)
-            if databricks_token:
                 # Create auto-evaluation job
                 auto_eval_job_id = str(uuid.uuid4())
                 logger.info("Creating auto-evaluation job: %s", auto_eval_job_id)
@@ -1769,8 +1750,6 @@ async def begin_annotation_phase(workshop_id: str, request: dict | None = None, 
                             try:
                                 import mlflow as _mlflow
 
-                                _os.environ["DATABRICKS_HOST"] = mlflow_config.databricks_host.rstrip("/")
-                                # SDK handles auth (service principal on Apps, CLI profile locally)
                                 _mlflow.set_tracking_uri("databricks")
 
                                 filter_str = f"tags.eval = 'true' AND tags.workshop_id = '{workshop_id}'"
@@ -2405,7 +2384,7 @@ async def generate_rubric_suggestions(
         from server.services.databricks_service import DatabricksService
         from server.services.rubric_generation_service import RubricGenerationService
 
-        databricks_service = DatabricksService(workshop_id=workshop_id, db_service=db_service)
+        databricks_service = DatabricksService()
         generation_service = RubricGenerationService(db_service, databricks_service)
 
         # Generate suggestions
@@ -2674,15 +2653,15 @@ async def upload_workshop_to_volume(workshop_id: str, upload_request: dict, db: 
         # Parse request parameters
         volume_path = upload_request.get("volume_path", "")
         file_name = upload_request.get("file_name", f"workshop_{workshop_id}.db")
-        databricks_host = upload_request.get("databricks_host", "")
 
-        if not all([volume_path, databricks_host]):
-            raise HTTPException(status_code=400, detail="Missing required fields: volume_path and databricks_host")
+        if not volume_path:
+            raise HTTPException(status_code=400, detail="Missing required field: volume_path")
 
-        from server.services.databricks_service import resolve_databricks_token
+        from server.services.databricks_service import get_databricks_host, resolve_databricks_token
 
         try:
-            databricks_token = resolve_databricks_token(databricks_host)
+            databricks_host = get_databricks_host()
+            databricks_token = resolve_databricks_token()
         except RuntimeError as e:
             raise HTTPException(status_code=401, detail=str(e)) from e
 
@@ -2992,7 +2971,6 @@ async def configure_mlflow_intake(
 
     try:
         config_to_save = MLflowIntakeConfig(
-            databricks_host=config.databricks_host,
             experiment_id=config.experiment_id,
             max_traces=config.max_traces,
             filter_string=config.filter_string,
@@ -3022,34 +3000,10 @@ async def list_available_models(workshop_id: str, db: Session = Depends(get_db))
     if not workshop:
         raise HTTPException(status_code=404, detail="Workshop not found")
 
-    mlflow_config = db_service.get_mlflow_config(workshop_id)
-    databricks_host = (mlflow_config.databricks_host if mlflow_config else None) or os.getenv("DATABRICKS_HOST")
-    if not databricks_host:
-        # Fall back to SDK default host (e.g. from databricks CLI profile)
-        try:
-            from databricks.sdk import WorkspaceClient
-
-            databricks_host = WorkspaceClient().config.host
-        except Exception:
-            pass
-    if not databricks_host:
-        return []
-
-    from server.services.databricks_service import resolve_databricks_token
-
-    try:
-        databricks_token = resolve_databricks_token(databricks_host)
-    except RuntimeError:
-        return []
-
     try:
         from server.services.databricks_service import DatabricksService
 
-        service = DatabricksService(
-            workspace_url=databricks_host,
-            token=databricks_token,
-            init_sdk=False,
-        )
+        service = DatabricksService()
         endpoints = await service.list_serving_endpoints()
         # Return only READY Foundation Model API chat endpoints
         return [
@@ -3091,8 +3045,6 @@ async def test_mlflow_connection(
         mlflow_service = MLflowIntakeService(db_service)
 
         mlflow_config = MLflowIntakeConfig(
-            databricks_host=config.databricks_host,
-            databricks_token=config.databricks_token,
             experiment_id=config.experiment_id,
             max_traces=config.max_traces,
             filter_string=config.filter_string,
@@ -3119,30 +3071,13 @@ async def ingest_mlflow_traces(workshop_id: str, ingest_request: dict, db: Sessi
             detail="MLflow configuration not found. Please configure MLflow intake first.",
         )
 
-    # Get Databricks token via SDK auth
-    from server.services.databricks_service import resolve_databricks_token
-
-    try:
-        databricks_token = resolve_databricks_token(config.databricks_host if config else None)
-    except RuntimeError as e:
-        raise HTTPException(status_code=401, detail=str(e)) from e
-
-    # Create config with token for ingestion
-    config_with_token = MLflowIntakeConfig(
-        databricks_host=config.databricks_host,
-        databricks_token=databricks_token,
-        experiment_id=config.experiment_id,
-        max_traces=config.max_traces,
-        filter_string=config.filter_string,
-    )
-
     try:
         from server.services.mlflow_intake_service import MLflowIntakeService
 
         mlflow_service = MLflowIntakeService(db_service)
 
         # Ingest traces
-        trace_count = mlflow_service.ingest_traces(workshop_id, config_with_token)
+        trace_count = mlflow_service.ingest_traces(workshop_id, config)
 
         # Update ingestion status
         db_service.update_mlflow_ingestion_status(workshop_id, trace_count)
@@ -3155,8 +3090,9 @@ async def ingest_mlflow_traces(workshop_id: str, ingest_request: dict, db: Sessi
                 unsummarized = [t for t in traces if t.context and not t.summary]
                 if unsummarized:
                     batch = [{"id": t.id, "context": t.context} for t in unsummarized]
-                    ingest_host = config_with_token.databricks_host.rstrip("/")
-                    ingest_url = ingest_host if ingest_host.startswith("https://") else f"https://{ingest_host}"
+                    from server.services.databricks_service import get_databricks_host
+
+                    ingest_url = get_databricks_host()
 
                     summ_job = db_service.create_summarization_job(workshop_id=workshop_id, total=len(batch))
                     summarization_job_id = summ_job.id
@@ -3204,8 +3140,6 @@ async def get_mlflow_traces(
         mlflow_service = MLflowIntakeService(db_service)
 
         mlflow_config = MLflowIntakeConfig(
-            databricks_host=config.databricks_host,
-            databricks_token=config.databricks_token,
             experiment_id=config.experiment_id,
             max_traces=config.max_traces,
             filter_string=config.filter_string,
@@ -3406,7 +3340,6 @@ async def upload_csv_traces(
 async def upload_csv_and_log_to_mlflow(
     workshop_id: str,
     file: UploadFile = File(...),
-    databricks_host: str = Form(None),
     experiment_id: str = Form(None),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
@@ -3424,11 +3357,8 @@ async def upload_csv_and_log_to_mlflow(
     2. For each row, create an MLflow trace with the request/response
     3. Store the traces locally with their MLflow trace IDs
 
-    Environment variables used if parameters not provided:
-    - DATABRICKS_HOST
-    - MLFLOW_EXPERIMENT_ID
-
     Authentication is resolved via Databricks SDK (service principal or CLI profile).
+    DATABRICKS_HOST and MLFLOW_EXPERIMENT_ID come from the environment.
     """
     import csv
     import io
@@ -3443,26 +3373,13 @@ async def upload_csv_and_log_to_mlflow(
     if not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="File must be a CSV file")
 
-    # Get MLflow configuration from parameters or environment variables
-    host = databricks_host or os.environ.get("DATABRICKS_HOST")
-    exp_id = experiment_id or os.environ.get("MLFLOW_EXPERIMENT_ID")
+    from server.services.databricks_service import get_experiment_id
 
-    if not host or not exp_id:
-        raise HTTPException(
-            status_code=400,
-            detail="MLflow configuration required. Provide databricks_host and experiment_id as parameters or set DATABRICKS_HOST and MLFLOW_EXPERIMENT_ID environment variables.",
-        )
-
-    # Ensure host has proper format
-    if not host.startswith("https://"):
-        host = f"https://{host}"
-    host = host.rstrip("/")
+    exp_id = experiment_id or get_experiment_id()
 
     try:
         import mlflow
 
-        # Configure MLflow
-        os.environ["DATABRICKS_HOST"] = host
         mlflow.set_tracking_uri("databricks")
         mlflow.set_experiment(experiment_id=exp_id)
 
@@ -3642,10 +3559,7 @@ async def analyze_discovery(
         raise HTTPException(status_code=404, detail="Workshop not found")
 
     try:
-        databricks_service = DatabricksService(
-            workshop_id=workshop_id,
-            db_service=db_service,
-        )
+        databricks_service = DatabricksService()
     except ValueError as e:
         raise HTTPException(
             status_code=400,
@@ -3903,16 +3817,6 @@ async def start_alignment_job(
     if not mlflow_config:
         raise HTTPException(status_code=400, detail="MLflow configuration not found")
 
-    # Get Databricks token
-    from server.services.databricks_service import resolve_databricks_token
-
-    try:
-        databricks_token = resolve_databricks_token(mlflow_config.databricks_host if mlflow_config else None)
-    except RuntimeError as e:
-        raise HTTPException(status_code=401, detail=str(e)) from e
-
-    mlflow_config.databricks_token = databricks_token
-
     # Create job first so we can log to it
     job_id = str(uuid.uuid4())
     job = create_job(job_id, workshop_id)
@@ -4106,16 +4010,6 @@ async def start_evaluation_job(
     if not mlflow_config:
         raise HTTPException(status_code=400, detail="MLflow configuration not found")
 
-    # Get Databricks token
-    from server.services.databricks_service import resolve_databricks_token
-
-    try:
-        databricks_token = resolve_databricks_token(mlflow_config.databricks_host if mlflow_config else None)
-    except RuntimeError as e:
-        raise HTTPException(status_code=401, detail=str(e)) from e
-
-    mlflow_config.databricks_token = databricks_token
-
     # IMPORTANT: Re-sync annotations to MLflow before evaluation
     # This ensures all annotations have the 'align' tag and feedback entries in MLflow,
     # even if the inline sync during annotation save failed due to transient errors.
@@ -4304,14 +4198,6 @@ async def start_simple_evaluation(
             status_code=400, detail="Databricks configuration not found. Please configure in Intake phase."
         )
 
-    # Get Databricks token
-    from server.services.databricks_service import resolve_databricks_token
-
-    try:
-        databricks_token = resolve_databricks_token(mlflow_config.databricks_host if mlflow_config else None)
-    except RuntimeError as e:
-        raise HTTPException(status_code=401, detail=str(e)) from e
-
     # Create job for tracking
     job_id = str(uuid.uuid4())
     job = create_job(job_id, workshop_id)
@@ -4333,8 +4219,7 @@ async def start_simple_evaluation(
                 thread_db_service = DatabaseService(thread_db)
 
                 # Initialize Databricks service
-                job.add_log(f"Connecting to Databricks workspace: {mlflow_config.databricks_host}")
-                databricks_svc = DatabricksService(workspace_url=mlflow_config.databricks_host, token=databricks_token)
+                databricks_svc = DatabricksService()
 
                 # Get rubric to determine judge type
                 rubric = thread_db_service.get_rubric(workshop_id)
@@ -5073,16 +4958,6 @@ async def restart_auto_evaluation(
     if not mlflow_config:
         raise HTTPException(status_code=400, detail="MLflow configuration not found")
 
-    # Get Databricks token
-    from server.services.databricks_service import resolve_databricks_token
-
-    try:
-        databricks_token = resolve_databricks_token(mlflow_config.databricks_host if mlflow_config else None)
-    except RuntimeError as e:
-        raise HTTPException(status_code=401, detail=str(e)) from e
-
-    mlflow_config.databricks_token = databricks_token
-
     # Tag traces with 'eval' label
     tag_result = db_service.tag_traces_for_evaluation(workshop_id, trace_ids, tag_type="eval")
     logger.info("Restart auto-eval: Tagged %d traces: %s", tag_result.get("tagged", 0), tag_result)
@@ -5447,16 +5322,6 @@ async def re_evaluate(
     mlflow_config = db_service.get_mlflow_config(workshop_id)
     if not mlflow_config:
         raise HTTPException(status_code=400, detail="MLflow configuration not found")
-
-    # Get Databricks token
-    from server.services.databricks_service import resolve_databricks_token
-
-    try:
-        databricks_token = resolve_databricks_token(mlflow_config.databricks_host if mlflow_config else None)
-    except RuntimeError as e:
-        raise HTTPException(status_code=401, detail=str(e)) from e
-
-    mlflow_config.databricks_token = databricks_token
 
     # Re-tag traces with 'eval' before evaluation (belt-and-suspenders).
     # With dedicated tag keys (eval/align), this is no longer strictly necessary

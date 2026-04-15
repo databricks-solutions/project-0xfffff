@@ -40,23 +40,8 @@ async def export_workshop_to_dbsql(
         elif db_path.startswith("sqlite://"):
             db_path = db_path.replace("sqlite://", "")
 
-        # Resolve Databricks token via SDK auth, falling back to request token
-        from server.services.databricks_service import resolve_databricks_token
-
-        databricks_token = request.databricks_token or None
-        if not databricks_token:
-            try:
-                databricks_token = resolve_databricks_token(request.databricks_host)
-            except RuntimeError:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Databricks token could not be resolved. On Databricks Apps this is automatic. Locally, run: databricks auth login --host <workspace-url>",
-                )
-
-        # Initialize DBSQL export service
+        # Initialize DBSQL export service — auth resolved from environment
         dbsql_service = DBSQLExportService(
-            databricks_host=request.databricks_host,
-            databricks_token=databricks_token,
             http_path=request.http_path,
             catalog=request.catalog,
             schema_name=request.schema_name,
