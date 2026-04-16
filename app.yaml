@@ -12,8 +12,5 @@ command:
 env:
   - name: DATABASE_ENV
     value: postgres
-resources:
-  - name: mlflow-experiment
-    type: mlflow_experiment
-    valueFrom:
-      key: MLFLOW_EXPERIMENT_ID
+  - name: MLFLOW_EXPERIMENT_ID
+    valueFrom: mlflow-experiment
