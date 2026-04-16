@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 
 from server.database import get_db
 from server.models import (
+    CriterionEvaluation,
+    CriterionEvaluationCreate,
     TraceCriterion,
     TraceCriterionCreate,
     TraceCriterionUpdate,
@@ -81,10 +83,31 @@ async def get_trace_rubric(
     return EvalModeService.render_trace_rubric(workshop_id, trace_id, criteria)
 
 
+@router.post("/{workshop_id}/traces/{trace_id}/criteria/{criterion_id}/evaluations", response_model=CriterionEvaluation, status_code=status.HTTP_201_CREATED)
+async def create_criterion_evaluation(
+    workshop_id: str,
+    trace_id: str,
+    criterion_id: str,
+    data: CriterionEvaluationCreate,
+    db: Session = Depends(get_db),
+) -> CriterionEvaluation:
+    service = EvalCriteriaService(db)
+    return service.create_evaluation(
+        workshop_id=workshop_id,
+        criterion_id=criterion_id,
+        trace_id=trace_id,
+        judge_model=data.judge_model,
+        met=data.met,
+        rationale=data.rationale,
+        raw_response=data.raw_response,
+    )
+
+
 @router.get("/{workshop_id}/eval-results", response_model=list[TraceEvalScore])
 async def get_eval_results(
     workshop_id: str,
     trace_id: str | None = Query(default=None),
+    judge_model: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ) -> list[TraceEvalScore]:
     criteria_service = EvalCriteriaService(db)
@@ -99,7 +122,7 @@ async def get_eval_results(
     results: list[TraceEvalScore] = []
     for current_trace_id in trace_ids:
         criteria = criteria_service.list_criteria(workshop_id, current_trace_id)
-        evaluations = criteria_service.list_evaluations(workshop_id, current_trace_id)
+        evaluations = criteria_service.list_evaluations(workshop_id, current_trace_id, judge_model=judge_model)
         results.append(EvalModeService.aggregate_trace_score(current_trace_id, criteria, evaluations))
 
     return results

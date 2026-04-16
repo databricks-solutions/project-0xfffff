@@ -723,6 +723,7 @@ class DiscoveryAgentRunDB(Base):
     trigger_comment_id = Column(String, ForeignKey("discovery_comments.id"), nullable=False)
     status = Column(String, nullable=False, default="running")  # running | completed | failed | timeout
     tool_calls_count = Column(Integer, nullable=False, default=0)
+    events = Column(JSON, nullable=False, default=list)
     partial_output = Column(Text, nullable=False, default="")
     final_output = Column(Text, nullable=True)
     error = Column(Text, nullable=True)

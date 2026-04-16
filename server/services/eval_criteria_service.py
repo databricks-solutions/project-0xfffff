@@ -154,6 +154,28 @@ class EvalCriteriaService:
         raw_response: dict | None = None,
     ) -> CriterionEvaluation:
         self._get_eval_workshop_or_404(workshop_id)
+
+        if judge_model == "HUMAN":
+            criterion = self.get_criterion(workshop_id, criterion_id)
+            if criterion:
+                try:
+                    import mlflow
+                    from mlflow.entities import AssessmentSource
+
+                    trace = self.db.query(TraceDB).filter(TraceDB.id == trace_id).first()
+                    if trace and trace.mlflow_trace_id:
+                        mlflow.client.MlflowClient().log_assessment(
+                            trace_id=trace.mlflow_trace_id,
+                            name="eval_mode_judge",
+                            source=AssessmentSource(source_type="HUMAN"),
+                            value=met,
+                            rationale=criterion.text,
+                        )
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Failed to log HUMAN assessment to MLflow: {e}")
+
         row = CriterionEvaluationDB(
             criterion_id=criterion_id,
             trace_id=trace_id,
@@ -168,12 +190,14 @@ class EvalCriteriaService:
         self.db.refresh(row)
         return self._evaluation_from_db(row)
 
-    def list_evaluations(self, workshop_id: str, trace_id: str) -> list[CriterionEvaluation]:
+    def list_evaluations(self, workshop_id: str, trace_id: str, judge_model: str | None = None) -> list[CriterionEvaluation]:
         self._get_eval_workshop_or_404(workshop_id)
-        rows = (
-            self.db.query(CriterionEvaluationDB)
-            .filter(CriterionEvaluationDB.workshop_id == workshop_id, CriterionEvaluationDB.trace_id == trace_id)
-            .order_by(CriterionEvaluationDB.created_at.asc())
-            .all()
+        query = self.db.query(CriterionEvaluationDB).filter(
+            CriterionEvaluationDB.workshop_id == workshop_id,
+            CriterionEvaluationDB.trace_id == trace_id
         )
+        if judge_model:
+            query = query.filter(CriterionEvaluationDB.judge_model == judge_model)
+            
+        rows = query.order_by(CriterionEvaluationDB.created_at.asc()).all()
         return [self._evaluation_from_db(row) for row in rows]

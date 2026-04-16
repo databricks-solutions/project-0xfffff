@@ -425,25 +425,36 @@ class DatabaseService:
     self.db.refresh(db_job)
     return self._job_from_db(db_job)
 
-  def add_summarization_job_completed(self, job_id: str, trace_id: str) -> "SummarizationJob | None":
+  def add_summarization_job_completed(
+    self,
+    job_id: str,
+    trace_id: str,
+    events: list[dict[str, Any]] | None = None,
+  ) -> "SummarizationJob | None":
     """Append a trace ID to the job's completed list."""
     db_job = self.db.query(SummarizationJobDB).filter(SummarizationJobDB.id == job_id).first()
     if not db_job:
       return None
     completed = list(db_job.completed_traces or [])
-    completed.append(trace_id)
+    completed.append({"trace_id": trace_id, "events": events or []})
     db_job.completed_traces = completed
     self.db.commit()
     self.db.refresh(db_job)
     return self._job_from_db(db_job)
 
-  def add_summarization_job_failed(self, job_id: str, trace_id: str, error: str) -> "SummarizationJob | None":
+  def add_summarization_job_failed(
+    self,
+    job_id: str,
+    trace_id: str,
+    error: str,
+    events: list[dict[str, Any]] | None = None,
+  ) -> "SummarizationJob | None":
     """Append a failed trace entry to the job's failed list."""
     db_job = self.db.query(SummarizationJobDB).filter(SummarizationJobDB.id == job_id).first()
     if not db_job:
       return None
     failed = list(db_job.failed_traces or [])
-    failed.append({"trace_id": trace_id, "error": error})
+    failed.append({"trace_id": trace_id, "error": error, "events": events or []})
     db_job.failed_traces = failed
     self.db.commit()
     self.db.refresh(db_job)
@@ -4850,6 +4861,42 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
     self.db.refresh(comment)
     return self._build_discovery_comment(comment, viewer_user_id=vote_data.user_id)
 
+  def delete_discovery_comment(self, workshop_id: str, comment_id: str) -> bool:
+    root_comment = self.db.query(DiscoveryCommentDB).filter(
+      DiscoveryCommentDB.id == comment_id,
+      DiscoveryCommentDB.workshop_id == workshop_id,
+    ).first()
+    if not root_comment:
+      return False
+
+    comment_ids: list[str] = [root_comment.id]
+    idx = 0
+    while idx < len(comment_ids):
+      parent_id = comment_ids[idx]
+      child_rows = self.db.query(DiscoveryCommentDB.id).filter(
+        DiscoveryCommentDB.workshop_id == workshop_id,
+        DiscoveryCommentDB.parent_comment_id == parent_id,
+      ).all()
+      for child_row in child_rows:
+        child_id = str(child_row.id)
+        if child_id not in comment_ids:
+          comment_ids.append(child_id)
+      idx += 1
+
+    self.db.query(DiscoveryCommentVoteDB).filter(
+      DiscoveryCommentVoteDB.comment_id.in_(comment_ids)
+    ).delete(synchronize_session=False)
+    self.db.query(DiscoveryAgentRunDB).filter(
+      DiscoveryAgentRunDB.workshop_id == workshop_id,
+      DiscoveryAgentRunDB.trigger_comment_id.in_(comment_ids),
+    ).delete(synchronize_session=False)
+    self.db.query(DiscoveryCommentDB).filter(
+      DiscoveryCommentDB.workshop_id == workshop_id,
+      DiscoveryCommentDB.id.in_(comment_ids),
+    ).delete(synchronize_session=False)
+    self.db.commit()
+    return True
+
   def create_discovery_agent_run(
     self,
     workshop_id: str,
@@ -4857,9 +4904,10 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
     trigger_comment_id: str,
     created_by: str,
     milestone_ref: Optional[str] = None,
+    run_id: Optional[str] = None,
   ) -> DiscoveryAgentRun:
     row = DiscoveryAgentRunDB(
-      id=str(uuid.uuid4()),
+      id=(run_id or str(uuid.uuid4())),
       workshop_id=workshop_id,
       trace_id=trace_id,
       milestone_ref=milestone_ref,
@@ -4880,6 +4928,7 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       trigger_comment_id=row.trigger_comment_id,
       status=row.status,
       tool_calls_count=row.tool_calls_count or 0,
+      events=list(row.events or []),
       partial_output=row.partial_output or "",
       final_output=row.final_output,
       error=row.error,
@@ -4901,6 +4950,7 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       trigger_comment_id=row.trigger_comment_id,
       status=row.status,
       tool_calls_count=row.tool_calls_count or 0,
+      events=list(row.events or []),
       partial_output=row.partial_output or "",
       final_output=row.final_output,
       error=row.error,
@@ -4916,6 +4966,7 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
     *,
     status: Optional[str] = None,
     tool_calls_count: Optional[int] = None,
+    events: Optional[List[dict[str, Any]]] = None,
     partial_output: Optional[str] = None,
     final_output: Optional[str] = None,
     error: Optional[str] = None,
@@ -4928,6 +4979,8 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       row.status = status
     if tool_calls_count is not None:
       row.tool_calls_count = tool_calls_count
+    if events is not None:
+      row.events = list(events)
     if partial_output is not None:
       row.partial_output = partial_output
     if final_output is not None:
@@ -4946,6 +4999,38 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       trigger_comment_id=row.trigger_comment_id,
       status=row.status,
       tool_calls_count=row.tool_calls_count or 0,
+      events=list(row.events or []),
+      partial_output=row.partial_output or "",
+      final_output=row.final_output,
+      error=row.error,
+      created_by=row.created_by,
+      completed_at=row.completed_at,
+      created_at=row.created_at,
+      updated_at=row.updated_at,
+    )
+
+  def append_discovery_agent_run_event(
+    self,
+    run_id: str,
+    event: dict[str, Any],
+  ) -> Optional[DiscoveryAgentRun]:
+    row = self.db.query(DiscoveryAgentRunDB).filter(DiscoveryAgentRunDB.id == run_id).first()
+    if not row:
+      return None
+    events = list(row.events or [])
+    events.append(event)
+    row.events = events
+    self.db.commit()
+    self.db.refresh(row)
+    return DiscoveryAgentRun(
+      id=row.id,
+      workshop_id=row.workshop_id,
+      trace_id=row.trace_id,
+      milestone_ref=row.milestone_ref,
+      trigger_comment_id=row.trigger_comment_id,
+      status=row.status,
+      tool_calls_count=row.tool_calls_count or 0,
+      events=list(row.events or []),
       partial_output=row.partial_output or "",
       final_output=row.final_output,
       error=row.error,
