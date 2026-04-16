@@ -30,6 +30,7 @@ interface Props {
   existingFeedback?: DiscoveryFeedbackData | null;
   onComplete?: () => void;
   isFacilitator?: boolean;
+  followupsEnabled?: boolean;
 }
 
 interface QnaPair {
@@ -48,6 +49,7 @@ export const DiscoveryFeedbackView: React.FC<Props> = ({
   existingFeedback,
   onComplete,
   isFacilitator = false,
+  followupsEnabled = true,
 }) => {
   // State machine
   const [state, setState] = useState<FeedbackState>('feedback');
@@ -100,7 +102,9 @@ export const DiscoveryFeedbackView: React.FC<Props> = ({
       setComment(existingFeedback.comment);
       setQnaPairs(qna);
 
-      if (qna.length >= 3) {
+      if (!followupsEnabled) {
+        setState('complete');
+      } else if (qna.length >= 3) {
         setState('complete');
       } else if (qna.length === 2) {
         setState('generating_q3');
@@ -120,15 +124,16 @@ export const DiscoveryFeedbackView: React.FC<Props> = ({
       setUsingFallback(false);
       setSelectedMilestoneRef('all');
     }
-  }, [traceId, existingFeedback]);
+  }, [traceId, existingFeedback, followupsEnabled]);
 
   // Auto-generate question when entering a generating state
   useEffect(() => {
+    if (!followupsEnabled) return;
     if (state === 'generating_q1' || state === 'generating_q2' || state === 'generating_q3') {
       const qNum = state === 'generating_q1' ? 1 : state === 'generating_q2' ? 2 : 3;
       generateQuestionForNumber(qNum);
     }
-  }, [state]);
+  }, [state, followupsEnabled]);
 
   const generateQuestionForNumber = useCallback(
     async (questionNumber: number) => {
@@ -178,13 +183,17 @@ export const DiscoveryFeedbackView: React.FC<Props> = ({
         feedback_label: feedbackLabel,
         comment: comment.trim(),
       });
-      setState('generating_q1');
+      if (!followupsEnabled) {
+        setState('complete');
+      } else {
+        setState('generating_q1');
+      }
     } catch (err) {
       toast.error('Failed to submit feedback', {
         description: 'Please try again.',
       });
     }
-  }, [feedbackLabel, comment, traceId, userId, submitFeedback]);
+  }, [feedbackLabel, comment, traceId, userId, submitFeedback, followupsEnabled]);
 
   const handleSubmitAnswer = useCallback(async () => {
     if (!currentAnswer.trim() || !currentQuestion) return;
@@ -288,7 +297,7 @@ export const DiscoveryFeedbackView: React.FC<Props> = ({
         )}
 
         {/* Fallback warning — facilitator-only */}
-        {isFacilitator && usingFallback && (state.startsWith('answering_') || state === 'complete') && (
+        {followupsEnabled && isFacilitator && usingFallback && (state.startsWith('answering_') || state === 'complete') && (
           <div className="flex items-start gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-md">
             <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
             <p className="text-xs text-amber-700">
@@ -298,7 +307,7 @@ export const DiscoveryFeedbackView: React.FC<Props> = ({
         )}
 
         {/* Loading Spinner */}
-        {isGenerating && (
+        {followupsEnabled && isGenerating && (
           <div className="flex flex-col items-center py-8 space-y-3">
             <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
             <p className="text-sm text-gray-500">Generating follow-up question...</p>
@@ -319,7 +328,7 @@ export const DiscoveryFeedbackView: React.FC<Props> = ({
         )}
 
         {/* Previous Q&A pairs (read-only) */}
-        {(isAnswering || state === 'complete') && qnaPairs.length > 0 && (
+        {followupsEnabled && (isAnswering || state === 'complete') && qnaPairs.length > 0 && (
           <div className="space-y-3">
             {qnaPairs.map((pair, i) => (
               <div key={i} className="bg-gray-50 rounded-lg p-3 space-y-1">
@@ -342,7 +351,7 @@ export const DiscoveryFeedbackView: React.FC<Props> = ({
         )}
 
         {/* Current Question + Answer Form */}
-        {isAnswering && (
+        {followupsEnabled && isAnswering && (
           <div className="space-y-3 border-t pt-3">
             <div className="bg-blue-50 rounded-lg p-3">
               <p className="text-xs font-medium text-blue-600 mb-1">
@@ -410,7 +419,9 @@ export const DiscoveryFeedbackView: React.FC<Props> = ({
         {state === 'complete' && (
           <div className="flex flex-col items-center py-4 space-y-3 border-t">
             <CheckCircle2 className="w-8 h-8 text-green-500" />
-            <p className="text-sm font-medium text-green-700">Feedback complete for this trace</p>
+            <p className="text-sm font-medium text-green-700">
+              {followupsEnabled ? 'Feedback complete for this trace' : 'Feedback submitted for this trace'}
+            </p>
             {onComplete && (
               <Button onClick={onComplete} className="mt-2">
                 Next Trace

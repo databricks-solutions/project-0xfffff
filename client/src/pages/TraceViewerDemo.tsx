@@ -17,7 +17,7 @@ import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useWorkflowContext } from '@/context/WorkflowContext';
 import { toast } from 'sonner';
 import { useUser, useRoleCheck } from '@/context/UserContext';
-import { useTraces, useUserFindings, useSubmitFinding, useParticipantNotes, useSubmitParticipantNote, useDeleteParticipantNote, useWorkshopAnnotationConfig, refetchAllWorkshopQueries, useDiscoveryFeedback } from '@/hooks/useWorkshopApi';
+import { useTraces, useUserFindings, useSubmitFinding, useParticipantNotes, useSubmitParticipantNote, useDeleteParticipantNote, useWorkshopAnnotationConfig, useWorkshopDiscoveryConfig, refetchAllWorkshopQueries, useDiscoveryFeedback } from '@/hooks/useWorkshopApi';
 import { DiscoveryFeedbackView } from '@/components/DiscoveryFeedbackView';
 import { useQueryClient } from '@tanstack/react-query';
 import { WorkshopsService, DiscoveryService } from '@/client';
@@ -52,7 +52,9 @@ export function TraceViewerDemo() {
   
   // Workshop data (for show_participant_notes flag)
   const { data: workshopData } = useWorkshopAnnotationConfig(workshopId!);
+  const { data: discoveryConfig } = useWorkshopDiscoveryConfig(workshopId!);
   const notesEnabled = workshopData?.show_participant_notes ?? false;
+  const followupsEnabled = discoveryConfig?.discovery_followups_enabled ?? true;
 
   // Discovery feedback (v2 Structured Feedback) - fetch existing for this user
   const { data: discoveryFeedbackList } = useDiscoveryFeedback(workshopId!, user?.id);
@@ -74,10 +76,10 @@ export function TraceViewerDemo() {
     if (!discoveryFeedbackList) return new Set<string>();
     return new Set(
       discoveryFeedbackList
-        .filter(f => (f.followup_qna?.length || 0) >= 3)
+        .filter(f => followupsEnabled ? (f.followup_qna?.length || 0) >= 3 : !!f.comment?.trim())
         .map(f => f.trace_id)
     );
-  }, [discoveryFeedbackList]);
+  }, [discoveryFeedbackList, followupsEnabled]);
 
   // Traces with any feedback started (but not necessarily all Q&A complete)
   const startedFeedbackTraces = useMemo(() => {
@@ -748,6 +750,7 @@ export function TraceViewerDemo() {
             traceSummary={currentTrace.summary}
             existingFeedback={discoveryFeedbackList?.find(f => f.trace_id === currentTrace.id) ?? null}
             isFacilitator={isFacilitator}
+            followupsEnabled={followupsEnabled}
             onComplete={() => {
               // Refetch feedback to update progress bar
               queryClient.invalidateQueries({ queryKey: ['discovery-feedback', workshopId, user?.id] });

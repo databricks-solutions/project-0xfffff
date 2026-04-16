@@ -34,6 +34,10 @@ export type { DatabricksEndpointInfo } from './models/DatabricksEndpointInfo';
 export type { DatabricksResponse } from './models/DatabricksResponse';
 export type { DBSQLExportRequest } from './models/DBSQLExportRequest';
 export type { DBSQLExportResponse } from './models/DBSQLExportResponse';
+export type { DiscoveryAgentRun } from './models/DiscoveryAgentRun';
+export type { DiscoveryComment } from './models/DiscoveryComment';
+export type { DiscoveryCommentCreateRequest } from './models/DiscoveryCommentCreateRequest';
+export type { DiscoveryCommentVoteRequest } from './models/DiscoveryCommentVoteRequest';
 export type { DiscoveryCoverage } from './models/DiscoveryCoverage';
 export type { DiscoveryFeedback } from './models/DiscoveryFeedback';
 export type { DiscoveryFeedbackCreate } from './models/DiscoveryFeedbackCreate';
@@ -44,6 +48,7 @@ export type { DiscoveryFindingWithUser } from './models/DiscoveryFindingWithUser
 export type { DiscoveryQuestion } from './models/DiscoveryQuestion';
 export type { DiscoveryQuestionsModelConfig } from './models/DiscoveryQuestionsModelConfig';
 export type { DiscoveryQuestionsResponse } from './models/DiscoveryQuestionsResponse';
+export type { DiscoverySettingsConfig } from './models/DiscoverySettingsConfig';
 export type { DiscoverySummariesResponse } from './models/DiscoverySummariesResponse';
 export type { DiscussionPromptResponse } from './models/DiscussionPromptResponse';
 export type { DraftRubricItem } from './models/DraftRubricItem';

@@ -14,6 +14,8 @@ from sqlalchemy.orm import sessionmaker
 
 from server.database import Base, TraceDB, UserDB, WorkshopDB, WorkshopParticipantDB
 from server.models import (
+    DiscoveryCommentCreate,
+    DiscoveryCommentVoteRequest,
     DiscoveryFeedbackCreate,
     FeedbackLabel,
 )
@@ -435,3 +437,78 @@ async def test_begin_discovery_with_trace_limit(async_client, override_get_db, m
     assert data["traces_used"] == 5
     assert data["total_traces"] == 20
     mock_db_svc.update_discovery_randomize_setting.assert_called_once_with("ws-1", True)
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("When follow-up questions are disabled, participant flow is GOOD/BAD + comment only")
+@pytest.mark.unit
+def test_followup_generation_disabled_raises(discovery_service, workshop_with_traces, test_db):
+    workshop = test_db.query(WorkshopDB).filter(WorkshopDB.id == "ws-1").first()
+    workshop.discovery_followups_enabled = False
+    test_db.commit()
+
+    discovery_service.submit_discovery_feedback(
+        "ws-1",
+        DiscoveryFeedbackCreate(
+            trace_id="t-1",
+            user_id="u-1",
+            feedback_label=FeedbackLabel.GOOD,
+            comment="good",
+        ),
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        discovery_service.generate_followup_question(
+            workshop_id="ws-1",
+            trace_id="t-1",
+            user_id="u-1",
+            question_number=1,
+        )
+    assert exc_info.value.status_code == 400
+    assert "disabled" in str(exc_info.value.detail).lower()
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("Facilitator `@assistant summarize this thread` returns a grounded summary as a thread reply")
+@pytest.mark.unit
+def test_assistant_mention_creates_assistant_reply(discovery_service, workshop_with_traces):
+    payload = discovery_service.create_discovery_comment(
+        "ws-1",
+        DiscoveryCommentCreate(
+            trace_id="t-1",
+            user_id="f-1",
+            body="@assistant summarize this thread",
+        ),
+    )
+    assert payload["comment"].author_type == "human"
+    assert payload["assistant_comment"].author_type == "assistant"
+    assert "summary" in payload["assistant_comment"].body.lower()
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("Users can upvote/downvote comments (single vote per user per comment with toggle behavior)")
+@pytest.mark.unit
+def test_comment_vote_toggle_behavior(discovery_service, workshop_with_traces):
+    created = discovery_service.create_discovery_comment(
+        "ws-1",
+        DiscoveryCommentCreate(
+            trace_id="t-1",
+            user_id="u-1",
+            body="I think milestone 2 is strong.",
+        ),
+    )["comment"]
+
+    upvoted = discovery_service.vote_discovery_comment(
+        "ws-1",
+        created.id,
+        DiscoveryCommentVoteRequest(user_id="u-2", value=1),
+    )
+    assert upvoted.upvotes == 1
+    assert upvoted.downvotes == 0
+
+    toggled_off = discovery_service.vote_discovery_comment(
+        "ws-1",
+        created.id,
+        DiscoveryCommentVoteRequest(user_id="u-2", value=1),
+    )
+    assert toggled_off.upvotes == 0
+    assert toggled_off.downvotes == 0

@@ -169,6 +169,8 @@ class Workshop(BaseModel):
     annotation_randomize_traces: bool = False  # Whether to randomize trace order in annotation
     judge_name: str = "workshop_judge"  # Name used for MLflow feedback entries
     discovery_questions_model_name: str = "demo"  # LLM model/endpoint for discovery question generation
+    discovery_mode: str = "analysis"  # Facilitator toggle: analysis | social
+    discovery_followups_enabled: bool = True  # Toggle auto follow-up question flow
     input_jsonpath: str | None = None  # JSONPath query for extracting trace input display
     output_jsonpath: str | None = None  # JSONPath query for extracting trace output display
     auto_evaluation_job_id: str | None = None  # Job ID for auto-evaluation on annotation start
@@ -949,6 +951,56 @@ class DraftRubricItemUpdate(BaseModel):
     text: str | None = None
     group_id: str | None = None
     group_name: str | None = None
+
+
+class DiscoveryCommentCreate(BaseModel):
+    trace_id: str
+    user_id: str
+    body: str
+    milestone_ref: str | None = None
+    parent_comment_id: str | None = None
+
+
+class DiscoveryCommentVoteRequest(BaseModel):
+    user_id: str
+    value: int  # -1 or +1
+
+
+class DiscoveryComment(BaseModel):
+    id: str
+    workshop_id: str
+    trace_id: str
+    milestone_ref: str | None = None
+    parent_comment_id: str | None = None
+    user_id: str
+    user_name: str
+    user_email: str
+    user_role: str
+    author_type: str = "human"
+    body: str
+    upvotes: int = 0
+    downvotes: int = 0
+    score: int = 0
+    viewer_vote: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+
+class DiscoveryAgentRun(BaseModel):
+    id: str
+    workshop_id: str
+    trace_id: str
+    milestone_ref: str | None = None
+    trigger_comment_id: str
+    status: str
+    tool_calls_count: int = 0
+    partial_output: str = ""
+    final_output: str | None = None
+    error: str | None = None
+    created_by: str
+    completed_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
 
 
 class ProposedGroup(BaseModel):

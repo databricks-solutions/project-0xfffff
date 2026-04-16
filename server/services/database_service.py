@@ -14,6 +14,9 @@ from server.database import (
   ClassifiedFindingDB,
   DisagreementDB,
   DiscoveryAnalysisDB,
+  DiscoveryAgentRunDB,
+  DiscoveryCommentDB,
+  DiscoveryCommentVoteDB,
   DiscoveryFeedbackDB,
   DiscoveryFindingDB,
   DiscoveryQuestionDB,
@@ -40,6 +43,10 @@ from server.models import (
   Annotation,
   AnnotationCreate,
   DiscoveryFeedback,
+  DiscoveryAgentRun,
+  DiscoveryComment,
+  DiscoveryCommentCreate,
+  DiscoveryCommentVoteRequest,
   DiscoveryFeedbackCreate,
   DiscoveryFinding,
   DiscoveryFindingCreate,
@@ -162,6 +169,8 @@ class DatabaseService:
       annotation_randomize_traces=getattr(db_workshop, 'annotation_randomize_traces', False) or False,
       judge_name=db_workshop.judge_name or 'workshop_judge',
       discovery_questions_model_name=getattr(db_workshop, 'discovery_questions_model_name', 'demo') or 'demo',
+      discovery_mode=(getattr(db_workshop, "discovery_mode", "analysis") or "analysis"),
+      discovery_followups_enabled=getattr(db_workshop, "discovery_followups_enabled", True),
       input_jsonpath=getattr(db_workshop, 'input_jsonpath', None),
       output_jsonpath=getattr(db_workshop, 'output_jsonpath', None),
       auto_evaluation_job_id=getattr(db_workshop, 'auto_evaluation_job_id', None),
@@ -577,6 +586,26 @@ class DatabaseService:
     self.db.commit()
     self.db.refresh(db_workshop)
 
+    return self._workshop_from_db(db_workshop)
+
+  def update_discovery_settings(
+    self,
+    workshop_id: str,
+    discovery_mode: Optional[str] = None,
+    discovery_followups_enabled: Optional[bool] = None,
+  ) -> Optional[Workshop]:
+    """Update discovery mode and/or follow-up toggle for a workshop."""
+    db_workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if not db_workshop:
+      return None
+
+    if discovery_mode is not None:
+      db_workshop.discovery_mode = discovery_mode
+    if discovery_followups_enabled is not None:
+      db_workshop.discovery_followups_enabled = discovery_followups_enabled
+
+    self.db.commit()
+    self.db.refresh(db_workshop)
     return self._workshop_from_db(db_workshop)
 
   def update_annotation_randomize_setting(self, workshop_id: str, randomize: bool) -> Optional[Workshop]:
@@ -4686,3 +4715,242 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
     return self.db.query(DiscoveryAnalysisDB).filter(
       DiscoveryAnalysisDB.id == analysis_id
     ).first()
+
+  # =========================================================================
+  # Discovery social thread operations
+  # =========================================================================
+
+  def _build_discovery_comment(self, row: DiscoveryCommentDB, viewer_user_id: Optional[str] = None) -> DiscoveryComment:
+    user = self.db.query(UserDB).filter(UserDB.id == row.user_id).first()
+    votes = self.db.query(DiscoveryCommentVoteDB).filter(DiscoveryCommentVoteDB.comment_id == row.id).all()
+    upvotes = sum(1 for v in votes if int(v.value) > 0)
+    downvotes = sum(1 for v in votes if int(v.value) < 0)
+    viewer_vote = 0
+    if viewer_user_id:
+      existing = next((v for v in votes if v.user_id == viewer_user_id), None)
+      if existing:
+        viewer_vote = int(existing.value)
+
+    user_name = "Unknown User"
+    user_email = ""
+    user_role = "participant"
+    if user:
+      user_name = user.name
+      user_email = user.email
+      user_role = user.role
+    elif row.author_type == "assistant":
+      user_name = "Assistant"
+      user_role = "assistant"
+    elif row.author_type == "agent":
+      user_name = "Agent"
+      user_role = "agent"
+
+    return DiscoveryComment(
+      id=row.id,
+      workshop_id=row.workshop_id,
+      trace_id=row.trace_id,
+      milestone_ref=row.milestone_ref,
+      parent_comment_id=row.parent_comment_id,
+      user_id=row.user_id,
+      user_name=user_name,
+      user_email=user_email,
+      user_role=user_role,
+      author_type=row.author_type,
+      body=row.body,
+      upvotes=upvotes,
+      downvotes=downvotes,
+      score=upvotes - downvotes,
+      viewer_vote=viewer_vote,
+      created_at=row.created_at,
+      updated_at=row.updated_at,
+    )
+
+  def create_discovery_comment(
+    self,
+    workshop_id: str,
+    data: DiscoveryCommentCreate,
+    author_type: str = "human",
+  ) -> DiscoveryComment:
+    row = DiscoveryCommentDB(
+      id=str(uuid.uuid4()),
+      workshop_id=workshop_id,
+      trace_id=data.trace_id,
+      milestone_ref=data.milestone_ref,
+      parent_comment_id=data.parent_comment_id,
+      user_id=data.user_id,
+      author_type=author_type,
+      body=data.body,
+    )
+    self.db.add(row)
+    self.db.commit()
+    self.db.refresh(row)
+    return self._build_discovery_comment(row, viewer_user_id=data.user_id)
+
+  def get_discovery_comment(self, comment_id: str, viewer_user_id: Optional[str] = None) -> Optional[DiscoveryComment]:
+    row = self.db.query(DiscoveryCommentDB).filter(DiscoveryCommentDB.id == comment_id).first()
+    if not row:
+      return None
+    return self._build_discovery_comment(row, viewer_user_id=viewer_user_id)
+
+  def list_discovery_comments(
+    self,
+    workshop_id: str,
+    trace_id: str,
+    milestone_ref: Optional[str] = None,
+    viewer_user_id: Optional[str] = None,
+  ) -> List[DiscoveryComment]:
+    query = self.db.query(DiscoveryCommentDB).filter(
+      DiscoveryCommentDB.workshop_id == workshop_id,
+      DiscoveryCommentDB.trace_id == trace_id,
+    )
+    if milestone_ref is None:
+      query = query.filter(DiscoveryCommentDB.milestone_ref.is_(None))
+    else:
+      query = query.filter(DiscoveryCommentDB.milestone_ref == milestone_ref)
+    rows = query.order_by(DiscoveryCommentDB.created_at.asc()).all()
+    return [self._build_discovery_comment(r, viewer_user_id=viewer_user_id) for r in rows]
+
+  def vote_discovery_comment(
+    self,
+    workshop_id: str,
+    comment_id: str,
+    vote_data: DiscoveryCommentVoteRequest,
+  ) -> DiscoveryComment:
+    if vote_data.value not in (-1, 1):
+      raise ValueError("vote value must be -1 or 1")
+
+    comment = self.db.query(DiscoveryCommentDB).filter(
+      DiscoveryCommentDB.id == comment_id,
+      DiscoveryCommentDB.workshop_id == workshop_id,
+    ).first()
+    if not comment:
+      raise ValueError("Comment not found")
+
+    existing = self.db.query(DiscoveryCommentVoteDB).filter(
+      DiscoveryCommentVoteDB.comment_id == comment_id,
+      DiscoveryCommentVoteDB.user_id == vote_data.user_id,
+    ).first()
+    if existing:
+      if int(existing.value) == int(vote_data.value):
+        # Toggle off same vote
+        self.db.delete(existing)
+      else:
+        existing.value = int(vote_data.value)
+    else:
+      self.db.add(
+        DiscoveryCommentVoteDB(
+          id=str(uuid.uuid4()),
+          workshop_id=workshop_id,
+          comment_id=comment_id,
+          user_id=vote_data.user_id,
+          value=int(vote_data.value),
+        )
+      )
+    self.db.commit()
+    self.db.refresh(comment)
+    return self._build_discovery_comment(comment, viewer_user_id=vote_data.user_id)
+
+  def create_discovery_agent_run(
+    self,
+    workshop_id: str,
+    trace_id: str,
+    trigger_comment_id: str,
+    created_by: str,
+    milestone_ref: Optional[str] = None,
+  ) -> DiscoveryAgentRun:
+    row = DiscoveryAgentRunDB(
+      id=str(uuid.uuid4()),
+      workshop_id=workshop_id,
+      trace_id=trace_id,
+      milestone_ref=milestone_ref,
+      trigger_comment_id=trigger_comment_id,
+      status="running",
+      tool_calls_count=0,
+      partial_output="",
+      created_by=created_by,
+    )
+    self.db.add(row)
+    self.db.commit()
+    self.db.refresh(row)
+    return DiscoveryAgentRun(
+      id=row.id,
+      workshop_id=row.workshop_id,
+      trace_id=row.trace_id,
+      milestone_ref=row.milestone_ref,
+      trigger_comment_id=row.trigger_comment_id,
+      status=row.status,
+      tool_calls_count=row.tool_calls_count or 0,
+      partial_output=row.partial_output or "",
+      final_output=row.final_output,
+      error=row.error,
+      created_by=row.created_by,
+      completed_at=row.completed_at,
+      created_at=row.created_at,
+      updated_at=row.updated_at,
+    )
+
+  def get_discovery_agent_run(self, run_id: str) -> Optional[DiscoveryAgentRun]:
+    row = self.db.query(DiscoveryAgentRunDB).filter(DiscoveryAgentRunDB.id == run_id).first()
+    if not row:
+      return None
+    return DiscoveryAgentRun(
+      id=row.id,
+      workshop_id=row.workshop_id,
+      trace_id=row.trace_id,
+      milestone_ref=row.milestone_ref,
+      trigger_comment_id=row.trigger_comment_id,
+      status=row.status,
+      tool_calls_count=row.tool_calls_count or 0,
+      partial_output=row.partial_output or "",
+      final_output=row.final_output,
+      error=row.error,
+      created_by=row.created_by,
+      completed_at=row.completed_at,
+      created_at=row.created_at,
+      updated_at=row.updated_at,
+    )
+
+  def update_discovery_agent_run(
+    self,
+    run_id: str,
+    *,
+    status: Optional[str] = None,
+    tool_calls_count: Optional[int] = None,
+    partial_output: Optional[str] = None,
+    final_output: Optional[str] = None,
+    error: Optional[str] = None,
+    completed: bool = False,
+  ) -> Optional[DiscoveryAgentRun]:
+    row = self.db.query(DiscoveryAgentRunDB).filter(DiscoveryAgentRunDB.id == run_id).first()
+    if not row:
+      return None
+    if status is not None:
+      row.status = status
+    if tool_calls_count is not None:
+      row.tool_calls_count = tool_calls_count
+    if partial_output is not None:
+      row.partial_output = partial_output
+    if final_output is not None:
+      row.final_output = final_output
+    if error is not None:
+      row.error = error
+    if completed:
+      row.completed_at = datetime.utcnow()
+    self.db.commit()
+    self.db.refresh(row)
+    return DiscoveryAgentRun(
+      id=row.id,
+      workshop_id=row.workshop_id,
+      trace_id=row.trace_id,
+      milestone_ref=row.milestone_ref,
+      trigger_comment_id=row.trigger_comment_id,
+      status=row.status,
+      tool_calls_count=row.tool_calls_count or 0,
+      partial_output=row.partial_output or "",
+      final_output=row.final_output,
+      error=row.error,
+      created_by=row.created_by,
+      completed_at=row.completed_at,
+      created_at=row.created_at,
+      updated_at=row.updated_at,
+    )

@@ -13,6 +13,7 @@ import {
   useWorkshopDiscoveryConfig,
   useWorkshopPhase,
   useUpdateDiscoveryModel,
+  useUpdateDiscoverySettings,
   useCreateRubricFromDraft,
   useAvailableModels,
   type DiscoveryAnalysis,
@@ -53,6 +54,7 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
   const runAnalysis = useRunDiscoveryAnalysis(workshopId!);
   const createDraftItem = useCreateDraftRubricItem(workshopId!);
   const updateModelMutation = useUpdateDiscoveryModel(workshopId!);
+  const updateDiscoverySettings = useUpdateDiscoverySettings(workshopId!);
   const deleteDraftItem = useDeleteDraftRubricItem(workshopId!);
   const createRubricFromDraft = useCreateRubricFromDraft(workshopId!);
   const [newItemIds, setNewItemIds] = useState<Set<string>>(new Set());
@@ -67,6 +69,8 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
 
   const modelOptions = useMemo(() => availableModels ? buildModelOptions(availableModels) : [], [availableModels]);
   const currentModel = discoveryConfig?.discovery_questions_model_name || 'demo';
+  const discoveryMode = (discoveryConfig?.discovery_mode || 'analysis') as 'analysis' | 'social';
+  const followupsEnabled = discoveryConfig?.discovery_followups_enabled ?? true;
 
   const currentAnalysis = analyses?.[0] ?? null;
 
@@ -304,6 +308,27 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
     updateModelMutation.mutate({ model_name: value });
   };
 
+  const handleModeChange = (mode: 'analysis' | 'social') => {
+    if (mode === discoveryMode) return;
+    updateDiscoverySettings.mutate(
+      { discovery_mode: mode },
+      {
+        onSuccess: () => toast.success(`Switched to ${mode} mode`),
+        onError: (err) => toast.error(err.message || 'Failed to switch discovery mode'),
+      },
+    );
+  };
+
+  const handleFollowupsToggle = () => {
+    updateDiscoverySettings.mutate(
+      { discovery_followups_enabled: !followupsEnabled },
+      {
+        onSuccess: () => toast.success(`Auto follow-up questions ${!followupsEnabled ? 'enabled' : 'disabled'}`),
+        onError: (err) => toast.error(err.message || 'Failed to update follow-up setting'),
+      },
+    );
+  };
+
   const handleCreateRubric = useCallback(async () => {
     try {
       await createRubricFromDraft.mutateAsync(user?.id || '');
@@ -394,7 +419,40 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
           hasMlflowConfig={modelOptions.length > 0}
         />
 
-        {currentAnalysis && (
+        <div className="rounded-lg border border-slate-200 bg-white p-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Discovery mode</span>
+            <Button
+              size="sm"
+              variant={discoveryMode === 'analysis' ? 'default' : 'outline'}
+              onClick={() => handleModeChange('analysis')}
+              disabled={updateDiscoverySettings.isPending}
+            >
+              Analysis
+            </Button>
+            <Button
+              size="sm"
+              variant={discoveryMode === 'social' ? 'default' : 'outline'}
+              onClick={() => handleModeChange('social')}
+              disabled={updateDiscoverySettings.isPending}
+            >
+              Social
+            </Button>
+            <Button
+              size="sm"
+              variant={followupsEnabled ? 'outline' : 'default'}
+              onClick={handleFollowupsToggle}
+              disabled={updateDiscoverySettings.isPending}
+            >
+              {followupsEnabled ? 'Disable Follow-ups' : 'Enable Follow-ups'}
+            </Button>
+          </div>
+          <p className="mt-1 text-xs text-slate-500">
+            Analysis keeps findings promotion flow. Social enables threaded discussion, votes, and @assistant/@agent mentions.
+          </p>
+        </div>
+
+        {discoveryMode === 'analysis' && currentAnalysis && (
           <CrossTraceAnalysisSummary
             analysis={currentAnalysis}
             onPromote={handlePromote}
@@ -406,6 +464,9 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
         {activeTraces.map((trace) => (
           <DiscoveryTraceCard
             key={trace.id}
+            workshopId={workshopId!}
+            currentUserId={user?.id || ''}
+            mode={discoveryMode}
             trace={trace}
             feedback={feedbackByTrace.get(trace.id) ?? []}
             findings={findingsByTrace.get(trace.id)}
@@ -413,6 +474,7 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
             onPromote={handlePromote}
             onNavigateToOrigin={handleNavigateToOrigin}
             promotedKeys={promotedKeys}
+            followupsEnabled={discoveryConfig?.discovery_followups_enabled ?? true}
           />
         ))}
 
