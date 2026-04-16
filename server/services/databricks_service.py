@@ -25,6 +25,18 @@ def _get_token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()[:16]
 
 
+def _normalize_databricks_host(host: str | None) -> str | None:
+    """Normalize Databricks host to include scheme and no trailing slash."""
+    if not host:
+        return None
+    normalized = host.strip().rstrip("/")
+    if not normalized:
+        return None
+    if not normalized.startswith(("http://", "https://")):
+        normalized = f"https://{normalized}"
+    return normalized
+
+
 def normalize_experiment_id(experiment_id: str | None) -> str | None:
     """Normalize MLflow experiment IDs from env/form inputs.
 
@@ -99,15 +111,16 @@ def get_databricks_host() -> str:
     Raises:
         RuntimeError: If no host can be resolved.
     """
-    host = os.getenv("DATABRICKS_HOST")
+    host = _normalize_databricks_host(os.getenv("DATABRICKS_HOST"))
     if host:
-        return host.rstrip("/")
+        return host
     try:
         from databricks.sdk import WorkspaceClient
 
         w = WorkspaceClient()
-        if w.config.host:
-            return w.config.host.rstrip("/")
+        host = _normalize_databricks_host(w.config.host)
+        if host:
+            return host
     except Exception:
         pass
     raise RuntimeError(
