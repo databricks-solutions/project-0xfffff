@@ -54,7 +54,7 @@ class MLflowIntakeService:
 
       # Search for traces with error handling
       traces = mlflow.search_traces(
-        experiment_ids=[experiment_id],
+        locations=[experiment_id],
         max_results=config.max_traces or 100,
         filter_string=config.filter_string,
         return_type='list',
@@ -111,6 +111,10 @@ class MLflowIntakeService:
   def ingest_traces(self, workshop_id: str, config: MLflowIntakeConfig) -> int:
     """Ingest traces from MLflow into the workshop."""
     try:
+      experiment_id = normalize_experiment_id(config.experiment_id)
+      if not experiment_id:
+        raise ValueError("MLflow experiment ID is empty after normalization.")
+
       # Search for traces
       trace_infos = self.search_traces(config)
 
