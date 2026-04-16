@@ -8,12 +8,19 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+import time
 from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from server.database import SessionLocal
 from server.models import (
+    DiscoveryAgentRun,
+    DiscoveryComment,
+    DiscoveryCommentCreate,
+    DiscoveryCommentVoteRequest,
     DiscoveryFeedback,
     DiscoveryFeedbackCreate,
     DiscoveryFinding,
@@ -441,6 +448,30 @@ class DiscoveryService:
         if not updated:
             raise HTTPException(status_code=500, detail="Failed to update discovery questions model")
         return updated.discovery_questions_model_name
+
+    def update_discovery_settings(
+        self,
+        workshop_id: str,
+        discovery_mode: str | None = None,
+        discovery_followups_enabled: bool | None = None,
+    ) -> dict[str, Any]:
+        self._get_workshop_or_404(workshop_id)
+
+        if discovery_mode is not None and discovery_mode not in {"analysis", "social"}:
+            raise HTTPException(status_code=400, detail="discovery_mode must be 'analysis' or 'social'")
+
+        updated = self.db_service.update_discovery_settings(
+            workshop_id,
+            discovery_mode=discovery_mode,
+            discovery_followups_enabled=discovery_followups_enabled,
+        )
+        if not updated:
+            raise HTTPException(status_code=500, detail="Failed to update discovery settings")
+
+        return {
+            "discovery_mode": updated.discovery_mode,
+            "discovery_followups_enabled": updated.discovery_followups_enabled,
+        }
 
     # ---------------------------------------------------------------------
     # Discovery summaries (iterative pipeline)
@@ -990,6 +1021,8 @@ class DiscoveryService:
     ) -> dict[str, Any]:
         """Generate a follow-up question for the given feedback."""
         workshop = self._get_workshop_or_404(workshop_id)
+        if not getattr(workshop, "discovery_followups_enabled", True):
+            raise HTTPException(status_code=400, detail="Follow-up questions are disabled for this workshop")
 
         if question_number < 1 or question_number > 3:
             raise HTTPException(status_code=400, detail="question_number must be 1, 2, or 3")
@@ -1074,6 +1107,9 @@ class DiscoveryService:
     ) -> dict[str, Any]:
         """Append a Q&A pair to the feedback record."""
         self._get_workshop_or_404(workshop_id)
+        workshop = self._get_workshop_or_404(workshop_id)
+        if not getattr(workshop, "discovery_followups_enabled", True):
+            raise HTTPException(status_code=400, detail="Follow-up questions are disabled for this workshop")
 
         if not answer or not answer.strip():
             raise HTTPException(status_code=422, detail="Answer is required")
@@ -1111,6 +1147,189 @@ class DiscoveryService:
         """Get all discovery feedback with user name/role for facilitator view."""
         self._get_workshop_or_404(workshop_id)
         return self.db_service.get_discovery_feedback_with_user_details(workshop_id, user_id)
+
+    # -----------------------------------------------------------------
+    # Discovery social threads
+    # -----------------------------------------------------------------
+
+    def create_discovery_comment(self, workshop_id: str, data: DiscoveryCommentCreate) -> dict[str, Any]:
+        workshop = self._get_workshop_or_404(workshop_id)
+        trace = self.db_service.get_trace(data.trace_id)
+        if not trace or trace.workshop_id != workshop_id:
+            raise HTTPException(status_code=404, detail="Trace not found")
+        if not data.body or not data.body.strip():
+            raise HTTPException(status_code=422, detail="Comment body is required")
+
+        created = self.db_service.create_discovery_comment(workshop_id, data, author_type="human")
+
+        mention_payload: dict[str, Any] = {}
+        is_facilitator = data.user_id == workshop.facilitator_id
+        content = data.body.strip().lower()
+
+        if is_facilitator and "@assistant" in content:
+            assistant_text = self._handle_assistant_mention(workshop_id, data)
+            assistant_comment = self.db_service.create_discovery_comment(
+                workshop_id,
+                DiscoveryCommentCreate(
+                    trace_id=data.trace_id,
+                    user_id="assistant",
+                    body=assistant_text,
+                    milestone_ref=data.milestone_ref,
+                    parent_comment_id=created.id,
+                ),
+                author_type="assistant",
+            )
+            mention_payload["assistant_comment"] = assistant_comment
+
+        if is_facilitator and "@agent" in content:
+            run = self.db_service.create_discovery_agent_run(
+                workshop_id=workshop_id,
+                trace_id=data.trace_id,
+                trigger_comment_id=created.id,
+                created_by=data.user_id,
+                milestone_ref=data.milestone_ref,
+            )
+            self._start_agent_run_async(run.id)
+            mention_payload["agent_run"] = run
+
+        return {"comment": created, **mention_payload}
+
+    def list_discovery_comments(
+        self,
+        workshop_id: str,
+        trace_id: str,
+        milestone_ref: str | None = None,
+        user_id: str | None = None,
+    ) -> list[DiscoveryComment]:
+        self._get_workshop_or_404(workshop_id)
+        return self.db_service.list_discovery_comments(
+            workshop_id=workshop_id,
+            trace_id=trace_id,
+            milestone_ref=milestone_ref,
+            viewer_user_id=user_id,
+        )
+
+    def vote_discovery_comment(
+        self,
+        workshop_id: str,
+        comment_id: str,
+        vote: DiscoveryCommentVoteRequest,
+    ) -> DiscoveryComment:
+        self._get_workshop_or_404(workshop_id)
+        try:
+            return self.db_service.vote_discovery_comment(workshop_id, comment_id, vote)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
+    def get_discovery_agent_run(self, workshop_id: str, run_id: str) -> DiscoveryAgentRun:
+        self._get_workshop_or_404(workshop_id)
+        run = self.db_service.get_discovery_agent_run(run_id)
+        if not run or run.workshop_id != workshop_id:
+            raise HTTPException(status_code=404, detail="Agent run not found")
+        return run
+
+    def _handle_assistant_mention(self, workshop_id: str, data: DiscoveryCommentCreate) -> str:
+        text = data.body.lower()
+        comments = self.db_service.list_discovery_comments(
+            workshop_id=workshop_id,
+            trace_id=data.trace_id,
+            milestone_ref=data.milestone_ref,
+            viewer_user_id=data.user_id,
+        )
+        if "summarize" in text and "thread" in text:
+            sample = comments[-6:]
+            summary_lines = [f"- {c.user_name}: {self._trim(c.body, 140)}" for c in sample]
+            if not summary_lines:
+                return "Thread summary: there are no comments yet in this thread."
+            return "Thread summary based on recent discussion:\n" + "\n".join(summary_lines)
+
+        if "tool" in text and "milestone" in text:
+            milestone = data.milestone_ref or "all"
+            return (
+                f"Milestone `{milestone}` tool context: this workspace exposes summarization-derived milestone context, "
+                "trace summary inputs/outputs, and discovery thread read/write tools."
+            )
+
+        return (
+            "I can help with `@assistant summarize this thread` and milestone tool-context questions. "
+            "Try: `@assistant what tools did the agent have access to at this milestone?`"
+        )
+
+    def _start_agent_run_async(self, run_id: str) -> None:
+        thread = threading.Thread(
+            target=self._run_agent_job,
+            args=(run_id,),
+            daemon=True,
+        )
+        thread.start()
+
+    @staticmethod
+    def _run_agent_job(run_id: str) -> None:
+        with SessionLocal() as db:
+            svc = DiscoveryService(db)
+            svc._execute_agent_run(run_id)
+
+    def _execute_agent_run(self, run_id: str) -> None:
+        run = self.db_service.get_discovery_agent_run(run_id)
+        if not run:
+            return
+        try:
+            comments = self.db_service.list_discovery_comments(
+                workshop_id=run.workshop_id,
+                trace_id=run.trace_id,
+                milestone_ref=run.milestone_ref,
+                viewer_user_id=run.created_by,
+            )
+            context = "\n".join(f"- {c.user_name}: {self._trim(c.body, 120)}" for c in comments[-8:])
+            if not context:
+                context = "- No prior comments in this thread."
+            response = (
+                "Agent run result:\n"
+                "I reviewed the current thread context and extracted the main points.\n"
+                f"{context}\n"
+                "Recommended next step: convert the top 2 concerns into evaluation criteria candidates."
+            )
+            partial = ""
+            tokens = response.split(" ")
+            tool_calls_count = 0
+            for i, token in enumerate(tokens):
+                partial = f"{partial} {token}".strip()
+                if i in (0, 8, 16):
+                    tool_calls_count += 1
+                self.db_service.update_discovery_agent_run(
+                    run_id,
+                    partial_output=partial,
+                    tool_calls_count=tool_calls_count,
+                    status="running",
+                )
+                time.sleep(0.05)
+
+            self.db_service.update_discovery_agent_run(
+                run_id,
+                status="completed",
+                final_output=response,
+                partial_output=response,
+                tool_calls_count=max(tool_calls_count, 1),
+                completed=True,
+            )
+            self.db_service.create_discovery_comment(
+                run.workshop_id,
+                DiscoveryCommentCreate(
+                    trace_id=run.trace_id,
+                    user_id="agent",
+                    body=response,
+                    milestone_ref=run.milestone_ref,
+                    parent_comment_id=run.trigger_comment_id,
+                ),
+                author_type="agent",
+            )
+        except Exception as e:  # pragma: no cover - defensive background guard
+            self.db_service.update_discovery_agent_run(
+                run_id,
+                status="failed",
+                error=str(e),
+                completed=True,
+            )
 
     # --------- Assisted Facilitation v2 Methods ---------
 

@@ -158,6 +158,8 @@ class WorkshopDB(Base):
     discovery_questions_model_name = Column(
         String, default="demo"
     )  # LLM model/endpoint for discovery question generation
+    discovery_mode = Column(String, default="analysis")  # Facilitator toggle: analysis | social
+    discovery_followups_enabled = Column(Boolean, default=True)  # Toggle auto follow-up question flow
     input_jsonpath = Column(Text, nullable=True)  # JSONPath query for extracting trace input display
     output_jsonpath = Column(Text, nullable=True)  # JSONPath query for extracting trace output display
     auto_evaluation_job_id = Column(String, nullable=True)  # Job ID for auto-evaluation on annotation start
@@ -200,6 +202,8 @@ class WorkshopDB(Base):
     trace_discovery_thresholds = relationship("TraceDiscoveryThresholdDB", back_populates="workshop", cascade="all, delete-orphan")
     discovery_feedback = relationship("DiscoveryFeedbackDB", back_populates="workshop", cascade="all, delete-orphan")
     draft_rubric_items = relationship("DraftRubricItemDB", back_populates="workshop", cascade="all, delete-orphan")
+    discovery_comments = relationship("DiscoveryCommentDB", back_populates="workshop", cascade="all, delete-orphan")
+    discovery_agent_runs = relationship("DiscoveryAgentRunDB", back_populates="workshop", cascade="all, delete-orphan")
     discovery_analyses = relationship("DiscoveryAnalysisDB", back_populates="workshop", cascade="all, delete-orphan")
     trace_criteria = relationship("TraceCriterionDB", back_populates="workshop", cascade="all, delete-orphan")
     criterion_evaluations = relationship("CriterionEvaluationDB", back_populates="workshop", cascade="all, delete-orphan")
@@ -673,6 +677,64 @@ class DraftRubricItemDB(Base):
     workshop = relationship("WorkshopDB", back_populates="draft_rubric_items")
 
 
+class DiscoveryCommentDB(Base):
+    """Threaded comment in discovery social mode."""
+
+    __tablename__ = "discovery_comments"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    trace_id = Column(String, ForeignKey("traces.id"), nullable=False)
+    milestone_ref = Column(String, nullable=True)
+    parent_comment_id = Column(String, nullable=True)
+    user_id = Column(String, nullable=False)
+    author_type = Column(String, nullable=False, default="human")  # human | assistant | agent
+    body = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    workshop = relationship("WorkshopDB", back_populates="discovery_comments")
+    trace = relationship("TraceDB")
+
+
+class DiscoveryCommentVoteDB(Base):
+    """Per-user vote on a discovery comment."""
+
+    __tablename__ = "discovery_comment_votes"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    comment_id = Column(String, ForeignKey("discovery_comments.id"), nullable=False)
+    user_id = Column(String, nullable=False)
+    value = Column(Integer, nullable=False)  # -1 or +1
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class DiscoveryAgentRunDB(Base):
+    """Bounded @agent run metadata and partial output."""
+
+    __tablename__ = "discovery_agent_runs"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    workshop_id = Column(String, ForeignKey("workshops.id"), nullable=False)
+    trace_id = Column(String, ForeignKey("traces.id"), nullable=False)
+    milestone_ref = Column(String, nullable=True)
+    trigger_comment_id = Column(String, ForeignKey("discovery_comments.id"), nullable=False)
+    status = Column(String, nullable=False, default="running")  # running | completed | failed | timeout
+    tool_calls_count = Column(Integer, nullable=False, default=0)
+    partial_output = Column(Text, nullable=False, default="")
+    final_output = Column(Text, nullable=True)
+    error = Column(Text, nullable=True)
+    created_by = Column(String, nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    workshop = relationship("WorkshopDB", back_populates="discovery_agent_runs")
+    trace = relationship("TraceDB")
+
+
 # Common PostgreSQL serverless connection error markers
 _PG_CONNECTION_ERRORS = (
     "connection is closed",
@@ -962,6 +1024,36 @@ def _apply_schema_updates():
                 print(f"ℹ️ workshops show_participant_notes column skipped (may already exist): {e}")
 
             try:
+                # Add discovery_mode column to workshops table
+                if is_postgres:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE workshops ADD COLUMN IF NOT EXISTS discovery_mode VARCHAR DEFAULT 'analysis'"
+                        )
+                    )
+                else:
+                    conn.execute(text("ALTER TABLE workshops ADD COLUMN discovery_mode VARCHAR DEFAULT 'analysis'"))
+                conn.commit()
+                print("✅ Database schema updated for workshops (added discovery_mode column)")
+            except Exception as e:
+                print(f"ℹ️ workshops discovery_mode column skipped (may already exist): {e}")
+
+            try:
+                # Add discovery_followups_enabled column to workshops table
+                if is_postgres:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE workshops ADD COLUMN IF NOT EXISTS discovery_followups_enabled BOOLEAN DEFAULT TRUE"
+                        )
+                    )
+                else:
+                    conn.execute(text("ALTER TABLE workshops ADD COLUMN discovery_followups_enabled BOOLEAN DEFAULT 1"))
+                conn.commit()
+                print("✅ Database schema updated for workshops (added discovery_followups_enabled column)")
+            except Exception as e:
+                print(f"ℹ️ workshops discovery_followups_enabled column skipped (may already exist): {e}")
+
+            try:
                 # Create participant_notes table if it doesn't exist
                 if is_postgres:
                     conn.execute(
@@ -1002,6 +1094,151 @@ def _apply_schema_updates():
                 print("✅ Database schema updated: created participant_notes table")
             except Exception as e:
                 print(f"ℹ️ participant_notes table creation skipped (may already exist): {e}")
+
+            try:
+                # Create discovery_comments table if it doesn't exist
+                if is_postgres:
+                    conn.execute(
+                        text("""
+                        CREATE TABLE IF NOT EXISTS discovery_comments (
+                            id VARCHAR PRIMARY KEY,
+                            workshop_id VARCHAR NOT NULL REFERENCES workshops(id) ON DELETE CASCADE,
+                            trace_id VARCHAR NOT NULL REFERENCES traces(id) ON DELETE CASCADE,
+                            milestone_ref VARCHAR NULL,
+                            parent_comment_id VARCHAR NULL,
+                            user_id VARCHAR NOT NULL,
+                            author_type VARCHAR NOT NULL DEFAULT 'human',
+                            body TEXT NOT NULL,
+                            created_at TIMESTAMP DEFAULT NOW(),
+                            updated_at TIMESTAMP DEFAULT NOW()
+                        )
+                    """)
+                    )
+                else:
+                    conn.execute(
+                        text("""
+                        CREATE TABLE IF NOT EXISTS discovery_comments (
+                            id VARCHAR PRIMARY KEY,
+                            workshop_id VARCHAR NOT NULL REFERENCES workshops(id) ON DELETE CASCADE,
+                            trace_id VARCHAR NOT NULL REFERENCES traces(id) ON DELETE CASCADE,
+                            milestone_ref VARCHAR NULL,
+                            parent_comment_id VARCHAR NULL,
+                            user_id VARCHAR NOT NULL,
+                            author_type VARCHAR NOT NULL DEFAULT 'human',
+                            body TEXT NOT NULL,
+                            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """)
+                    )
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_discovery_comments_workshop_trace ON discovery_comments (workshop_id, trace_id)"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_discovery_comments_parent ON discovery_comments (parent_comment_id)"
+                    )
+                )
+                conn.commit()
+                print("✅ Database schema updated: created discovery_comments table")
+            except Exception as e:
+                print(f"ℹ️ discovery_comments table creation skipped (may already exist): {e}")
+
+            try:
+                # Create discovery_comment_votes table if it doesn't exist
+                if is_postgres:
+                    conn.execute(
+                        text("""
+                        CREATE TABLE IF NOT EXISTS discovery_comment_votes (
+                            id VARCHAR PRIMARY KEY,
+                            workshop_id VARCHAR NOT NULL REFERENCES workshops(id) ON DELETE CASCADE,
+                            comment_id VARCHAR NOT NULL REFERENCES discovery_comments(id) ON DELETE CASCADE,
+                            user_id VARCHAR NOT NULL,
+                            value INTEGER NOT NULL,
+                            created_at TIMESTAMP DEFAULT NOW(),
+                            updated_at TIMESTAMP DEFAULT NOW()
+                        )
+                    """)
+                    )
+                else:
+                    conn.execute(
+                        text("""
+                        CREATE TABLE IF NOT EXISTS discovery_comment_votes (
+                            id VARCHAR PRIMARY KEY,
+                            workshop_id VARCHAR NOT NULL REFERENCES workshops(id) ON DELETE CASCADE,
+                            comment_id VARCHAR NOT NULL REFERENCES discovery_comments(id) ON DELETE CASCADE,
+                            user_id VARCHAR NOT NULL,
+                            value INTEGER NOT NULL,
+                            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """)
+                    )
+                conn.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS ix_discovery_comment_votes_unique ON discovery_comment_votes (comment_id, user_id)"
+                    )
+                )
+                conn.commit()
+                print("✅ Database schema updated: created discovery_comment_votes table")
+            except Exception as e:
+                print(f"ℹ️ discovery_comment_votes table creation skipped (may already exist): {e}")
+
+            try:
+                # Create discovery_agent_runs table if it doesn't exist
+                if is_postgres:
+                    conn.execute(
+                        text("""
+                        CREATE TABLE IF NOT EXISTS discovery_agent_runs (
+                            id VARCHAR PRIMARY KEY,
+                            workshop_id VARCHAR NOT NULL REFERENCES workshops(id) ON DELETE CASCADE,
+                            trace_id VARCHAR NOT NULL REFERENCES traces(id) ON DELETE CASCADE,
+                            milestone_ref VARCHAR NULL,
+                            trigger_comment_id VARCHAR NOT NULL REFERENCES discovery_comments(id) ON DELETE CASCADE,
+                            status VARCHAR NOT NULL DEFAULT 'running',
+                            tool_calls_count INTEGER NOT NULL DEFAULT 0,
+                            partial_output TEXT NOT NULL DEFAULT '',
+                            final_output TEXT NULL,
+                            error TEXT NULL,
+                            created_by VARCHAR NOT NULL,
+                            completed_at TIMESTAMP NULL,
+                            created_at TIMESTAMP DEFAULT NOW(),
+                            updated_at TIMESTAMP DEFAULT NOW()
+                        )
+                    """)
+                    )
+                else:
+                    conn.execute(
+                        text("""
+                        CREATE TABLE IF NOT EXISTS discovery_agent_runs (
+                            id VARCHAR PRIMARY KEY,
+                            workshop_id VARCHAR NOT NULL REFERENCES workshops(id) ON DELETE CASCADE,
+                            trace_id VARCHAR NOT NULL REFERENCES traces(id) ON DELETE CASCADE,
+                            milestone_ref VARCHAR NULL,
+                            trigger_comment_id VARCHAR NOT NULL REFERENCES discovery_comments(id) ON DELETE CASCADE,
+                            status VARCHAR NOT NULL DEFAULT 'running',
+                            tool_calls_count INTEGER NOT NULL DEFAULT 0,
+                            partial_output TEXT NOT NULL DEFAULT '',
+                            final_output TEXT NULL,
+                            error TEXT NULL,
+                            created_by VARCHAR NOT NULL,
+                            completed_at DATETIME NULL,
+                            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """)
+                    )
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_discovery_agent_runs_workshop_trace ON discovery_agent_runs (workshop_id, trace_id)"
+                    )
+                )
+                conn.commit()
+                print("✅ Database schema updated: created discovery_agent_runs table")
+            except Exception as e:
+                print(f"ℹ️ discovery_agent_runs table creation skipped (may already exist): {e}")
 
             try:
                 # Add phase column to participant_notes table

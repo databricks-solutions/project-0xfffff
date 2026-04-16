@@ -28,6 +28,7 @@ vi.mock('@/hooks/useWorkshopApi', () => ({
   useWorkshopPhase: () => ({ data: { current_phase: 'discovery', completed_phases: [], discovery_started: true, annotation_started: false } }),
   useMLflowConfig: () => ({ data: null }),
   useUpdateDiscoveryModel: () => ({ mutate: vi.fn() }),
+  useUpdateDiscoverySettings: () => ({ mutate: vi.fn(), isPending: false }),
   useAvailableModels: () => ({ data: undefined }),
 }));
 

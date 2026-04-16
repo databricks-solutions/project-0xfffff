@@ -21,6 +21,8 @@ export type Workshop = {
     annotation_randomize_traces?: boolean;
     judge_name?: string;
     discovery_questions_model_name?: string;
+    discovery_mode?: string;
+    discovery_followups_enabled?: boolean;
     input_jsonpath?: (string | null);
     output_jsonpath?: (string | null);
     auto_evaluation_job_id?: (string | null);

@@ -1,13 +1,20 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ChevronDown, ChevronRight, AlertTriangle, ArrowUpRight, Sparkles } from 'lucide-react';
+import { ChevronDown, ChevronRight, AlertTriangle, ArrowUpRight, Sparkles, ThumbsUp, ThumbsDown, Send } from 'lucide-react';
 import { MilestoneView } from '@/components/MilestoneView';
 import type { Trace } from '@/client';
 import type { DiscoveryFeedbackWithUser } from '@/client';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import {
+  useCreateDiscoveryComment,
+  useDiscoveryAgentRun,
+  useDiscoveryComments,
+  useVoteDiscoveryComment,
+  type DiscoveryCommentData,
+} from '@/hooks/useWorkshopApi';
 
 interface Finding {
   text: string;
@@ -34,6 +41,9 @@ export interface PromotePayload {
 }
 
 interface DiscoveryTraceCardProps {
+  workshopId?: string;
+  currentUserId?: string;
+  mode?: 'analysis' | 'social';
   trace: Trace;
   feedback: DiscoveryFeedbackWithUser[];
   findings?: Finding[];
@@ -41,6 +51,252 @@ interface DiscoveryTraceCardProps {
   onPromote: (payload: PromotePayload) => void;
   onNavigateToOrigin?: (originRef: string) => void;
   promotedKeys?: Set<string>;
+  followupsEnabled?: boolean;
+}
+
+function DiscoverySocialThread({
+  workshopId,
+  trace,
+  currentUserId,
+}: {
+  workshopId: string;
+  trace: Trace;
+  currentUserId: string;
+}) {
+  const [threadScope, setThreadScope] = useState<'trace' | 'milestone'>('trace');
+  const [selectedMilestone, setSelectedMilestone] = useState<string>(() => {
+    const first = trace.summary?.milestones?.[0];
+    return first ? `m${first.number || 1}` : 'm1';
+  });
+  const [body, setBody] = useState('');
+  const [replyToId, setReplyToId] = useState<string | null>(null);
+  const [streamedComments, setStreamedComments] = useState<DiscoveryCommentData[] | null>(null);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [streamedAgentText, setStreamedAgentText] = useState('');
+  const [streamStatus, setStreamStatus] = useState<'running' | 'completed' | 'failed' | null>(null);
+
+  const milestoneRef = threadScope === 'milestone' ? selectedMilestone : null;
+  const { data: comments = [], refetch } = useDiscoveryComments(workshopId, trace.id, milestoneRef, currentUserId);
+  const createComment = useCreateDiscoveryComment(workshopId);
+  const voteComment = useVoteDiscoveryComment(workshopId);
+  const { data: activeRun } = useDiscoveryAgentRun(workshopId, activeRunId);
+
+  const displayedComments = streamedComments ?? comments;
+  const milestoneOptions = useMemo(
+    () =>
+      (trace.summary?.milestones || []).map(
+        (m: { number?: number; title?: string }, i: number) => ({
+          value: `m${m.number || i + 1}`,
+          label: `Milestone ${m.number || i + 1}: ${m.title || 'Untitled'}`,
+        }),
+      ),
+    [trace.summary?.milestones],
+  );
+
+  useEffect(() => {
+    setStreamedComments(null);
+    const params = new URLSearchParams({
+      trace_id: trace.id,
+      user_id: currentUserId,
+    });
+    if (milestoneRef) params.append('milestone_ref', milestoneRef);
+
+    const source = new EventSource(`/workshops/${workshopId}/discovery-comments/stream?${params.toString()}`);
+    const onSnapshot = (evt: Event) => {
+      try {
+        const payload = JSON.parse((evt as MessageEvent).data);
+        if (Array.isArray(payload?.comments)) {
+          setStreamedComments(payload.comments);
+        }
+      } catch {
+        // Ignore malformed stream payloads
+      }
+    };
+    source.addEventListener('comments_snapshot', onSnapshot);
+    source.onerror = () => {
+      source.close();
+    };
+    return () => source.close();
+  }, [workshopId, trace.id, currentUserId, milestoneRef]);
+
+  useEffect(() => {
+    if (!activeRunId) return;
+    setStreamedAgentText('');
+    setStreamStatus('running');
+    const source = new EventSource(`/workshops/${workshopId}/discovery-agent-runs/${activeRunId}/stream`);
+    const onDelta = (evt: Event) => {
+      try {
+        const payload = JSON.parse((evt as MessageEvent).data);
+        setStreamedAgentText((prev) => `${prev}${payload.delta || ''}`);
+      } catch {
+        // Ignore malformed deltas
+      }
+    };
+    const onCompleted = () => {
+      setStreamStatus('completed');
+      void refetch();
+      source.close();
+    };
+    const onFailed = () => {
+      setStreamStatus('failed');
+      source.close();
+    };
+    source.addEventListener('token_delta', onDelta);
+    source.addEventListener('run_completed', onCompleted);
+    source.addEventListener('run_failed', onFailed);
+    source.onerror = () => {
+      source.close();
+    };
+    return () => source.close();
+  }, [activeRunId, workshopId, refetch]);
+
+  const byParent = useMemo(() => {
+    const map = new Map<string | null, DiscoveryCommentData[]>();
+    for (const c of displayedComments) {
+      const key = c.parent_comment_id || null;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(c);
+    }
+    return map;
+  }, [displayedComments]);
+
+  const orderedComments = useMemo(() => {
+    const roots = (byParent.get(null) || []).slice();
+    const out: Array<DiscoveryCommentData & { depth: number }> = [];
+    const visit = (comment: DiscoveryCommentData, depth: number) => {
+      out.push({ ...comment, depth });
+      const children = byParent.get(comment.id) || [];
+      children.forEach((child) => visit(child, depth + 1));
+    };
+    roots.forEach((root) => visit(root, 0));
+    return out;
+  }, [byParent]);
+
+  const submitComment = async () => {
+    const trimmed = body.trim();
+    if (!trimmed) return;
+    const result = await createComment.mutateAsync({
+      trace_id: trace.id,
+      user_id: currentUserId,
+      body: trimmed,
+      milestone_ref: milestoneRef || undefined,
+      parent_comment_id: replyToId || undefined,
+    });
+    setBody('');
+    setReplyToId(null);
+    if (result.agent_run?.id) {
+      setActiveRunId(result.agent_run.id);
+    }
+    void refetch();
+  };
+
+  return (
+    <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" variant={threadScope === 'trace' ? 'default' : 'outline'} onClick={() => setThreadScope('trace')}>
+          Trace Thread
+        </Button>
+        <Button size="sm" variant={threadScope === 'milestone' ? 'default' : 'outline'} onClick={() => setThreadScope('milestone')}>
+          Milestone Thread
+        </Button>
+        {threadScope === 'milestone' && (
+          <select
+            value={selectedMilestone}
+            onChange={(e) => setSelectedMilestone(e.target.value)}
+            className="h-8 rounded border border-slate-300 bg-white px-2 text-xs"
+          >
+            {milestoneOptions.length === 0 ? (
+              <option value="m1">No milestones available</option>
+            ) : (
+              milestoneOptions.map((m: { value: string; label: string }) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))
+            )}
+          </select>
+        )}
+      </div>
+
+      <div className="mt-3 space-y-2 max-h-96 overflow-y-auto pr-1">
+        {orderedComments.length === 0 && (
+          <p className="text-xs text-slate-500">No comments yet. Start the discussion.</p>
+        )}
+        {orderedComments.map((comment) => (
+          <div
+            key={comment.id}
+            className="rounded border border-slate-200 bg-slate-50 p-2"
+            style={{ marginLeft: `${Math.min(comment.depth, 2) * 16}px` }}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs text-slate-600">
+                <span className="font-semibold text-slate-800">{comment.user_name}</span>
+                <span className="ml-2 uppercase tracking-wide">{comment.author_type}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant={comment.viewer_vote === 1 ? 'default' : 'ghost'}
+                  size="sm"
+                  className="h-6 px-1.5 text-xs"
+                  onClick={() => voteComment.mutate({ commentId: comment.id, traceId: trace.id, userId: currentUserId, value: 1, milestoneRef })}
+                >
+                  <ThumbsUp className="mr-1 h-3 w-3" /> {comment.upvotes}
+                </Button>
+                <Button
+                  variant={comment.viewer_vote === -1 ? 'default' : 'ghost'}
+                  size="sm"
+                  className="h-6 px-1.5 text-xs"
+                  onClick={() => voteComment.mutate({ commentId: comment.id, traceId: trace.id, userId: currentUserId, value: -1, milestoneRef })}
+                >
+                  <ThumbsDown className="mr-1 h-3 w-3" /> {comment.downvotes}
+                </Button>
+              </div>
+            </div>
+            <p className="mt-1 whitespace-pre-wrap text-sm text-slate-800">{comment.body}</p>
+            <button
+              type="button"
+              className="mt-1 text-xs text-indigo-600 hover:text-indigo-800"
+              onClick={() => setReplyToId(comment.id)}
+            >
+              Reply
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {streamStatus === 'running' && (
+        <div className="mt-3 rounded border border-indigo-200 bg-indigo-50 p-2">
+          <p className="text-[11px] uppercase tracking-wide text-indigo-700">
+            @agent running {activeRun ? `(${activeRun.tool_calls_count} tools)` : ''}
+          </p>
+          <p className="mt-1 whitespace-pre-wrap text-sm text-indigo-900">{streamedAgentText || 'Streaming response...'}</p>
+        </div>
+      )}
+
+      <div className="mt-3">
+        {replyToId && (
+          <div className="mb-1 flex items-center justify-between rounded bg-slate-100 px-2 py-1 text-xs text-slate-600">
+            <span>Replying to comment</span>
+            <button type="button" onClick={() => setReplyToId(null)} className="text-slate-500 hover:text-slate-800">
+              Cancel
+            </button>
+          </div>
+        )}
+        <textarea
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          placeholder="Comment on this trace. Use @assistant summarize this thread or @agent investigate this discussion..."
+          className="min-h-[88px] w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+        />
+        <div className="mt-2 flex justify-end">
+          <Button onClick={() => { void submitComment(); }} disabled={createComment.isPending || !body.trim()}>
+            <Send className="mr-1 h-3.5 w-3.5" />
+            Post
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function tryParseContent(raw: string): string {
@@ -64,7 +320,7 @@ function linkifyOriginRefs(text: string): string {
   );
 }
 
-function FeedbackRow({ fb }: { fb: DiscoveryFeedbackWithUser }) {
+function FeedbackRow({ fb, showFollowups }: { fb: DiscoveryFeedbackWithUser; showFollowups: boolean }) {
   const [qnaOpen, setQnaOpen] = useState(false);
   const qnaCount = fb.followup_qna?.length ?? 0;
 
@@ -83,7 +339,7 @@ function FeedbackRow({ fb }: { fb: DiscoveryFeedbackWithUser }) {
         </Badge>
       </div>
       <p className="text-sm text-slate-700">{fb.comment}</p>
-      {qnaCount > 0 && (
+      {showFollowups && qnaCount > 0 && (
         <button
           type="button"
           className="flex items-center gap-1 mt-1.5 text-xs text-slate-500 hover:text-slate-700"
@@ -93,7 +349,7 @@ function FeedbackRow({ fb }: { fb: DiscoveryFeedbackWithUser }) {
           {qnaCount} follow-up Q&A{qnaCount !== 1 ? 's' : ''}
         </button>
       )}
-      {qnaOpen && fb.followup_qna && (
+      {showFollowups && qnaOpen && fb.followup_qna && (
         <div className="mt-1.5 pl-4 border-l-2 border-slate-200 space-y-1.5">
           {fb.followup_qna.map((pair, i) => (
             <div key={i} className="text-xs">
@@ -111,6 +367,9 @@ function FeedbackRow({ fb }: { fb: DiscoveryFeedbackWithUser }) {
 }
 
 export const DiscoveryTraceCard: React.FC<DiscoveryTraceCardProps> = ({
+  workshopId = '',
+  currentUserId = '',
+  mode = 'analysis',
   trace,
   feedback,
   findings,
@@ -118,6 +377,7 @@ export const DiscoveryTraceCard: React.FC<DiscoveryTraceCardProps> = ({
   onPromote,
   onNavigateToOrigin,
   promotedKeys = new Set(),
+  followupsEnabled = true,
 }) => {
   const [contentExpanded, setContentExpanded] = useState(false);
   const [findingsOpen, setFindingsOpen] = useState(true);
@@ -200,7 +460,7 @@ export const DiscoveryTraceCard: React.FC<DiscoveryTraceCardProps> = ({
         )}
 
         {/* Analysis findings — pinned above feedback */}
-        {hasAnalysis && (
+        {mode === 'analysis' && hasAnalysis && (
           <div className="mb-4">
             <button
               type="button"
@@ -340,13 +600,21 @@ export const DiscoveryTraceCard: React.FC<DiscoveryTraceCardProps> = ({
           </h4>
           <div className="divide-y divide-slate-100">
             {feedback.map((fb) => (
-              <FeedbackRow key={fb.id} fb={fb} />
+              <FeedbackRow key={fb.id} fb={fb} showFollowups={followupsEnabled} />
             ))}
           </div>
           {feedback.length === 0 && (
             <p className="text-sm text-slate-500 italic py-2">No feedback yet</p>
           )}
         </div>
+
+        {mode === 'social' && (
+          <DiscoverySocialThread
+            workshopId={workshopId}
+            trace={trace}
+            currentUserId={currentUserId}
+          />
+        )}
       </CardContent>
     </Card>
   );

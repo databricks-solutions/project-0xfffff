@@ -5,14 +5,21 @@ and non-discovery flows.
 """
 
 import logging
+import time
+import json
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from server.database import get_db
 from server.models import (
+    DiscoveryAgentRun,
+    DiscoveryComment,
+    DiscoveryCommentCreate,
+    DiscoveryCommentVoteRequest,
     DiscoveryFeedback,
     DiscoveryFeedbackCreate,
     DiscoveryFeedbackWithUser,
@@ -63,6 +70,13 @@ class DiscoveryQuestionsModelConfig(BaseModel):
     """Workshop-level config for discovery question generation."""
 
     model_name: str
+
+
+class DiscoverySettingsConfig(BaseModel):
+    """Workshop-level config for discovery workspace behavior."""
+
+    discovery_mode: str | None = None
+    discovery_followups_enabled: bool | None = None
 
 
 class KeyDisagreementResponse(BaseModel):
@@ -130,6 +144,21 @@ async def update_discovery_questions_model(
     svc = DiscoveryService(db)
     model_name = svc.set_discovery_questions_model(workshop_id=workshop_id, model_name=config.model_name)
     return {"message": "Discovery questions model updated", "model_name": model_name}
+
+
+@router.put("/{workshop_id}/discovery-settings")
+async def update_discovery_settings(
+    workshop_id: str,
+    config: DiscoverySettingsConfig,
+    db: Session = Depends(get_db),
+):
+    svc = DiscoveryService(db)
+    payload = svc.update_discovery_settings(
+        workshop_id=workshop_id,
+        discovery_mode=config.discovery_mode,
+        discovery_followups_enabled=config.discovery_followups_enabled,
+    )
+    return {"message": "Discovery settings updated", **payload}
 
 
 def _build_summaries_response(payload: dict[str, Any]) -> DiscoverySummariesResponse:
@@ -321,6 +350,154 @@ async def get_discovery_feedback_with_user_details(
     """Get all discovery feedback with user details (name, role) for facilitator view."""
     svc = DiscoveryService(db)
     return svc.get_discovery_feedback_with_user_details(workshop_id, user_id)
+
+
+class DiscoveryCommentCreateRequest(BaseModel):
+    trace_id: str
+    user_id: str
+    body: str
+    milestone_ref: str | None = None
+    parent_comment_id: str | None = None
+
+
+def _sse_event(event: str, payload: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, default=str)}\n\n"
+
+
+@router.post("/{workshop_id}/discovery-comments", response_model=dict[str, Any])
+async def create_discovery_comment(
+    workshop_id: str,
+    request: DiscoveryCommentCreateRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    svc = DiscoveryService(db)
+    payload = svc.create_discovery_comment(
+        workshop_id,
+        DiscoveryCommentCreate(
+            trace_id=request.trace_id,
+            user_id=request.user_id,
+            body=request.body,
+            milestone_ref=request.milestone_ref,
+            parent_comment_id=request.parent_comment_id,
+        ),
+    )
+    return payload
+
+
+@router.get("/{workshop_id}/discovery-comments", response_model=list[DiscoveryComment])
+async def list_discovery_comments(
+    workshop_id: str,
+    trace_id: str,
+    milestone_ref: str | None = None,
+    user_id: str | None = None,
+    db: Session = Depends(get_db),
+) -> list[DiscoveryComment]:
+    svc = DiscoveryService(db)
+    return svc.list_discovery_comments(
+        workshop_id=workshop_id,
+        trace_id=trace_id,
+        milestone_ref=milestone_ref,
+        user_id=user_id,
+    )
+
+
+@router.post("/{workshop_id}/discovery-comments/{comment_id}/vote", response_model=DiscoveryComment)
+async def vote_discovery_comment(
+    workshop_id: str,
+    comment_id: str,
+    request: DiscoveryCommentVoteRequest,
+    db: Session = Depends(get_db),
+) -> DiscoveryComment:
+    svc = DiscoveryService(db)
+    return svc.vote_discovery_comment(workshop_id, comment_id, request)
+
+
+@router.get("/{workshop_id}/discovery-agent-runs/{run_id}", response_model=DiscoveryAgentRun)
+async def get_discovery_agent_run(
+    workshop_id: str,
+    run_id: str,
+    db: Session = Depends(get_db),
+) -> DiscoveryAgentRun:
+    svc = DiscoveryService(db)
+    return svc.get_discovery_agent_run(workshop_id, run_id)
+
+
+@router.get("/{workshop_id}/discovery-agent-runs/{run_id}/stream")
+async def stream_discovery_agent_run(
+    workshop_id: str,
+    run_id: str,
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    svc = DiscoveryService(db)
+
+    def event_generator():
+        sent_started = False
+        last_len = 0
+        while True:
+            run = svc.get_discovery_agent_run(workshop_id, run_id)
+            if not sent_started:
+                sent_started = True
+                yield _sse_event("run_started", {"run_id": run.id, "status": run.status})
+
+            current = run.partial_output or ""
+            if len(current) > last_len:
+                delta = current[last_len:]
+                last_len = len(current)
+                yield _sse_event("token_delta", {"run_id": run.id, "delta": delta})
+
+            if run.status in {"completed", "failed", "timeout"}:
+                event_name = "run_completed" if run.status == "completed" else "run_failed"
+                payload = {
+                    "run_id": run.id,
+                    "status": run.status,
+                    "final_output": run.final_output,
+                    "error": run.error,
+                    "tool_calls_count": run.tool_calls_count,
+                }
+                yield _sse_event(event_name, payload)
+                break
+
+            yield _sse_event("heartbeat", {"run_id": run.id, "status": run.status})
+            time.sleep(0.35)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@router.get("/{workshop_id}/discovery-comments/stream")
+async def stream_discovery_comments(
+    workshop_id: str,
+    trace_id: str,
+    milestone_ref: str | None = None,
+    user_id: str | None = None,
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    svc = DiscoveryService(db)
+
+    def event_generator():
+        last_signature = ""
+        while True:
+            comments = svc.list_discovery_comments(
+                workshop_id=workshop_id,
+                trace_id=trace_id,
+                milestone_ref=milestone_ref,
+                user_id=user_id,
+            )
+            signature = f"{len(comments)}:{comments[-1].updated_at if comments else ''}"
+            if signature != last_signature:
+                last_signature = signature
+                yield _sse_event(
+                    "comments_snapshot",
+                    {
+                        "trace_id": trace_id,
+                        "milestone_ref": milestone_ref,
+                        "comments": [c.model_dump(mode="json") if hasattr(c, "model_dump") else c.dict() for c in comments],
+                    },
+                )
+            else:
+                yield _sse_event("heartbeat", {"trace_id": trace_id, "milestone_ref": milestone_ref})
+            time.sleep(0.75)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 # ---------------------------------------------------------------------------

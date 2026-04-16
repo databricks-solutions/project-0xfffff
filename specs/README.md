@@ -7,6 +7,7 @@ This directory contains declarative specifications for the Human Evaluation Work
 | Spec | Domain | Key Concepts |
 |------|--------|--------------|
 | [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md) | Discovery & Facilitation | discovery, facilitation, findings, classification, promotion, rubric bridge |
+| [DISCOVERY_SPEC](./DISCOVERY_SPEC.md) | Discovery Workspace | discovery workspace, social threads, milestones, facilitator modes, assistant mentions, agent mentions |
 | [AUTHENTICATION_SPEC](./AUTHENTICATION_SPEC.md) | Auth & Sessions | login, permissions, session, Databricks auth, fallback |
 | [ANNOTATION_SPEC](./ANNOTATION_SPEC.md) | Annotation System | annotation, rating, editing, MLflow feedback, comments |
 | [DATASETS_SPEC](./DATASETS_SPEC.md) | Trace Datasets | dataset, labeling dataset, composition, randomization, per-user order |
@@ -31,7 +32,15 @@ This directory contains declarative specifications for the Human Evaluation Work
 Use this index to find relevant specs by keyword.
 
 ### Discovery & Assisted Facilitation
-- **discovery** → [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md), [DISCOVERY_TRACE_ASSIGNMENT_SPEC](./DISCOVERY_TRACE_ASSIGNMENT_SPEC.md)
+- **discovery** → [DISCOVERY_SPEC](./DISCOVERY_SPEC.md), [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md), [DISCOVERY_TRACE_ASSIGNMENT_SPEC](./DISCOVERY_TRACE_ASSIGNMENT_SPEC.md)
+- **discovery workspace** → [DISCOVERY_SPEC](./DISCOVERY_SPEC.md)
+- **social thread** → [DISCOVERY_SPEC](./DISCOVERY_SPEC.md)
+- **comment thread** → [DISCOVERY_SPEC](./DISCOVERY_SPEC.md)
+- **upvote** → [DISCOVERY_SPEC](./DISCOVERY_SPEC.md)
+- **downvote** → [DISCOVERY_SPEC](./DISCOVERY_SPEC.md)
+- **@assistant** → [DISCOVERY_SPEC](./DISCOVERY_SPEC.md)
+- **@agent** → [DISCOVERY_SPEC](./DISCOVERY_SPEC.md)
+- **follow-up questions** → [DISCOVERY_SPEC](./DISCOVERY_SPEC.md)
 - **assisted facilitation** → [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md)
 - **finding** → [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md)
 - **classification** → [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md)

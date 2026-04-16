@@ -82,6 +82,9 @@ const QUERY_KEYS = {
   mlflowConfig: (workshopId: string) => ['mlflowConfig', workshopId],
   draftRubricItems: (workshopId: string) => ['draftRubricItems', workshopId],
   discoveryAnalyses: (workshopId: string) => ['discovery-analyses', workshopId],
+  discoveryComments: (workshopId: string, traceId: string, milestoneRef?: string | null, userId?: string) =>
+    ['discovery-comments', workshopId, traceId, milestoneRef || 'trace', userId || 'anonymous'],
+  discoveryAgentRun: (workshopId: string, runId: string) => ['discovery-agent-run', workshopId, runId],
   availableModels: (workshopId: string) => ['availableModels', workshopId],
   summarizationJob: (workshopId: string, jobId: string) => ['summarization-job', workshopId, jobId],
   summarizationStatus: (workshopId: string) => ['summarization-status', workshopId],
@@ -236,6 +239,8 @@ export function useWorkshopDiscoveryConfig(workshopId: string) {
       discovery_questions_model_name: w.discovery_questions_model_name,
       discovery_randomize_traces: w.discovery_randomize_traces,
       active_discovery_trace_ids: w.active_discovery_trace_ids,
+      discovery_mode: w.discovery_mode || 'analysis',
+      discovery_followups_enabled: w.discovery_followups_enabled ?? true,
     }),
   });
 }
@@ -1319,6 +1324,43 @@ export interface DiscoveryFeedbackWithUser extends DiscoveryFeedbackData {
   user_role: string;
 }
 
+export interface DiscoveryCommentData {
+  id: string;
+  workshop_id: string;
+  trace_id: string;
+  milestone_ref?: string | null;
+  parent_comment_id?: string | null;
+  user_id: string;
+  user_name: string;
+  user_email: string;
+  user_role: string;
+  author_type: string;
+  body: string;
+  upvotes: number;
+  downvotes: number;
+  score: number;
+  viewer_vote: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DiscoveryAgentRunData {
+  id: string;
+  workshop_id: string;
+  trace_id: string;
+  milestone_ref?: string | null;
+  trigger_comment_id: string;
+  status: string;
+  tool_calls_count: number;
+  partial_output: string;
+  final_output?: string | null;
+  error?: string | null;
+  created_by: string;
+  completed_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 /** Fetch all discovery feedback with user details (facilitator-only) */
 export function useFacilitatorDiscoveryFeedback(workshopId: string) {
   const { isFacilitator } = useRoleCheck();
@@ -1417,6 +1459,32 @@ export function useUpdateDiscoveryModel(workshopId: string) {
   });
 }
 
+export function useUpdateDiscoverySettings(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    { message: string; discovery_mode: string; discovery_followups_enabled: boolean },
+    Error,
+    { discovery_mode?: 'analysis' | 'social'; discovery_followups_enabled?: boolean }
+  >({
+    mutationFn: async (data) => {
+      const response = await fetch(`/workshops/${workshopId}/discovery-settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ detail: 'Failed to update discovery settings' }));
+        throw new Error(err.detail || 'Failed to update discovery settings');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.workshop(workshopId) });
+    },
+  });
+}
+
 export function useSubmitFollowUpAnswer(workshopId: string) {
   const queryClient = useQueryClient();
 
@@ -1463,6 +1531,102 @@ export function useRunDiscoveryAnalysis(workshopId: string) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.discoveryAnalyses(workshopId) });
+    },
+  });
+}
+
+export function useDiscoveryComments(
+  workshopId: string,
+  traceId: string,
+  milestoneRef?: string | null,
+  userId?: string,
+) {
+  return useQuery<DiscoveryCommentData[]>({
+    queryKey: QUERY_KEYS.discoveryComments(workshopId, traceId, milestoneRef, userId),
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.append('trace_id', traceId);
+      if (milestoneRef) params.append('milestone_ref', milestoneRef);
+      if (userId) params.append('user_id', userId);
+      const response = await fetch(`/workshops/${workshopId}/discovery-comments?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch discovery comments');
+      }
+      return response.json();
+    },
+    enabled: !!workshopId && !!traceId,
+    refetchInterval: (query) => query.state.status === 'error' ? false : 10_000,
+  });
+}
+
+export function useCreateDiscoveryComment(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    { comment: DiscoveryCommentData; assistant_comment?: DiscoveryCommentData; agent_run?: DiscoveryAgentRunData },
+    Error,
+    { trace_id: string; user_id: string; body: string; milestone_ref?: string | null; parent_comment_id?: string | null }
+  >({
+    mutationFn: async (data) => {
+      const response = await fetch(`/workshops/${workshopId}/discovery-comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ detail: 'Failed to create comment' }));
+        throw new Error(err.detail || 'Failed to create comment');
+      }
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.discoveryComments(workshopId, variables.trace_id, variables.milestone_ref || null, variables.user_id),
+      });
+    },
+  });
+}
+
+export function useVoteDiscoveryComment(workshopId: string) {
+  const queryClient = useQueryClient();
+  return useMutation<
+    DiscoveryCommentData,
+    Error,
+    { commentId: string; traceId: string; userId: string; value: -1 | 1; milestoneRef?: string | null }
+  >({
+    mutationFn: async ({ commentId, userId, value }) => {
+      const response = await fetch(`/workshops/${workshopId}/discovery-comments/${commentId}/vote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId, value }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ detail: 'Failed to vote on comment' }));
+        throw new Error(err.detail || 'Failed to vote on comment');
+      }
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.discoveryComments(workshopId, variables.traceId, variables.milestoneRef || null, variables.userId),
+      });
+    },
+  });
+}
+
+export function useDiscoveryAgentRun(workshopId: string, runId?: string | null) {
+  return useQuery<DiscoveryAgentRunData>({
+    queryKey: QUERY_KEYS.discoveryAgentRun(workshopId, runId || ''),
+    queryFn: async () => {
+      const response = await fetch(`/workshops/${workshopId}/discovery-agent-runs/${runId}`);
+      if (!response.ok) throw new Error('Failed to fetch discovery agent run');
+      return response.json();
+    },
+    enabled: !!workshopId && !!runId,
+    refetchInterval: (query) => {
+      const status = (query.state.data as DiscoveryAgentRunData | undefined)?.status;
+      if (!status || status === 'running') return 1500;
+      return false;
     },
   });
 }
