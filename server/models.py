@@ -215,6 +215,13 @@ class TraceCriterion(BaseModel):
     updated_at: datetime = Field(default_factory=datetime.now)
 
 
+class CriterionEvaluationCreate(BaseModel):
+    judge_model: str
+    met: bool
+    rationale: str | None = None
+    raw_response: dict[str, Any] | None = None
+
+
 class CriterionEvaluation(BaseModel):
     id: str
     criterion_id: str
@@ -287,8 +294,8 @@ class SummarizationJob(BaseModel):
     workshop_id: str
     status: str = "pending"  # pending, running, completed, failed, cancelled
     total: int = 0
-    completed_traces: list[str] = Field(default_factory=list)
-    failed_traces: list[dict] = Field(default_factory=list)
+    completed_traces: list[dict[str, Any] | str] = Field(default_factory=list)
+    failed_traces: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 
@@ -959,6 +966,7 @@ class DiscoveryCommentCreate(BaseModel):
     body: str
     milestone_ref: str | None = None
     parent_comment_id: str | None = None
+    suppress_auto_agent_run: bool = False
 
 
 class DiscoveryCommentVoteRequest(BaseModel):
@@ -994,6 +1002,7 @@ class DiscoveryAgentRun(BaseModel):
     trigger_comment_id: str
     status: str
     tool_calls_count: int = 0
+    events: list[dict[str, Any]] = Field(default_factory=list)
     partial_output: str = ""
     final_output: str | None = None
     error: str | None = None

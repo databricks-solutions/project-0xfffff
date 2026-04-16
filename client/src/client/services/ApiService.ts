@@ -14,6 +14,8 @@ import type { Body_upload_csv_and_log_to_mlflow_workshops__workshop_id__csv_uplo
 import type { Body_upload_csv_traces_workshops__workshop_id__csv_upload_post } from '../models/Body_upload_csv_traces_workshops__workshop_id__csv_upload_post';
 import type { CreateDraftRubricItemRequest } from '../models/CreateDraftRubricItemRequest';
 import type { CreateRubricFromDraftRequest } from '../models/CreateRubricFromDraftRequest';
+import type { CriterionEvaluation } from '../models/CriterionEvaluation';
+import type { CriterionEvaluationCreate } from '../models/CriterionEvaluationCreate';
 import type { CustomLLMProviderConfigCreate } from '../models/CustomLLMProviderConfigCreate';
 import type { CustomLLMProviderStatus } from '../models/CustomLLMProviderStatus';
 import type { CustomLLMProviderTestResult } from '../models/CustomLLMProviderTestResult';
@@ -26,6 +28,7 @@ import type { DBSQLExportResponse } from '../models/DBSQLExportResponse';
 import type { DiscoveryAgentRun } from '../models/DiscoveryAgentRun';
 import type { DiscoveryComment } from '../models/DiscoveryComment';
 import type { DiscoveryCommentCreateRequest } from '../models/DiscoveryCommentCreateRequest';
+import type { DiscoveryCommentDeleteRequest } from '../models/DiscoveryCommentDeleteRequest';
 import type { DiscoveryCommentVoteRequest } from '../models/DiscoveryCommentVoteRequest';
 import type { DiscoveryFeedback } from '../models/DiscoveryFeedback';
 import type { DiscoveryFeedbackCreate } from '../models/DiscoveryFeedbackCreate';
@@ -3173,6 +3176,33 @@ export class ApiService {
         });
     }
     /**
+     * Delete Discovery Comment
+     * @param workshopId
+     * @param commentId
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static deleteDiscoveryCommentWorkshopsWorkshopIdDiscoveryCommentsCommentIdDelete(
+        workshopId: string,
+        commentId: string,
+        requestBody: DiscoveryCommentDeleteRequest,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/workshops/{workshop_id}/discovery-comments/{comment_id}',
+            path: {
+                'workshop_id': workshopId,
+                'comment_id': commentId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * Get Discovery Agent Run
      * @param workshopId
      * @param runId
@@ -3212,6 +3242,76 @@ export class ApiService {
             path: {
                 'workshop_id': workshopId,
                 'run_id': runId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Run Thread Assistant Ag Ui
+     * Run the discovery thread assistant through AG-UI streaming protocol.
+     * @param workshopId
+     * @param traceId
+     * @param userId
+     * @param triggerCommentId
+     * @param milestoneRef
+     * @param parentCommentId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static runThreadAssistantAgUiWorkshopsWorkshopIdTracesTraceIdAgUiThreadAssistantPost(
+        workshopId: string,
+        traceId: string,
+        userId: string,
+        triggerCommentId: string,
+        milestoneRef?: (string | null),
+        parentCommentId?: (string | null),
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/traces/{trace_id}/ag-ui/thread-assistant',
+            path: {
+                'workshop_id': workshopId,
+                'trace_id': traceId,
+            },
+            query: {
+                'user_id': userId,
+                'trigger_comment_id': triggerCommentId,
+                'milestone_ref': milestoneRef,
+                'parent_comment_id': parentCommentId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Run Summarization Assistant Ag Ui
+     * Run trace summarization assistant through AG-UI streaming protocol.
+     * @param workshopId
+     * @param traceId
+     * @param userId
+     * @param triggerCommentId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static runSummarizationAssistantAgUiWorkshopsWorkshopIdTracesTraceIdAgUiSummarizationAssistantPost(
+        workshopId: string,
+        traceId: string,
+        userId: string,
+        triggerCommentId: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/traces/{trace_id}/ag-ui/summarization-assistant',
+            path: {
+                'workshop_id': workshopId,
+                'trace_id': traceId,
+            },
+            query: {
+                'user_id': userId,
+                'trigger_comment_id': triggerCommentId,
             },
             errors: {
                 422: `Validation Error`,
@@ -3692,15 +3792,47 @@ export class ApiService {
         });
     }
     /**
+     * Create Criterion Evaluation
+     * @param workshopId
+     * @param traceId
+     * @param criterionId
+     * @param requestBody
+     * @returns CriterionEvaluation Successful Response
+     * @throws ApiError
+     */
+    public static createCriterionEvaluationWorkshopsWorkshopIdTracesTraceIdCriteriaCriterionIdEvaluationsPost(
+        workshopId: string,
+        traceId: string,
+        criterionId: string,
+        requestBody: CriterionEvaluationCreate,
+    ): CancelablePromise<CriterionEvaluation> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/traces/{trace_id}/criteria/{criterion_id}/evaluations',
+            path: {
+                'workshop_id': workshopId,
+                'trace_id': traceId,
+                'criterion_id': criterionId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * Get Eval Results
      * @param workshopId
      * @param traceId
+     * @param judgeModel
      * @returns TraceEvalScore Successful Response
      * @throws ApiError
      */
     public static getEvalResultsWorkshopsWorkshopIdEvalResultsGet(
         workshopId: string,
         traceId?: (string | null),
+        judgeModel?: (string | null),
     ): CancelablePromise<Array<TraceEvalScore>> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -3710,6 +3842,7 @@ export class ApiService {
             },
             query: {
                 'trace_id': traceId,
+                'judge_model': judgeModel,
             },
             errors: {
                 422: `Validation Error`,

@@ -5,7 +5,7 @@ mocking the entire service layer. Only the LLM call boundary is mocked.
 """
 
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -468,9 +468,9 @@ def test_followup_generation_disabled_raises(discovery_service, workshop_with_tr
 
 
 @pytest.mark.spec("DISCOVERY_SPEC")
-@pytest.mark.req("Facilitator `@assistant summarize this thread` returns a grounded summary as a thread reply")
+@pytest.mark.req("Facilitator `@assistant` invokes the bounded agent run pipeline")
 @pytest.mark.unit
-def test_assistant_mention_creates_assistant_reply(discovery_service, workshop_with_traces):
+def test_assistant_mention_creates_agent_run(discovery_service, workshop_with_traces):
     payload = discovery_service.create_discovery_comment(
         "ws-1",
         DiscoveryCommentCreate(
@@ -480,8 +480,70 @@ def test_assistant_mention_creates_assistant_reply(discovery_service, workshop_w
         ),
     )
     assert payload["comment"].author_type == "human"
-    assert payload["assistant_comment"].author_type == "assistant"
-    assert "summary" in payload["assistant_comment"].body.lower()
+    assert payload["agent_run"].status == "running"
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("Facilitator `@assistant summarize this` aliases to the bounded agent run pipeline")
+@pytest.mark.unit
+def test_assistant_mention_summarize_this_alias(discovery_service, workshop_with_traces):
+    payload = discovery_service.create_discovery_comment(
+        "ws-1",
+        DiscoveryCommentCreate(
+            trace_id="t-1",
+            user_id="f-1",
+            body="@assistant summarize this?",
+        ),
+    )
+    assert payload["agent_run"].status == "running"
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("Facilitator `@assistant` can invoke the same tool-grounded run path as `@agent`")
+@pytest.mark.unit
+def test_assistant_tool_context_mention_uses_trace_context(discovery_service, workshop_with_traces, test_db):
+    trace = test_db.query(TraceDB).filter(TraceDB.id == "t-1").first()
+    trace.context = {
+        "status": "OK",
+        "execution_time_ms": 88,
+        "spans": [
+            {
+                "name": "root",
+                "parent_span_id": None,
+                "span_type": "CHAIN",
+                "status": "OK",
+                "inputs": {"question": "q"},
+                "outputs": {"answer": "a"},
+            },
+            {
+                "name": "tool_lookup",
+                "parent_span_id": "root",
+                "span_type": "TOOL",
+                "status": "OK",
+                "inputs": {"query": "retrieval"},
+                "outputs": {"result": "docs"},
+            },
+        ],
+        "tags": {},
+    }
+    test_db.commit()
+    discovery_service._start_agent_run_async = lambda _run_id: None
+    discovery_service._run_shared_trace_tool_loop = lambda **_kwargs: ("Shared tool-loop response.", False)
+    payload = discovery_service.create_discovery_comment(
+        "ws-1",
+        DiscoveryCommentCreate(
+            trace_id="t-1",
+            user_id="f-1",
+            body="@assistant what tools did the agent have access to at this milestone?",
+            milestone_ref="m1",
+        ),
+    )
+    run_id = payload["agent_run"].id
+    discovery_service._execute_agent_run(run_id)
+    completed = discovery_service.db_service.get_discovery_agent_run(run_id)
+    assert completed is not None
+    assert completed.status == "completed"
+    assert "Shared tool-loop response." in (completed.final_output or "")
 
 
 @pytest.mark.spec("DISCOVERY_SPEC")
@@ -512,3 +574,179 @@ def test_comment_vote_toggle_behavior(discovery_service, workshop_with_traces):
     )
     assert toggled_off.upvotes == 0
     assert toggled_off.downvotes == 0
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("Facilitator can moderate social discussion threads by deleting comments")
+@pytest.mark.unit
+def test_facilitator_can_delete_comment_tree(discovery_service, workshop_with_traces):
+    root = discovery_service.create_discovery_comment(
+        "ws-1",
+        DiscoveryCommentCreate(
+            trace_id="t-1",
+            user_id="u-1",
+            body="Root comment",
+        ),
+    )["comment"]
+    child = discovery_service.create_discovery_comment(
+        "ws-1",
+        DiscoveryCommentCreate(
+            trace_id="t-1",
+            user_id="u-2",
+            body="Reply comment",
+            parent_comment_id=root.id,
+        ),
+    )["comment"]
+    discovery_service.vote_discovery_comment(
+        "ws-1",
+        child.id,
+        DiscoveryCommentVoteRequest(user_id="u-3", value=1),
+    )
+
+    result = discovery_service.delete_discovery_comment("ws-1", root.id, user_id="f-1")
+    assert result["deleted"] is True
+
+    comments = discovery_service.list_discovery_comments("ws-1", trace_id="t-1", user_id="f-1")
+    assert comments == []
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("Only facilitator can delete social thread comments")
+@pytest.mark.unit
+def test_non_facilitator_cannot_delete_comment(discovery_service, workshop_with_traces):
+    root = discovery_service.create_discovery_comment(
+        "ws-1",
+        DiscoveryCommentCreate(
+            trace_id="t-1",
+            user_id="u-1",
+            body="Cannot delete me",
+        ),
+    )["comment"]
+
+    with pytest.raises(HTTPException) as exc_info:
+        discovery_service.delete_discovery_comment("ws-1", root.id, user_id="u-2")
+    assert exc_info.value.status_code == 403
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("Facilitator can invoke `@agent` to run a bounded tool loop and receive a persisted agent reply in-thread with clear success/failure status")
+@pytest.mark.unit
+def test_agent_run_uses_trace_context_tools(discovery_service, workshop_with_traces, test_db):
+    trace = test_db.query(TraceDB).filter(TraceDB.id == "t-1").first()
+    trace.context = {
+        "status": "OK",
+        "execution_time_ms": 120,
+        "spans": [
+            {
+                "name": "root",
+                "parent_span_id": None,
+                "span_type": "CHAIN",
+                "status": "OK",
+                "inputs": {"question": "what could have been better?"},
+                "outputs": {"answer": "baseline answer"},
+            },
+            {
+                "name": "tool_lookup",
+                "parent_span_id": "root",
+                "span_type": "TOOL",
+                "status": "OK",
+                "inputs": {"query": "retrieval"},
+                "outputs": {"result": "documents"},
+            },
+        ],
+        "tags": {},
+    }
+    test_db.commit()
+    discovery_service._run_shared_trace_tool_loop = lambda **_kwargs: ("Tool loop produced grounded answer.", False)
+
+    root_comment = discovery_service.create_discovery_comment(
+        "ws-1",
+        DiscoveryCommentCreate(
+            trace_id="t-1",
+            user_id="f-1",
+            body="what could have been better in this interaction?",
+        ),
+    )["comment"]
+
+    run = discovery_service.db_service.create_discovery_agent_run(
+        workshop_id="ws-1",
+        trace_id="t-1",
+        trigger_comment_id=root_comment.id,
+        created_by="f-1",
+    )
+    discovery_service._execute_agent_run(run.id)
+
+    completed = discovery_service.db_service.get_discovery_agent_run(run.id)
+    assert completed is not None
+    assert completed.status == "completed"
+    assert "Tool loop produced grounded answer." in (completed.final_output or "")
+    event_names = [evt.get("event") for evt in completed.events]
+    assert "run_started" in event_names
+    assert "run_completed" in event_names
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("Facilitator `@agent` starts a bounded tool-calling run and posts streamed partial output in the thread")
+@pytest.mark.unit
+def test_agent_run_uses_shared_trace_tool_service(discovery_service, workshop_with_traces, test_db):
+    workshop = test_db.query(WorkshopDB).filter(WorkshopDB.id == "ws-1").first()
+    workshop.discovery_questions_model_name = "databricks-agent-endpoint"
+    trace = test_db.query(TraceDB).filter(TraceDB.id == "t-1").first()
+    trace.context = {
+        "status": "OK",
+        "execution_time_ms": 120,
+        "spans": [
+            {
+                "name": "root",
+                "parent_span_id": None,
+                "span_type": "CHAIN",
+                "status": "OK",
+                "inputs": {"question": "what could have been better?"},
+                "outputs": {"answer": "baseline answer"},
+            },
+            {
+                "name": "tool_lookup",
+                "parent_span_id": "root",
+                "span_type": "TOOL",
+                "status": "OK",
+                "inputs": {"query": "retrieval"},
+                "outputs": {"result": "documents"},
+            },
+        ],
+        "tags": {},
+    }
+    test_db.commit()
+
+    trigger_comment = discovery_service.create_discovery_comment(
+        "ws-1",
+        DiscoveryCommentCreate(
+            trace_id="t-1",
+            user_id="f-1",
+            body="@agent what do you think might go wrong with this trajectory?",
+        ),
+    )["comment"]
+
+    run = discovery_service.db_service.create_discovery_agent_run(
+        workshop_id="ws-1",
+        trace_id="t-1",
+        trigger_comment_id=trigger_comment.id,
+        created_by="f-1",
+    )
+    with patch.object(discovery_service, "_resolve_databricks_llm_auth", return_value=("https://dbc", "token")), patch(
+        "server.services.discovery_service.TraceSummarizationService.answer_thread_prompt",
+        new=AsyncMock(return_value="Potential issues: weak retrieval grounding and unclear decision criteria."),
+    ) as mock_answer:
+        discovery_service._execute_agent_run(run.id)
+
+    completed = discovery_service.db_service.get_discovery_agent_run(run.id)
+    assert completed is not None
+    assert completed.status == "completed"
+    assert "Potential issues" in (completed.final_output or "")
+    assert mock_answer.call_count == 1
+    _, kwargs = mock_answer.call_args
+    assert kwargs["prompt"] == "@agent what do you think might go wrong with this trajectory?"
+    assert kwargs["trace_id"] == "t-1"
+    assert isinstance(kwargs["trace_context"], dict)
+    event_names = [evt.get("event") for evt in completed.events]
+    assert "run_started" in event_names
+    assert "run_completed" in event_names

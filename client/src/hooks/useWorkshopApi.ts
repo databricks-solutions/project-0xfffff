@@ -401,11 +401,15 @@ export function useTraceRubric(workshopId: string, traceId: string) {
   });
 }
 
-export function useEvalResults(workshopId: string, traceId?: string) {
+export function useEvalResults(workshopId: string, traceId?: string, judgeModel?: string) {
   return useQuery<TraceEvalScore[]>({
-    queryKey: QUERY_KEYS.evalResults(workshopId, traceId),
+    queryKey: [...QUERY_KEYS.evalResults(workshopId, traceId), judgeModel],
     queryFn: async () => {
-      const query = traceId ? `?trace_id=${encodeURIComponent(traceId)}` : '';
+      const params = new URLSearchParams();
+      if (traceId) params.append('trace_id', traceId);
+      if (judgeModel) params.append('judge_model', judgeModel);
+      
+      const query = params.toString() ? `?${params.toString()}` : '';
       const response = await fetch(`/workshops/${workshopId}/eval-results${query}`);
       if (!response.ok) {
         const error = await response.json().catch(() => ({ detail: 'Failed to fetch eval results' }));
@@ -414,6 +418,33 @@ export function useEvalResults(workshopId: string, traceId?: string) {
       return response.json();
     },
     enabled: !!workshopId,
+  });
+}
+
+export function useCreateCriterionEvaluation(workshopId: string, traceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: {
+      criterion_id: string;
+      judge_model: string;
+      met: boolean;
+      rationale?: string | null;
+      raw_response?: Record<string, any> | null;
+    }) => {
+      const response = await fetch(`/workshops/${workshopId}/traces/${traceId}/criteria/${data.criterion_id}/evaluations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to create evaluation' }));
+        throw new Error(error.detail || 'Failed to create evaluation');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.evalResults(workshopId, traceId) });
+    },
   });
 }
 
@@ -1352,6 +1383,17 @@ export interface DiscoveryAgentRunData {
   trigger_comment_id: string;
   status: string;
   tool_calls_count: number;
+  events: Array<{
+    event: string;
+    timestamp_ms: number;
+    tool_name?: string;
+    tool_call_id?: string;
+    tool_call_index?: number;
+    duration_ms?: number;
+    result_summary?: string;
+    reasoning?: string;
+    error?: string;
+  }>;
   partial_output: string;
   final_output?: string | null;
   error?: string | null;
@@ -1565,7 +1607,14 @@ export function useCreateDiscoveryComment(workshopId: string) {
   return useMutation<
     { comment: DiscoveryCommentData; assistant_comment?: DiscoveryCommentData; agent_run?: DiscoveryAgentRunData },
     Error,
-    { trace_id: string; user_id: string; body: string; milestone_ref?: string | null; parent_comment_id?: string | null }
+    {
+      trace_id: string;
+      user_id: string;
+      body: string;
+      milestone_ref?: string | null;
+      parent_comment_id?: string | null;
+      suppress_auto_agent_run?: boolean;
+    }
   >({
     mutationFn: async (data) => {
       const response = await fetch(`/workshops/${workshopId}/discovery-comments`, {
@@ -1603,6 +1652,33 @@ export function useVoteDiscoveryComment(workshopId: string) {
       if (!response.ok) {
         const err = await response.json().catch(() => ({ detail: 'Failed to vote on comment' }));
         throw new Error(err.detail || 'Failed to vote on comment');
+      }
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.discoveryComments(workshopId, variables.traceId, variables.milestoneRef || null, variables.userId),
+      });
+    },
+  });
+}
+
+export function useDeleteDiscoveryComment(workshopId: string) {
+  const queryClient = useQueryClient();
+  return useMutation<
+    { deleted: boolean; comment_id: string },
+    Error,
+    { commentId: string; traceId: string; userId: string; milestoneRef?: string | null }
+  >({
+    mutationFn: async ({ commentId, userId }) => {
+      const response = await fetch(`/workshops/${workshopId}/discovery-comments/${commentId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ detail: 'Failed to delete comment' }));
+        throw new Error(err.detail || 'Failed to delete comment');
       }
       return response.json();
     },

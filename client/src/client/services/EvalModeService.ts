@@ -2,6 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { CriterionEvaluation } from '../models/CriterionEvaluation';
+import type { CriterionEvaluationCreate } from '../models/CriterionEvaluationCreate';
 import type { TraceCriterion } from '../models/TraceCriterion';
 import type { TraceCriterionCreate } from '../models/TraceCriterionCreate';
 import type { TraceCriterionUpdate } from '../models/TraceCriterionUpdate';
@@ -135,15 +137,47 @@ export class EvalModeService {
         });
     }
     /**
+     * Create Criterion Evaluation
+     * @param workshopId
+     * @param traceId
+     * @param criterionId
+     * @param requestBody
+     * @returns CriterionEvaluation Successful Response
+     * @throws ApiError
+     */
+    public static createCriterionEvaluationWorkshopsWorkshopIdTracesTraceIdCriteriaCriterionIdEvaluationsPost(
+        workshopId: string,
+        traceId: string,
+        criterionId: string,
+        requestBody: CriterionEvaluationCreate,
+    ): CancelablePromise<CriterionEvaluation> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/traces/{trace_id}/criteria/{criterion_id}/evaluations',
+            path: {
+                'workshop_id': workshopId,
+                'trace_id': traceId,
+                'criterion_id': criterionId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * Get Eval Results
      * @param workshopId
      * @param traceId
+     * @param judgeModel
      * @returns TraceEvalScore Successful Response
      * @throws ApiError
      */
     public static getEvalResultsWorkshopsWorkshopIdEvalResultsGet(
         workshopId: string,
         traceId?: (string | null),
+        judgeModel?: (string | null),
     ): CancelablePromise<Array<TraceEvalScore>> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -153,6 +187,7 @@ export class EvalModeService {
             },
             query: {
                 'trace_id': traceId,
+                'judge_model': judgeModel,
             },
             errors: {
                 422: `Validation Error`,

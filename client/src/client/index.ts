@@ -21,6 +21,8 @@ export type { Body_upload_csv_traces_workshops__workshop_id__csv_upload_post } f
 export type { ConvergenceMetricsResponse } from './models/ConvergenceMetricsResponse';
 export type { CreateDraftRubricItemRequest } from './models/CreateDraftRubricItemRequest';
 export type { CreateRubricFromDraftRequest } from './models/CreateRubricFromDraftRequest';
+export type { CriterionEvaluation } from './models/CriterionEvaluation';
+export type { CriterionEvaluationCreate } from './models/CriterionEvaluationCreate';
 export type { CriterionScoreResult } from './models/CriterionScoreResult';
 export type { CustomLLMProviderConfigCreate } from './models/CustomLLMProviderConfigCreate';
 export type { CustomLLMProviderStatus } from './models/CustomLLMProviderStatus';
@@ -37,6 +39,7 @@ export type { DBSQLExportResponse } from './models/DBSQLExportResponse';
 export type { DiscoveryAgentRun } from './models/DiscoveryAgentRun';
 export type { DiscoveryComment } from './models/DiscoveryComment';
 export type { DiscoveryCommentCreateRequest } from './models/DiscoveryCommentCreateRequest';
+export type { DiscoveryCommentDeleteRequest } from './models/DiscoveryCommentDeleteRequest';
 export type { DiscoveryCommentVoteRequest } from './models/DiscoveryCommentVoteRequest';
 export type { DiscoveryCoverage } from './models/DiscoveryCoverage';
 export type { DiscoveryFeedback } from './models/DiscoveryFeedback';

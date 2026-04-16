@@ -9,8 +9,10 @@ import time
 import json
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from pydantic_ai.ag_ui import run_ag_ui
+from pydantic_ai.ui.ag_ui import AGUIAdapter
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -34,11 +36,39 @@ from server.models import (
     Rubric,
     SubmitFollowUpAnswerRequest,
     SuggestGroupsResponse,
+    WorkshopMode,
 )
 from server.services.discovery_service import DiscoveryService
+from server.services.eval_criteria_service import EvalCriteriaService
+from server.services.trace_summarization_service import TraceContext, TraceSummarizationService
+from server.models import TraceCriterionCreate, TraceCriterionType
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _build_trace_summarization_service(
+    svc: DiscoveryService,
+    workshop_id: str,
+    model_name: str,
+) -> tuple[Any, TraceSummarizationService]:
+    workshop = svc._get_workshop_or_404(workshop_id)
+    selected_model = (model_name or "").strip()
+    if not selected_model or selected_model == "demo":
+        raise HTTPException(status_code=400, detail="A non-demo model is required for AG-UI assistant runs")
+
+    workspace_url, databricks_token = svc._resolve_databricks_llm_auth()
+    if not workspace_url or not databricks_token:
+        raise HTTPException(status_code=400, detail="Databricks auth is required for AG-UI assistant runs")
+
+    service = TraceSummarizationService(
+        endpoint_url=f"{workspace_url.rstrip('/')}/serving-endpoints",
+        token=databricks_token,
+        model_name=selected_model,
+        guidance=getattr(workshop, "summarization_guidance", None),
+        use_case_description=getattr(workshop, "description", None),
+    )
+    return workshop, service
 
 
 class DiscoveryQuestion(BaseModel):
@@ -358,10 +388,184 @@ class DiscoveryCommentCreateRequest(BaseModel):
     body: str
     milestone_ref: str | None = None
     parent_comment_id: str | None = None
+    suppress_auto_agent_run: bool = False
+
+
+class DiscoveryCommentDeleteRequest(BaseModel):
+    user_id: str
 
 
 def _sse_event(event: str, payload: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(payload, default=str)}\n\n"
+
+
+def _iter_sse_data_payloads(chunk: str) -> list[str]:
+    normalized = chunk.replace("\r\n", "\n")
+    payloads: list[str] = []
+    for raw_event in normalized.split("\n\n"):
+        raw_event = raw_event.strip()
+        if not raw_event:
+            continue
+        lines = [line.strip() for line in raw_event.split("\n") if line.strip().startswith("data:")]
+        if not lines:
+            continue
+        payload = "\n".join(line[5:].strip() for line in lines)
+        if payload:
+            payloads.append(payload)
+    return payloads
+
+
+def _summarize_text(value: Any, max_len: int = 240) -> str:
+    text = value if isinstance(value, str) else json.dumps(value, default=str)
+    compact = " ".join(text.split()).strip()
+    if len(compact) <= max_len:
+        return compact
+    return compact[: max_len - 1] + "…"
+
+
+def _parse_percent_value(raw: Any) -> float | None:
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    if not isinstance(raw, str):
+        return None
+    text = raw.strip().replace("%", "")
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _normalize_criterion_weight(criterion_type: TraceCriterionType, args: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    if criterion_type == TraceCriterionType.HURDLE:
+        return 1, {"mode": "hurdle_default"}
+
+    weight_raw = args.get("weight")
+    if isinstance(weight_raw, (int, float)):
+        bounded = max(-10, min(10, int(round(float(weight_raw)))))
+        return bounded, {"mode": "explicit_weight", "input": weight_raw}
+    if isinstance(weight_raw, str):
+        try:
+            parsed = float(weight_raw.strip())
+            bounded = max(-10, min(10, int(round(parsed))))
+            return bounded, {"mode": "explicit_weight", "input": weight_raw}
+        except ValueError:
+            pass
+
+    percent = _parse_percent_value(args.get("weight_percent"))
+    if percent is not None:
+        scaled = int(round((percent / 100.0) * 10.0))
+        if percent > 0 and scaled == 0:
+            scaled = 1
+        if percent < 0 and scaled == 0:
+            scaled = -1
+        bounded = max(-10, min(10, scaled))
+        return bounded, {"mode": "weight_percent", "input": percent, "scale": "percent_to_10"}
+
+    return 1, {"mode": "default_weight"}
+
+
+def _persist_ag_ui_payload(
+    svc: DiscoveryService,
+    run_id: str,
+    payload: dict[str, Any],
+    *,
+    state: dict[str, Any],
+) -> None:
+    event_type = str(payload.get("type") or "").upper()
+    now_ms = int(time.time() * 1000)
+    current_partial = str(state.get("partial_output") or "")
+    tool_calls_count = int(state.get("tool_calls_count") or 0)
+
+    if event_type == "RUN_STARTED":
+        svc.db_service.append_discovery_agent_run_event(
+            run_id,
+            {"event": "run_started", "timestamp_ms": now_ms},
+        )
+        svc.db_service.update_discovery_agent_run(run_id, status="running")
+        return
+
+    if event_type == "TEXT_MESSAGE_CONTENT":
+        delta = payload.get("delta")
+        if isinstance(delta, str) and delta:
+            current_partial += delta
+            state["partial_output"] = current_partial
+            svc.db_service.update_discovery_agent_run(run_id, partial_output=current_partial)
+        return
+
+    if event_type == "THINKING_TEXT_MESSAGE_CONTENT":
+        delta = payload.get("delta")
+        if isinstance(delta, str) and delta.strip():
+            svc.db_service.append_discovery_agent_run_event(
+                run_id,
+                {
+                    "event": "reasoning_delta",
+                    "timestamp_ms": now_ms,
+                    "reasoning": delta,
+                },
+            )
+        return
+
+    if event_type == "TOOL_CALL_START":
+        tool_calls_count += 1
+        state["tool_calls_count"] = tool_calls_count
+        svc.db_service.append_discovery_agent_run_event(
+            run_id,
+            {
+                "event": "tool_start",
+                "timestamp_ms": now_ms,
+                "tool_name": payload.get("toolCallName"),
+                "tool_call_id": payload.get("toolCallId"),
+                "tool_call_index": tool_calls_count,
+            },
+        )
+        svc.db_service.update_discovery_agent_run(run_id, tool_calls_count=tool_calls_count)
+        return
+
+    if event_type == "TOOL_CALL_RESULT":
+        result_summary = _summarize_text(payload.get("content"))
+        svc.db_service.append_discovery_agent_run_event(
+            run_id,
+            {
+                "event": "tool_result",
+                "timestamp_ms": now_ms,
+                "tool_call_id": payload.get("toolCallId"),
+                "result_summary": result_summary,
+            },
+        )
+        return
+
+    if event_type == "RUN_FINISHED":
+        svc.db_service.append_discovery_agent_run_event(
+            run_id,
+            {"event": "run_completed", "timestamp_ms": now_ms},
+        )
+        svc.db_service.update_discovery_agent_run(
+            run_id,
+            status="completed",
+            tool_calls_count=tool_calls_count,
+            partial_output=current_partial,
+            final_output=current_partial,
+            completed=True,
+        )
+        return
+
+    if event_type == "RUN_ERROR":
+        message = payload.get("message")
+        error_text = str(message) if message is not None else "AG-UI run failed"
+        svc.db_service.append_discovery_agent_run_event(
+            run_id,
+            {"event": "run_failed", "timestamp_ms": now_ms, "error": error_text},
+        )
+        svc.db_service.update_discovery_agent_run(
+            run_id,
+            status="failed",
+            tool_calls_count=tool_calls_count,
+            partial_output=current_partial,
+            error=error_text,
+            completed=True,
+        )
 
 
 @router.post("/{workshop_id}/discovery-comments", response_model=dict[str, Any])
@@ -379,6 +583,7 @@ async def create_discovery_comment(
             body=request.body,
             milestone_ref=request.milestone_ref,
             parent_comment_id=request.parent_comment_id,
+            suppress_auto_agent_run=request.suppress_auto_agent_run,
         ),
     )
     return payload
@@ -412,6 +617,17 @@ async def vote_discovery_comment(
     return svc.vote_discovery_comment(workshop_id, comment_id, request)
 
 
+@router.delete("/{workshop_id}/discovery-comments/{comment_id}", response_model=dict[str, Any])
+async def delete_discovery_comment(
+    workshop_id: str,
+    comment_id: str,
+    request: DiscoveryCommentDeleteRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    svc = DiscoveryService(db)
+    return svc.delete_discovery_comment(workshop_id, comment_id, request.user_id)
+
+
 @router.get("/{workshop_id}/discovery-agent-runs/{run_id}", response_model=DiscoveryAgentRun)
 async def get_discovery_agent_run(
     workshop_id: str,
@@ -433,11 +649,22 @@ async def stream_discovery_agent_run(
     def event_generator():
         sent_started = False
         last_len = 0
+        sent_event_count = 0
         while True:
             run = svc.get_discovery_agent_run(workshop_id, run_id)
             if not sent_started:
                 sent_started = True
                 yield _sse_event("run_started", {"run_id": run.id, "status": run.status})
+
+            events = list(run.events or [])
+            if sent_event_count < len(events):
+                for evt in events[sent_event_count:]:
+                    event_name = str(evt.get("event") or "event")
+                    if event_name == "run_started":
+                        continue
+                    payload = {"run_id": run.id, **evt}
+                    yield _sse_event(event_name, payload)
+                sent_event_count = len(events)
 
             current = run.partial_output or ""
             if len(current) > last_len:
@@ -446,7 +673,12 @@ async def stream_discovery_agent_run(
                 yield _sse_event("token_delta", {"run_id": run.id, "delta": delta})
 
             if run.status in {"completed", "failed", "timeout"}:
-                event_name = "run_completed" if run.status == "completed" else "run_failed"
+                if run.status == "completed":
+                    event_name = "run_completed"
+                elif run.status == "timeout":
+                    event_name = "run_timeout"
+                else:
+                    event_name = "run_failed"
                 payload = {
                     "run_id": run.id,
                     "status": run.status,
@@ -461,6 +693,323 @@ async def stream_discovery_agent_run(
             time.sleep(0.35)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@router.post("/{workshop_id}/traces/{trace_id}/ag-ui/thread-assistant")
+async def run_thread_assistant_ag_ui(
+    workshop_id: str,
+    trace_id: str,
+    request: Request,
+    user_id: str,
+    trigger_comment_id: str,
+    milestone_ref: str | None = None,
+    parent_comment_id: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """Run the discovery thread assistant through AG-UI streaming protocol."""
+    svc = DiscoveryService(db)
+    workshop = svc._get_workshop_or_404(workshop_id)
+    trace = svc.db_service.get_trace(trace_id)
+    if not trace or trace.workshop_id != workshop_id:
+        raise HTTPException(status_code=404, detail="Trace not found")
+
+    model_name = (getattr(workshop, "discovery_questions_model_name", None) or "").strip()
+    _, ts_service = _build_trace_summarization_service(svc, workshop_id, model_name=model_name)
+
+    deps = TraceContext.from_dict(trace.context if isinstance(trace.context, dict) else {})
+    trigger_comment = svc.db_service.get_discovery_comment(trigger_comment_id, viewer_user_id=user_id)
+    if not trigger_comment or trigger_comment.workshop_id != workshop_id or trigger_comment.trace_id != trace_id:
+        raise HTTPException(status_code=404, detail="Trigger comment not found")
+
+    body = await request.body()
+    run_input = AGUIAdapter.build_run_input(body)
+    existing_run = svc.db_service.get_discovery_agent_run(run_input.run_id)
+    run_record = existing_run
+    if existing_run is None:
+        run_record = svc.db_service.create_discovery_agent_run(
+            workshop_id=workshop_id,
+            trace_id=trace_id,
+            trigger_comment_id=trigger_comment_id,
+            created_by=user_id,
+            milestone_ref=milestone_ref,
+            run_id=run_input.run_id,
+        )
+    run_state: dict[str, Any] = {"partial_output": "", "tool_calls_count": 0, "reply_created": False}
+
+    def _list_thread_comments(limit: int, include_agent: bool) -> list[dict[str, Any]]:
+        rows = svc.db_service.list_discovery_comments(
+            workshop_id=workshop_id,
+            trace_id=trace_id,
+            milestone_ref=milestone_ref,
+            viewer_user_id=user_id,
+        )
+        if not include_agent:
+            rows = [c for c in rows if c.author_type != "agent"]
+        sample = rows[-limit:] if limit else rows
+        return [
+            {
+                "id": c.id,
+                "author": c.user_name,
+                "author_type": c.author_type,
+                "body": c.body,
+                "created_at": c.created_at.isoformat(),
+            }
+            for c in sample
+        ]
+
+    def _create_thread_reply_comment(body: str) -> dict[str, Any]:
+        created = svc.db_service.create_discovery_comment(
+            workshop_id,
+            DiscoveryCommentCreate(
+                trace_id=trace_id,
+                user_id="agent",
+                body=body,
+                milestone_ref=milestone_ref,
+                parent_comment_id=parent_comment_id,
+            ),
+            author_type="agent",
+        )
+        run_state["reply_created"] = True
+        return {"id": created.id, "status": "created"}
+
+    def _create_rubric_criterion(args: dict[str, Any]) -> dict[str, Any]:
+        def _normalize_text(value: str) -> str:
+            return " ".join((value or "").strip().lower().split())
+
+        if not run_record:
+            return {"error": "Agent run is unavailable"}
+        if run_record.created_by != workshop.facilitator_id:
+            return {"error": "Only facilitators can create rubric criteria"}
+
+        text = str(args.get("text") or "").strip()
+        if not text:
+            return {"error": "Missing required argument `text`"}
+
+        raw_type = str(args.get("criterion_type") or "standard").strip().lower()
+        if raw_type not in {"standard", "hurdle"}:
+            return {"error": "Invalid `criterion_type` (expected `standard` or `hurdle`)"}
+        criterion_type = TraceCriterionType(raw_type)
+        weight, weight_details = _normalize_criterion_weight(criterion_type, args)
+
+        rows = svc.db_service.list_discovery_comments(
+            workshop_id=workshop_id,
+            trace_id=trace_id,
+            milestone_ref=milestone_ref,
+            viewer_user_id=user_id,
+        )
+        comment_map = {c.id: c for c in rows}
+        raw_lineage = args.get("lineage") if isinstance(args.get("lineage"), dict) else {}
+        raw_comment_ids = raw_lineage.get("source_comment_ids", args.get("source_comment_ids", []))
+        provided_comment_ids: list[str] = []
+        if isinstance(raw_comment_ids, list):
+            provided_comment_ids = [str(v) for v in raw_comment_ids if str(v).strip()]
+        elif isinstance(raw_comment_ids, str) and raw_comment_ids.strip():
+            provided_comment_ids = [raw_comment_ids.strip()]
+        comment_ids = [cid for cid in provided_comment_ids if cid in comment_map]
+        if not comment_ids:
+            human_comment_ids = [c.id for c in rows if c.author_type == "human"]
+            comment_ids = human_comment_ids[-5:] if human_comment_ids else [run_record.trigger_comment_id]
+        vote_rows = [comment_map[cid] for cid in comment_ids if cid in comment_map]
+        lineage = {
+            "source_thread_type": "milestone" if run_record.milestone_ref else "trace",
+            "source_milestone_ref": run_record.milestone_ref or None,
+            "source_comment_ids": comment_ids,
+            "source_vote_snapshot": {
+                "included_comment_count": len(vote_rows),
+                "upvotes_total": sum(max(0, int(c.upvotes or 0)) for c in vote_rows),
+                "downvotes_total": sum(max(0, int(c.downvotes or 0)) for c in vote_rows),
+                "score_total": sum(int(c.score or 0) for c in vote_rows),
+            },
+            "trigger_comment_id": run_record.trigger_comment_id,
+        }
+
+        if getattr(workshop, "mode", WorkshopMode.WORKSHOP.value) == WorkshopMode.EVAL.value:
+            eval_service = EvalCriteriaService(db)
+            normalized_new = _normalize_text(text)
+            existing = eval_service.list_criteria(workshop_id=workshop_id, trace_id=trace_id)
+            duplicate = next(
+                (
+                    c
+                    for c in existing
+                    if c.criterion_type == criterion_type
+                    and int(c.weight) == int(weight)
+                    and _normalize_text(c.text) == normalized_new
+                ),
+                None,
+            )
+            if duplicate:
+                return {
+                    "target": "trace_criteria",
+                    "criterion_id": duplicate.id,
+                    "trace_id": duplicate.trace_id,
+                    "criterion_type": duplicate.criterion_type.value,
+                    "weight": duplicate.weight,
+                    "lineage": lineage,
+                    "weight_details": {**weight_details, "deduped": True, "deduped_to": duplicate.id},
+                }
+
+            criterion = eval_service.create_criterion(
+                workshop_id=workshop_id,
+                trace_id=trace_id,
+                data=TraceCriterionCreate(
+                    text=text,
+                    criterion_type=criterion_type,
+                    weight=weight,
+                    created_by=run_record.created_by,
+                    lineage=lineage,
+                ),
+            )
+            return {
+                "target": "trace_criteria",
+                "criterion_id": criterion.id,
+                "trace_id": criterion.trace_id,
+                "criterion_type": criterion.criterion_type.value,
+                "weight": criterion.weight,
+                "lineage": criterion.lineage,
+                "weight_details": weight_details,
+            }
+
+        draft_item = svc.db_service.add_draft_rubric_item(
+            workshop_id,
+            DraftRubricItemCreate(
+                text=text,
+                source_type="feedback",
+                source_trace_ids=[trace_id],
+            ),
+            promoted_by=run_record.created_by,
+        )
+        return {
+            "target": "draft_rubric_items",
+            "item_id": draft_item.id,
+            "criterion_type": criterion_type.value,
+            "weight": weight,
+            "lineage": {
+                **lineage,
+                "criterion_type": criterion_type.value,
+                "weight": weight,
+            },
+            "weight_details": weight_details,
+        }
+
+    deps.list_thread_comments_fn = _list_thread_comments
+    deps.create_thread_reply_comment_fn = _create_thread_reply_comment
+    deps.create_rubric_criterion_fn = _create_rubric_criterion
+
+    async def _event_stream():
+        state: dict[str, Any] = {"partial_output": "", "tool_calls_count": 0}
+        try:
+            async for chunk in run_ag_ui(
+                ts_service.thread_agent,
+                run_input=run_input,
+                accept=request.headers.get("accept", "text/event-stream"),
+                deps=deps,
+            ):
+                for payload_str in _iter_sse_data_payloads(chunk):
+                    if payload_str == "[DONE]":
+                        continue
+                    try:
+                        payload = json.loads(payload_str)
+                    except json.JSONDecodeError:
+                        continue
+                    if isinstance(payload, dict):
+                        _persist_ag_ui_payload(svc, run_input.run_id, payload, state=state)
+                yield chunk
+            final_text = str(state.get("partial_output") or "").strip()
+            if final_text and not run_state.get("reply_created"):
+                svc.db_service.create_discovery_comment(
+                    workshop_id,
+                    DiscoveryCommentCreate(
+                        trace_id=trace_id,
+                        user_id="agent",
+                        body=final_text,
+                        milestone_ref=milestone_ref,
+                        parent_comment_id=parent_comment_id,
+                    ),
+                    author_type="agent",
+                )
+                run_state["reply_created"] = True
+        except Exception as e:
+            svc.db_service.update_discovery_agent_run(
+                run_input.run_id,
+                status="failed",
+                partial_output=str(state.get("partial_output") or ""),
+                error=str(e),
+                completed=True,
+            )
+            raise
+
+    return StreamingResponse(_event_stream(), media_type="text/event-stream")
+
+
+@router.post("/{workshop_id}/traces/{trace_id}/ag-ui/summarization-assistant")
+async def run_summarization_assistant_ag_ui(
+    workshop_id: str,
+    trace_id: str,
+    request: Request,
+    user_id: str,
+    trigger_comment_id: str,
+    db: Session = Depends(get_db),
+):
+    """Run trace summarization assistant through AG-UI streaming protocol."""
+    svc = DiscoveryService(db)
+    workshop = svc._get_workshop_or_404(workshop_id)
+    trace = svc.db_service.get_trace(trace_id)
+    if not trace or trace.workshop_id != workshop_id:
+        raise HTTPException(status_code=404, detail="Trace not found")
+
+    model_name = (
+        (getattr(workshop, "summarization_model", None) or "").strip()
+        or (getattr(workshop, "discovery_questions_model_name", None) or "").strip()
+    )
+    _, ts_service = _build_trace_summarization_service(svc, workshop_id, model_name=model_name)
+    deps = TraceContext.from_dict(trace.context if isinstance(trace.context, dict) else {})
+    trigger_comment = svc.db_service.get_discovery_comment(trigger_comment_id, viewer_user_id=user_id)
+    if not trigger_comment or trigger_comment.workshop_id != workshop_id or trigger_comment.trace_id != trace_id:
+        raise HTTPException(status_code=404, detail="Trigger comment not found")
+
+    body = await request.body()
+    run_input = AGUIAdapter.build_run_input(body)
+    existing_run = svc.db_service.get_discovery_agent_run(run_input.run_id)
+    if existing_run is None:
+        svc.db_service.create_discovery_agent_run(
+            workshop_id=workshop_id,
+            trace_id=trace_id,
+            trigger_comment_id=trigger_comment_id,
+            created_by=user_id,
+            milestone_ref=None,
+            run_id=run_input.run_id,
+        )
+
+    async def _event_stream():
+        state: dict[str, Any] = {"partial_output": "", "tool_calls_count": 0}
+        try:
+            async for chunk in run_ag_ui(
+                ts_service.summary_agent,
+                run_input=run_input,
+                accept=request.headers.get("accept", "text/event-stream"),
+                deps=deps,
+            ):
+                for payload_str in _iter_sse_data_payloads(chunk):
+                    if payload_str == "[DONE]":
+                        continue
+                    try:
+                        payload = json.loads(payload_str)
+                    except json.JSONDecodeError:
+                        continue
+                    if isinstance(payload, dict):
+                        _persist_ag_ui_payload(svc, run_input.run_id, payload, state=state)
+                yield chunk
+        except Exception as e:
+            svc.db_service.update_discovery_agent_run(
+                run_input.run_id,
+                status="failed",
+                partial_output=str(state.get("partial_output") or ""),
+                error=str(e),
+                completed=True,
+            )
+            raise
+
+    return StreamingResponse(_event_stream(), media_type="text/event-stream")
 
 
 @router.get("/{workshop_id}/discovery-comments/stream")

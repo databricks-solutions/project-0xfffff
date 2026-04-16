@@ -8,6 +8,7 @@ import type { CreateRubricFromDraftRequest } from '../models/CreateRubricFromDra
 import type { DiscoveryAgentRun } from '../models/DiscoveryAgentRun';
 import type { DiscoveryComment } from '../models/DiscoveryComment';
 import type { DiscoveryCommentCreateRequest } from '../models/DiscoveryCommentCreateRequest';
+import type { DiscoveryCommentDeleteRequest } from '../models/DiscoveryCommentDeleteRequest';
 import type { DiscoveryCommentVoteRequest } from '../models/DiscoveryCommentVoteRequest';
 import type { DiscoveryFeedback } from '../models/DiscoveryFeedback';
 import type { DiscoveryFeedbackCreate } from '../models/DiscoveryFeedbackCreate';
@@ -592,6 +593,33 @@ export class DiscoveryService {
         });
     }
     /**
+     * Delete Discovery Comment
+     * @param workshopId
+     * @param commentId
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static deleteDiscoveryCommentWorkshopsWorkshopIdDiscoveryCommentsCommentIdDelete(
+        workshopId: string,
+        commentId: string,
+        requestBody: DiscoveryCommentDeleteRequest,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/workshops/{workshop_id}/discovery-comments/{comment_id}',
+            path: {
+                'workshop_id': workshopId,
+                'comment_id': commentId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * Get Discovery Agent Run
      * @param workshopId
      * @param runId
@@ -631,6 +659,76 @@ export class DiscoveryService {
             path: {
                 'workshop_id': workshopId,
                 'run_id': runId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Run Thread Assistant Ag Ui
+     * Run the discovery thread assistant through AG-UI streaming protocol.
+     * @param workshopId
+     * @param traceId
+     * @param userId
+     * @param triggerCommentId
+     * @param milestoneRef
+     * @param parentCommentId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static runThreadAssistantAgUiWorkshopsWorkshopIdTracesTraceIdAgUiThreadAssistantPost(
+        workshopId: string,
+        traceId: string,
+        userId: string,
+        triggerCommentId: string,
+        milestoneRef?: (string | null),
+        parentCommentId?: (string | null),
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/traces/{trace_id}/ag-ui/thread-assistant',
+            path: {
+                'workshop_id': workshopId,
+                'trace_id': traceId,
+            },
+            query: {
+                'user_id': userId,
+                'trigger_comment_id': triggerCommentId,
+                'milestone_ref': milestoneRef,
+                'parent_comment_id': parentCommentId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Run Summarization Assistant Ag Ui
+     * Run trace summarization assistant through AG-UI streaming protocol.
+     * @param workshopId
+     * @param traceId
+     * @param userId
+     * @param triggerCommentId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static runSummarizationAssistantAgUiWorkshopsWorkshopIdTracesTraceIdAgUiSummarizationAssistantPost(
+        workshopId: string,
+        traceId: string,
+        userId: string,
+        triggerCommentId: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/traces/{trace_id}/ag-ui/summarization-assistant',
+            path: {
+                'workshop_id': workshopId,
+                'trace_id': traceId,
+            },
+            query: {
+                'user_id': userId,
+                'trigger_comment_id': triggerCommentId,
             },
             errors: {
                 422: `Validation Error`,

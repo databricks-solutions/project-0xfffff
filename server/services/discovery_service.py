@@ -6,10 +6,12 @@ phase transitions, completion tracking) so routers stay thin.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import threading
 import time
+from collections.abc import Callable
 from typing import Any
 
 from fastapi import HTTPException
@@ -39,11 +41,15 @@ from server.services.databricks_service import get_databricks_host, resolve_data
 from server.services.database_service import DatabaseService
 from server.services.discovery_dspy import QUESTION_CATEGORIES
 from server.services.eval_criteria_service import EvalCriteriaService
+from server.services.trace_summarization_service import (
+    TraceSummarizationService,
+)
 
 logger = logging.getLogger(__name__)
 
 # Maximum number of generated questions per (user, trace) before stopping
 MAX_GENERATED_QUESTIONS_PER_TRACE = 6
+AGENT_TIMEOUT_SECONDS = 120.0
 
 
 class DiscoveryService:
@@ -1166,22 +1172,7 @@ class DiscoveryService:
         is_facilitator = data.user_id == workshop.facilitator_id
         content = data.body.strip().lower()
 
-        if is_facilitator and "@assistant" in content:
-            assistant_text = self._handle_assistant_mention(workshop_id, data)
-            assistant_comment = self.db_service.create_discovery_comment(
-                workshop_id,
-                DiscoveryCommentCreate(
-                    trace_id=data.trace_id,
-                    user_id="assistant",
-                    body=assistant_text,
-                    milestone_ref=data.milestone_ref,
-                    parent_comment_id=created.id,
-                ),
-                author_type="assistant",
-            )
-            mention_payload["assistant_comment"] = assistant_comment
-
-        if is_facilitator and "@agent" in content:
+        if (not data.suppress_auto_agent_run) and is_facilitator and ("@assistant" in content or "@agent" in content):
             run = self.db_service.create_discovery_agent_run(
                 workshop_id=workshop_id,
                 trace_id=data.trace_id,
@@ -1221,6 +1212,25 @@ class DiscoveryService:
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
 
+    def delete_discovery_comment(
+        self,
+        workshop_id: str,
+        comment_id: str,
+        user_id: str,
+    ) -> dict[str, Any]:
+        workshop = self._get_workshop_or_404(workshop_id)
+        if user_id != workshop.facilitator_id:
+            raise HTTPException(status_code=403, detail="Only the facilitator can delete comments")
+
+        comment = self.db_service.get_discovery_comment(comment_id, viewer_user_id=user_id)
+        if not comment or comment.workshop_id != workshop_id:
+            raise HTTPException(status_code=404, detail="Comment not found")
+
+        deleted = self.db_service.delete_discovery_comment(workshop_id, comment_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Comment not found")
+        return {"deleted": True, "comment_id": comment_id}
+
     def get_discovery_agent_run(self, workshop_id: str, run_id: str) -> DiscoveryAgentRun:
         self._get_workshop_or_404(workshop_id)
         run = self.db_service.get_discovery_agent_run(run_id)
@@ -1228,32 +1238,90 @@ class DiscoveryService:
             raise HTTPException(status_code=404, detail="Agent run not found")
         return run
 
-    def _handle_assistant_mention(self, workshop_id: str, data: DiscoveryCommentCreate) -> str:
-        text = data.body.lower()
-        comments = self.db_service.list_discovery_comments(
-            workshop_id=workshop_id,
-            trace_id=data.trace_id,
-            milestone_ref=data.milestone_ref,
-            viewer_user_id=data.user_id,
+    def _append_agent_event(self, run_id: str, event: str, **payload: Any) -> None:
+        self.db_service.append_discovery_agent_run_event(
+            run_id,
+            {
+                "event": event,
+                "timestamp_ms": int(time.time() * 1000),
+                **payload,
+            },
         )
-        if "summarize" in text and "thread" in text:
-            sample = comments[-6:]
-            summary_lines = [f"- {c.user_name}: {self._trim(c.body, 140)}" for c in sample]
-            if not summary_lines:
-                return "Thread summary: there are no comments yet in this thread."
-            return "Thread summary based on recent discussion:\n" + "\n".join(summary_lines)
 
-        if "tool" in text and "milestone" in text:
-            milestone = data.milestone_ref or "all"
-            return (
-                f"Milestone `{milestone}` tool context: this workspace exposes summarization-derived milestone context, "
-                "trace summary inputs/outputs, and discovery thread read/write tools."
+    def _run_shared_trace_tool_loop(
+        self,
+        workshop_id: str,
+        trace_id: str,
+        user_prompt: str,
+        trace_context: dict[str, Any],
+        *,
+        milestone_ref: str | None,
+        parent_comment_id: str,
+        viewer_user_id: str,
+        on_partial: Callable[[str], None] | None = None,
+        on_event: Callable[[dict[str, Any]], None] | None = None,
+    ) -> tuple[str | None, bool]:
+        workshop = self.db_service.get_workshop(workshop_id)
+        model_name = (getattr(workshop, "discovery_questions_model_name", None) or "").strip()
+        if not model_name or model_name == "demo":
+            return None, False
+
+        workspace_url, databricks_token = self._resolve_databricks_llm_auth()
+        if not workspace_url or not databricks_token:
+            logger.warning("Agent run missing Databricks auth; falling back to local response")
+            return None, False
+
+        tool_posted_reply = {"body": ""}
+
+        def _list_thread_comments(limit: int, include_agent: bool) -> list[dict[str, Any]]:
+            rows = self.db_service.list_discovery_comments(
+                workshop_id=workshop_id,
+                trace_id=trace_id,
+                milestone_ref=milestone_ref,
+                viewer_user_id=viewer_user_id,
             )
+            if not include_agent:
+                rows = [c for c in rows if c.author_type != "agent"]
+            sample = rows[-limit:] if limit else rows
+            return [
+                {
+                    "id": c.id,
+                    "author": c.user_name,
+                    "author_type": c.author_type,
+                    "body": self._trim(c.body, 260),
+                    "created_at": c.created_at.isoformat(),
+                }
+                for c in sample
+            ]
 
-        return (
-            "I can help with `@assistant summarize this thread` and milestone tool-context questions. "
-            "Try: `@assistant what tools did the agent have access to at this milestone?`"
+        def _create_thread_reply_comment(body: str) -> dict[str, Any]:
+            # Capture the latest model-authored reply candidate and persist once at run completion.
+            tool_posted_reply["body"] = (body or "").strip()
+            return {"status": "queued"}
+
+        service = TraceSummarizationService(
+            endpoint_url=f"{workspace_url.rstrip('/')}/serving-endpoints",
+            token=databricks_token,
+            model_name=model_name,
+            guidance=getattr(workshop, "summarization_guidance", None),
+            use_case_description=getattr(workshop, "description", None),
         )
+        answer = asyncio.run(
+            asyncio.wait_for(
+                service.answer_thread_prompt(
+                    trace_context=trace_context,
+                    prompt=user_prompt,
+                    trace_id=trace_id,
+                    list_thread_comments_fn=_list_thread_comments,
+                    create_thread_reply_comment_fn=_create_thread_reply_comment,
+                    on_partial=on_partial,
+                    on_event=on_event,
+                ),
+                timeout=AGENT_TIMEOUT_SECONDS,
+            )
+        )
+        final_answer = (answer or "").strip() or (tool_posted_reply["body"] or "").strip()
+        return (final_answer or None), False
 
     def _start_agent_run_async(self, run_id: str) -> None:
         thread = threading.Thread(
@@ -1273,63 +1341,164 @@ class DiscoveryService:
         run = self.db_service.get_discovery_agent_run(run_id)
         if not run:
             return
+        started = time.monotonic()
+
+        def _elapsed_s() -> float:
+            return time.monotonic() - started
+
+        self._append_agent_event(run_id, "run_started")
         try:
-            comments = self.db_service.list_discovery_comments(
-                workshop_id=run.workshop_id,
-                trace_id=run.trace_id,
-                milestone_ref=run.milestone_ref,
-                viewer_user_id=run.created_by,
-            )
-            context = "\n".join(f"- {c.user_name}: {self._trim(c.body, 120)}" for c in comments[-8:])
-            if not context:
-                context = "- No prior comments in this thread."
-            response = (
-                "Agent run result:\n"
-                "I reviewed the current thread context and extracted the main points.\n"
-                f"{context}\n"
-                "Recommended next step: convert the top 2 concerns into evaluation criteria candidates."
-            )
-            partial = ""
-            tokens = response.split(" ")
-            tool_calls_count = 0
-            for i, token in enumerate(tokens):
-                partial = f"{partial} {token}".strip()
-                if i in (0, 8, 16):
-                    tool_calls_count += 1
+            trigger_comment = self.db_service.get_discovery_comment(run.trigger_comment_id, viewer_user_id=run.created_by)
+            user_prompt = (trigger_comment.body if trigger_comment else "").strip()
+            if not user_prompt:
+                user_prompt = "@agent analyze this interaction"
+
+            trace = self.db_service.get_trace(run.trace_id)
+            trace_context = trace.context if trace and isinstance(trace.context, dict) else {}
+            run_state = {"tool_calls_count": 0}
+
+            def _on_partial(text: str) -> None:
+                if _elapsed_s() > AGENT_TIMEOUT_SECONDS:
+                    raise TimeoutError(f"Agent run exceeded {AGENT_TIMEOUT_SECONDS:.0f}s timeout")
                 self.db_service.update_discovery_agent_run(
                     run_id,
-                    partial_output=partial,
-                    tool_calls_count=tool_calls_count,
+                    partial_output=text,
+                    tool_calls_count=0,
                     status="running",
                 )
-                time.sleep(0.05)
 
+            def _on_event(event_payload: dict[str, Any]) -> None:
+                event_name = str(event_payload.get("event") or "").strip()
+                if not event_name:
+                    return
+                if event_name == "tool_start":
+                    run_state["tool_calls_count"] += 1
+                self._append_agent_event(run_id, event_name, **{k: v for k, v in event_payload.items() if k != "event"})
+                self.db_service.update_discovery_agent_run(
+                    run_id,
+                    tool_calls_count=run_state["tool_calls_count"],
+                    status="running",
+                )
+
+            response, posted_via_tool = self._run_shared_trace_tool_loop(
+                workshop_id=run.workshop_id,
+                trace_id=run.trace_id,
+                user_prompt=user_prompt,
+                trace_context=trace_context,
+                milestone_ref=run.milestone_ref,
+                parent_comment_id=run.trigger_comment_id,
+                viewer_user_id=run.created_by,
+                on_partial=_on_partial,
+                on_event=_on_event,
+            )
+            if not response:
+                response = (
+                    "I couldn't run a tool-based analysis for this prompt in the current environment. "
+                    "Please confirm a non-demo model is configured and Databricks auth is available."
+                )
+                self.db_service.update_discovery_agent_run(
+                    run_id,
+                    partial_output=response,
+                    tool_calls_count=0,
+                    status="running",
+                )
+
+            if not posted_via_tool:
+                self.db_service.create_discovery_comment(
+                    run.workshop_id,
+                    DiscoveryCommentCreate(
+                        trace_id=run.trace_id,
+                        user_id="agent",
+                        body=response,
+                        milestone_ref=run.milestone_ref,
+                        parent_comment_id=run.trigger_comment_id,
+                    ),
+                    author_type="agent",
+                )
             self.db_service.update_discovery_agent_run(
                 run_id,
                 status="completed",
                 final_output=response,
                 partial_output=response,
-                tool_calls_count=max(tool_calls_count, 1),
+                tool_calls_count=run_state["tool_calls_count"],
                 completed=True,
             )
-            self.db_service.create_discovery_comment(
-                run.workshop_id,
-                DiscoveryCommentCreate(
-                    trace_id=run.trace_id,
-                    user_id="agent",
-                    body=response,
-                    milestone_ref=run.milestone_ref,
-                    parent_comment_id=run.trigger_comment_id,
-                ),
-                author_type="agent",
+            self._append_agent_event(
+                run_id,
+                "run_completed",
+                tool_calls_count=run_state["tool_calls_count"],
+                duration_ms=int(_elapsed_s() * 1000),
+            )
+        except TimeoutError as e:
+            self.db_service.update_discovery_agent_run(
+                run_id,
+                status="timeout",
+                error=str(e),
+                tool_calls_count=0,
+                completed=True,
+            )
+            self._append_agent_event(
+                run_id,
+                "run_timeout",
+                tool_calls_count=0,
+                duration_ms=int(_elapsed_s() * 1000),
+                error=str(e),
             )
         except Exception as e:  # pragma: no cover - defensive background guard
             self.db_service.update_discovery_agent_run(
                 run_id,
                 status="failed",
                 error=str(e),
+                tool_calls_count=0,
                 completed=True,
             )
+            self._append_agent_event(
+                run_id,
+                "run_failed",
+                tool_calls_count=0,
+                duration_ms=int(_elapsed_s() * 1000),
+                error=str(e),
+            )
+
+    def _extract_milestone_context(self, trace_summary: dict[str, Any], milestone_ref: str) -> str:
+        milestones = trace_summary.get("milestones")
+        if not isinstance(milestones, list):
+            return ""
+        normalized = (milestone_ref or "").strip().lower()
+        milestone_num: int | None = None
+        if normalized.startswith("m") and normalized[1:].isdigit():
+            milestone_num = int(normalized[1:])
+        elif normalized.isdigit():
+            milestone_num = int(normalized)
+        if milestone_num is None:
+            return ""
+
+        for milestone in milestones:
+            if not isinstance(milestone, dict):
+                continue
+            number = milestone.get("number")
+            if number != milestone_num:
+                continue
+            title = str(milestone.get("title") or f"Milestone {milestone_num}")
+            summary = self._trim(str(milestone.get("summary") or ""), 240)
+            inputs = milestone.get("inputs") or []
+            outputs = milestone.get("outputs") or []
+            input_spans = [
+                str(item.get("span_name"))
+                for item in inputs
+                if isinstance(item, dict) and item.get("span_name")
+            ]
+            output_spans = [
+                str(item.get("span_name"))
+                for item in outputs
+                if isinstance(item, dict) and item.get("span_name")
+            ]
+            return (
+                f"title={title}; summary={summary}; "
+                f"input_spans={', '.join(input_spans[:4]) or 'none'}; "
+                f"output_spans={', '.join(output_spans[:4]) or 'none'}"
+            )
+        return ""
 
     # --------- Assisted Facilitation v2 Methods ---------
 

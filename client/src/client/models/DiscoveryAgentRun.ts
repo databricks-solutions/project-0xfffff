@@ -10,6 +10,7 @@ export type DiscoveryAgentRun = {
     trigger_comment_id: string;
     status: string;
     tool_calls_count?: number;
+    events?: Array<Record<string, any>>;
     partial_output?: string;
     final_output?: (string | null);
     error?: (string | null);

@@ -8,5 +8,6 @@ export type DiscoveryCommentCreateRequest = {
     body: string;
     milestone_ref?: (string | null);
     parent_comment_id?: (string | null);
+    suppress_auto_agent_run?: boolean;
 };
 
