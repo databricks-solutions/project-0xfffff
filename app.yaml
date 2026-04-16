@@ -15,5 +15,5 @@ env:
 resources:
   - name: mlflow-experiment
     type: mlflow_experiment
-    value_from:
+    valueFrom:
       key: MLFLOW_EXPERIMENT_ID
