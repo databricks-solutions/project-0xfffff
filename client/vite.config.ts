@@ -11,9 +11,15 @@ export default defineConfig({
       name: 'copilotkit-v2-css-shim',
       enforce: 'pre',
       resolveId(source, importer) {
+        const copilotV2CssPath = '/node_modules/@copilotkit/react-core/dist/v2/index.css';
         if (
-          source === './index.css' &&
-          importer?.includes('/node_modules/@copilotkit/react-core/dist/v2/index.mjs')
+          // Raw module import from CopilotKit source.
+          (source === './index.css' &&
+            importer?.includes('/node_modules/@copilotkit/react-core/dist/v2/index.mjs')) ||
+          // Prebundled dep import emitted by Vite (absolute filesystem path).
+          source.includes(copilotV2CssPath) ||
+          // Direct stylesheet import from app code.
+          source === '@copilotkit/react-core/v2/styles.css'
         ) {
           return path.resolve(__dirname, './src/styles/copilotkit-empty.css');
         }
@@ -23,9 +29,27 @@ export default defineConfig({
     react(),
   ],
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
+    alias: [
+      // CopilotKit v2 currently ships Tailwind v4-generated CSS, which breaks
+      // this Tailwind v3/PostCSS pipeline. Redirect all entrypoints to a no-op.
+      {
+        find: '@copilotkit/react-core/v2/styles.css',
+        replacement: path.resolve(__dirname, './src/styles/copilotkit-empty.css'),
+      },
+      {
+        find: /@copilotkit\/react-core\/dist\/v2\/index\.css$/,
+        replacement: path.resolve(__dirname, './src/styles/copilotkit-empty.css'),
+      },
+      {
+        find: '@',
+        replacement: path.resolve(__dirname, './src'),
+      },
+    ],
+  },
+  optimizeDeps: {
+    // Prevent Vite from rewriting CopilotKit v2 imports into .vite/deps
+    // absolute CSS imports that bypass the standard alias shims.
+    exclude: ['@copilotkit/react-core', '@copilotkit/react-core/v2'],
   },
   test: {
     environment: 'jsdom',

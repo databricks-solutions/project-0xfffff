@@ -81,6 +81,26 @@ export interface MockDiscoveryAnalysis {
   updated_at: string;
 }
 
+export interface MockDiscoveryComment {
+  id: string;
+  workshop_id: string;
+  trace_id: string;
+  milestone_ref?: string | null;
+  parent_comment_id?: string | null;
+  user_id: string;
+  user_name: string;
+  user_email: string;
+  user_role: string;
+  author_type: string;
+  body: string;
+  upvotes: number;
+  downvotes: number;
+  score: number;
+  viewer_vote: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface MockDataStore {
   workshop?: Workshop;
   users: User[];
@@ -91,6 +111,7 @@ export interface MockDataStore {
   discoveryComplete: Map<string, boolean>;
   customLlmProvider?: CustomLLMProviderConfig;
   discoveryAnalyses: MockDiscoveryAnalysis[];
+  discoveryComments: MockDiscoveryComment[];
 }
 
 /**
@@ -684,6 +705,140 @@ export class ApiMocker {
             all_completed: completed === participants.length && participants.length > 0,
           },
         });
+      },
+    });
+
+    // Discovery comments routes
+    this.routes.push({
+      pattern: /\/workshops\/([a-f0-9-]+)\/discovery-comments$/i,
+      get: async (route) => {
+        const url = new URL(route.request().url());
+        const traceId = url.searchParams.get('trace_id');
+        let comments = this.store.discoveryComments;
+        if (traceId) {
+          comments = comments.filter((c) => c.trace_id === traceId);
+        }
+        await route.fulfill({ json: comments });
+      },
+      post: async (route) => {
+        const body = route.request().postDataJSON();
+        const user = this.store.users.find((u) => u.id === body?.user_id);
+        const comment: MockDiscoveryComment = {
+          id: 'comment-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+          workshop_id: this.store.workshop?.id || '',
+          trace_id: body?.trace_id || '',
+          milestone_ref: body?.milestone_ref || null,
+          parent_comment_id: body?.parent_comment_id || null,
+          user_id: body?.user_id || '',
+          user_name: user?.name || 'Unknown',
+          user_email: user?.email || '',
+          user_role: user?.role || 'participant',
+          author_type: 'human',
+          body: body?.body || '',
+          upvotes: 0,
+          downvotes: 0,
+          score: 0,
+          viewer_vote: 0,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        this.store.discoveryComments.push(comment);
+        await route.fulfill({ status: 201, json: { comment } });
+      },
+    });
+
+    this.routes.push({
+      pattern: /\/workshops\/([a-f0-9-]+)\/discovery-comments\/stream/i,
+      get: async (route) => {
+        const url = new URL(route.request().url());
+        const traceId = url.searchParams.get('trace_id');
+        const comments = traceId
+          ? this.store.discoveryComments.filter((c) => c.trace_id === traceId)
+          : this.store.discoveryComments;
+        await route.fulfill({
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+          body: `event: comments_snapshot\ndata: ${JSON.stringify({ comments })}\n\n`,
+        });
+      },
+    });
+
+    this.routes.push({
+      pattern: /\/workshops\/([a-f0-9-]+)\/discovery-comments\/([a-z0-9-]+)\/vote$/i,
+      post: async (route) => {
+        await route.fulfill({ json: { success: true } });
+      },
+    });
+
+    this.routes.push({
+      pattern: /\/workshops\/([a-f0-9-]+)\/discovery-comments\/([a-z0-9-]+)$/i,
+      delete: async (route) => {
+        await route.fulfill({ json: { deleted: true, comment_id: 'deleted' } });
+      },
+    });
+
+    // Discovery feedback (facilitator view)
+    this.routes.push({
+      pattern: /\/workshops\/([a-f0-9-]+)\/discovery-feedback-with-users$/i,
+      get: async (route) => {
+        await route.fulfill({ json: [] });
+      },
+    });
+
+    // Discovery settings
+    this.routes.push({
+      pattern: /\/workshops\/([a-f0-9-]+)\/discovery-settings$/i,
+      put: async (route) => {
+        const body = route.request().postDataJSON();
+        if (this.store.workshop) {
+          if (body?.discovery_mode) this.store.workshop.discovery_mode = body.discovery_mode;
+          if (body?.discovery_followups_enabled !== undefined)
+            this.store.workshop.discovery_followups_enabled = body.discovery_followups_enabled;
+        }
+        await route.fulfill({
+          json: {
+            message: 'Settings updated',
+            discovery_mode: body?.discovery_mode || 'analysis',
+            discovery_followups_enabled: body?.discovery_followups_enabled ?? true,
+          },
+        });
+      },
+    });
+
+    // Draft rubric items
+    this.routes.push({
+      pattern: /\/workshops\/([a-f0-9-]+)\/draft-rubric-items$/i,
+      get: async (route) => {
+        await route.fulfill({ json: [] });
+      },
+      post: async (route) => {
+        const body = route.request().postDataJSON();
+        const item = { id: 'dri-' + Date.now(), ...body, created_at: new Date().toISOString() };
+        await route.fulfill({ status: 201, json: item });
+      },
+    });
+
+    // Available models
+    this.routes.push({
+      pattern: /\/workshops\/([a-f0-9-]+)\/available-models$/i,
+      get: async (route) => {
+        await route.fulfill({ json: [] });
+      },
+    });
+
+    // Phase complete/resume
+    this.routes.push({
+      pattern: /\/workshops\/([a-f0-9-]+)\/(complete-phase|resume-phase)\/([a-z_]+)$/i,
+      post: async (route) => {
+        await route.fulfill({ json: { success: true } });
+      },
+    });
+
+    // Discovery agent runs (polling endpoint)
+    this.routes.push({
+      pattern: /\/workshops\/([a-f0-9-]+)\/discovery-agent-runs\/([a-z0-9-]+)$/i,
+      get: async (route) => {
+        await route.fulfill({ status: 404, json: { detail: 'No active run' } });
       },
     });
 

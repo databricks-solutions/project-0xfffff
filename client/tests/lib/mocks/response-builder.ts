@@ -234,6 +234,20 @@ export class TraceBuilder {
     return this;
   }
 
+  withSummary(summary: {
+    executive_summary: string;
+    milestones: Array<{
+      number: number;
+      title: string;
+      summary: string;
+      inputs: Array<{ span_name: string; field: 'inputs' | 'outputs'; value?: unknown }>;
+      outputs: Array<{ span_name: string; field: 'inputs' | 'outputs'; value?: unknown }>;
+    }>;
+  }): this {
+    (this.data as Record<string, unknown>).summary = summary;
+    return this;
+  }
+
   build(): Trace {
     return this.data as Trace;
   }
