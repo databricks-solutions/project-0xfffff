@@ -7,7 +7,7 @@ import { WorkshopHeader } from '@/components/WorkshopHeader';
 import { useUser, useRoleCheck } from '@/context/UserContext';
 import { useWorkflowContext } from '@/context/WorkflowContext';
 import { useWorkshopContext } from '@/context/WorkshopContext';
-import { useWorkshopPhase, useRubric, useCreateWorkshop } from '@/hooks/useWorkshopApi';
+import { useWorkshopPhase, useRubric, useCreateWorkshop, useWorkshopDiscoveryConfig } from '@/hooks/useWorkshopApi';
 import { WorkshopsService } from '@/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -62,6 +62,7 @@ export function WorkshopDemoLanding() {
   
   const { data: workshop, error: workshopError } = useWorkshopPhase(workshopId || '');
   const { data: rubric } = useRubric(workshopId || '');
+  const { data: discoveryConfig } = useWorkshopDiscoveryConfig(workshopId || '');
   
   // State hooks - MUST be before any conditional returns
   const [isManualNavigation, setIsManualNavigation] = React.useState(false);
@@ -508,6 +509,9 @@ export function WorkshopDemoLanding() {
       case 'discovery-monitor':
         return <FacilitatorDiscoveryWorkspace onNavigate={handleNavigation} />;
       case 'discovery-participate':
+        if (discoveryConfig?.discovery_mode === 'social') {
+          return <FacilitatorDiscoveryWorkspace onNavigate={handleNavigation} />;
+        }
         return <TraceViewerDemo />;
       case 'discovery-complete':
         return <PhasePausedView phase="discovery" onBack={user?.role === 'facilitator' ? () => handleNavigation('discovery') : undefined} />;

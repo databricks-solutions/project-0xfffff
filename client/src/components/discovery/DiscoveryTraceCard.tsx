@@ -23,6 +23,7 @@ import {
 
 import { EvalGradingPanel } from '@/components/eval/EvalGradingPanel';
 import { useWorkflowMode } from '@/hooks/useWorkflowMode';
+import { DiscoveryCopilotChat } from '@/components/discovery/DiscoveryCopilotChat';
 
 interface Finding {
   text: string;
@@ -91,6 +92,7 @@ function DiscoverySocialThread({
   const [streamStatus, setStreamStatus] = useState<'running' | 'completed' | 'failed' | null>(null);
   const [toolEvents, setToolEvents] = useState<ToolEventRow[]>([]);
   const [reasoningEvents, setReasoningEvents] = useState<string[]>([]);
+  const [showCopilotChat, setShowCopilotChat] = useState(false);
 
   const milestoneRef = activeMilestoneRef;
   const { data: comments = [], refetch } = useDiscoveryComments(workshopId, trace.id, null, currentUserId);
@@ -247,6 +249,18 @@ function DiscoverySocialThread({
     roots.forEach((root) => visit(root, 0));
     return out;
   }, [byParent]);
+
+  const milestoneFirstIds = useMemo(() => {
+    const seen = new Set<string>();
+    const map = new Map<string, string>();
+    for (const c of orderedComments) {
+      if (c.milestone_ref && c.depth === 0 && !seen.has(c.milestone_ref)) {
+        seen.add(c.milestone_ref);
+        map.set(c.id, c.milestone_ref);
+      }
+    }
+    return map;
+  }, [orderedComments]);
 
   const appendToolResult = (toolCallId: string | undefined, summary: string) => {
     setToolEvents((prev) => {
@@ -512,11 +526,26 @@ function DiscoverySocialThread({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (activeMilestoneRef && scrollContainerRef.current) {
-      const el = scrollContainerRef.current.querySelector(`[data-milestone-ref="${activeMilestoneRef}"]`);
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    if (!activeMilestoneRef) {
+      container.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    const anchor = container.querySelector(
+      `[data-milestone-anchor="${activeMilestoneRef}"]`
+    ) as HTMLElement | null;
+    const target = anchor || container.querySelector(
+      `[data-milestone-ref="${activeMilestoneRef}"]`
+    ) as HTMLElement | null;
+
+    if (target) {
+      const containerRect = container.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      const scrollTop = container.scrollTop + (targetRect.top - containerRect.top);
+      container.scrollTo({ top: Math.max(0, scrollTop), behavior: 'smooth' });
     }
   }, [activeMilestoneRef]);
 
@@ -526,12 +555,35 @@ function DiscoverySocialThread({
         <h3 className="text-lg font-bold text-slate-900 tracking-tight">
           Discussion Flow
         </h3>
-        {onClose && (
-          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors">
-            <ChevronRight className="w-5 h-5" />
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 text-[11px] border-indigo-100 text-indigo-700 hover:bg-indigo-50"
+            onClick={() => setShowCopilotChat((prev) => !prev)}
+          >
+            {showCopilotChat ? 'Hide Copilot' : 'Use Copilot'}
+          </Button>
+          {onClose && (
+            <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors">
+              <ChevronRight className="w-5 h-5" />
+            </button>
+          )}
+        </div>
       </div>
+      {showCopilotChat && (
+        <div className="px-4 pb-3">
+          <div className="h-72">
+            <DiscoveryCopilotChat
+              workshopId={workshopId}
+              traceId={trace.id}
+              userId={currentUserId}
+              milestoneRef={milestoneRef}
+            />
+          </div>
+        </div>
+      )}
       <div 
         ref={scrollContainerRef}
         className="flex-1 overflow-y-auto px-4 pt-2 pb-4 space-y-6 custom-scrollbar max-h-[calc(100vh-200px)]"
@@ -552,10 +604,28 @@ function DiscoverySocialThread({
             ? trace.summary?.milestones?.find((m: { number?: number; title?: string }) => m.number === milestoneNumber)?.title
             : null;
           const milestoneHash = milestoneTitle ? getHash(milestoneTitle, milestoneNumber!) : getHash('trace');
+          const milestoneDividerRef = milestoneFirstIds.get(comment.id);
 
           return (
+          <React.Fragment key={comment.id}>
+          {milestoneDividerRef && (
+            <div
+              data-milestone-anchor={milestoneDividerRef}
+              className="flex items-center gap-2 mt-4 mb-1 first:mt-0"
+            >
+              <div className="flex-1 h-px bg-slate-200/60" />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2 flex items-center gap-1.5">
+                <GenerativeBlob
+                  hash={milestoneHash}
+                  sizeClassName="w-3.5 h-3.5"
+                  subtle
+                />
+                {milestoneTitle || `Milestone ${milestoneDividerRef.replace('m', '')}`}
+              </span>
+              <div className="flex-1 h-px bg-slate-200/60" />
+            </div>
+          )}
           <div
-            key={comment.id}
             data-milestone-ref={comment.milestone_ref}
             className="relative group transition-all duration-200"
             style={{ marginLeft: `${Math.min(comment.depth, 3) * 24}px` }}
@@ -693,6 +763,7 @@ function DiscoverySocialThread({
               </div>
             </div>
           </div>
+          </React.Fragment>
           );
         })}
       </div>

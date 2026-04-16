@@ -104,6 +104,7 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
   const currentModel = discoveryConfig?.discovery_questions_model_name || 'demo';
   const discoveryMode = (discoveryConfig?.discovery_mode || 'analysis') as 'analysis' | 'social';
   const followupsEnabled = discoveryConfig?.discovery_followups_enabled ?? true;
+  const canManageDiscovery = isFacilitator;
 
   const currentAnalysis = analyses?.[0] ?? null;
 
@@ -454,9 +455,10 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
           followupsEnabled={followupsEnabled}
           onModeChange={handleModeChange}
           onFollowupsToggle={handleFollowupsToggle}
+          canManageDiscovery={canManageDiscovery}
         />
 
-        {discoveryMode === 'analysis' && currentAnalysis && (
+        {canManageDiscovery && discoveryMode === 'analysis' && currentAnalysis && (
           <div className="animate-in fade-in slide-in-from-top-4">
             <CrossTraceAnalysisSummary
               analysis={currentAnalysis}
@@ -504,7 +506,7 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
       </div>
 
       {/* Draft Rubric Sidebar: docked by default, can pop out into a modal */}
-      {discoveryMode === 'analysis' && !isDraftPaneModalOpen && (
+      {canManageDiscovery && discoveryMode === 'analysis' && !isDraftPaneModalOpen && (
         <div className={`${isDraftPaneExpanded ? 'w-[40rem]' : 'w-80'} transition-[width] duration-200 border-l bg-slate-50 overflow-y-auto shrink-0`}>
           <DraftRubricSidebar
             items={draftItems}
@@ -519,7 +521,7 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
         </div>
       )}
 
-      <Dialog open={isDraftPaneModalOpen && discoveryMode === 'analysis'} onOpenChange={setIsDraftPaneModalOpen}>
+      <Dialog open={canManageDiscovery && isDraftPaneModalOpen && discoveryMode === 'analysis'} onOpenChange={setIsDraftPaneModalOpen}>
         <DialogContent className="w-[95vw] max-w-5xl h-[85vh] p-0">
           <DraftRubricSidebar
             items={draftItems}

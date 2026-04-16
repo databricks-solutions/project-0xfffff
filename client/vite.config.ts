@@ -6,7 +6,22 @@ import path from 'path'
 const apiTarget = process.env.E2E_API_URL ?? 'http://localhost:8000';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    {
+      name: 'copilotkit-v2-css-shim',
+      enforce: 'pre',
+      resolveId(source, importer) {
+        if (
+          source === './index.css' &&
+          importer?.includes('/node_modules/@copilotkit/react-core/dist/v2/index.mjs')
+        ) {
+          return path.resolve(__dirname, './src/styles/copilotkit-empty.css');
+        }
+        return null;
+      },
+    },
+    react(),
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

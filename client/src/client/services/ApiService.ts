@@ -3263,8 +3263,8 @@ export class ApiService {
     public static runThreadAssistantAgUiWorkshopsWorkshopIdTracesTraceIdAgUiThreadAssistantPost(
         workshopId: string,
         traceId: string,
-        userId: string,
-        triggerCommentId: string,
+        userId?: (string | null),
+        triggerCommentId?: (string | null),
         milestoneRef?: (string | null),
         parentCommentId?: (string | null),
     ): CancelablePromise<any> {
@@ -3299,8 +3299,8 @@ export class ApiService {
     public static runSummarizationAssistantAgUiWorkshopsWorkshopIdTracesTraceIdAgUiSummarizationAssistantPost(
         workshopId: string,
         traceId: string,
-        userId: string,
-        triggerCommentId: string,
+        userId?: (string | null),
+        triggerCommentId?: (string | null),
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'POST',

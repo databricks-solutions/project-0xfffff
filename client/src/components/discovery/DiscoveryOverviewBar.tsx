@@ -23,6 +23,7 @@ interface DiscoveryOverviewBarProps {
   followupsEnabled: boolean;
   onModeChange: (mode: 'analysis' | 'social') => void;
   onFollowupsToggle: () => void;
+  canManageDiscovery?: boolean;
 }
 
 export const DiscoveryOverviewBar: React.FC<DiscoveryOverviewBarProps> = ({
@@ -42,6 +43,7 @@ export const DiscoveryOverviewBar: React.FC<DiscoveryOverviewBarProps> = ({
   followupsEnabled,
   onModeChange,
   onFollowupsToggle,
+  canManageDiscovery = true,
 }) => {
   const [template, setTemplate] = useState('evaluation_criteria');
 
@@ -69,6 +71,7 @@ export const DiscoveryOverviewBar: React.FC<DiscoveryOverviewBarProps> = ({
                 variant="outline" 
                 size="sm" 
                 className="h-9 w-9 p-0 bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 shadow-sm transition-all"
+                disabled={!canManageDiscovery}
               >
                 <Settings2 className="w-4 h-4" />
               </Button>
@@ -87,6 +90,7 @@ export const DiscoveryOverviewBar: React.FC<DiscoveryOverviewBarProps> = ({
                         ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200/50'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
                     }`}
+                    disabled={!canManageDiscovery}
                     onClick={() => onModeChange('analysis')}
                   >
                     Analysis
@@ -97,6 +101,7 @@ export const DiscoveryOverviewBar: React.FC<DiscoveryOverviewBarProps> = ({
                         ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200/50'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
                     }`}
+                    disabled={!canManageDiscovery}
                     onClick={() => onModeChange('social')}
                   >
                     Social
@@ -115,6 +120,7 @@ export const DiscoveryOverviewBar: React.FC<DiscoveryOverviewBarProps> = ({
                   className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
                     followupsEnabled ? 'bg-indigo-600' : 'bg-slate-300'
                   }`}
+                  disabled={!canManageDiscovery}
                   onClick={onFollowupsToggle}
                 >
                   <span className="sr-only">Toggle follow-ups</span>
@@ -132,6 +138,7 @@ export const DiscoveryOverviewBar: React.FC<DiscoveryOverviewBarProps> = ({
             variant="outline" 
             size="sm" 
             className="h-9 text-xs font-semibold bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 shadow-sm transition-all" 
+            disabled={!canManageDiscovery}
             onClick={onAddTraces}
           >
             <Plus className="w-3.5 h-3.5 mr-1.5" />
@@ -146,6 +153,7 @@ export const DiscoveryOverviewBar: React.FC<DiscoveryOverviewBarProps> = ({
                 ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-transparent' 
                 : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900'
             }`} 
+            disabled={!canManageDiscovery}
             onClick={onPauseToggle}
           >
             {isPaused ? <Play className="w-3.5 h-3.5 mr-1.5" /> : <Pause className="w-3.5 h-3.5 mr-1.5" />}
@@ -191,7 +199,7 @@ export const DiscoveryOverviewBar: React.FC<DiscoveryOverviewBarProps> = ({
           <Button
             size="sm"
             className="h-9 px-5 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-600/20 transition-all"
-            disabled={isAnalysisRunning || !hasMlflowConfig}
+            disabled={!canManageDiscovery || isAnalysisRunning || !hasMlflowConfig}
             onClick={() => onRunAnalysis(template)}
           >
             {isAnalysisRunning ? (
