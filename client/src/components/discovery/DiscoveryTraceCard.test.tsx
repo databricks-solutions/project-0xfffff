@@ -114,7 +114,7 @@ describe('DiscoveryTraceCard', () => {
         onPromote={onPromote}
       />
     );
-    const promoteButtons = screen.getAllByRole('button', { name: /add to draft/i });
+    const promoteButtons = screen.getAllByRole('button', { name: /draft/i });
     // promoteButtons[0] is the disagreement, [1] is the finding
     await userEvent.click(promoteButtons[1]);
     expect(onPromote).toHaveBeenCalledWith(
