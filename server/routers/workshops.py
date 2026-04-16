@@ -571,39 +571,42 @@ async def _run_summarization_background(
         )
 
         with SessionLocal() as bg_db:
-            bg_service = DatabaseService(bg_db)
-            bg_service.update_summarization_job_status(job_id, "running")
+            DatabaseService(bg_db).update_summarization_job_status(job_id, "running")
             logger.info("Summarization job status updated job_id=%s status=running", job_id)
 
-            def _on_progress(completed: int, total: int, failed: int) -> None:
-                logger.info(
-                    "Summarization job progress job_id=%s completed=%d total=%d failed=%d",
-                    job_id,
-                    completed,
-                    total,
-                    failed,
-                )
+        def _on_progress(completed: int, total: int, failed: int) -> None:
+            logger.info(
+                "Summarization job progress job_id=%s completed=%d total=%d failed=%d",
+                job_id,
+                completed,
+                total,
+                failed,
+            )
 
-            results = await svc.summarize_batch(batch, on_progress=_on_progress)
-            for result in results:
+        results = await svc.summarize_batch(batch, on_progress=_on_progress)
+
+        for result in results:
+            with SessionLocal() as write_db:
+                write_svc = DatabaseService(write_db)
                 if result["summary"] is not None:
-                    bg_service.update_trace_summary(result["trace_id"], result["summary"])
-                    bg_service.add_summarization_job_completed(job_id, result["trace_id"])
+                    write_svc.update_trace_summary(result["trace_id"], result["summary"])
+                    write_svc.add_summarization_job_completed(job_id, result["trace_id"])
                 else:
-                    bg_service.add_summarization_job_failed(
+                    write_svc.add_summarization_job_failed(
                         job_id, result["trace_id"], result.get("error", "Unknown error")
                     )
 
-            bg_service.update_summarization_job_status(job_id, "completed")
-            succeeded = len([r for r in results if r["summary"]])
-            failed = len([r for r in results if not r["summary"]])
-            logger.info(
-                "Summarization job completed job_id=%s succeeded=%d failed=%d elapsed_s=%.2f",
-                job_id,
-                succeeded,
-                failed,
-                time.perf_counter() - started_at,
-            )
+        with SessionLocal() as final_db:
+            DatabaseService(final_db).update_summarization_job_status(job_id, "completed")
+        succeeded = len([r for r in results if r["summary"]])
+        failed = len([r for r in results if not r["summary"]])
+        logger.info(
+            "Summarization job completed job_id=%s succeeded=%d failed=%d elapsed_s=%.2f",
+            job_id,
+            succeeded,
+            failed,
+            time.perf_counter() - started_at,
+        )
     except asyncio.CancelledError:
         logger.info(
             "Summarization job cancelled job_id=%s elapsed_s=%.2f",

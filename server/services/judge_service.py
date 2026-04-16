@@ -116,7 +116,12 @@ class JudgeService:
                 mode_rating = rating_counts.most_common(1)[0][0]  # Most frequent rating
 
                 trace = trace_objects[trace_id]
-                display_input, display_output = get_display_text(trace, workshop)
+                has_summary = bool(getattr(trace, "summary", None))
+                display_input, display_output = get_display_text(
+                    trace,
+                    workshop,
+                    include_milestone_context=has_summary,
+                )
 
                 # Evaluate using either MLflow or simulation
                 if use_mlflow:
@@ -228,7 +233,12 @@ class JudgeService:
                 mode_rating = rating_counts.most_common(1)[0][0]
 
                 trace = trace_objects[trace_id]
-                display_input, display_output = get_display_text(trace, workshop)
+                has_summary = bool(getattr(trace, "summary", None))
+                display_input, display_output = get_display_text(
+                    trace,
+                    workshop,
+                    include_milestone_context=has_summary,
+                )
 
                 # Evaluate using either MLflow or simulation
                 if use_mlflow:
@@ -527,7 +537,12 @@ class JudgeService:
                     # Use the most common rating if multiple annotations
                     ratings = [a.rating for a in trace_annotations]
                     most_common_rating = max(set(ratings), key=ratings.count)
-                    display_input, display_output = get_display_text(trace, workshop)
+                    has_summary = bool(getattr(trace, "summary", None))
+                    display_input, display_output = get_display_text(
+                        trace,
+                        workshop,
+                        include_milestone_context=has_summary,
+                    )
 
                     few_shot_examples.append(
                         {
