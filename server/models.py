@@ -190,6 +190,8 @@ class TraceCriterionCreate(BaseModel):
     criterion_type: TraceCriterionType
     weight: int = Field(default=1, ge=-10, le=10)
     source_finding_id: str | None = None
+    milestone_refs: list[str] = Field(default_factory=list)
+    lineage_scope: str | None = None
     order: int = 0
     created_by: str
 
@@ -209,6 +211,8 @@ class TraceCriterion(BaseModel):
     criterion_type: TraceCriterionType
     weight: int = 1
     source_finding_id: str | None = None
+    milestone_refs: list[str] = Field(default_factory=list)
+    lineage_scope: str | None = None
     created_by: str
     order: int = 0
     created_at: datetime = Field(default_factory=datetime.now)

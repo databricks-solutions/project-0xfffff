@@ -141,7 +141,7 @@ async def test_trace_rubric_and_eval_results(async_client, override_get_db, monk
             assert trace_id in {"t1", "t2"}
             return [criterion] if trace_id == "t1" else []
 
-        def list_evaluations(self, workshop_id, trace_id):
+        def list_evaluations(self, workshop_id, trace_id, judge_model=None):
             assert workshop_id == "w1"
             return [evaluation] if trace_id == "t1" else []
 

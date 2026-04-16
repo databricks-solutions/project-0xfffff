@@ -45,6 +45,8 @@ class EvalCriteriaService:
             criterion_type=TraceCriterionType(row.criterion_type),
             weight=row.weight,
             source_finding_id=row.source_finding_id,
+            milestone_refs=row.milestone_refs or [],
+            lineage_scope=row.lineage_scope,
             created_by=row.created_by,
             order=row.order or 0,
             created_at=row.created_at,
@@ -78,6 +80,8 @@ class EvalCriteriaService:
             criterion_type=data.criterion_type.value,
             weight=data.weight,
             source_finding_id=data.source_finding_id,
+            milestone_refs=data.milestone_refs or [],
+            lineage_scope=data.lineage_scope,
             created_by=data.created_by,
             order=data.order,
         )

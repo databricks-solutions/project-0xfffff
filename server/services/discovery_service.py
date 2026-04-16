@@ -1959,6 +1959,10 @@ class DiscoveryService:
                     detail="Cannot promote finding to eval criteria without a trace reference",
                 )
 
+            import re as _re
+            milestone_refs = _re.findall(r"\[m(\d+)\]\(m\d+\)", finding_text)
+            milestone_refs = [f"{trace_id}:m{n}" for n in milestone_refs]
+
             eval_service = EvalCriteriaService(self.db)
             criterion = eval_service.create_criterion(
                 workshop_id=workshop_id,
@@ -1968,6 +1972,7 @@ class DiscoveryService:
                     criterion_type=TraceCriterionType.STANDARD,
                     weight=1,
                     source_finding_id=finding_id,
+                    milestone_refs=milestone_refs,
                     created_by=promoter_id,
                 ),
             )

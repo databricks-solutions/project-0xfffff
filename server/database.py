@@ -371,6 +371,8 @@ class TraceCriterionDB(Base):
     criterion_type = Column(String, nullable=False)  # standard|hurdle
     weight = Column(Integer, default=1)
     source_finding_id = Column(String, nullable=True)
+    milestone_refs = Column(JSON, default=list)
+    lineage_scope = Column(String, nullable=True)
     created_by = Column(String, nullable=False)
     order = Column(Integer, default=0)
     created_at = Column(DateTime, default=func.now())
