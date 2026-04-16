@@ -22,7 +22,6 @@ def _ann(*, trace_id: str, user_id: str, rating: int) -> Annotation:
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
-@pytest.mark.req("Works for both Likert and Binary scales")
 def test_analyze_annotation_structure_empty():
     assert analyze_annotation_structure([]) == {
         "num_raters": 0,
@@ -37,7 +36,6 @@ def test_analyze_annotation_structure_empty():
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
-@pytest.mark.req("Cohen's Kappa calculated for rater pairs")
 def test_analyze_annotation_structure_recommends_cohens_kappa_when_two_raters_complete():
     annotations = [
         _ann(trace_id="t1", user_id="u1", rating=3),
@@ -53,7 +51,6 @@ def test_analyze_annotation_structure_recommends_cohens_kappa_when_two_raters_co
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
-@pytest.mark.req("Krippendorff's Alpha calculated correctly")
 def test_analyze_annotation_structure_recommends_krippendorff_alpha_when_missing_data():
     annotations = [
         _ann(trace_id="t1", user_id="u1", rating=3),
@@ -69,7 +66,6 @@ def test_analyze_annotation_structure_recommends_krippendorff_alpha_when_missing
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
-@pytest.mark.req("Handles edge cases (no variation, single rater)")
 @pytest.mark.parametrize(
     "annotations, expected_error_substr",
     [
@@ -117,7 +113,6 @@ def test_validate_annotations_for_irr_invalid_cases(annotations, expected_error_
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
-@pytest.mark.req("Updates when new annotations added")
 def test_validate_annotations_for_irr_valid_case():
     annotations = [
         _ann(trace_id="t1", user_id="u1", rating=3),
@@ -131,7 +126,6 @@ def test_validate_annotations_for_irr_valid_case():
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
-@pytest.mark.req("Alignment metrics reported")
 def test_format_irr_result_rounding_and_ready_flag():
     analysis = analyze_annotation_structure(
         [
@@ -142,21 +136,40 @@ def test_format_irr_result_rounding_and_ready_flag():
         ]
     )
     result = format_irr_result(
-        metric_name="Some Metric",
-        score=0.333333,
-        interpretation="ok",
-        suggestions=["a"],
+        metric_name="Pairwise Agreement",
+        score=80.5555,
+        interpretation="Good agreement",
+        suggestions=[],
         analysis=analysis,
     )
-    assert result["metric_used"] == "Some Metric"
-    assert result["score"] == 0.333
-    assert result["ready_to_proceed"] is True
-    assert result["threshold"] == 0.3
+    assert result["metric_used"] == "Pairwise Agreement"
+    assert result["score"] == 80.6  # Rounded to 1 decimal
+    assert result["ready_to_proceed"] is True  # 80.6 >= 75.0
+    assert result["threshold"] == 75.0
     assert result["num_raters"] == 2
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
-@pytest.mark.req("Handles edge cases (no variation, single rater)")
+def test_format_irr_result_not_ready_below_threshold():
+    analysis = analyze_annotation_structure(
+        [
+            _ann(trace_id="t1", user_id="u1", rating=1),
+            _ann(trace_id="t1", user_id="u2", rating=5),
+            _ann(trace_id="t2", user_id="u1", rating=1),
+            _ann(trace_id="t2", user_id="u2", rating=5),
+        ]
+    )
+    result = format_irr_result(
+        metric_name="Pairwise Agreement",
+        score=50.0,
+        interpretation="Fair agreement",
+        suggestions=["Improve"],
+        analysis=analysis,
+    )
+    assert result["ready_to_proceed"] is False  # 50.0 < 75.0
+
+
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
 def test_detect_problematic_patterns_basic_signals():
     # u1 always gives 1; t1 has extreme disagreement (1 vs 5)
     annotations = [

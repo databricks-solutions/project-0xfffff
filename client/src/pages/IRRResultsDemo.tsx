@@ -1,8 +1,8 @@
 /**
  * IRRResultsDemo Component
- * 
- * Displays Inter-Rater Reliability results including Cohen's Kappa or 
- * Krippendorff's Alpha with interpretation, suggestions, and detailed analysis.
+ *
+ * Displays Inter-Rater Reliability results using Pairwise Agreement Percentage
+ * with interpretation, suggestions, and detailed analysis.
  */
 
 import React, { useState, useEffect } from 'react';
@@ -35,49 +35,18 @@ import { useUser, useRoleCheck } from '@/context/UserContext';
 import { useWorkflowContext } from '@/context/WorkflowContext';
 import { WorkshopsService } from '@/client';
 import { useQueryClient } from '@tanstack/react-query';
-import type { IRRResult, Rubric, Trace, Annotation } from '@/client';
+import type { IRRResult } from '@/client';
 import { TraceViewer } from '@/components/TraceViewer';
 import { convertTraceToTraceData } from '@/utils/traceUtils';
 import { toast } from 'sonner';
 import { parseRubricQuestions as parseQuestions } from '@/utils/rubricUtils';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-
+import { getModelOptions, getBackendModelName } from '@/utils/modelMapping';
 import { BarChart3 } from 'lucide-react';
 
-/** Annotation extended with user details from the annotations-with-users endpoint */
-interface AnnotationWithUser extends Annotation {
-  user_name: string;
-  user_email: string;
-  user_role: string;
-}
-
-/** Shape of a parsed rubric question returned by the local parseRubricQuestions */
-interface ParsedRubricQuestion {
-  id: string;
-  title: string;
-  description: string;
-  judgeType: string;
-  index: number;
-}
-
-/** Per-metric IRR score entry from irrResult.details.per_metric_scores */
-interface PerMetricScore {
-  score: number;
-  interpretation: string;
-  acceptable: boolean;
-  suggestions?: string[];
-  is_binary?: boolean;
-}
-
-/** Trace agreement data keyed by trace ID */
-interface TraceAgreementData {
-  agreement: number;
-  ratingCount: number;
-}
-
 // Parse rubric questions to get question IDs and titles
-const parseRubricQuestions = (rubric: Rubric): ParsedRubricQuestion[] => {
+const parseRubricQuestions = (rubric: any) => {
   if (!rubric || !rubric.question) return [];
   
   return parseQuestions(rubric.question).map((q, index) => ({
@@ -90,7 +59,7 @@ const parseRubricQuestions = (rubric: Rubric): ParsedRubricQuestion[] => {
 };
 
 // Helper function to calculate real per-trace agreement from annotations for a specific metric
-const calculateRealTraceAgreement = (traces: Trace[], annotations: AnnotationWithUser[], questionId: string | null = null): Record<string, TraceAgreementData> => {
+const calculateRealTraceAgreement = (traces: any[], annotations: any[], questionId: string | null = null) => {
   if (!traces || !annotations) return {};
   
   const traceAgreements: Record<string, { agreement: number, ratingCount: number }> = {};
@@ -126,52 +95,29 @@ const calculateRealTraceAgreement = (traces: Trace[], annotations: AnnotationWit
 };
 
 // Helper function to sort traces by disagreement (most disagreement first) 
-const sortTracesByDisagreement = (traceAgreements: Record<string, TraceAgreementData>): Record<string, TraceAgreementData> => {
+const sortTracesByDisagreement = (traceAgreements: Record<string, { agreement: number, ratingCount: number }>) => {
   return Object.entries(traceAgreements)
     .sort(([, a], [, b]) => b.agreement - a.agreement) // Higher stdDev = more disagreement
-    .reduce<Record<string, TraceAgreementData>>((sorted, [key, value]) => ({ ...sorted, [key]: value }), {});
+    .reduce((sorted, [key, value]) => ({ ...sorted, [key]: value }), {});
 };
 
 // Mock IRR result data
 const mockIRRResult = {
   workshop_id: "workshop_123",
-  score: 0.75,
+  score: 82.5,
   ready_to_proceed: true,
   calculated_at: new Date().toISOString(),
   details: {
-    metric_used: "Krippendorff's Alpha",
-    interpretation: "Substantial agreement",
+    metric_used: "Pairwise Agreement",
+    interpretation: "Good agreement",
     num_raters: 3,
     num_traces: 5,
     num_annotations: 45,
     completeness: 0.95,
     missing_data: false,
-    suggestions: [
-      "Current reliability is acceptable for proceeding with evaluation",
-      "Consider increasing sample size for more robust results",
-      "Monitor consistency across different types of traces"
-    ],
-    analysis: {
-      rater_consistency: {
-        "SME_1": { consistency: 0.82, annotations: 15 },
-        "SME_2": { consistency: 0.78, annotations: 15 },
-        "Participant_1": { consistency: 0.69, annotations: 15 }
-      },
-      trace_difficulty: {
-        "trace_1": { agreement: 0.89, difficulty: "Easy" },
-        "trace_2": { agreement: 0.76, difficulty: "Medium" },
-        "trace_3": { agreement: 0.45, difficulty: "Hard" },
-        "trace_4": { agreement: 0.82, difficulty: "Medium" },
-        "trace_5": { agreement: 0.91, difficulty: "Easy" }
-      },
-      question_reliability: {
-        "Response Accuracy": { agreement: 0.78, variance: 0.45 },
-        "Response Helpfulness": { agreement: 0.72, variance: 0.52 },
-        "Response Clarity": { agreement: 0.81, variance: 0.38 }
-      }
-    },
+    suggestions: [],
     problematic_patterns: [
-      "Trace 3 shows low agreement (0.45) - may need clarification",
+      "Trace 3 shows high disagreement - may need clarification",
       "Participant_1 shows lower consistency - may need additional training"
     ]
   }
@@ -210,10 +156,10 @@ export function IRRResultsDemo({ workshopId }: IRRResultsProps) {
   // Extract per-metric scores from IRR result
   // Filter to only include metrics that exist in the current rubric (not deleted)
   const allPerMetricScores = irrResult?.details?.per_metric_scores || {};
-  const currentRubricIds = new Set(rubricQuestions.map((q: ParsedRubricQuestion) => q.id));
+  const currentRubricIds = new Set(rubricQuestions.map((q: any) => q.id));
   const perMetricScores = Object.fromEntries(
     Object.entries(allPerMetricScores).filter(([metricId]) => currentRubricIds.has(metricId))
-  ) as Record<string, PerMetricScore>;
+  );
   const hasMetrics = Object.keys(perMetricScores).length > 0;
   
   // Traces start collapsed by default
@@ -223,7 +169,7 @@ export function IRRResultsDemo({ workshopId }: IRRResultsProps) {
   // Get metric names and types mapped to question IDs
   const metricDisplayNames: Record<string, string> = {};
   const metricJudgeTypes: Record<string, string> = {};
-  rubricQuestions.forEach((q: ParsedRubricQuestion) => {
+  rubricQuestions.forEach((q: any) => {
     metricDisplayNames[q.id] = q.title;
     metricJudgeTypes[q.id] = q.judgeType || 'likert';
   });
@@ -264,7 +210,8 @@ export function IRRResultsDemo({ workshopId }: IRRResultsProps) {
       // The navigation will be handled by the WorkshopDemoLanding component
       // when it detects the phase change
     } catch (error) {
-      // no-op
+      
+      
     } finally {
       setIsAdvancing(false);
     }
@@ -337,7 +284,7 @@ Workshop ID: ${activeWorkshopId}
 Workshop Name: ${workshop?.name || 'Unknown Workshop'}
 
 ## Summary
-${details?.metric_used}: ${irrResult.score.toFixed(3)}
+${details?.metric_used}: ${irrResult.score.toFixed(1)}%
 Interpretation: ${details?.interpretation}
 Ready to Proceed: ${irrResult.ready_to_proceed ? 'Yes' : 'No'}
 
@@ -386,14 +333,14 @@ Report generated by Databricks LLM-Judge Builder Workshop
   const result = (irrResult && !hasInsufficientData) ? irrResult : mockIRRResult;
 
   const getScoreColor = (score: number) => {
-    if (score >= 0.8) return "text-green-600";
-    if (score >= 0.6) return "text-yellow-600";
+    if (score >= 80) return "text-green-600";
+    if (score >= 60) return "text-yellow-600";
     return "text-red-600";
   };
 
   const getScoreBadgeColor = (score: number) => {
-    if (score >= 0.8) return "bg-green-100 text-green-800";
-    if (score >= 0.6) return "bg-yellow-100 text-yellow-800";
+    if (score >= 80) return "bg-green-100 text-green-800";
+    if (score >= 60) return "bg-yellow-100 text-yellow-800";
     return "bg-red-100 text-red-800";
   };
 
@@ -480,7 +427,7 @@ Report generated by Databricks LLM-Judge Builder Workshop
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-base font-semibold text-gray-900 mb-1">IRR Results Summary</h3>
-                <p className="text-xs text-gray-600">Krippendorff's Alpha calculated separately for each evaluation criterion</p>
+                <p className="text-xs text-gray-600">Pairwise agreement calculated separately for each evaluation criterion</p>
               </div>
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" onClick={exportResultsAsText}>
@@ -525,7 +472,7 @@ Report generated by Databricks LLM-Judge Builder Workshop
           </TabsList>
 
           {/* Individual Metric Tabs */}
-          {hasMetrics && Object.entries(perMetricScores).map(([metricId, metricData]: [string, PerMetricScore]) => (
+          {hasMetrics && Object.entries(perMetricScores).map(([metricId, metricData]: [string, any]) => (
             <TabsContent key={metricId} value={`metric-${metricId}`} className="space-y-4">
               {/* Metric Summary Card */}
               <Card className="border-l-4 border-purple-500">
@@ -536,25 +483,57 @@ Report generated by Databricks LLM-Judge Builder Workshop
                       {metricDisplayNames[metricId] || metricId}
                     </h3>
                     <p className="text-xs text-gray-600 mt-1">
-                      {rubricQuestions.find((q: ParsedRubricQuestion) => q.id === metricId)?.description || 'Inter-rater reliability for this evaluation criterion'}
+                      {rubricQuestions.find((q: any) => q.id === metricId)?.description || 'Inter-rater reliability for this evaluation criterion'}
                     </p>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Score Display */}
+                    {/* Score Display — A^HH as primary */}
                     <div className="text-center">
                       <div className="mb-2">
                         <span className="text-sm font-medium text-gray-600">
-                          Krippendorff's Alpha
+                          Human Agreement A<sup>HH</sup> (GDPval)
                         </span>
                       </div>
-                      <div className={`text-4xl font-bold ${getScoreColor(metricData.score)}`}>
-                        {metricData.score.toFixed(3)}
-                      </div>
-                      <div className="mt-2">
-                        <Badge className={getScoreBadgeColor(metricData.score)}>
-                          {metricData.interpretation}
-                        </Badge>
-                      </div>
+                      {metricData.human_agreement != null ? (
+                        <>
+                          <div className={`text-4xl font-bold ${
+                            metricData.human_agreement >= 0.75 ? 'text-green-600' :
+                            metricData.human_agreement >= 0.60 ? 'text-yellow-600' :
+                            metricData.human_agreement >= 0.50 ? 'text-orange-600' :
+                            'text-red-600'
+                          }`}>
+                            {metricData.human_agreement.toFixed(3)}
+                          </div>
+                          <div className="mt-2">
+                            <Badge className={
+                              metricData.human_agreement >= 0.75 ? 'bg-green-100 text-green-800' :
+                              metricData.human_agreement >= 0.60 ? 'bg-yellow-100 text-yellow-800' :
+                              metricData.human_agreement >= 0.50 ? 'bg-orange-100 text-orange-800' :
+                              'bg-red-100 text-red-800'
+                            }>
+                              {metricData.human_agreement >= 0.90 ? 'Excellent agreement' :
+                               metricData.human_agreement >= 0.75 ? 'Good agreement' :
+                               metricData.human_agreement >= 0.60 ? 'Moderate agreement' :
+                               metricData.human_agreement >= 0.50 ? 'Fair agreement' :
+                               'Poor agreement'}
+                            </Badge>
+                          </div>
+                          <div className="text-xs text-gray-400 mt-3 max-w-xs mx-auto">
+                            Score of 1.0 = raters always agree. Score of 0.0 = maximum disagreement. Ratings normalized to [0, 1] scale.
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className={`text-4xl font-bold ${getScoreColor(metricData.score)}`}>
+                            {metricData.score.toFixed(1)}%
+                          </div>
+                          <div className="mt-2">
+                            <Badge className={getScoreBadgeColor(metricData.score)}>
+                              {metricData.interpretation}
+                            </Badge>
+                          </div>
+                        </>
+                      )}
                     </div>
 
                     {/* Status */}
@@ -571,7 +550,7 @@ Report generated by Databricks LLM-Judge Builder Workshop
                         </span>
                       </div>
                       <div className="text-sm text-gray-500">
-                        {metricData.acceptable 
+                        {metricData.acceptable
                           ? 'Reliability is sufficient for this criterion'
                           : 'Consider additional calibration for this criterion'}
                       </div>
@@ -598,7 +577,7 @@ Report generated by Databricks LLM-Judge Builder Workshop
                           </div>
                         ))}
                       </div>
-                    ) : metricData.score >= 0.3 ? (
+                    ) : metricData.acceptable ? (
                       <div className="flex flex-col items-center justify-center py-4 text-center">
                         <CheckCircle className="h-8 w-8 text-green-500 mb-2" />
                         <span className="text-sm text-gray-600">Agreement is acceptable for this criterion</span>
@@ -607,9 +586,9 @@ Report generated by Databricks LLM-Judge Builder Workshop
                       <div className="flex flex-col items-center justify-center py-4 text-center">
                         <AlertCircle className="h-8 w-8 text-orange-500 mb-2" />
                         <span className="text-sm text-gray-600">
-                          {metricData.score < 0 
-                            ? 'Systematic disagreement detected - raters may be interpreting the scale differently'
-                            : 'Low agreement - consider additional calibration'}
+                          {metricData.score < 50
+                            ? 'Low agreement - consider revising the rubric or additional calibration'
+                            : 'Agreement is moderate - consider additional calibration'}
                         </span>
                       </div>
                     )}
@@ -718,8 +697,8 @@ Report generated by Databricks LLM-Judge Builder Workshop
                         })()}
 
                         {Object.entries(sortTracesByDisagreement(realTraceAgreements)).map(([traceId, data]) => {
-                          const trace = traces?.find((t: Trace) => t.id === traceId);
-                          const stdDev = data.agreement;
+                          const trace = traces?.find((t: any) => t.id === traceId);
+                          const stdDev = (data as any).agreement;
                           
                           const getHeatMapColor = (stdDev: number) => {
                             if (stdDev < 0.5) return 'bg-green-500';
@@ -737,15 +716,15 @@ Report generated by Databricks LLM-Judge Builder Workshop
                             return 'text-red-700';
                           };
                           
-                          const traceAnnotations = annotations?.filter((ann: AnnotationWithUser) => ann.trace_id === traceId) || [];
+                          const traceAnnotations = annotations?.filter((ann: any) => ann.trace_id === traceId) || [];
                           const isExpanded = expandedTraces.has(`${metricId}-${traceId}`);
                           
                           // Calculate rating distribution for this specific metric
                           const isBinaryMetric = metricJudgeTypes[metricId] === 'binary';
                           const ratingCounts = isBinaryMetric ? [0, 0] : [0, 0, 0, 0, 0];
-                          traceAnnotations.forEach((ann: AnnotationWithUser) => {
-                            const rating = ann.ratings && ann.ratings[metricId] !== undefined
-                              ? ann.ratings[metricId]
+                          traceAnnotations.forEach((ann: any) => {
+                            const rating = ann.ratings && ann.ratings[metricId] !== undefined 
+                              ? ann.ratings[metricId] 
                               : ann.rating;
                             if (isBinaryMetric) {
                               if (rating === 0 || rating === 1) {
@@ -799,9 +778,9 @@ Report generated by Databricks LLM-Judge Builder Workshop
                                         if (trace.mlflow_url) {
                                           window.open(trace.mlflow_url, '_blank');
                                         } else if (mlflowConfig) {
-                                          // TODO: databricks_host removed from mlflowConfig; get from mlflow-status endpoint
+                                          const baseUrl = mlflowConfig.databricks_host;
                                           const experimentId = mlflowConfig.experiment_id;
-                                          const traceUrl = `/ml/experiments/${experimentId}/traces?selectedEvaluationId=${trace.mlflow_trace_id}`;
+                                          const traceUrl = `${baseUrl}/ml/experiments/${experimentId}/traces?selectedEvaluationId=${trace.mlflow_trace_id}`;
                                           window.open(traceUrl, '_blank');
                                         } else {
 
@@ -813,7 +792,7 @@ Report generated by Databricks LLM-Judge Builder Workshop
                                       MLflow
                                     </Button>
                                   )}
-                                  <span className="text-xs text-gray-500">{data.ratingCount} ratings</span>
+                                  <span className="text-xs text-gray-500">{(data as any).ratingCount} ratings</span>
                                   <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-mono font-medium ${
                                     stdDev < 0.5 ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/20' :
                                     stdDev < 1.0 ? 'bg-green-50 text-green-700 ring-1 ring-inset ring-green-600/20' :
@@ -856,13 +835,13 @@ Report generated by Databricks LLM-Judge Builder Workshop
                                         <div key={rating} className="flex flex-col items-center flex-1">
                                           <div className="flex flex-wrap justify-center gap-0.5 min-h-[20px] mb-1">
                                             {traceAnnotations
-                                              .filter((ann: AnnotationWithUser) => {
-                                                const annRating = ann.ratings && ann.ratings[metricId] !== undefined
-                                                  ? ann.ratings[metricId]
+                                              .filter((ann: any) => {
+                                                const annRating = ann.ratings && ann.ratings[metricId] !== undefined 
+                                                  ? ann.ratings[metricId] 
                                                   : ann.rating;
                                                 return annRating === rating;
                                               })
-                                              .map((ann: AnnotationWithUser, idx: number) => (
+                                              .map((ann: any, idx: number) => (
                                                 <div
                                                   key={idx}
                                                   className={`w-3 h-3 rounded-full ${rating === 0 ? 'bg-red-500' : 'bg-green-500'}`}
@@ -884,18 +863,18 @@ Report generated by Databricks LLM-Judge Builder Workshop
                                         <div key={rating} className="flex flex-col items-center">
                                           <div className="flex flex-wrap justify-center gap-0.5 min-h-[20px] mb-1">
                                             {traceAnnotations
-                                              .filter((ann: AnnotationWithUser) => {
-                                                const annRating = ann.ratings && ann.ratings[metricId] !== undefined
-                                                  ? ann.ratings[metricId]
+                                              .filter((ann: any) => {
+                                                const annRating = ann.ratings && ann.ratings[metricId] !== undefined 
+                                                  ? ann.ratings[metricId] 
                                                   : ann.rating;
                                                 return annRating === rating;
                                               })
-                                              .map((ann: AnnotationWithUser, idx: number) => (
+                                              .map((ann: any, idx: number) => (
                                                 <div
                                                   key={idx}
                                                   className={`w-2 h-2 rounded-full ${
-                                                    rating <= 2 ? 'bg-red-400' :
-                                                    rating === 3 ? 'bg-yellow-400' :
+                                                    rating <= 2 ? 'bg-red-400' : 
+                                                    rating === 3 ? 'bg-yellow-400' : 
                                                     'bg-green-400'
                                                   }`}
                                                   title={ann.user_name || ann.user_id}
@@ -911,7 +890,7 @@ Report generated by Databricks LLM-Judge Builder Workshop
                                   
                                   {/* Annotator list with their ratings */}
                                   <div className="space-y-1">
-                                    {traceAnnotations.map((ann: AnnotationWithUser, idx: number) => {
+                                    {traceAnnotations.map((ann: any, idx: number) => {
                                       const annRating = ann.ratings && ann.ratings[metricId] !== undefined 
                                         ? ann.ratings[metricId] 
                                         : ann.rating;
