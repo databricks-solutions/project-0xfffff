@@ -4850,6 +4850,42 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
     self.db.refresh(comment)
     return self._build_discovery_comment(comment, viewer_user_id=vote_data.user_id)
 
+  def delete_discovery_comment(self, workshop_id: str, comment_id: str) -> bool:
+    root_comment = self.db.query(DiscoveryCommentDB).filter(
+      DiscoveryCommentDB.id == comment_id,
+      DiscoveryCommentDB.workshop_id == workshop_id,
+    ).first()
+    if not root_comment:
+      return False
+
+    comment_ids: list[str] = [root_comment.id]
+    idx = 0
+    while idx < len(comment_ids):
+      parent_id = comment_ids[idx]
+      child_rows = self.db.query(DiscoveryCommentDB.id).filter(
+        DiscoveryCommentDB.workshop_id == workshop_id,
+        DiscoveryCommentDB.parent_comment_id == parent_id,
+      ).all()
+      for child_row in child_rows:
+        child_id = str(child_row.id)
+        if child_id not in comment_ids:
+          comment_ids.append(child_id)
+      idx += 1
+
+    self.db.query(DiscoveryCommentVoteDB).filter(
+      DiscoveryCommentVoteDB.comment_id.in_(comment_ids)
+    ).delete(synchronize_session=False)
+    self.db.query(DiscoveryAgentRunDB).filter(
+      DiscoveryAgentRunDB.workshop_id == workshop_id,
+      DiscoveryAgentRunDB.trigger_comment_id.in_(comment_ids),
+    ).delete(synchronize_session=False)
+    self.db.query(DiscoveryCommentDB).filter(
+      DiscoveryCommentDB.workshop_id == workshop_id,
+      DiscoveryCommentDB.id.in_(comment_ids),
+    ).delete(synchronize_session=False)
+    self.db.commit()
+    return True
+
   def create_discovery_agent_run(
     self,
     workshop_id: str,

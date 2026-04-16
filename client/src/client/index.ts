@@ -37,6 +37,7 @@ export type { DBSQLExportResponse } from './models/DBSQLExportResponse';
 export type { DiscoveryAgentRun } from './models/DiscoveryAgentRun';
 export type { DiscoveryComment } from './models/DiscoveryComment';
 export type { DiscoveryCommentCreateRequest } from './models/DiscoveryCommentCreateRequest';
+export type { DiscoveryCommentDeleteRequest } from './models/DiscoveryCommentDeleteRequest';
 export type { DiscoveryCommentVoteRequest } from './models/DiscoveryCommentVoteRequest';
 export type { DiscoveryCoverage } from './models/DiscoveryCoverage';
 export type { DiscoveryFeedback } from './models/DiscoveryFeedback';

@@ -8,6 +8,7 @@ import type { CreateRubricFromDraftRequest } from '../models/CreateRubricFromDra
 import type { DiscoveryAgentRun } from '../models/DiscoveryAgentRun';
 import type { DiscoveryComment } from '../models/DiscoveryComment';
 import type { DiscoveryCommentCreateRequest } from '../models/DiscoveryCommentCreateRequest';
+import type { DiscoveryCommentDeleteRequest } from '../models/DiscoveryCommentDeleteRequest';
 import type { DiscoveryCommentVoteRequest } from '../models/DiscoveryCommentVoteRequest';
 import type { DiscoveryFeedback } from '../models/DiscoveryFeedback';
 import type { DiscoveryFeedbackCreate } from '../models/DiscoveryFeedbackCreate';
@@ -580,6 +581,33 @@ export class DiscoveryService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/workshops/{workshop_id}/discovery-comments/{comment_id}/vote',
+            path: {
+                'workshop_id': workshopId,
+                'comment_id': commentId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Delete Discovery Comment
+     * @param workshopId
+     * @param commentId
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static deleteDiscoveryCommentWorkshopsWorkshopIdDiscoveryCommentsCommentIdDelete(
+        workshopId: string,
+        commentId: string,
+        requestBody: DiscoveryCommentDeleteRequest,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/workshops/{workshop_id}/discovery-comments/{comment_id}',
             path: {
                 'workshop_id': workshopId,
                 'comment_id': commentId,

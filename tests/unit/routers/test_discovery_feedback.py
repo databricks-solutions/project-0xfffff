@@ -512,3 +512,108 @@ def test_comment_vote_toggle_behavior(discovery_service, workshop_with_traces):
     )
     assert toggled_off.upvotes == 0
     assert toggled_off.downvotes == 0
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("Facilitator can moderate social discussion threads by deleting comments")
+@pytest.mark.unit
+def test_facilitator_can_delete_comment_tree(discovery_service, workshop_with_traces):
+    root = discovery_service.create_discovery_comment(
+        "ws-1",
+        DiscoveryCommentCreate(
+            trace_id="t-1",
+            user_id="u-1",
+            body="Root comment",
+        ),
+    )["comment"]
+    child = discovery_service.create_discovery_comment(
+        "ws-1",
+        DiscoveryCommentCreate(
+            trace_id="t-1",
+            user_id="u-2",
+            body="Reply comment",
+            parent_comment_id=root.id,
+        ),
+    )["comment"]
+    discovery_service.vote_discovery_comment(
+        "ws-1",
+        child.id,
+        DiscoveryCommentVoteRequest(user_id="u-3", value=1),
+    )
+
+    result = discovery_service.delete_discovery_comment("ws-1", root.id, user_id="f-1")
+    assert result["deleted"] is True
+
+    comments = discovery_service.list_discovery_comments("ws-1", trace_id="t-1", user_id="f-1")
+    assert comments == []
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("Only facilitator can delete social thread comments")
+@pytest.mark.unit
+def test_non_facilitator_cannot_delete_comment(discovery_service, workshop_with_traces):
+    root = discovery_service.create_discovery_comment(
+        "ws-1",
+        DiscoveryCommentCreate(
+            trace_id="t-1",
+            user_id="u-1",
+            body="Cannot delete me",
+        ),
+    )["comment"]
+
+    with pytest.raises(HTTPException) as exc_info:
+        discovery_service.delete_discovery_comment("ws-1", root.id, user_id="u-2")
+    assert exc_info.value.status_code == 403
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("Facilitator can invoke `@agent` to run a bounded tool loop and receive a persisted agent reply in-thread with clear success/failure status")
+@pytest.mark.unit
+def test_agent_run_uses_trace_context_tools(discovery_service, workshop_with_traces, test_db):
+    trace = test_db.query(TraceDB).filter(TraceDB.id == "t-1").first()
+    trace.context = {
+        "status": "OK",
+        "execution_time_ms": 120,
+        "spans": [
+            {
+                "name": "root",
+                "parent_span_id": None,
+                "span_type": "CHAIN",
+                "status": "OK",
+                "inputs": {"question": "what could have been better?"},
+                "outputs": {"answer": "baseline answer"},
+            },
+            {
+                "name": "tool_lookup",
+                "parent_span_id": "root",
+                "span_type": "TOOL",
+                "status": "OK",
+                "inputs": {"query": "retrieval"},
+                "outputs": {"result": "documents"},
+            },
+        ],
+        "tags": {},
+    }
+    test_db.commit()
+
+    root_comment = discovery_service.create_discovery_comment(
+        "ws-1",
+        DiscoveryCommentCreate(
+            trace_id="t-1",
+            user_id="f-1",
+            body="what could have been better in this interaction?",
+        ),
+    )["comment"]
+
+    run = discovery_service.db_service.create_discovery_agent_run(
+        workshop_id="ws-1",
+        trace_id="t-1",
+        trigger_comment_id=root_comment.id,
+        created_by="f-1",
+    )
+    discovery_service._execute_agent_run(run.id)
+
+    completed = discovery_service.db_service.get_discovery_agent_run(run.id)
+    assert completed is not None
+    assert completed.status == "completed"
+    assert "Trace overview" in (completed.final_output or "")

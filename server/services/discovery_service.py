@@ -39,6 +39,13 @@ from server.services.databricks_service import get_databricks_host, resolve_data
 from server.services.database_service import DatabaseService
 from server.services.discovery_dspy import QUESTION_CATEGORIES
 from server.services.eval_criteria_service import EvalCriteriaService
+from server.services.trace_summarization_service import (
+    TraceContext,
+    get_root_span,
+    get_span_detail,
+    get_trace_overview,
+    list_spans,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1221,6 +1228,25 @@ class DiscoveryService:
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
 
+    def delete_discovery_comment(
+        self,
+        workshop_id: str,
+        comment_id: str,
+        user_id: str,
+    ) -> dict[str, Any]:
+        workshop = self._get_workshop_or_404(workshop_id)
+        if user_id != workshop.facilitator_id:
+            raise HTTPException(status_code=403, detail="Only the facilitator can delete comments")
+
+        comment = self.db_service.get_discovery_comment(comment_id, viewer_user_id=user_id)
+        if not comment or comment.workshop_id != workshop_id:
+            raise HTTPException(status_code=404, detail="Comment not found")
+
+        deleted = self.db_service.delete_discovery_comment(workshop_id, comment_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Comment not found")
+        return {"deleted": True, "comment_id": comment_id}
+
     def get_discovery_agent_run(self, workshop_id: str, run_id: str) -> DiscoveryAgentRun:
         self._get_workshop_or_404(workshop_id)
         run = self.db_service.get_discovery_agent_run(run_id)
@@ -1274,28 +1300,84 @@ class DiscoveryService:
         if not run:
             return
         try:
+            trigger_comment = self.db_service.get_discovery_comment(run.trigger_comment_id, viewer_user_id=run.created_by)
+            user_prompt = (trigger_comment.body if trigger_comment else "").strip()
+
+            trace = self.db_service.get_trace(run.trace_id)
+            trace_context = trace.context if trace and isinstance(trace.context, dict) else {}
+            tool_calls_count = 0
+            trace_findings: list[str] = []
+
+            if trace_context:
+                deps = TraceContext.from_dict(trace_context)
+                overview = get_trace_overview(deps)
+                tool_calls_count += 1
+                root = get_root_span(deps)
+                tool_calls_count += 1
+
+                trace_findings.append(
+                    f"Trace overview: status={overview.get('status')} span_count={overview.get('span_count')} "
+                    f"root_span={overview.get('root_span_name')} elapsed_ms={overview.get('execution_time_ms')}"
+                )
+
+                user_input = self._trim(str(root.get("inputs", {})), 260) if isinstance(root, dict) else ""
+                assistant_output = self._trim(str(root.get("outputs", {})), 340) if isinstance(root, dict) else ""
+                trace_findings.append(f"Root input: {user_input or '(none)'}")
+                trace_findings.append(f"Root output: {assistant_output or '(none)'}")
+
+                tool_spans = list_spans(deps, filter_type="TOOL")
+                tool_calls_count += 1
+                if tool_spans:
+                    trace_findings.append(
+                        "Tool spans observed: "
+                        + ", ".join(str(s.get("name", "unnamed")) for s in tool_spans[:6])
+                    )
+                    first_tool_name = str(tool_spans[0].get("name", "")).strip()
+                    if first_tool_name:
+                        detail = get_span_detail(deps, first_tool_name)
+                        tool_calls_count += 1
+                        detail_summary = self._trim(str(detail.get("outputs", {})), 220)
+                        trace_findings.append(
+                            f"Sample tool output ({first_tool_name}): {detail_summary or '(empty)'}"
+                        )
+
+                if run.milestone_ref and trace.summary and isinstance(trace.summary, dict):
+                    milestone_context = self._extract_milestone_context(trace.summary, run.milestone_ref)
+                    if milestone_context:
+                        trace_findings.append(f"Milestone context ({run.milestone_ref}): {milestone_context}")
+
             comments = self.db_service.list_discovery_comments(
                 workshop_id=run.workshop_id,
                 trace_id=run.trace_id,
                 milestone_ref=run.milestone_ref,
                 viewer_user_id=run.created_by,
             )
-            context = "\n".join(f"- {c.user_name}: {self._trim(c.body, 120)}" for c in comments[-8:])
-            if not context:
-                context = "- No prior comments in this thread."
+            thread_context = "\n".join(f"- {c.user_name}: {self._trim(c.body, 120)}" for c in comments[-8:])
+            if not thread_context:
+                thread_context = "- No prior comments in this thread."
+
+            if not user_prompt:
+                user_prompt = "@agent analyze this interaction"
+
+            analysis_lines = "\n".join(f"- {line}" for line in trace_findings) if trace_findings else "- Trace context unavailable."
             response = (
                 "Agent run result:\n"
-                "I reviewed the current thread context and extracted the main points.\n"
-                f"{context}\n"
+                f"Prompt: {user_prompt}\n"
+                "I analyzed the underlying trace interaction using summarization-tool context and combined it with thread feedback.\n\n"
+                "Trace analysis:\n"
+                f"{analysis_lines}\n\n"
+                "Thread context:\n"
+                f"{thread_context}\n\n"
+                "What could be better:\n"
+                "- Clarify evaluation expectations in the prompt so completeness vs brevity is less subjective.\n"
+                "- Add explicit acceptance criteria for tool usage quality and output structure.\n"
+                "- Capture one actionable rubric candidate directly from this disagreement.\n"
                 "Recommended next step: convert the top 2 concerns into evaluation criteria candidates."
             )
             partial = ""
             tokens = response.split(" ")
-            tool_calls_count = 0
             for i, token in enumerate(tokens):
                 partial = f"{partial} {token}".strip()
-                if i in (0, 8, 16):
-                    tool_calls_count += 1
                 self.db_service.update_discovery_agent_run(
                     run_id,
                     partial_output=partial,
@@ -1330,6 +1412,46 @@ class DiscoveryService:
                 error=str(e),
                 completed=True,
             )
+
+    def _extract_milestone_context(self, trace_summary: dict[str, Any], milestone_ref: str) -> str:
+        milestones = trace_summary.get("milestones")
+        if not isinstance(milestones, list):
+            return ""
+        normalized = (milestone_ref or "").strip().lower()
+        milestone_num: int | None = None
+        if normalized.startswith("m") and normalized[1:].isdigit():
+            milestone_num = int(normalized[1:])
+        elif normalized.isdigit():
+            milestone_num = int(normalized)
+        if milestone_num is None:
+            return ""
+
+        for milestone in milestones:
+            if not isinstance(milestone, dict):
+                continue
+            number = milestone.get("number")
+            if number != milestone_num:
+                continue
+            title = str(milestone.get("title") or f"Milestone {milestone_num}")
+            summary = self._trim(str(milestone.get("summary") or ""), 240)
+            inputs = milestone.get("inputs") or []
+            outputs = milestone.get("outputs") or []
+            input_spans = [
+                str(item.get("span_name"))
+                for item in inputs
+                if isinstance(item, dict) and item.get("span_name")
+            ]
+            output_spans = [
+                str(item.get("span_name"))
+                for item in outputs
+                if isinstance(item, dict) and item.get("span_name")
+            ]
+            return (
+                f"title={title}; summary={summary}; "
+                f"input_spans={', '.join(input_spans[:4]) or 'none'}; "
+                f"output_spans={', '.join(output_spans[:4]) or 'none'}"
+            )
+        return ""
 
     # --------- Assisted Facilitation v2 Methods ---------
 

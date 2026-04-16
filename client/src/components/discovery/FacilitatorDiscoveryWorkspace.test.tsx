@@ -30,6 +30,11 @@ vi.mock('@/hooks/useWorkshopApi', () => ({
   useUpdateDiscoveryModel: () => ({ mutate: vi.fn() }),
   useUpdateDiscoverySettings: () => ({ mutate: vi.fn(), isPending: false }),
   useAvailableModels: () => ({ data: undefined }),
+  useDiscoveryComments: () => ({ data: [], refetch: vi.fn() }),
+  useCreateDiscoveryComment: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useVoteDiscoveryComment: () => ({ mutate: vi.fn(), isPending: false }),
+  useDeleteDiscoveryComment: () => ({ mutate: vi.fn(), isPending: false }),
+  useDiscoveryAgentRun: () => ({ data: undefined }),
 }));
 
 vi.mock('@/context/WorkshopContext', () => ({
@@ -52,7 +57,7 @@ describe('FacilitatorDiscoveryWorkspace', () => {
     );
     // Overview bar stats
     expect(screen.getByText(/1 participants/)).toBeInTheDocument();
-    expect(screen.getByText(/2 traces/)).toBeInTheDocument();
+    expect(screen.getByText(/2 active traces/)).toBeInTheDocument();
 
     // Trace content shown (not IDs)
     expect(screen.getByText(/User question 1/)).toBeInTheDocument();

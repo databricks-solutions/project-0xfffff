@@ -360,6 +360,10 @@ class DiscoveryCommentCreateRequest(BaseModel):
     parent_comment_id: str | None = None
 
 
+class DiscoveryCommentDeleteRequest(BaseModel):
+    user_id: str
+
+
 def _sse_event(event: str, payload: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(payload, default=str)}\n\n"
 
@@ -410,6 +414,17 @@ async def vote_discovery_comment(
 ) -> DiscoveryComment:
     svc = DiscoveryService(db)
     return svc.vote_discovery_comment(workshop_id, comment_id, request)
+
+
+@router.delete("/{workshop_id}/discovery-comments/{comment_id}", response_model=dict[str, Any])
+async def delete_discovery_comment(
+    workshop_id: str,
+    comment_id: str,
+    request: DiscoveryCommentDeleteRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    svc = DiscoveryService(db)
+    return svc.delete_discovery_comment(workshop_id, comment_id, request.user_id)
 
 
 @router.get("/{workshop_id}/discovery-agent-runs/{run_id}", response_model=DiscoveryAgentRun)

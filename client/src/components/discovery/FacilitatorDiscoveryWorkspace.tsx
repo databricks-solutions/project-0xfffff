@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useWorkshopContext } from '@/context/WorkshopContext';
-import { useUser } from '@/context/UserContext';
+import { useRoleCheck, useUser } from '@/context/UserContext';
 import {
   useAllTraces,
   useFacilitatorDiscoveryFeedback,
@@ -39,6 +39,7 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
 }) => {
   const { workshopId } = useWorkshopContext();
   const { user } = useUser();
+  const { isFacilitator } = useRoleCheck();
   const queryClient = useQueryClient();
 
   // Data
@@ -401,9 +402,9 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
   };
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full bg-slate-50/50">
       {/* Main content — scrollable trace feed */}
-      <div className="flex-1 overflow-y-auto p-5 space-y-4">
+      <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
         <DiscoveryOverviewBar
           participantCount={participantCount}
           traceCount={activeTraces.length}
@@ -419,68 +420,97 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
           hasMlflowConfig={modelOptions.length > 0}
         />
 
-        <div className="rounded-lg border border-slate-200 bg-white p-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Discovery mode</span>
-            <Button
-              size="sm"
-              variant={discoveryMode === 'analysis' ? 'default' : 'outline'}
-              onClick={() => handleModeChange('analysis')}
-              disabled={updateDiscoverySettings.isPending}
-            >
-              Analysis
-            </Button>
-            <Button
-              size="sm"
-              variant={discoveryMode === 'social' ? 'default' : 'outline'}
-              onClick={() => handleModeChange('social')}
-              disabled={updateDiscoverySettings.isPending}
-            >
-              Social
-            </Button>
-            <Button
-              size="sm"
-              variant={followupsEnabled ? 'outline' : 'default'}
+        <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Workspace Mode</span>
+            <div className="flex items-center bg-slate-100 p-1 rounded-lg">
+              <button
+                className={`px-4 py-1.5 rounded-md text-sm font-semibold transition-all ${
+                  discoveryMode === 'analysis'
+                    ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200/50'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                }`}
+                onClick={() => handleModeChange('analysis')}
+                disabled={updateDiscoverySettings.isPending}
+              >
+                Analysis
+              </button>
+              <button
+                className={`px-4 py-1.5 rounded-md text-sm font-semibold transition-all ${
+                  discoveryMode === 'social'
+                    ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200/50'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                }`}
+                onClick={() => handleModeChange('social')}
+                disabled={updateDiscoverySettings.isPending}
+              >
+                Social
+              </button>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Auto Follow-ups</span>
+            <button
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
+                followupsEnabled ? 'bg-indigo-600' : 'bg-slate-300'
+              }`}
               onClick={handleFollowupsToggle}
               disabled={updateDiscoverySettings.isPending}
             >
-              {followupsEnabled ? 'Disable Follow-ups' : 'Enable Follow-ups'}
-            </Button>
+              <span className="sr-only">Toggle follow-ups</span>
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  followupsEnabled ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
           </div>
-          <p className="mt-1 text-xs text-slate-500">
-            Analysis keeps findings promotion flow. Social enables threaded discussion, votes, and @assistant/@agent mentions.
-          </p>
         </div>
 
         {discoveryMode === 'analysis' && currentAnalysis && (
-          <CrossTraceAnalysisSummary
-            analysis={currentAnalysis}
-            onPromote={handlePromote}
-            onNavigateToOrigin={handleNavigateToOrigin}
-            promotedKeys={promotedKeys}
-          />
+          <div className="animate-in fade-in slide-in-from-top-4">
+            <CrossTraceAnalysisSummary
+              analysis={currentAnalysis}
+              onPromote={handlePromote}
+              onNavigateToOrigin={handleNavigateToOrigin}
+              promotedKeys={promotedKeys}
+            />
+          </div>
         )}
 
-        {activeTraces.map((trace) => (
-          <DiscoveryTraceCard
-            key={trace.id}
-            workshopId={workshopId!}
-            currentUserId={user?.id || ''}
-            mode={discoveryMode}
-            trace={trace}
-            feedback={feedbackByTrace.get(trace.id) ?? []}
-            findings={findingsByTrace.get(trace.id)}
-            disagreements={disagreementsByTrace.get(trace.id)}
-            onPromote={handlePromote}
-            onNavigateToOrigin={handleNavigateToOrigin}
-            promotedKeys={promotedKeys}
-            followupsEnabled={discoveryConfig?.discovery_followups_enabled ?? true}
-          />
-        ))}
+        <div className="space-y-6 max-w-5xl mx-auto">
+          {activeTraces.map((trace) => (
+            <DiscoveryTraceCard
+              key={trace.id}
+              workshopId={workshopId!}
+              currentUserId={user?.id || ''}
+              canModerateComments={isFacilitator}
+              mode={discoveryMode}
+              trace={trace}
+              feedback={feedbackByTrace.get(trace.id) ?? []}
+              findings={findingsByTrace.get(trace.id)}
+              disagreements={disagreementsByTrace.get(trace.id)}
+              onPromote={handlePromote}
+              onNavigateToOrigin={handleNavigateToOrigin}
+              promotedKeys={promotedKeys}
+              followupsEnabled={discoveryConfig?.discovery_followups_enabled ?? true}
+            />
+          ))}
+        </div>
 
         {activeTraces.length === 0 && (
-          <div className="text-center py-12 text-slate-500">
-            <p className="text-sm">No discovery traces yet. Add traces to get started.</p>
+          <div className="flex flex-col items-center justify-center py-20 text-slate-400 bg-white rounded-xl border border-slate-200 border-dashed max-w-5xl mx-auto">
+            <div className="h-16 w-16 rounded-full bg-slate-100 flex items-center justify-center mb-4">
+              <svg className="w-8 h-8 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold text-slate-700 mb-1">No Traces Yet</h3>
+            <p className="text-sm max-w-sm text-center">Add discovery traces to start analyzing feedback and collaborating with your team.</p>
+            <Button onClick={() => setShowAddTracesDialog(true)} className="mt-6 bg-indigo-600 hover:bg-indigo-700">
+              Add Traces Now
+            </Button>
           </div>
         )}
       </div>

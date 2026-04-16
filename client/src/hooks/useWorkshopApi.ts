@@ -1614,6 +1614,33 @@ export function useVoteDiscoveryComment(workshopId: string) {
   });
 }
 
+export function useDeleteDiscoveryComment(workshopId: string) {
+  const queryClient = useQueryClient();
+  return useMutation<
+    { deleted: boolean; comment_id: string },
+    Error,
+    { commentId: string; traceId: string; userId: string; milestoneRef?: string | null }
+  >({
+    mutationFn: async ({ commentId, userId }) => {
+      const response = await fetch(`/workshops/${workshopId}/discovery-comments/${commentId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ detail: 'Failed to delete comment' }));
+        throw new Error(err.detail || 'Failed to delete comment');
+      }
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.discoveryComments(workshopId, variables.traceId, variables.milestoneRef || null, variables.userId),
+      });
+    },
+  });
+}
+
 export function useDiscoveryAgentRun(workshopId: string, runId?: string | null) {
   return useQuery<DiscoveryAgentRunData>({
     queryKey: QUERY_KEYS.discoveryAgentRun(workshopId, runId || ''),
