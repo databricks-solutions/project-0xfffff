@@ -106,9 +106,10 @@ export const EvalGradingPanel: React.FC<EvalGradingPanelProps> = ({
               const isHurdle = criterion.criterion_type === 'hurdle';
               const isMet = result?.met;
               
-              // Extract milestone ref from text if it exists (e.g. [m2](m2))
-              const milestoneMatch = criterion.text.match(/\[m(\d+)\]\(m\d+\)/);
-              const milestoneRef = milestoneMatch ? `m${milestoneMatch[1]}` : null;
+              const milestoneRefs: string[] = (criterion as any).milestone_refs || [];
+              const milestoneRef = milestoneRefs.length > 0
+                ? milestoneRefs[0].split(':').pop() || null
+                : null;
 
               return (
                 <tr 

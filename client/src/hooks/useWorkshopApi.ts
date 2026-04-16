@@ -91,6 +91,9 @@ const QUERY_KEYS = {
   traceCriteria: (workshopId: string, traceId: string) => ['trace-criteria', workshopId, traceId],
   traceRubric: (workshopId: string, traceId: string) => ['trace-rubric', workshopId, traceId],
   evalResults: (workshopId: string, traceId?: string) => ['eval-results', workshopId, traceId],
+  evalJob: (workshopId: string, jobId: string) => ['eval-job', workshopId, jobId],
+  evalIrr: (workshopId: string) => ['eval-irr', workshopId],
+  evalAlignmentStatus: (workshopId: string) => ['eval-alignment-status', workshopId],
 };
 
 // Helper function to invalidate all workshop-related queries
@@ -444,6 +447,92 @@ export function useCreateCriterionEvaluation(workshopId: string, traceId: string
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.evalResults(workshopId, traceId) });
+    },
+  });
+}
+
+// Eval-mode judge run hooks
+
+export function useStartEvalJudgeRun(workshopId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { model_name: string; trace_ids?: string[] }) => {
+      const response = await fetch(`/workshops/${workshopId}/evaluate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to start evaluation' }));
+        throw new Error(error.detail || 'Failed to start evaluation');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.evalResults(workshopId) });
+    },
+  });
+}
+
+export function useEvalJobStatus(workshopId: string, jobId: string | null) {
+  return useQuery({
+    queryKey: QUERY_KEYS.evalJob(workshopId, jobId ?? ''),
+    queryFn: async () => {
+      const response = await fetch(`/workshops/${workshopId}/eval-job/${jobId}`);
+      if (!response.ok) throw new Error('Failed to fetch eval job status');
+      return response.json();
+    },
+    enabled: !!jobId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      if (status === 'completed' || status === 'failed') return false;
+      return 2000;
+    },
+  });
+}
+
+export function useEvalIRR(workshopId: string) {
+  return useQuery({
+    queryKey: QUERY_KEYS.evalIrr(workshopId),
+    queryFn: async () => {
+      const response = await fetch(`/workshops/${workshopId}/eval-irr`);
+      if (!response.ok) throw new Error('Failed to fetch eval IRR');
+      return response.json();
+    },
+    enabled: !!workshopId,
+  });
+}
+
+export function useEvalAlignmentStatus(workshopId: string) {
+  return useQuery({
+    queryKey: QUERY_KEYS.evalAlignmentStatus(workshopId),
+    queryFn: async () => {
+      const response = await fetch(`/workshops/${workshopId}/alignment-status`);
+      if (!response.ok) throw new Error('Failed to fetch alignment status');
+      return response.json();
+    },
+    enabled: !!workshopId,
+  });
+}
+
+export function useStartEvalAlignment(workshopId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { evaluation_model_name: string; alignment_model_name?: string }) => {
+      const response = await fetch(`/workshops/${workshopId}/align`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to start alignment' }));
+        throw new Error(error.detail || 'Failed to start alignment');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.evalAlignmentStatus(workshopId) });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.evalResults(workshopId) });
     },
   });
 }
