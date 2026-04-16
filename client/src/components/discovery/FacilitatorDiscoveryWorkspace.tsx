@@ -105,6 +105,45 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
     return map;
   }, [currentAnalysis]);
 
+  const questionOriginByRef = useMemo(() => {
+    const map = new Map<string, string>();
+
+    const normalizeMilestoneRefForTrace = (traceId: string, rawRef: unknown): string | null => {
+      if (typeof rawRef !== 'string') return null;
+      const tokenRaw = rawRef.trim().toLowerCase();
+      if (!tokenRaw) return null;
+      const token = tokenRaw.includes(':') ? tokenRaw.split(':').pop() || '' : tokenRaw;
+      if (!token) return null;
+      if (token === 'all' || token === 'whole' || token === 'full') return `${traceId}:all`;
+      if (/^m\d+$/i.test(token)) return `${traceId}:${token.toLowerCase()}`;
+      if (/^\d+$/.test(token)) return `${traceId}:m${token}`;
+      return `${traceId}:all`;
+    };
+
+    for (const trace of activeTraces) {
+      const feedbackForTrace = feedbackByTrace.get(trace.id) ?? [];
+      let questionCounter = 0;
+      for (const fb of feedbackForTrace) {
+        const qna = fb.followup_qna ?? [];
+        for (const pair of qna) {
+          questionCounter += 1;
+          const key = `${trace.id}#q${questionCounter}`;
+          const refs = (pair as { milestone_references?: unknown[] }).milestone_references;
+          const normalizedRefs = Array.isArray(refs)
+            ? refs
+                .map((r) => normalizeMilestoneRefForTrace(trace.id, r))
+                .filter((r): r is string => !!r)
+            : [];
+
+          const specificMilestone = normalizedRefs.find((r) => /:m\d+$/i.test(r));
+          map.set(key, specificMilestone || `${trace.id}:all`);
+        }
+      }
+    }
+
+    return map;
+  }, [activeTraces, feedbackByTrace]);
+
   // Disagreements by trace
   const disagreementsByTrace = useMemo(() => {
     if (!currentAnalysis) return new Map();
@@ -206,20 +245,48 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
     const ref = (originRef || '').trim();
     if (!ref) return;
 
+    if (/^https?:\/\//i.test(ref)) {
+      window.open(ref, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    const normalizedRef = ref.startsWith('#') ? ref.slice(1) : ref;
+    const parseTraceAndSegment = (value: string): { traceId: string; segment: string | null } => {
+      if (value.includes('#')) {
+        const [rawTraceId, rawSegment] = value.split('#', 2);
+        const traceId = rawTraceId.split('/').filter(Boolean).pop() || rawTraceId;
+        return { traceId, segment: rawSegment || null };
+      }
+      if (value.includes(':')) {
+        const [traceId, segment] = value.split(':', 2);
+        return { traceId, segment: segment || null };
+      }
+      return { traceId: value, segment: null };
+    };
+
+    const { traceId, segment } = parseTraceAndSegment(normalizedRef);
+    if (!traceId) return;
+
     let targetId: string | null = null;
-    if (ref.includes(':')) {
-      const [traceId, segment] = ref.split(':', 2);
-      if (traceId && segment) {
-        if (segment === 'all') {
-          targetId = `discovery-trace-${traceId}`;
-        } else if (segment.startsWith('m')) {
-          targetId = `discovery-trace-${traceId}-${segment.toLowerCase()}`;
+    if (segment) {
+      if (segment.toLowerCase() === 'all') {
+        targetId = `discovery-trace-${traceId}`;
+      } else if (/^q\d+$/i.test(segment)) {
+        const questionRef = `${traceId}#${segment.toLowerCase()}`;
+        const resolvedOrigin = questionOriginByRef.get(questionRef) || `${traceId}:all`;
+        const [, resolvedSegment] = resolvedOrigin.split(':', 2);
+        if (resolvedSegment && /^m\d+$/i.test(resolvedSegment)) {
+          targetId = `discovery-trace-${traceId}-${resolvedSegment.toLowerCase()}`;
         } else {
           targetId = `discovery-trace-${traceId}`;
         }
+      } else if (segment.toLowerCase().startsWith('m')) {
+        targetId = `discovery-trace-${traceId}-${segment.toLowerCase()}`;
+      } else {
+        targetId = `discovery-trace-${traceId}`;
       }
     } else {
-      targetId = `discovery-trace-${ref}`;
+      targetId = `discovery-trace-${traceId}`;
     }
 
     const target = targetId ? document.getElementById(targetId) : null;
@@ -229,10 +296,9 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
     }
 
     // Fallback: if milestone anchor isn't currently mounted, scroll to trace card.
-    const traceIdFallback = ref.includes(':') ? ref.split(':', 1)[0] : ref;
-    const traceCard = document.getElementById(`discovery-trace-${traceIdFallback}`);
+    const traceCard = document.getElementById(`discovery-trace-${traceId}`);
     traceCard?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, []);
+  }, [questionOriginByRef]);
 
   const handleModelChange = (value: string) => {
     updateModelMutation.mutate({ model_name: value });
@@ -332,6 +398,7 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
           <CrossTraceAnalysisSummary
             analysis={currentAnalysis}
             onPromote={handlePromote}
+            onNavigateToOrigin={handleNavigateToOrigin}
             promotedKeys={promotedKeys}
           />
         )}
@@ -344,6 +411,7 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
             findings={findingsByTrace.get(trace.id)}
             disagreements={disagreementsByTrace.get(trace.id)}
             onPromote={handlePromote}
+            onNavigateToOrigin={handleNavigateToOrigin}
             promotedKeys={promotedKeys}
           />
         ))}

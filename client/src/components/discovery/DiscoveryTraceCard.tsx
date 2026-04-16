@@ -1,16 +1,19 @@
 import React, { useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { ChevronDown, ChevronRight, AlertTriangle, ArrowUpRight, Sparkles } from 'lucide-react';
 import { MilestoneView } from '@/components/MilestoneView';
 import type { Trace } from '@/client';
 import type { DiscoveryFeedbackWithUser } from '@/client';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface Finding {
   text: string;
   evidence_trace_ids: string[];
   evidence_milestone_refs?: string[];
+  evidence_question_refs?: string[];
   priority: string;
 }
 
@@ -36,6 +39,7 @@ interface DiscoveryTraceCardProps {
   findings?: Finding[];
   disagreements?: Disagreement[];
   onPromote: (payload: PromotePayload) => void;
+  onNavigateToOrigin?: (originRef: string) => void;
   promotedKeys?: Set<string>;
 }
 
@@ -50,6 +54,14 @@ function tryParseContent(raw: string): string {
     // not JSON, use raw
   }
   return raw;
+}
+
+function linkifyOriginRefs(text: string): string {
+  // Tolerate model outputs that include bare refs like `trace-1#q2` or `trace-1#m3`.
+  return text.replace(
+    /(^|[\s(])(?<!\]\()([A-Za-z0-9_-]+#(?:all|m\d+|q\d+))(?=$|[\s).,;:!?])/gi,
+    (match, prefix, ref) => `${prefix}[${ref}](${ref})`
+  );
 }
 
 function FeedbackRow({ fb }: { fb: DiscoveryFeedbackWithUser }) {
@@ -104,6 +116,7 @@ export const DiscoveryTraceCard: React.FC<DiscoveryTraceCardProps> = ({
   findings,
   disagreements,
   onPromote,
+  onNavigateToOrigin,
   promotedKeys = new Set(),
 }) => {
   const [contentExpanded, setContentExpanded] = useState(false);
@@ -207,7 +220,30 @@ export const DiscoveryTraceCard: React.FC<DiscoveryTraceCardProps> = ({
                         <AlertTriangle className="w-4 h-4 text-red-600" />
                         <span className="text-xs font-semibold uppercase text-red-700">High Disagreement</span>
                       </div>
-                      <p className="text-sm text-slate-800 font-medium">{d.summary}</p>
+                      <div className="text-sm text-slate-800 font-medium">
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            p: ({ children }) => <p className="m-0">{children}</p>,
+                            a: ({ href, children }) => (
+                              <a
+                                href={href}
+                                onClick={(e) => {
+                                  if (href && onNavigateToOrigin) {
+                                    e.preventDefault();
+                                    onNavigateToOrigin(href);
+                                  }
+                                }}
+                                className="text-indigo-700 underline hover:text-indigo-900"
+                              >
+                                {children}
+                              </a>
+                            ),
+                          }}
+                        >
+                          {linkifyOriginRefs(d.summary)}
+                        </ReactMarkdown>
+                      </div>
                       <p className="text-xs text-slate-600 mt-1">Theme: {d.underlying_theme}</p>
                       {d.followup_questions?.length > 0 && (
                         <div className="mt-2">
@@ -247,16 +283,30 @@ export const DiscoveryTraceCard: React.FC<DiscoveryTraceCardProps> = ({
                   const priorityColor = f.priority === 'high' ? 'border-amber-200 bg-amber-50' : 'border-blue-200 bg-blue-50';
                   return (
                     <div key={key} className={`finding-item rounded-lg border ${priorityColor} p-3${promotedKeys.has(key) ? ' promoted-collapsing' : ''}`}>
-                      <p className="text-sm text-slate-800 font-medium">{f.text}</p>
-                      {f.evidence_milestone_refs && f.evidence_milestone_refs.length > 0 && (
-                        <div className="mt-1.5 flex flex-wrap gap-1">
-                          {f.evidence_milestone_refs.map((ref) => (
-                            <Badge key={ref} variant="outline" className="text-[10px] text-indigo-700 border-indigo-200 bg-indigo-50">
-                              {ref}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
+                      <div className="text-sm text-slate-800 font-medium">
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            p: ({ children }) => <p className="m-0">{children}</p>,
+                            a: ({ href, children }) => (
+                              <a
+                                href={href}
+                                onClick={(e) => {
+                                  if (href && onNavigateToOrigin) {
+                                    e.preventDefault();
+                                    onNavigateToOrigin(href);
+                                  }
+                                }}
+                                className="text-indigo-700 underline hover:text-indigo-900"
+                              >
+                                {children}
+                              </a>
+                            ),
+                          }}
+                        >
+                          {linkifyOriginRefs(f.text)}
+                        </ReactMarkdown>
+                      </div>
                       <Button
                         variant="outline"
                         size="sm"

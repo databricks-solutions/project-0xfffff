@@ -1074,7 +1074,13 @@ export interface DiscoveryAnalysis {
   workshop_id: string;
   template_used: string;
   analysis_data: string;
-  findings: Array<{ text: string; evidence_trace_ids: string[]; evidence_milestone_refs?: string[]; priority: string }>;
+  findings: Array<{
+    text: string;
+    evidence_trace_ids: string[];
+    evidence_milestone_refs?: string[];
+    evidence_question_refs?: string[];
+    priority: string;
+  }>;
   disagreements: {
     high: Array<{
       trace_id: string;

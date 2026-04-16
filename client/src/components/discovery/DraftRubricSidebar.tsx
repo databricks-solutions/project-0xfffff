@@ -2,6 +2,8 @@ import React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { FileText, Trash2, Plus, Sparkles, Check, X, Pencil, PanelRightOpen, PanelRightClose } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   useCreateDraftRubricItem,
   useUpdateDraftRubricItem,
@@ -49,6 +51,11 @@ export const DraftRubricSidebar: React.FC<DraftRubricSidebarProps> = ({
   const [editText, setEditText] = React.useState('');
   const [proposedGroups, setProposedGroups] = React.useState<ProposedGroup[] | null>(null);
   const rootRef = React.useRef<HTMLDivElement | null>(null);
+  const linkifyOriginRefs = (text: string): string =>
+    text.replace(
+      /(^|[\s(])(?<!\]\()([A-Za-z0-9_-]+#(?:all|m\d+|q\d+))(?=$|[\s).,;:!?])/gi,
+      (match, prefix, ref) => `${prefix}[${ref}](${ref})`
+    );
 
   const groupsByName = React.useMemo(() => {
     const map = new Map<string, string>();
@@ -190,46 +197,6 @@ export const DraftRubricSidebar: React.FC<DraftRubricSidebarProps> = ({
 
   const groupCount = Object.keys(grouped.groups).length;
 
-  const formatOriginLabel = (originRef: string) => {
-    const trimmed = originRef.trim();
-    if (!trimmed) return trimmed;
-    if (trimmed.includes(':')) {
-      const [traceId, segment] = trimmed.split(':', 2);
-      if (segment === 'all') return `${traceId.slice(0, 8)} · all milestones`;
-      if (segment.startsWith('m')) return `${traceId.slice(0, 8)} · ${segment.toUpperCase()}`;
-      return `${traceId.slice(0, 8)} · ${segment}`;
-    }
-    return trimmed.slice(0, 8);
-  };
-
-  const renderTraceBadges = (item: DraftRubricItem) => {
-    if (!item.source_trace_ids || item.source_trace_ids.length === 0) return null;
-    return (
-      <>
-        {item.source_trace_ids.slice(0, 3).map((originRef) => (
-          <button
-            key={originRef}
-            type="button"
-            onClick={() => onNavigateToOrigin?.(originRef)}
-            className="inline-flex"
-          >
-            <Badge
-              variant="outline"
-              className="text-xs font-mono cursor-pointer hover:bg-indigo-50 hover:border-indigo-300"
-            >
-              {formatOriginLabel(originRef)}
-            </Badge>
-          </button>
-        ))}
-        {item.source_trace_ids.length > 3 && (
-          <Badge variant="outline" className="text-xs">
-            +{item.source_trace_ids.length - 3} more
-          </Badge>
-        )}
-      </>
-    );
-  };
-
   const renderItem = (item: DraftRubricItem) => {
     const isEditing = editingId === item.id;
 
@@ -269,7 +236,30 @@ export const DraftRubricSidebar: React.FC<DraftRubricSidebarProps> = ({
               </div>
             </div>
           ) : (
-            <p className="text-sm text-slate-800 flex-1">{item.text}</p>
+            <div className="text-sm text-slate-800 flex-1">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  p: ({ children }) => <p className="m-0">{children}</p>,
+                  a: ({ href, children }) => (
+                    <a
+                      href={href}
+                      onClick={(e) => {
+                        if (href && onNavigateToOrigin) {
+                          e.preventDefault();
+                          onNavigateToOrigin(href);
+                        }
+                      }}
+                      className="text-indigo-700 underline hover:text-indigo-900"
+                    >
+                      {children}
+                    </a>
+                  ),
+                }}
+              >
+                {linkifyOriginRefs(item.text)}
+              </ReactMarkdown>
+            </div>
           )}
           {!isEditing && (
             <div className="flex gap-0.5">
@@ -292,10 +282,6 @@ export const DraftRubricSidebar: React.FC<DraftRubricSidebarProps> = ({
               </Button>
             </div>
           )}
-        </div>
-
-        <div className="flex flex-wrap gap-1">
-          {renderTraceBadges(item)}
         </div>
 
         <div className="mt-2">

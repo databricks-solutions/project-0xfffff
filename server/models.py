@@ -917,6 +917,7 @@ class Finding(BaseModel):
     text: str
     evidence_trace_ids: list[str] = Field(default_factory=list)
     evidence_milestone_refs: list[str] = Field(default_factory=list)
+    evidence_question_refs: list[str] = Field(default_factory=list)
     priority: str = "medium"  # 'high' | 'medium' | 'low'
 
 

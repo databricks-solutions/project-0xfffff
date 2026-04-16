@@ -33,6 +33,7 @@ Required JSON structure:
       "text": "Description of the finding (criterion or theme)",
       "evidence_trace_ids": ["trace-id-1", "trace-id-2"],
       "evidence_milestone_refs": ["trace-id-1:all", "trace-id-1:m2"],
+      "evidence_question_refs": ["trace-id-1#q1", "trace-id-2#q3"],
       "priority": "high" | "medium" | "low"
     }
   ],
@@ -69,9 +70,20 @@ Each finding should be reusable for offline evaluation and should focus on:
 Use milestone summaries and milestone references when present to ground findings
 in trajectory-level evidence, not just final response text.
 
+Write findings in natural prose and embed milestone evidence directly in the
+finding text using markdown links, for example:
+- "The agent [retried the query](trace-id-1#m2) after a failure instead of
+  asking for clarification."
+- Use #all for whole-trace summary references (example: (trace-id-1#all))
+- When grounded in specific participant follow-up questions, cite those inline
+  using markdown links like [question follow-up](trace-id-1#qN).
+- Prefer these inline links over appending separate "Milestones: ..." text.
+
 For each finding:
 - Cite evidence trace IDs
 - Include evidence_milestone_refs when the finding is tied to specific milestones
+- Include evidence_question_refs pointing to specific discovery follow-up questions
+  (format: trace-id#qN) that materially support the finding
 - Assign priority (high/medium/low) based on frequency and impact on evaluator decisions
 - Adapt criteria to the workshop use-case context (domain, goals, constraints)
 
@@ -105,6 +117,12 @@ responses. Look for:
 For each theme, cite the trace IDs that provide evidence and assign a
 priority (high/medium/low) based on prevalence and impact.
 Ground findings in the provided workshop use-case context.
+When a theme is grounded in a specific milestone, include markdown links in the
+finding text using [milestone evidence](trace-id#mN) or
+[full trajectory](trace-id#all) so evidence reads inline.
+When themes are grounded in specific participant discovery questions, cite those
+inline as markdown links like [question evidence](trace-id#qN) and include the same refs in
+evidence_question_refs.
 
 ## Disagreement Analysis
 
@@ -183,6 +201,7 @@ class DiscoveryAnalysisService:
 
         for trace_id, data in aggregated.items():
             data["referenced_milestones"] = self._extract_milestone_references_from_feedback(data["feedback_entries"], trace_id)
+            data["question_lineage"] = self._extract_question_lineage_from_feedback(data["feedback_entries"], trace_id)
 
         return aggregated
 
@@ -315,6 +334,7 @@ class DiscoveryAnalysisService:
         use_case_description = getattr(workshop, "description", None) if workshop else None
         distillation = self.distill(template, aggregated, disagreements, model, use_case_description)
         self._backfill_milestone_refs(distillation, aggregated)
+        self._backfill_question_refs(distillation, aggregated)
 
         # 5. Serialize findings & disagreements for storage
         findings_data = [f.model_dump() for f in distillation.findings]
@@ -373,6 +393,45 @@ class DiscoveryAnalysisService:
                         collected.append(ref)
             if collected:
                 finding.evidence_milestone_refs = collected[:6]
+
+    def _backfill_question_refs(
+        self, distillation: DistillationOutput, aggregated: dict[str, Any]
+    ) -> None:
+        """Ensure findings preserve question-level lineage references when available."""
+        trace_to_question_refs: dict[str, list[str]] = {}
+        for trace_id, data in aggregated.items():
+            lineage = data.get("question_lineage") or []
+            if not isinstance(lineage, list):
+                continue
+            refs: list[str] = []
+            for item in lineage:
+                if isinstance(item, dict):
+                    ref = str(item.get("ref") or "").strip()
+                    if ref:
+                        refs.append(ref)
+            if refs:
+                trace_to_question_refs[trace_id] = refs
+
+        if not trace_to_question_refs:
+            return
+
+        for finding in distillation.findings:
+            if finding.evidence_question_refs:
+                continue
+            # First try to infer refs explicitly cited as markdown links in finding text.
+            text_refs = self._extract_question_refs_from_text(finding.text)
+            if text_refs:
+                finding.evidence_question_refs = text_refs[:6]
+                continue
+
+            # Fallback: attach the earliest known question refs from evidence traces.
+            collected: list[str] = []
+            for trace_id in finding.evidence_trace_ids:
+                for ref in trace_to_question_refs.get(trace_id, []):
+                    if ref not in collected:
+                        collected.append(ref)
+            if collected:
+                finding.evidence_question_refs = collected[:6]
 
     # ------------------------------------------------------------------
     # Helpers
@@ -438,6 +497,46 @@ class DiscoveryAnalysisService:
                         refs.append(normalized)
         return refs
 
+    def _extract_question_lineage_from_feedback(
+        self, feedback_entries: list[dict[str, Any]], trace_id: str
+    ) -> list[dict[str, str]]:
+        """Collect ordered question lineage refs and metadata from follow-up Q&A."""
+        lineage: list[dict[str, str]] = []
+        question_counter = 0
+        for entry in feedback_entries:
+            user_id = str(entry.get("user") or "").strip() or "unknown-user"
+            feedback_label = str(entry.get("label") or "").strip().lower()
+            for qna in entry.get("followup_qna", []) or []:
+                if not isinstance(qna, dict):
+                    continue
+                question = str(qna.get("question") or "").strip()
+                answer = str(qna.get("answer") or "").strip()
+                if not question and not answer:
+                    continue
+                question_counter += 1
+                lineage.append({
+                    "ref": f"{trace_id}#q{question_counter}",
+                    "user": user_id,
+                    "label": feedback_label,
+                    "question": question,
+                    "answer": answer,
+                })
+        return lineage
+
+    def _extract_question_refs_from_text(self, text: str) -> list[str]:
+        """Extract unique `trace-id#qN` refs from markdown-style links in finding text."""
+        if not text:
+            return []
+        refs: list[str] = []
+        seen: set[str] = set()
+        for match in re.findall(r"\]\(([^)]+#q\d+)\)", text, flags=re.IGNORECASE):
+            ref = str(match).strip()
+            if not ref or ref in seen:
+                continue
+            seen.add(ref)
+            refs.append(ref)
+        return refs
+
     def _format_feedback_for_prompt(self, aggregated: dict[str, Any]) -> str:
         """Format aggregated feedback for the LLM prompt."""
         parts = []
@@ -452,6 +551,21 @@ class DiscoveryAnalysisService:
                 parts.append(
                     f"**Referenced milestones:** {', '.join(data['referenced_milestones'])}"
                 )
+            if data.get("question_lineage"):
+                parts.append("**Discovery question lineage (use these refs in findings):**")
+                for item in data["question_lineage"][:12]:
+                    if not isinstance(item, dict):
+                        continue
+                    ref = str(item.get("ref") or "").strip()
+                    user = str(item.get("user") or "").strip()
+                    label = str(item.get("label") or "").strip().upper()
+                    question = str(item.get("question") or "").strip()
+                    answer = str(item.get("answer") or "").strip()
+                    parts.append(f"- {ref} [{label}] {user}")
+                    if question:
+                        parts.append(f"  Q: {question}")
+                    if answer:
+                        parts.append(f"  A: {answer}")
             for entry in data["feedback_entries"][:10]:
                 label = entry["label"].upper()
                 parts.append(f"- [{label}] {entry['comment']}")
