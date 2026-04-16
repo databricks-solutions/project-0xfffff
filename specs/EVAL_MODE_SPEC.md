@@ -426,6 +426,12 @@ GET    /workshops/{workshop_id}/eval-export
 - [ ] Export includes scoring configuration (types, weights, aggregation rules)
 - [ ] Exported eval can be re-run via `mlflow.genai.evaluate()`
 
+## Implementation Log
+
+| Date | Plan | Status | Summary |
+|------|------|--------|---------|
+| 2026-04-16 | [Fully Wired Eval Mode MVP](../.claude/plans/2026-04-16-fully-wired-eval-mode-mvp.md) | in-progress | Judge execution (milestone-scoped), pairwise agreement IRR, alignment wiring, frontend controls |
+
 ## Future Work
 
 - **Grounding checks**: ACE-style criterion type that verifies claims against external data sources. Three-valued scoring (+1 verified, 0 not met, -1 contradicted). ACE's grounding was against web sources; an analog for trace data (verifying that a claimed action actually appears in trace spans) could also be explored.

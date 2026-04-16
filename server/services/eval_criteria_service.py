@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
@@ -100,7 +98,7 @@ class EvalCriteriaService:
         )
         return [self._criterion_from_db(row) for row in rows]
 
-    def get_criterion(self, workshop_id: str, criterion_id: str) -> Optional[TraceCriterion]:
+    def get_criterion(self, workshop_id: str, criterion_id: str) -> TraceCriterion | None:
         self._get_eval_workshop_or_404(workshop_id)
         row = (
             self.db.query(TraceCriterionDB)
@@ -111,7 +109,7 @@ class EvalCriteriaService:
             return None
         return self._criterion_from_db(row)
 
-    def update_criterion(self, workshop_id: str, criterion_id: str, updates: TraceCriterionUpdate) -> Optional[TraceCriterion]:
+    def update_criterion(self, workshop_id: str, criterion_id: str, updates: TraceCriterionUpdate) -> TraceCriterion | None:
         self._get_eval_workshop_or_404(workshop_id)
         row = (
             self.db.query(TraceCriterionDB)
@@ -202,6 +200,6 @@ class EvalCriteriaService:
         )
         if judge_model:
             query = query.filter(CriterionEvaluationDB.judge_model == judge_model)
-            
+
         rows = query.order_by(CriterionEvaluationDB.created_at.asc()).all()
         return [self._evaluation_from_db(row) for row in rows]

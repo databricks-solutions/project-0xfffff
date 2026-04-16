@@ -276,15 +276,15 @@ Type: {ctype}
         per_criterion: dict[str, dict[str, Any]] = {}
         for cid in paired_ids:
             h = human_by_criterion[cid]
-            l = llm_by_criterion[cid]
-            agreed = h == l
+            llm_val = llm_by_criterion[cid]
+            agreed = h == llm_val
             if agreed:
                 agreeing += 1
             crit = next((c for c in criteria if c.id == cid), None)
             per_criterion[cid] = {
                 "criterion_text": crit.text if crit else cid,
                 "human_met": h,
-                "llm_met": l,
+                "llm_met": llm_val,
                 "agreed": agreed,
             }
 
