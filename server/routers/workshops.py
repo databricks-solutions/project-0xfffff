@@ -584,14 +584,36 @@ async def _run_summarization_background(
                     failed,
                 )
 
-            results = await svc.summarize_batch(batch, on_progress=_on_progress)
+            def _on_trace_event(trace_id: str, event: dict[str, Any]) -> None:
+                event_name = str(event.get("event") or "event")
+                if event_name in {"tool_start", "tool_result", "run_failed"}:
+                    logger.info(
+                        "Summarization trace event job_id=%s trace_id=%s event=%s",
+                        job_id,
+                        trace_id,
+                        event_name,
+                    )
+
+            results = await svc.summarize_batch(
+                batch,
+                on_progress=_on_progress,
+                on_trace_event=_on_trace_event,
+            )
             for result in results:
+                trace_events = result.get("events") if isinstance(result.get("events"), list) else []
                 if result["summary"] is not None:
                     bg_service.update_trace_summary(result["trace_id"], result["summary"])
-                    bg_service.add_summarization_job_completed(job_id, result["trace_id"])
+                    bg_service.add_summarization_job_completed(
+                        job_id,
+                        result["trace_id"],
+                        events=trace_events,
+                    )
                 else:
                     bg_service.add_summarization_job_failed(
-                        job_id, result["trace_id"], result.get("error", "Unknown error")
+                        job_id,
+                        result["trace_id"],
+                        result.get("error", "Unknown error"),
+                        events=trace_events,
                     )
 
             bg_service.update_summarization_job_status(job_id, "completed")

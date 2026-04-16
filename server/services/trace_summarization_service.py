@@ -15,6 +15,8 @@ from typing import Any, Literal
 import httpx
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
+from pydantic_ai import messages as pai_messages
+from pydantic_ai.run import AgentRunResultEvent
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
@@ -56,6 +58,10 @@ class TraceSummary(BaseModel):
     milestones: list[Milestone]
 
 
+class ThreadAgentAnswer(BaseModel):
+    answer: str = Field(description="Direct, grounded answer to the facilitator's prompt.")
+
+
 # --- Trace context (PydanticAI dependency) ---
 
 
@@ -67,6 +73,9 @@ class TraceContext:
     status: str = "UNKNOWN"
     execution_time_ms: float = 0
     tags: dict = dc_field(default_factory=dict)
+    list_thread_comments_fn: Callable[[int, bool], list[dict[str, Any]]] | None = None
+    create_thread_reply_comment_fn: Callable[[str], dict[str, Any]] | None = None
+    create_rubric_criterion_fn: Callable[[dict[str, Any]], dict[str, Any]] | None = None
 
     @classmethod
     def from_dict(cls, d: dict) -> TraceContext:
@@ -185,6 +194,40 @@ def search_spans(ctx: TraceContext, pattern: str) -> list[dict]:
     return matches
 
 
+def list_thread_comments(ctx: TraceContext, limit: int = 8, include_agent: bool = False) -> list[dict]:
+    """List recent thread comments via the injected callback."""
+    if not callable(ctx.list_thread_comments_fn):
+        return [{"error": "Thread comments unavailable in this context"}]
+    safe_limit = max(1, min(int(limit), 25))
+    try:
+        return ctx.list_thread_comments_fn(safe_limit, bool(include_agent))
+    except Exception as exc:  # pragma: no cover - defensive callback guard
+        return [{"error": f"Failed to list thread comments: {exc!s}"}]
+
+
+def create_thread_reply_comment(ctx: TraceContext, body: str) -> dict:
+    """Create a thread reply comment via the injected callback."""
+    if not callable(ctx.create_thread_reply_comment_fn):
+        return {"error": "Thread reply creation unavailable in this context"}
+    text = str(body or "").strip()
+    if not text:
+        return {"error": "Reply body is required"}
+    try:
+        return ctx.create_thread_reply_comment_fn(text)
+    except Exception as exc:  # pragma: no cover - defensive callback guard
+        return {"error": f"Failed to create thread reply: {exc!s}"}
+
+
+def create_rubric_criterion(ctx: TraceContext, payload: dict[str, Any]) -> dict:
+    """Create a rubric/criterion item via an injected callback."""
+    if not callable(ctx.create_rubric_criterion_fn):
+        return {"error": "Rubric criterion creation unavailable in this context"}
+    try:
+        return ctx.create_rubric_criterion_fn(payload)
+    except Exception as exc:  # pragma: no cover - defensive callback guard
+        return {"error": f"Failed to create rubric criterion: {exc!s}"}
+
+
 # --- Span data reference resolution ---
 
 
@@ -223,6 +266,22 @@ def resolve_span_data_refs(refs: list[SpanDataRef], ctx: TraceContext) -> list[S
                 value = _resolve_jsonpath(field_data, ref.jsonpath)
         resolved.append(ref.model_copy(update={"value": value}))
     return resolved
+
+
+def _summarize_tool_result(result_part: Any, max_len: int = 180) -> str:
+    try:
+        if hasattr(result_part, "model_response_str"):
+            text = str(result_part.model_response_str() or "").strip()
+        else:
+            text = str(getattr(result_part, "content", "") or "").strip()
+    except Exception:
+        text = ""
+    compact = " ".join(text.split())
+    if not compact:
+        return "completed"
+    if len(compact) <= max_len:
+        return compact
+    return compact[: max_len - 1] + "…"
 
 
 # --- Prompts ---
@@ -282,6 +341,18 @@ Anti-patterns to avoid:
 - "Results were returned" → instead: state what the results showed
 - "A response was generated" → instead: summarize what the response concluded"""
 
+THREAD_AGENT_INSTRUCTIONS = """\
+You are a discovery thread agent helping a facilitator evaluate an AI trajectory.
+Use tools to inspect the trace deeply before answering.
+
+Guidance:
+- Answer the facilitator's specific prompt directly.
+- Ground claims in concrete trace evidence (spans, inputs, outputs, errors, timings).
+- Avoid rigid report templates and avoid boilerplate section headers.
+- Keep the response concise but substantive.
+- If the facilitator asks to create a criterion, use `create_rubric_criterion` directly.
+"""
+
 
 # --- PydanticAI tool wrappers ---
 
@@ -313,12 +384,52 @@ def _make_pydantic_ai_tools() -> list:
         """Regex search across span inputs and outputs."""
         return search_spans(ctx.deps, pattern=pattern)
 
+    def pai_list_thread_comments(
+        ctx: RunContext[TraceContext],
+        limit: int = 8,
+        include_agent: bool = False,
+    ) -> list[dict]:
+        """List recent comments from the current discussion thread."""
+        return list_thread_comments(ctx.deps, limit=limit, include_agent=include_agent)
+
+    def pai_create_thread_reply_comment(
+        ctx: RunContext[TraceContext],
+        body: str,
+    ) -> dict:
+        """Create a reply comment in the current discussion thread."""
+        return create_thread_reply_comment(ctx.deps, body=body)
+
+    def pai_create_rubric_criterion(
+        ctx: RunContext[TraceContext],
+        text: str,
+        criterion_type: str = "standard",
+        weight: int = 1,
+        weight_percent: float | None = None,
+        lineage: dict[str, Any] | None = None,
+        source_comment_ids: list[str] | None = None,
+    ) -> dict:
+        """Create rubric criterion from discussion context."""
+        return create_rubric_criterion(
+            ctx.deps,
+            {
+                "text": text,
+                "criterion_type": criterion_type,
+                "weight": weight,
+                "weight_percent": weight_percent,
+                "lineage": lineage,
+                "source_comment_ids": source_comment_ids,
+            },
+        )
+
     return [
         pai_get_trace_overview,
         pai_list_spans,
         pai_get_span_detail,
         pai_get_root_span,
         pai_search_spans,
+        pai_list_thread_comments,
+        pai_create_thread_reply_comment,
+        pai_create_rubric_criterion,
     ]
 
 
@@ -381,6 +492,14 @@ class TraceSummarizationService:
             tools=tools,
             retries=2,
         )
+        self.thread_agent: Agent[TraceContext, str] = Agent(
+            model,
+            deps_type=TraceContext,
+            output_type=str,
+            instructions=THREAD_AGENT_INSTRUCTIONS + guidance_suffix,
+            tools=tools,
+            retries=2,
+        )
 
         self.max_concurrency = max_concurrency
 
@@ -417,6 +536,14 @@ class TraceSummarizationService:
             deps_type=TraceContext,
             output_type=TraceSummary,
             instructions=MILESTONE_INSTRUCTIONS,
+            tools=tools,
+            retries=2,
+        )
+        instance.thread_agent = Agent(
+            TestModel(custom_output_text="test-answer"),
+            deps_type=TraceContext,
+            output_type=str,
+            instructions=THREAD_AGENT_INSTRUCTIONS,
             tools=tools,
             retries=2,
         )
@@ -468,6 +595,7 @@ class TraceSummarizationService:
         self,
         trace_context: dict,
         trace_id: str | None = None,
+        on_event: Callable[[dict[str, Any]], None] | None = None,
     ) -> TraceSummary | None:
         """Two-pass summarization with tool-based trace inspection.
 
@@ -477,28 +605,94 @@ class TraceSummarizationService:
         """
         if hasattr(self, "_test_raise_error") and self._test_raise_error:
             return None
+
         if hasattr(self, "_test_fail_trace_ids") and trace_id in self._test_fail_trace_ids:
             return None
+
+        def _emit(event: dict[str, Any]) -> None:
+            if on_event:
+                on_event(event)
 
         started_at = time.perf_counter()
         try:
             deps = TraceContext.from_dict(trace_context)
+            tool_call_counter = 0
+
+            async def _run_agent_with_events(
+                *,
+                phase: str,
+                prompt: str,
+                agent: Agent[Any, Any],
+            ) -> Any:
+                nonlocal tool_call_counter
+                final_output: Any = None
+                async for event in agent.run_stream_events(prompt, deps=deps):
+                    if isinstance(event, pai_messages.PartStartEvent):
+                        part = event.part
+                        if isinstance(part, pai_messages.ThinkingPart) and part.content:
+                            _emit({"event": "reasoning_delta", "phase": phase, "reasoning": part.content})
+                        continue
+
+                    if isinstance(event, pai_messages.PartDeltaEvent):
+                        delta = event.delta
+                        if isinstance(delta, pai_messages.ThinkingPartDelta) and delta.content_delta:
+                            _emit({"event": "reasoning_delta", "phase": phase, "reasoning": delta.content_delta})
+                        continue
+
+                    if isinstance(event, pai_messages.FunctionToolCallEvent):
+                        part = event.part
+                        tool_call_counter += 1
+                        _emit(
+                            {
+                                "event": "tool_start",
+                                "phase": phase,
+                                "tool_name": part.tool_name,
+                                "tool_call_id": part.tool_call_id,
+                                "tool_call_index": tool_call_counter,
+                            }
+                        )
+                        continue
+
+                    if isinstance(event, pai_messages.FunctionToolResultEvent):
+                        result_part = event.result
+                        _emit(
+                            {
+                                "event": "tool_result",
+                                "phase": phase,
+                                "tool_name": getattr(result_part, "tool_name", None),
+                                "tool_call_id": getattr(result_part, "tool_call_id", None),
+                                "result_summary": _summarize_tool_result(result_part),
+                            }
+                        )
+                        continue
+
+                    if isinstance(event, AgentRunResultEvent):
+                        final_output = getattr(event.result, "output", None)
+
+                return final_output
+
             logger.info(
                 "Trace summarization started trace_id=%s spans=%d",
                 trace_id,
                 len(deps.spans),
             )
+            _emit({"event": "run_started"})
 
             # Pass 1: Executive summary (agent uses tools to explore)
             exec_result = await self._run_with_429_retry(
-                lambda: self.summary_agent.run(
-                    "Analyze this trace using your tools. Explore the structure, "
-                    "inspect key spans, and produce an executive summary.",
-                    deps=deps,
+                lambda: _run_agent_with_events(
+                    phase="executive_summary",
+                    prompt=(
+                        "Analyze this trace using your tools. Explore the structure, "
+                        "inspect key spans, and produce an executive summary."
+                    ),
+                    agent=self.summary_agent,
                 ),
                 trace_id=trace_id,
             )
-            executive_summary = exec_result.output.executive_summary
+            if not exec_result:
+                return None
+            executive_summary = exec_result.executive_summary
             logger.debug(
                 "Trace summarization pass1 complete trace_id=%s elapsed_s=%.2f",
                 trace_id,
@@ -507,11 +701,14 @@ class TraceSummarizationService:
 
             # Pass 2: Milestones with span data refs
             milestone_result = await self._run_with_429_retry(
-                lambda: self.milestone_agent.run(
-                    "Using this executive summary as a guide, extract milestones "
-                    "with span data references.\n\n"
-                    f"Executive summary: {executive_summary}",
-                    deps=deps,
+                lambda: _run_agent_with_events(
+                    phase="milestones",
+                    prompt=(
+                        "Using this executive summary as a guide, extract milestones "
+                        "with span data references.\n\n"
+                        f"Executive summary: {executive_summary}"
+                    ),
+                    agent=self.milestone_agent,
                 ),
                 trace_id=trace_id,
             )
@@ -522,7 +719,9 @@ class TraceSummarizationService:
             )
 
             # Post-processing: resolve refs to actual trace values
-            summary = milestone_result.output
+            if not milestone_result:
+                return None
+            summary = milestone_result
             for milestone in summary.milestones:
                 milestone.inputs = resolve_span_data_refs(milestone.inputs, deps)
                 milestone.outputs = resolve_span_data_refs(milestone.outputs, deps)
@@ -541,6 +740,7 @@ class TraceSummarizationService:
                 trace_id,
                 time.perf_counter() - started_at,
             )
+            _emit({"event": "run_failed", "error": "Cancelled"})
             raise
         except Exception as e:
             logger.error(
@@ -551,12 +751,118 @@ class TraceSummarizationService:
                 time.perf_counter() - started_at,
                 exc_info=True,
             )
+            _emit({"event": "run_failed", "error": str(e)})
+            return None
+
+    async def answer_thread_prompt(
+        self,
+        trace_context: dict,
+        prompt: str,
+        trace_id: str | None = None,
+        list_thread_comments_fn: Callable[[int, bool], list[dict[str, Any]]] | None = None,
+        create_thread_reply_comment_fn: Callable[[str], dict[str, Any]] | None = None,
+        on_partial: Callable[[str], None] | None = None,
+        on_event: Callable[[dict[str, Any]], None] | None = None,
+    ) -> str | None:
+        """Run a single free-form, tool-calling answer for discovery thread prompts."""
+        started_at = time.perf_counter()
+        try:
+            deps = TraceContext.from_dict(trace_context)
+            deps.list_thread_comments_fn = list_thread_comments_fn
+            deps.create_thread_reply_comment_fn = create_thread_reply_comment_fn
+
+            async def _run_streaming_answer() -> str:
+                latest_text = ""
+                text_by_index: dict[int, str] = {}
+                final_text = ""
+                async for event in self.thread_agent.run_stream_events(prompt, deps=deps):
+                    if isinstance(event, pai_messages.PartStartEvent):
+                        part = event.part
+                        if isinstance(part, pai_messages.ThinkingPart):
+                            if on_event and part.content:
+                                on_event({"event": "reasoning_delta", "reasoning": part.content})
+                        elif isinstance(part, pai_messages.TextPart):
+                            text_by_index[event.index] = part.content or ""
+                        continue
+
+                    if isinstance(event, pai_messages.PartDeltaEvent):
+                        delta = event.delta
+                        if isinstance(delta, pai_messages.ThinkingPartDelta):
+                            if on_event and delta.content_delta:
+                                on_event({"event": "reasoning_delta", "reasoning": delta.content_delta})
+                        elif isinstance(delta, pai_messages.TextPartDelta):
+                            current = text_by_index.get(event.index, "")
+                            current = f"{current}{delta.content_delta or ''}"
+                            text_by_index[event.index] = current
+                            assembled = "".join(text_by_index.get(i, "") for i in sorted(text_by_index)).strip()
+                            if assembled and assembled != latest_text:
+                                latest_text = assembled
+                                if on_partial:
+                                    on_partial(assembled)
+                        elif isinstance(delta, pai_messages.ToolCallPartDelta):
+                            if on_event and delta.tool_name_delta:
+                                on_event({"event": "reasoning_delta", "reasoning": f"tool_call_delta:{delta.tool_name_delta}"})
+                        continue
+
+                    if isinstance(event, pai_messages.FunctionToolCallEvent):
+                        part = event.part
+                        if on_event:
+                            on_event(
+                                {
+                                    "event": "tool_start",
+                                    "tool_name": part.tool_name,
+                                    "tool_call_id": part.tool_call_id,
+                                }
+                            )
+                        continue
+
+                    if isinstance(event, pai_messages.FunctionToolResultEvent):
+                        result_part = event.result
+                        tool_name = getattr(result_part, "tool_name", None)
+                        tool_call_id = getattr(result_part, "tool_call_id", None)
+                        if on_event:
+                            on_event(
+                                {
+                                    "event": "tool_result",
+                                    "tool_name": tool_name,
+                                    "tool_call_id": tool_call_id,
+                                    "result_summary": "completed",
+                                }
+                            )
+                        continue
+
+                    if isinstance(event, AgentRunResultEvent):
+                        final_text = str(getattr(event.result, "output", "") or "").strip()
+
+                if final_text and final_text != latest_text and on_partial:
+                    on_partial(final_text)
+                return final_text or latest_text
+
+            answer = (await self._run_with_429_retry(_run_streaming_answer, trace_id=trace_id)).strip()
+            if not answer:
+                return None
+            logger.info(
+                "Thread agent answer succeeded trace_id=%s elapsed_s=%.2f",
+                trace_id,
+                time.perf_counter() - started_at,
+            )
+            return answer
+        except asyncio.CancelledError:
+            logger.warning(
+                "Thread agent answer cancelled trace_id=%s elapsed_s=%.2f",
+                trace_id,
+                time.perf_counter() - started_at,
+            )
+            raise
+        except Exception:
+            logger.exception("Thread agent answer failed trace_id=%s", trace_id)
             return None
 
     async def summarize_batch(
         self,
         traces: list[dict],
         on_progress: Callable[[int, int, int], None] | None = None,
+        on_trace_event: Callable[[str, dict[str, Any]], None] | None = None,
     ) -> list[dict]:
         """Summarize a batch of traces concurrently.
 
@@ -587,6 +893,13 @@ class TraceSummarizationService:
             trace_id = trace["id"]
             error_msg = None
             trace_started_at = time.perf_counter()
+            events: list[dict[str, Any]] = []
+
+            def _record_event(event: dict[str, Any]) -> None:
+                payload = {"timestamp_ms": int(time.time() * 1000), **event}
+                events.append(payload)
+                if on_trace_event:
+                    on_trace_event(trace_id, payload)
 
             # Stagger: each task waits a bit before acquiring the semaphore
             async with index_lock:
@@ -597,7 +910,7 @@ class TraceSummarizationService:
 
             async with semaphore:
                 try:
-                    summary = await self.summarize_trace(trace["context"], trace_id=trace_id)
+                    summary = await self.summarize_trace(trace["context"], trace_id=trace_id, on_event=_record_event)
                 except asyncio.CancelledError:
                     logger.warning(
                         "Batch trace task cancelled trace_id=%s elapsed_s=%.2f",
@@ -615,6 +928,16 @@ class TraceSummarizationService:
                         e,
                         exc_info=True,
                     )
+
+            if summary is None and not error_msg:
+                last_error = next(
+                    (evt for evt in reversed(events) if evt.get("event") == "run_failed" and evt.get("error")),
+                    None,
+                )
+                if isinstance(last_error, dict):
+                    error_msg = str(last_error.get("error") or "No summary produced")
+                else:
+                    error_msg = "No summary produced"
 
             async with lock:
                 if summary is None:
@@ -634,6 +957,7 @@ class TraceSummarizationService:
             result = {
                 "trace_id": trace_id,
                 "summary": summary.model_dump() if summary else None,
+                "events": events,
             }
             if error_msg:
                 result["error"] = error_msg

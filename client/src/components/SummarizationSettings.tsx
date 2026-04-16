@@ -290,9 +290,23 @@ export const SummarizationSettings: React.FC = () => {
                   <div className="mt-2 space-y-1">
                     <p className="text-xs font-medium text-red-700">Failed traces:</p>
                     <div className="max-h-32 overflow-y-auto space-y-1">
-                      {activeJob.failed_traces.map((ft: { trace_id: string; error: string }) => (
-                        <div key={ft.trace_id} className="text-xs text-red-600 bg-red-50 rounded px-2 py-1">
-                          <span className="font-mono">{ft.trace_id.slice(0, 12)}...</span>: {ft.error}
+                      {activeJob.failed_traces.map((ft: { trace_id: string; error: string; events?: Array<{ event?: string; tool_name?: string; phase?: string; result_summary?: string }> }) => (
+                        <div key={ft.trace_id} className="text-xs text-red-600 bg-red-50 rounded px-2 py-1 space-y-1">
+                          <div>
+                            <span className="font-mono">{ft.trace_id.slice(0, 12)}...</span>: {ft.error}
+                          </div>
+                          {Array.isArray(ft.events) && ft.events.length > 0 && (
+                            <div className="text-[11px] text-red-700/90">
+                              {ft.events.slice(-4).map((evt, idx) => (
+                                <div key={`${ft.trace_id}-evt-${idx}`} className="font-mono">
+                                  {evt.phase ? `[${evt.phase}] ` : ''}
+                                  {evt.event || 'event'}
+                                  {evt.tool_name ? ` ${evt.tool_name}` : ''}
+                                  {evt.result_summary ? `: ${evt.result_summary}` : ''}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
