@@ -4,6 +4,7 @@ Exercises real DiscoveryService logic with in-memory SQLite instead of
 mocking the entire service layer. Only the LLM call boundary is mocked.
 """
 
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -13,6 +14,8 @@ from sqlalchemy.orm import sessionmaker
 
 from server.database import Base, TraceDB, UserDB, WorkshopDB, WorkshopParticipantDB
 from server.models import (
+    DiscoveryCommentCreate,
+    DiscoveryCommentVoteRequest,
     DiscoveryFeedbackCreate,
     FeedbackLabel,
 )
@@ -214,6 +217,55 @@ def test_generate_followup_with_demo_model(discovery_service, workshop_with_trac
     assert result["is_fallback"] is True
 
 
+@pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("AI generates 3 follow-up questions per trace based on feedback")
+@pytest.mark.unit
+def test_generate_followup_uses_sdk_auth_without_mlflow_config(
+    discovery_service, workshop_with_traces, monkeypatch
+):
+    """Regression: follow-up generation should rely on SDK auth, not MLflow config."""
+    discovery_service.submit_discovery_feedback(
+        "ws-1",
+        DiscoveryFeedbackCreate(
+            trace_id="t-1",
+            user_id="u-1",
+            feedback_label=FeedbackLabel.GOOD,
+            comment="Good answer",
+        ),
+    )
+
+    monkeypatch.setattr(
+        discovery_service,
+        "_get_workshop_or_404",
+        lambda _workshop_id: SimpleNamespace(discovery_questions_model_name="databricks-llm-endpoint"),
+    )
+
+    monkeypatch.setattr(
+        discovery_service.db_service,
+        "get_mlflow_config",
+        lambda _workshop_id: None,
+    )
+
+    with patch("server.services.discovery_service.get_databricks_host", return_value="https://example.databricks.com"), patch(
+        "server.services.discovery_service.resolve_databricks_token",
+        return_value="dapi_test_token",
+    ), patch(
+        "server.services.followup_question_service.FollowUpQuestionService.generate",
+        return_value=("Q?", False),
+    ) as mock_generate:
+        result = discovery_service.generate_followup_question(
+            workshop_id="ws-1", trace_id="t-1", user_id="u-1", question_number=1
+        )
+
+    _, kwargs = mock_generate.call_args
+    assert kwargs["workspace_url"] == "https://example.databricks.com"
+    assert kwargs["databricks_token"] == "dapi_test_token"
+    assert kwargs["model_name"] == "databricks-llm-endpoint"
+    assert result["question"] == "Q?"
+    assert result["question_number"] == 1
+    assert result["is_fallback"] is False
+
+
 # ============================================================================
 # POST /workshops/{id}/submit-followup-answer
 # ============================================================================
@@ -236,6 +288,7 @@ def test_submit_followup_answer(discovery_service, workshop_with_traces):
         user_id="u-1",
         question="What specifically was wrong?",
         answer="The tone was off.",
+        milestone_references=["all", "m2"],
     )
 
     assert result["qna_count"] == 1
@@ -246,6 +299,7 @@ def test_submit_followup_answer(discovery_service, workshop_with_traces):
     assert len(feedbacks[0].followup_qna) == 1
     assert feedbacks[0].followup_qna[0]["question"] == "What specifically was wrong?"
     assert feedbacks[0].followup_qna[0]["answer"] == "The tone was off."
+    assert feedbacks[0].followup_qna[0]["milestone_references"] == ["all", "m2"]
 
 
 @pytest.mark.spec("DISCOVERY_SPEC")
@@ -383,3 +437,183 @@ async def test_begin_discovery_with_trace_limit(async_client, override_get_db, m
     assert data["traces_used"] == 5
     assert data["total_traces"] == 20
     mock_db_svc.update_discovery_randomize_setting.assert_called_once_with("ws-1", True)
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("When follow-up questions are disabled, participant flow is GOOD/BAD + comment only")
+@pytest.mark.unit
+def test_followup_generation_disabled_raises(discovery_service, workshop_with_traces, test_db):
+    workshop = test_db.query(WorkshopDB).filter(WorkshopDB.id == "ws-1").first()
+    workshop.discovery_followups_enabled = False
+    test_db.commit()
+
+    discovery_service.submit_discovery_feedback(
+        "ws-1",
+        DiscoveryFeedbackCreate(
+            trace_id="t-1",
+            user_id="u-1",
+            feedback_label=FeedbackLabel.GOOD,
+            comment="good",
+        ),
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        discovery_service.generate_followup_question(
+            workshop_id="ws-1",
+            trace_id="t-1",
+            user_id="u-1",
+            question_number=1,
+        )
+    assert exc_info.value.status_code == 400
+    assert "disabled" in str(exc_info.value.detail).lower()
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("Facilitator `@assistant summarize this thread` returns a grounded summary as a thread reply")
+@pytest.mark.unit
+def test_assistant_mention_creates_assistant_reply(discovery_service, workshop_with_traces):
+    payload = discovery_service.create_discovery_comment(
+        "ws-1",
+        DiscoveryCommentCreate(
+            trace_id="t-1",
+            user_id="f-1",
+            body="@assistant summarize this thread",
+        ),
+    )
+    assert payload["comment"].author_type == "human"
+    assert payload["assistant_comment"].author_type == "assistant"
+    assert "summary" in payload["assistant_comment"].body.lower()
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("Users can upvote/downvote comments (single vote per user per comment with toggle behavior)")
+@pytest.mark.unit
+def test_comment_vote_toggle_behavior(discovery_service, workshop_with_traces):
+    created = discovery_service.create_discovery_comment(
+        "ws-1",
+        DiscoveryCommentCreate(
+            trace_id="t-1",
+            user_id="u-1",
+            body="I think milestone 2 is strong.",
+        ),
+    )["comment"]
+
+    upvoted = discovery_service.vote_discovery_comment(
+        "ws-1",
+        created.id,
+        DiscoveryCommentVoteRequest(user_id="u-2", value=1),
+    )
+    assert upvoted.upvotes == 1
+    assert upvoted.downvotes == 0
+
+    toggled_off = discovery_service.vote_discovery_comment(
+        "ws-1",
+        created.id,
+        DiscoveryCommentVoteRequest(user_id="u-2", value=1),
+    )
+    assert toggled_off.upvotes == 0
+    assert toggled_off.downvotes == 0
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("Facilitator can moderate social discussion threads by deleting comments")
+@pytest.mark.unit
+def test_facilitator_can_delete_comment_tree(discovery_service, workshop_with_traces):
+    root = discovery_service.create_discovery_comment(
+        "ws-1",
+        DiscoveryCommentCreate(
+            trace_id="t-1",
+            user_id="u-1",
+            body="Root comment",
+        ),
+    )["comment"]
+    child = discovery_service.create_discovery_comment(
+        "ws-1",
+        DiscoveryCommentCreate(
+            trace_id="t-1",
+            user_id="u-2",
+            body="Reply comment",
+            parent_comment_id=root.id,
+        ),
+    )["comment"]
+    discovery_service.vote_discovery_comment(
+        "ws-1",
+        child.id,
+        DiscoveryCommentVoteRequest(user_id="u-3", value=1),
+    )
+
+    result = discovery_service.delete_discovery_comment("ws-1", root.id, user_id="f-1")
+    assert result["deleted"] is True
+
+    comments = discovery_service.list_discovery_comments("ws-1", trace_id="t-1", user_id="f-1")
+    assert comments == []
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("Only facilitator can delete social thread comments")
+@pytest.mark.unit
+def test_non_facilitator_cannot_delete_comment(discovery_service, workshop_with_traces):
+    root = discovery_service.create_discovery_comment(
+        "ws-1",
+        DiscoveryCommentCreate(
+            trace_id="t-1",
+            user_id="u-1",
+            body="Cannot delete me",
+        ),
+    )["comment"]
+
+    with pytest.raises(HTTPException) as exc_info:
+        discovery_service.delete_discovery_comment("ws-1", root.id, user_id="u-2")
+    assert exc_info.value.status_code == 403
+
+
+@pytest.mark.spec("DISCOVERY_SPEC")
+@pytest.mark.req("Facilitator can invoke `@agent` to run a bounded tool loop and receive a persisted agent reply in-thread with clear success/failure status")
+@pytest.mark.unit
+def test_agent_run_uses_trace_context_tools(discovery_service, workshop_with_traces, test_db):
+    trace = test_db.query(TraceDB).filter(TraceDB.id == "t-1").first()
+    trace.context = {
+        "status": "OK",
+        "execution_time_ms": 120,
+        "spans": [
+            {
+                "name": "root",
+                "parent_span_id": None,
+                "span_type": "CHAIN",
+                "status": "OK",
+                "inputs": {"question": "what could have been better?"},
+                "outputs": {"answer": "baseline answer"},
+            },
+            {
+                "name": "tool_lookup",
+                "parent_span_id": "root",
+                "span_type": "TOOL",
+                "status": "OK",
+                "inputs": {"query": "retrieval"},
+                "outputs": {"result": "documents"},
+            },
+        ],
+        "tags": {},
+    }
+    test_db.commit()
+
+    root_comment = discovery_service.create_discovery_comment(
+        "ws-1",
+        DiscoveryCommentCreate(
+            trace_id="t-1",
+            user_id="f-1",
+            body="what could have been better in this interaction?",
+        ),
+    )["comment"]
+
+    run = discovery_service.db_service.create_discovery_agent_run(
+        workshop_id="ws-1",
+        trace_id="t-1",
+        trigger_comment_id=root_comment.id,
+        created_by="f-1",
+    )
+    discovery_service._execute_agent_run(run.id)
+
+    completed = discovery_service.db_service.get_discovery_agent_run(run.id)
+    assert completed is not None
+    assert completed.status == "completed"
+    assert "Trace overview" in (completed.final_output or "")

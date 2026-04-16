@@ -18,6 +18,7 @@ def _make_trace(input_text="Hello", output_text="Hi there"):
     mock = MagicMock()
     mock.input = input_text
     mock.output = output_text
+    mock.summary = None
     return mock
 
 
@@ -92,10 +93,11 @@ def test_extract_fields_includes_prior_qna():
         ],
     )
 
-    trace_input, trace_output, fb_label, fb_comment, prior_qna = svc._extract_fields(trace, feedback)
+    trace_input, trace_output, summary_context, fb_label, fb_comment, prior_qna = svc._extract_fields(trace, feedback)
 
     assert trace_input == "What is 2+2?"
     assert trace_output == "4"
+    assert summary_context == "(no summary available)"
     assert fb_label == "bad"
     assert fb_comment == "Too terse"
     assert "Q1: What was missing?" in prior_qna
@@ -111,8 +113,31 @@ def test_extract_fields_empty_qna():
     trace = _make_trace()
     feedback = _make_feedback(qna=[])
 
-    _, _, _, _, prior_qna = svc._extract_fields(trace, feedback)
+    _, _, _, _, _, prior_qna = svc._extract_fields(trace, feedback)
     assert prior_qna == "(none yet)"
+
+
+@pytest.mark.spec("EVAL_MODE_SPEC")
+@pytest.mark.req("Discovery analysis uses trace summaries when available")
+@pytest.mark.unit
+def test_extract_fields_includes_trace_summary_context():
+    """Milestone summary context is included when present on trace."""
+    svc = FollowUpQuestionService()
+    trace = _make_trace()
+    trace.summary = {
+        "executive_summary": "Agent validated context before answering.",
+        "milestones": [
+            {"number": 1, "title": "Parse request", "description": "Captured key constraints"},
+            {"number": 2, "title": "Query policy", "description": "Loaded policy context"},
+        ],
+    }
+    feedback = _make_feedback()
+
+    _, _, summary_context, _, _, _ = svc._extract_fields(trace, feedback)
+
+    assert "Executive summary: Agent validated context before answering." in summary_context
+    assert "- M1: Parse request" in summary_context
+    assert "- M2: Query policy" in summary_context
 
 
 # ============================================================================
@@ -239,6 +264,7 @@ def test_generate_uses_custom_llm_when_custom_params_provided():
     with patch.object(svc, "_call_llm", return_value="What about edge cases?") as mock_call:
         question, is_fallback = svc.generate(
             trace, feedback, 1,
+            use_case_description="Evaluate support-agent troubleshooting quality",
             custom_base_url="https://custom.example.com",
             custom_model_name="custom-model-v1",
             custom_api_key="custom-key-abc",
@@ -251,6 +277,8 @@ def test_generate_uses_custom_llm_when_custom_params_provided():
     call_kwargs = mock_call.call_args[1]
     assert call_kwargs["trace_input"] == "Hello"
     assert call_kwargs["trace_output"] == "Hi there"
+    assert call_kwargs["trace_summary_context"] == "(no summary available)"
+    assert call_kwargs["use_case_description"] == "Evaluate support-agent troubleshooting quality"
     assert call_kwargs["feedback_label"] == "good"
     assert call_kwargs["feedback_comment"] == "Great answer"
     assert call_kwargs["prior_qna"] == "(none yet)"

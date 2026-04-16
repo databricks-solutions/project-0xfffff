@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useWorkshopContext } from '@/context/WorkshopContext';
-import { useUser } from '@/context/UserContext';
+import { useRoleCheck, useUser } from '@/context/UserContext';
 import {
   useAllTraces,
   useFacilitatorDiscoveryFeedback,
@@ -9,15 +10,20 @@ import {
   useDraftRubricItems,
   useCreateDraftRubricItem,
   useDeleteDraftRubricItem,
-  useWorkshop,
-  useMLflowConfig,
+  useWorkshopDiscoveryConfig,
+  useWorkshopPhase,
   useUpdateDiscoveryModel,
+  useUpdateDiscoverySettings,
   useCreateRubricFromDraft,
+  useAvailableModels,
   type DiscoveryAnalysis,
 } from '@/hooks/useWorkshopApi';
-import type { Trace } from '@/client';
-import { getModelOptions, getBackendModelName, getFrontendModelName } from '@/utils/modelMapping';
+import type { Trace, Workshop } from '@/client';
+import { buildModelOptions } from '@/utils/modelMapping';
 import { toast } from 'sonner';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 import { DiscoveryOverviewBar } from './DiscoveryOverviewBar';
 import { CrossTraceAnalysisSummary } from './CrossTraceAnalysisSummary';
@@ -33,33 +39,39 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
 }) => {
   const { workshopId } = useWorkshopContext();
   const { user } = useUser();
+  const { isFacilitator } = useRoleCheck();
+  const queryClient = useQueryClient();
 
   // Data
-  const { data: workshop } = useWorkshop(workshopId!);
+  const { data: discoveryConfig } = useWorkshopDiscoveryConfig(workshopId!);
+  const { data: phaseData } = useWorkshopPhase(workshopId!);
   const { data: traces } = useAllTraces(workshopId!) as { data: Trace[] | undefined };
   const { data: allFeedback } = useFacilitatorDiscoveryFeedback(workshopId!);
   const { data: analyses } = useDiscoveryAnalyses(workshopId!);
   const { data: draftItems = [] } = useDraftRubricItems(workshopId!);
-  const { data: mlflowConfig } = useMLflowConfig(workshopId!);
+  const { data: availableModels } = useAvailableModels(workshopId!);
 
   // Mutations
   const runAnalysis = useRunDiscoveryAnalysis(workshopId!);
   const createDraftItem = useCreateDraftRubricItem(workshopId!);
   const updateModelMutation = useUpdateDiscoveryModel(workshopId!);
+  const updateDiscoverySettings = useUpdateDiscoverySettings(workshopId!);
   const deleteDraftItem = useDeleteDraftRubricItem(workshopId!);
   const createRubricFromDraft = useCreateRubricFromDraft(workshopId!);
   const [newItemIds, setNewItemIds] = useState<Set<string>>(new Set());
 
   // State
   const [promotedKeys, setPromotedKeys] = useState<Set<string>>(new Set());
+  const [showAddTracesDialog, setShowAddTracesDialog] = useState(false);
+  const [tracesCountInput, setTracesCountInput] = useState('');
+  const [isAddingTraces, setIsAddingTraces] = useState(false);
+  const [isDraftPaneExpanded, setIsDraftPaneExpanded] = useState(false);
+  const [isDraftPaneModalOpen, setIsDraftPaneModalOpen] = useState(false);
 
-  const hasMlflowConfig = !!mlflowConfig;
-  const modelOptions = getModelOptions(hasMlflowConfig);
-  const currentModel = useMemo(() => {
-    const backendName = workshop?.discovery_questions_model_name || 'demo';
-    if (backendName === 'demo' || backendName === 'custom') return backendName;
-    return getFrontendModelName(backendName);
-  }, [workshop?.discovery_questions_model_name]);
+  const modelOptions = useMemo(() => availableModels ? buildModelOptions(availableModels) : [], [availableModels]);
+  const currentModel = discoveryConfig?.discovery_questions_model_name || 'demo';
+  const discoveryMode = (discoveryConfig?.discovery_mode || 'analysis') as 'analysis' | 'social';
+  const followupsEnabled = discoveryConfig?.discovery_followups_enabled ?? true;
 
   const currentAnalysis = analyses?.[0] ?? null;
 
@@ -77,12 +89,12 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
   // Filter traces to active discovery traces
   const activeTraces = useMemo(() => {
     if (!traces) return [];
-    const activeIds = workshop?.active_discovery_trace_ids;
+    const activeIds = discoveryConfig?.active_discovery_trace_ids;
     if (activeIds?.length) {
       return traces.filter((t) => activeIds.includes(t.id));
     }
     return traces;
-  }, [traces, workshop?.active_discovery_trace_ids]);
+  }, [traces, discoveryConfig?.active_discovery_trace_ids]);
 
   // Split analysis findings: trace-specific vs cross-trace
   const findingsByTrace = useMemo(() => {
@@ -97,6 +109,45 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
     }
     return map;
   }, [currentAnalysis]);
+
+  const questionOriginByRef = useMemo(() => {
+    const map = new Map<string, string>();
+
+    const normalizeMilestoneRefForTrace = (traceId: string, rawRef: unknown): string | null => {
+      if (typeof rawRef !== 'string') return null;
+      const tokenRaw = rawRef.trim().toLowerCase();
+      if (!tokenRaw) return null;
+      const token = tokenRaw.includes(':') ? tokenRaw.split(':').pop() || '' : tokenRaw;
+      if (!token) return null;
+      if (token === 'all' || token === 'whole' || token === 'full') return `${traceId}:all`;
+      if (/^m\d+$/i.test(token)) return `${traceId}:${token.toLowerCase()}`;
+      if (/^\d+$/.test(token)) return `${traceId}:m${token}`;
+      return `${traceId}:all`;
+    };
+
+    for (const trace of activeTraces) {
+      const feedbackForTrace = feedbackByTrace.get(trace.id) ?? [];
+      let questionCounter = 0;
+      for (const fb of feedbackForTrace) {
+        const qna = fb.followup_qna ?? [];
+        for (const pair of qna) {
+          questionCounter += 1;
+          const key = `${trace.id}#q${questionCounter}`;
+          const refs = (pair as { milestone_references?: unknown[] }).milestone_references;
+          const normalizedRefs = Array.isArray(refs)
+            ? refs
+                .map((r) => normalizeMilestoneRefForTrace(trace.id, r))
+                .filter((r): r is string => !!r)
+            : [];
+
+          const specificMilestone = normalizedRefs.find((r) => /:m\d+$/i.test(r));
+          map.set(key, specificMilestone || `${trace.id}:all`);
+        }
+      }
+    }
+
+    return map;
+  }, [activeTraces, feedbackByTrace]);
 
   // Disagreements by trace
   const disagreementsByTrace = useMemo(() => {
@@ -124,9 +175,8 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
 
   // Handlers
   const handleRunAnalysis = (template: string) => {
-    const backendModel = getBackendModelName(currentModel);
     runAnalysis.mutate(
-      { template, model: backendModel },
+      { template, model: currentModel },
       {
         onSuccess: () => toast.success('Analysis completed'),
         onError: (err) => toast.error(err.message || 'Analysis failed'),
@@ -144,7 +194,12 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
       {
         text: payload.text,
         source_type: payload.source_type,
-        source_trace_ids: payload.source_trace_ids,
+        source_trace_ids: Array.from(
+          new Set([
+            ...(payload.source_trace_ids || []),
+            ...(payload.source_milestone_refs || []),
+          ])
+        ),
         promoted_by: user?.id || '',
       },
       {
@@ -191,9 +246,88 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
     );
   }, [createDraftItem, deleteDraftItem, user?.id]);
 
+  const handleNavigateToOrigin = useCallback((originRef: string) => {
+    const ref = (originRef || '').trim();
+    if (!ref) return;
+
+    if (/^https?:\/\//i.test(ref)) {
+      window.open(ref, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    const normalizedRef = ref.startsWith('#') ? ref.slice(1) : ref;
+    const parseTraceAndSegment = (value: string): { traceId: string; segment: string | null } => {
+      if (value.includes('#')) {
+        const [rawTraceId, rawSegment] = value.split('#', 2);
+        const traceId = rawTraceId.split('/').filter(Boolean).pop() || rawTraceId;
+        return { traceId, segment: rawSegment || null };
+      }
+      if (value.includes(':')) {
+        const [traceId, segment] = value.split(':', 2);
+        return { traceId, segment: segment || null };
+      }
+      return { traceId: value, segment: null };
+    };
+
+    const { traceId, segment } = parseTraceAndSegment(normalizedRef);
+    if (!traceId) return;
+
+    let targetId: string | null = null;
+    if (segment) {
+      if (segment.toLowerCase() === 'all') {
+        targetId = `discovery-trace-${traceId}`;
+      } else if (/^q\d+$/i.test(segment)) {
+        const questionRef = `${traceId}#${segment.toLowerCase()}`;
+        const resolvedOrigin = questionOriginByRef.get(questionRef) || `${traceId}:all`;
+        const [, resolvedSegment] = resolvedOrigin.split(':', 2);
+        if (resolvedSegment && /^m\d+$/i.test(resolvedSegment)) {
+          targetId = `discovery-trace-${traceId}-${resolvedSegment.toLowerCase()}`;
+        } else {
+          targetId = `discovery-trace-${traceId}`;
+        }
+      } else if (segment.toLowerCase().startsWith('m')) {
+        targetId = `discovery-trace-${traceId}-${segment.toLowerCase()}`;
+      } else {
+        targetId = `discovery-trace-${traceId}`;
+      }
+    } else {
+      targetId = `discovery-trace-${traceId}`;
+    }
+
+    const target = targetId ? document.getElementById(targetId) : null;
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+
+    // Fallback: if milestone anchor isn't currently mounted, scroll to trace card.
+    const traceCard = document.getElementById(`discovery-trace-${traceId}`);
+    traceCard?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [questionOriginByRef]);
+
   const handleModelChange = (value: string) => {
-    const backendName = value === 'demo' || value === 'custom' ? value : getBackendModelName(value);
-    updateModelMutation.mutate({ model_name: backendName });
+    updateModelMutation.mutate({ model_name: value });
+  };
+
+  const handleModeChange = (mode: 'analysis' | 'social') => {
+    if (mode === discoveryMode) return;
+    updateDiscoverySettings.mutate(
+      { discovery_mode: mode },
+      {
+        onSuccess: () => toast.success(`Switched to ${mode} mode`),
+        onError: (err) => toast.error(err.message || 'Failed to switch discovery mode'),
+      },
+    );
+  };
+
+  const handleFollowupsToggle = () => {
+    updateDiscoverySettings.mutate(
+      { discovery_followups_enabled: !followupsEnabled },
+      {
+        onSuccess: () => toast.success(`Auto follow-up questions ${!followupsEnabled ? 'enabled' : 'disabled'}`),
+        onError: (err) => toast.error(err.message || 'Failed to update follow-up setting'),
+      },
+    );
   };
 
   const handleCreateRubric = useCallback(async () => {
@@ -205,12 +339,72 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
     }
   }, [createRubricFromDraft, user?.id, onNavigate]);
 
-  const isPaused = workshop?.completed_phases?.includes('discovery') ?? false;
+  const isPaused = phaseData?.completed_phases?.includes('discovery') ?? false;
+
+  const handlePauseToggle = async () => {
+    if (!workshopId) return;
+    const endpoint = isPaused
+      ? `/workshops/${workshopId}/resume-phase/discovery`
+      : `/workshops/${workshopId}/complete-phase/discovery`;
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to update phase status');
+      }
+      queryClient.setQueryData<Workshop>(['workshop', workshopId], (old) => {
+        if (!old) return old;
+        const phases = old.completed_phases || [];
+        const newPhases = isPaused
+          ? phases.filter((p) => p !== 'discovery')
+          : [...phases, 'discovery'];
+        return { ...old, completed_phases: newPhases };
+      });
+      void queryClient.refetchQueries({ queryKey: ['workshop', workshopId] });
+      toast.success(`Discovery ${isPaused ? 'resumed' : 'paused'}`);
+    } catch (error: unknown) {
+      void queryClient.refetchQueries({ queryKey: ['workshop', workshopId] });
+      toast.error(error instanceof Error ? error.message : 'Failed to update phase');
+    }
+  };
+
+  const handleAddTracesConfirm = async () => {
+    const count = parseInt(tracesCountInput);
+    if (!count || count <= 0 || !workshopId) return;
+    setIsAddingTraces(true);
+    try {
+      const response = await fetch(`/workshops/${workshopId}/add-traces`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ additional_count: count, phase: 'discovery' }),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to add traces');
+      }
+      const result = await response.json();
+      setTracesCountInput('');
+      setShowAddTracesDialog(false);
+      await queryClient.refetchQueries({ queryKey: ['workshop', workshopId] });
+      await queryClient.refetchQueries({ queryKey: ['traces', workshopId] });
+      void queryClient.invalidateQueries({ queryKey: ['findings', workshopId] });
+      toast.success('Traces added', {
+        description: `${result.traces_added} traces added. Total: ${result.total_active_traces}.`,
+      });
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Failed to add traces');
+    } finally {
+      setIsAddingTraces(false);
+    }
+  };
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full bg-slate-50/50">
       {/* Main content — scrollable trace feed */}
-      <div className="flex-1 overflow-y-auto p-5 space-y-4">
+      <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
         <DiscoveryOverviewBar
           participantCount={participantCount}
           traceCount={activeTraces.length}
@@ -219,50 +413,166 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
           modelOptions={modelOptions}
           onRunAnalysis={handleRunAnalysis}
           onModelChange={handleModelChange}
-          onPauseToggle={() => {/* wire to phase control */}}
-          onAddTraces={() => {/* wire to add traces */}}
+          onPauseToggle={handlePauseToggle}
+          onAddTraces={() => setShowAddTracesDialog(true)}
           isPaused={isPaused}
           isAnalysisRunning={runAnalysis.isPending}
-          hasMlflowConfig={hasMlflowConfig}
+          hasMlflowConfig={modelOptions.length > 0}
         />
 
-        {currentAnalysis && (
-          <CrossTraceAnalysisSummary
-            analysis={currentAnalysis}
-            onPromote={handlePromote}
-            promotedKeys={promotedKeys}
-          />
+        <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Workspace Mode</span>
+            <div className="flex items-center bg-slate-100 p-1 rounded-lg">
+              <button
+                className={`px-4 py-1.5 rounded-md text-sm font-semibold transition-all ${
+                  discoveryMode === 'analysis'
+                    ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200/50'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                }`}
+                onClick={() => handleModeChange('analysis')}
+                disabled={updateDiscoverySettings.isPending}
+              >
+                Analysis
+              </button>
+              <button
+                className={`px-4 py-1.5 rounded-md text-sm font-semibold transition-all ${
+                  discoveryMode === 'social'
+                    ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200/50'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                }`}
+                onClick={() => handleModeChange('social')}
+                disabled={updateDiscoverySettings.isPending}
+              >
+                Social
+              </button>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Auto Follow-ups</span>
+            <button
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
+                followupsEnabled ? 'bg-indigo-600' : 'bg-slate-300'
+              }`}
+              onClick={handleFollowupsToggle}
+              disabled={updateDiscoverySettings.isPending}
+            >
+              <span className="sr-only">Toggle follow-ups</span>
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  followupsEnabled ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+
+        {discoveryMode === 'analysis' && currentAnalysis && (
+          <div className="animate-in fade-in slide-in-from-top-4">
+            <CrossTraceAnalysisSummary
+              analysis={currentAnalysis}
+              onPromote={handlePromote}
+              onNavigateToOrigin={handleNavigateToOrigin}
+              promotedKeys={promotedKeys}
+            />
+          </div>
         )}
 
-        {activeTraces.map((trace) => (
-          <DiscoveryTraceCard
-            key={trace.id}
-            trace={trace}
-            feedback={feedbackByTrace.get(trace.id) ?? []}
-            findings={findingsByTrace.get(trace.id)}
-            disagreements={disagreementsByTrace.get(trace.id)}
-            onPromote={handlePromote}
-            promotedKeys={promotedKeys}
-          />
-        ))}
+        <div className="space-y-6 max-w-5xl mx-auto">
+          {activeTraces.map((trace) => (
+            <DiscoveryTraceCard
+              key={trace.id}
+              workshopId={workshopId!}
+              currentUserId={user?.id || ''}
+              canModerateComments={isFacilitator}
+              mode={discoveryMode}
+              trace={trace}
+              feedback={feedbackByTrace.get(trace.id) ?? []}
+              findings={findingsByTrace.get(trace.id)}
+              disagreements={disagreementsByTrace.get(trace.id)}
+              onPromote={handlePromote}
+              onNavigateToOrigin={handleNavigateToOrigin}
+              promotedKeys={promotedKeys}
+              followupsEnabled={discoveryConfig?.discovery_followups_enabled ?? true}
+            />
+          ))}
+        </div>
 
         {activeTraces.length === 0 && (
-          <div className="text-center py-12 text-slate-500">
-            <p className="text-sm">No discovery traces yet. Add traces to get started.</p>
+          <div className="flex flex-col items-center justify-center py-20 text-slate-400 bg-white rounded-xl border border-slate-200 border-dashed max-w-5xl mx-auto">
+            <div className="h-16 w-16 rounded-full bg-slate-100 flex items-center justify-center mb-4">
+              <svg className="w-8 h-8 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold text-slate-700 mb-1">No Traces Yet</h3>
+            <p className="text-sm max-w-sm text-center">Add discovery traces to start analyzing feedback and collaborating with your team.</p>
+            <Button onClick={() => setShowAddTracesDialog(true)} className="mt-6 bg-indigo-600 hover:bg-indigo-700">
+              Add Traces Now
+            </Button>
           </div>
         )}
       </div>
 
-      {/* Draft Rubric Sidebar */}
-      <div className="w-80 border-l bg-slate-50 overflow-y-auto shrink-0">
-        <DraftRubricSidebar
-          items={draftItems}
-          workshopId={workshopId!}
-          userId={user?.id || ''}
-          onCreateRubric={handleCreateRubric}
-          newItemIds={newItemIds}
-        />
-      </div>
+      {/* Draft Rubric Sidebar: docked by default, can pop out into a modal */}
+      {!isDraftPaneModalOpen && (
+        <div className={`${isDraftPaneExpanded ? 'w-[40rem]' : 'w-80'} transition-[width] duration-200 border-l bg-slate-50 overflow-y-auto shrink-0`}>
+          <DraftRubricSidebar
+            items={draftItems}
+            workshopId={workshopId!}
+            userId={user?.id || ''}
+            onCreateRubric={handleCreateRubric}
+            newItemIds={newItemIds}
+            onFocusWithinChange={setIsDraftPaneExpanded}
+            onTogglePopout={() => setIsDraftPaneModalOpen(true)}
+            onNavigateToOrigin={handleNavigateToOrigin}
+          />
+        </div>
+      )}
+
+      <Dialog open={isDraftPaneModalOpen} onOpenChange={setIsDraftPaneModalOpen}>
+        <DialogContent className="w-[95vw] max-w-5xl h-[85vh] p-0">
+          <DraftRubricSidebar
+            items={draftItems}
+            workshopId={workshopId!}
+            userId={user?.id || ''}
+            onCreateRubric={handleCreateRubric}
+            newItemIds={newItemIds}
+            isModal
+            onTogglePopout={() => setIsDraftPaneModalOpen(false)}
+            onNavigateToOrigin={handleNavigateToOrigin}
+          />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showAddTracesDialog} onOpenChange={setShowAddTracesDialog}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Add Discovery Traces</DialogTitle>
+            <DialogDescription>
+              How many additional traces should be added to the discovery phase?
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            type="number"
+            min="1"
+            placeholder="Number of traces"
+            value={tracesCountInput}
+            onChange={(e) => setTracesCountInput(e.target.value)}
+            disabled={isAddingTraces}
+            autoFocus
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddTracesDialog(false)} disabled={isAddingTraces}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddTracesConfirm} disabled={isAddingTraces || !tracesCountInput}>
+              {isAddingTraces ? 'Adding...' : 'Add Traces'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

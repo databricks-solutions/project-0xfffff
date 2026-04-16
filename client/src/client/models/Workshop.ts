@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { WorkshopMode } from './WorkshopMode';
 import type { WorkshopPhase } from './WorkshopPhase';
 import type { WorkshopStatus } from './WorkshopStatus';
 export type Workshop = {
@@ -20,6 +21,8 @@ export type Workshop = {
     annotation_randomize_traces?: boolean;
     judge_name?: string;
     discovery_questions_model_name?: string;
+    discovery_mode?: string;
+    discovery_followups_enabled?: boolean;
     input_jsonpath?: (string | null);
     output_jsonpath?: (string | null);
     auto_evaluation_job_id?: (string | null);
@@ -27,6 +30,10 @@ export type Workshop = {
     auto_evaluation_model?: (string | null);
     show_participant_notes?: boolean;
     span_attribute_filter?: (Record<string, any> | null);
+    summarization_enabled?: boolean;
+    summarization_model?: (string | null);
+    summarization_guidance?: (string | null);
+    mode?: WorkshopMode;
     created_at?: string;
 };
 

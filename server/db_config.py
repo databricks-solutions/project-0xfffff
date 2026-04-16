@@ -8,13 +8,20 @@ environment variable:
 When using PostgreSQL, these environment variables configure the connection:
 - PGHOST: PostgreSQL host
 - PGDATABASE: Database name
-- PGUSER: Username (typically a UUID for Lakebase)
+- PGUSER: Username (typically a UUID for Lakebase service principal)
 - PGPORT: Port (default 5432)
 - PGSSLMODE: SSL mode (default 'require')
 - PGAPPNAME: Application name for connection tracking
+- ENDPOINT_NAME: Lakebase endpoint for credential generation
+  (format: projects/<id>/branches/<id>/endpoints/<id>)
 
-The OAuth token for Lakebase authentication is automatically refreshed
-using the Databricks SDK WorkspaceClient.
+OAuth credentials for Lakebase are generated via the Databricks SDK
+``WorkspaceClient().postgres.generate_database_credential()`` and injected
+into new physical connections via the SQLAlchemy ``do_connect`` event.
+Existing pooled connections remain valid after the credential expires — tokens
+are only checked at connection establishment.
+
+Reference: https://docs.databricks.com/aws/en/lakebase/connect/custom-app.html
 """
 
 from __future__ import annotations
@@ -73,18 +80,24 @@ class LakebaseConfig:
         )
 
 
-class OAuthTokenManager:
-    """Manages OAuth token refresh for Lakebase connections."""
+class LakebaseCredentialManager:
+    """Caches Lakebase database credentials and refreshes near expiry.
 
-    def __init__(self, refresh_interval_seconds: int = 900):
-        """Initialize token manager.
+    Uses ``WorkspaceClient().postgres.generate_database_credential()`` which
+    returns a token valid for 1 hour.  Tokens are refreshed 2 minutes before
+    expiry.  Existing pooled connections remain valid after the cached token
+    expires — this manager is only consulted when creating *new* physical
+    connections via the ``do_connect`` event.
 
-        Args:
-            refresh_interval_seconds: Interval between token refreshes (default 15 min).
-        """
+    Reference: https://docs.databricks.com/aws/en/lakebase/connect/token-rotation.html
+    """
+
+    # Refresh 2 minutes before the 1-hour expiry
+    _EXPIRY_BUFFER_SECONDS = 120
+
+    def __init__(self):
         self._token: str | None = None
-        self._last_refresh: float = 0
-        self._refresh_interval = refresh_interval_seconds
+        self._token_expiry: float = 0.0
         self._workspace_client = None
 
     def _get_workspace_client(self):
@@ -95,45 +108,70 @@ class OAuthTokenManager:
             self._workspace_client = WorkspaceClient()
         return self._workspace_client
 
-    def get_token(self) -> str:
-        """Get OAuth token, refreshing if needed."""
-        current_time = time.time()
+    def get_password(self, endpoint_name: str | None = None) -> str:
+        """Get a database credential, refreshing if near expiry.
 
-        if self._token is None or (current_time - self._last_refresh) > self._refresh_interval:
-            try:
-                client = self._get_workspace_client()
-                self._token = client.config.oauth_token().access_token
-                self._last_refresh = current_time
-                logger.info("Successfully refreshed Lakebase OAuth token")
-            except Exception as e:
-                logger.error(f"Failed to refresh OAuth token: {e}")
-                if self._token is None:
-                    raise RuntimeError(f"Cannot obtain OAuth token for Lakebase: {e}") from e
-                # Use stale token if we have one
-                logger.warning("Using potentially stale OAuth token")
+        Args:
+            endpoint_name: Lakebase endpoint name for generate_database_credential().
+                If None, falls back to workspace OAuth token.
+        """
+        now = time.time()
+
+        if self._token is not None and now < (self._token_expiry - self._EXPIRY_BUFFER_SECONDS):
+            return self._token
+
+        client = self._get_workspace_client()
+
+        try:
+            if endpoint_name:
+                cred = client.postgres.generate_database_credential(endpoint=endpoint_name)
+                token = cred.token
+                if not token:
+                    raise RuntimeError(
+                        "generate_database_credential returned empty token "
+                        f"(endpoint={endpoint_name})"
+                    )
+                self._token = token
+                # expire_time is a google.protobuf.Timestamp (absolute UTC),
+                # not a Duration — use .seconds directly as the epoch expiry.
+                try:
+                    self._token_expiry = cred.expire_time.seconds
+                except (AttributeError, TypeError):
+                    self._token_expiry = now + 3600
+                logger.info(
+                    "Refreshed Lakebase credential via generate_database_credential "
+                    "(expires in %.0fs)",
+                    self._token_expiry - now,
+                )
+            else:
+                oauth = client.config.oauth_token()
+                token = oauth.access_token
+                if not token:
+                    raise RuntimeError("oauth_token() returned empty access_token")
+                self._token = token
+                self._token_expiry = now + 3600
+                logger.info(
+                    "Refreshed Lakebase credential via workspace OAuth token (no ENDPOINT_NAME)"
+                )
+        except Exception as e:
+            logger.error("Failed to refresh Lakebase credential: %s", e)
+            if self._token is None:
+                raise RuntimeError(f"Cannot obtain Lakebase credential: {e}") from e
+            logger.warning("Using potentially stale Lakebase credential")
 
         return self._token
 
-    def force_refresh(self) -> None:
-        """Force an immediate token refresh on the next get_token() call."""
-        self._last_refresh = 0
 
-    @property
-    def needs_refresh(self) -> bool:
-        """Check if token needs to be refreshed."""
-        return self._token is None or (time.time() - self._last_refresh) > self._refresh_interval
+# Global credential manager instance
+_credential_manager: LakebaseCredentialManager | None = None
 
 
-# Global token manager instance
-_token_manager: OAuthTokenManager | None = None
-
-
-def get_token_manager() -> OAuthTokenManager:
-    """Get the global token manager instance."""
-    global _token_manager
-    if _token_manager is None:
-        _token_manager = OAuthTokenManager()
-    return _token_manager
+def get_credential_manager() -> LakebaseCredentialManager:
+    """Get the global Lakebase credential manager instance."""
+    global _credential_manager
+    if _credential_manager is None:
+        _credential_manager = LakebaseCredentialManager()
+    return _credential_manager
 
 
 def detect_database_backend() -> DatabaseBackend:
@@ -165,31 +203,17 @@ def get_database_url() -> str:
     """Get the database URL based on detected backend.
 
     For SQLite: Uses DATABASE_URL env var or default.
-    For PostgreSQL: Constructs URL from Lakebase env vars with OAuth token.
+    For PostgreSQL: Returns a placeholder URL — actual credentials are
+    injected per-connection via the ``do_connect`` event in
+    ``create_engine_for_backend()``.
     """
     backend = detect_database_backend()
 
     if backend == DatabaseBackend.SQLITE:
         return os.getenv("DATABASE_URL", "sqlite:///./workshop.db")
 
-    # PostgreSQL with Lakebase
-    config = LakebaseConfig.from_env()
-    if config is None:
-        raise RuntimeError("Lakebase detected but config could not be created")
-
-    token_manager = get_token_manager()
-    password = token_manager.get_token()
-
-    # Construct PostgreSQL URL
-    # Note: psycopg uses postgresql+psycopg for async, postgresql for sync
-    url = (
-        f"postgresql+psycopg://{config.user}:{password}@"
-        f"{config.host}:{config.port}/{config.database}"
-        f"?sslmode={config.sslmode}"
-        f"&application_name={config.app_name}"
-    )
-
-    return url
+    # PostgreSQL: return placeholder — do_connect handles auth
+    return "postgresql+psycopg://"
 
 
 def create_engine_for_backend(backend: DatabaseBackend) -> Engine:
@@ -240,47 +264,57 @@ def create_engine_for_backend(backend: DatabaseBackend) -> Engine:
     if config is None:
         raise RuntimeError("Cannot create PostgreSQL engine: Lakebase config not available")
 
-    token_manager = get_token_manager()
+    credential_manager = get_credential_manager()
+    endpoint_name = os.getenv("ENDPOINT_NAME")
+    if endpoint_name:
+        logger.info("ENDPOINT_NAME=%s — will use generate_database_credential()", endpoint_name)
+    else:
+        logger.warning(
+            "ENDPOINT_NAME not set — falling back to workspace OAuth token. "
+            "Set ENDPOINT_NAME for Lakebase Autoscaling deployments."
+        )
 
     # Derive schema name from PGAPPNAME (hyphens → underscores for SQL safety)
     schema_name = config.app_name.replace("-", "_")
 
-    # Use a creator callable so every NEW connection fetches a fresh OAuth
-    # token.  Previously the token was baked into the URL at engine creation
-    # time, so after it expired all new connections (including retries after
-    # pool reset) would fail with "Invalid authorization".
-    def _create_pg_connection():
-        import psycopg
+    # Build connection URL without password — do_connect injects it per-connection.
+    # Reference: https://docs.databricks.com/aws/en/lakebase/connect/custom-app.html
+    conninfo = (
+        f"postgresql+psycopg://{config.user}@"
+        f"{config.host}:{config.port}/{config.database}"
+        f"?sslmode={config.sslmode}"
+        f"&application_name={config.app_name}"
+        f"&options=-csearch_path%3D{schema_name}%2Cpublic"
+    )
 
-        token = token_manager.get_token()
-        conn = psycopg.connect(
-            host=config.host,
-            port=config.port,
-            dbname=config.database,
-            user=config.user,
-            password=token,
-            sslmode=config.sslmode,
-            options=f"-csearch_path={schema_name},public",
-            application_name=config.app_name,
-        )
-        return conn
-
-    # Use a placeholder URL — the actual connection is made by _create_pg_connection
     engine = create_engine(
-        "postgresql+psycopg://",
-        creator=_create_pg_connection,
+        conninfo,
         pool_size=5,
-        max_overflow=10,
+        max_overflow=5,  # Cap at 10/worker, 20 total with 2 gunicorn workers
         pool_timeout=30,
-        pool_recycle=300,  # Recycle every 5 min — serverless PG drops idle connections
-        pool_pre_ping=True,
+        pool_recycle=2700,  # 45 min — recycle well before token expiry
+        pool_pre_ping=True,  # Detect stale/expired connections before use
         echo=False,
     )
 
-    # Belt-and-suspenders: set search_path via on_connect as well
+    # Inject fresh credential into each NEW physical connection.
+    # pool_pre_ping detects dead connections and discards them; the
+    # replacement connection comes through do_connect with a fresh token.
+    # Reference: https://docs.databricks.com/aws/en/lakebase/connect/token-rotation.html
+    @event.listens_for(engine, "do_connect")
+    def provide_token(dialect, conn_rec, cargs, cparams):
+        password = credential_manager.get_password(endpoint_name)
+        cparams["password"] = password
+        logger.debug(
+            "do_connect: injected credential (length=%d, user=%s, host=%s)",
+            len(password) if password else 0,
+            cparams.get("user", "?"),
+            cparams.get("host", "?"),
+        )
+
+    # Set search_path on every new connection
     @event.listens_for(engine, "connect")
     def on_connect(dbapi_connection, connection_record):
-        """Set search_path on new connections."""
         try:
             cursor = dbapi_connection.cursor()
             cursor.execute(f'SET search_path TO "{schema_name}", public')

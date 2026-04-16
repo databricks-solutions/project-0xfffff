@@ -16,7 +16,7 @@ import { Code, Eye, Save, X, CheckCircle, AlertCircle, Filter } from 'lucide-rea
 import { toast } from 'sonner';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import {
-  useWorkshop,
+  useWorkshopDisplayConfig,
   useUpdateJsonPathSettings,
   usePreviewJsonPath,
   useUpdateSpanAttributeFilter,
@@ -25,7 +25,7 @@ import {
 
 export const JsonPathSettings: React.FC = () => {
   const { workshopId } = useWorkshopContext();
-  const { data: workshop } = useWorkshop(workshopId!);
+  const { data: workshop } = useWorkshopDisplayConfig(workshopId!);
   const updateSettings = useUpdateJsonPathSettings(workshopId!);
   const previewJsonPath = usePreviewJsonPath(workshopId!);
   const updateSpanFilter = useUpdateSpanAttributeFilter(workshopId!);

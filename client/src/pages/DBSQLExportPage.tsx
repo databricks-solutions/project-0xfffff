@@ -48,7 +48,6 @@ interface UploadResult {
 
 interface ExportFormState {
   databricksHost?: string;
-  databricksToken?: string;
   httpPath?: string;
   catalog?: string;
   schemaName?: string;
@@ -105,7 +104,6 @@ export function DBSQLExportPage() {
   };
   
   const [databricksHost, setDatabricksHost] = useState(() => loadStateFromStorage().databricksHost || '');
-  const [databricksToken, setDatabricksToken] = useState(() => loadStateFromStorage().databricksToken || '');
   const [httpPath, setHttpPath] = useState(() => loadStateFromStorage().httpPath || '');
   const [catalog, setCatalog] = useState(() => loadStateFromStorage().catalog || '');
   const [schemaName, setSchemaName] = useState(() => loadStateFromStorage().schemaName || '');
@@ -155,7 +153,6 @@ export function DBSQLExportPage() {
     const storageKey = `dbsql-export-state-${workshopId}`;
     const stateToSave = {
       databricksHost,
-      databricksToken,
       httpPath,
       catalog,
       schemaName,
@@ -172,7 +169,7 @@ export function DBSQLExportPage() {
   // Save state when form fields change
   useEffect(() => {
     saveStateToStorage({});
-  }, [databricksHost, databricksToken, httpPath, catalog, schemaName]);
+  }, [databricksHost, httpPath, catalog, schemaName]);
 
   // Track scroll position
   useEffect(() => {
@@ -216,7 +213,7 @@ export function DBSQLExportPage() {
   };
 
   const exportToDBSQL = async () => {
-    if (!workshopId || !databricksHost || !databricksToken || !httpPath || !catalog || !schemaName) {
+    if (!workshopId || !databricksHost || !httpPath || !catalog || !schemaName) {
       setError('Please provide all required DBSQL configuration fields');
       return;
     }
@@ -232,7 +229,6 @@ export function DBSQLExportPage() {
         },
         body: JSON.stringify({
           databricks_host: databricksHost,
-          databricks_token: databricksToken,
           http_path: httpPath,
           catalog: catalog,
           schema_name: schemaName
@@ -259,8 +255,8 @@ export function DBSQLExportPage() {
   };
 
   const uploadToVolume = async () => {
-    if (!workshopId || !volumePath || !databricksHost || !databricksToken) {
-      setUploadError('Missing required fields: workshop ID, volume path, Databricks host, or token');
+    if (!workshopId || !volumePath || !databricksHost) {
+      setUploadError('Missing required fields: workshop ID, volume path, or Databricks host');
       return;
     }
 
@@ -289,8 +285,7 @@ export function DBSQLExportPage() {
         body: JSON.stringify({
           volume_path: volumePath,
           file_name: finalFileName,
-          databricks_host: databricksHost,
-          databricks_token: databricksToken
+          databricks_host: databricksHost
         }),
       });
 
@@ -324,7 +319,6 @@ export function DBSQLExportPage() {
     
     // Reset form fields
     setDatabricksHost('');
-    setDatabricksToken('');
     setHttpPath('');
     setCatalog('');
     setSchemaName('');
@@ -402,20 +396,6 @@ export function DBSQLExportPage() {
                   onChange={(e) => {
                     setDatabricksHost(e.target.value);
                     saveStateToStorage({ databricksHost: e.target.value });
-                  }}
-                />
-              </div>
-              
-              <div>
-                <Label htmlFor="databricks-token">Databricks Token</Label>
-                <Input
-                  id="databricks-token"
-                  type="password"
-                  placeholder="dapi..."
-                  value={databricksToken}
-                  onChange={(e) => {
-                    setDatabricksToken(e.target.value);
-                    saveStateToStorage({ databricksToken: e.target.value });
                   }}
                 />
               </div>
@@ -573,7 +553,7 @@ export function DBSQLExportPage() {
             <CardContent>
               <Button
                 onClick={exportToDBSQL}
-                disabled={isExporting || !databricksHost || !databricksToken || !httpPath || !catalog || !schemaName}
+                disabled={isExporting || !databricksHost || !httpPath || !catalog || !schemaName}
                 className="w-full"
                 size="lg"
               >
@@ -726,7 +706,7 @@ export function DBSQLExportPage() {
 
               <Button
                 onClick={uploadToVolume}
-                disabled={isUploading || !databricksHost || !databricksToken || !volumePath}
+                disabled={isUploading || !databricksHost || !volumePath}
                 className="w-full"
                 size="lg"
               >

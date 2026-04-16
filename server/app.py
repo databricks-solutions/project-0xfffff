@@ -2,6 +2,7 @@
 
 import logging
 import os
+import sys
 import time
 from contextlib import asynccontextmanager
 
@@ -28,10 +29,26 @@ from server.sqlite_rescue import (
 logger = logging.getLogger(__name__)
 
 
+def _configure_app_log_levels() -> None:
+    """Set app logger levels for non-uvicorn modules.
+
+    Uvicorn config controls access/error logger verbosity, but app module
+    loggers (`server.*`) can still remain too restrictive. Mirror uvicorn
+    verbosity unless APP_LOG_LEVEL is explicitly set.
+    """
+    requested = os.getenv("APP_LOG_LEVEL") or os.getenv("UVICORN_LOG_LEVEL") or "INFO"
+    level = getattr(logging, requested.upper(), logging.INFO)
+    logging.getLogger().setLevel(level)
+    logging.getLogger("server").setLevel(level)
+    logging.getLogger("uvicorn.error").setLevel(level)
+    logger.info("Configured app logger level level=%s", logging.getLevelName(level))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan with proper startup and shutdown."""
     print("🚀 Application startup - lifespan function called!")
+    _configure_app_log_levels()
 
     # Detect database backend
     db_backend = detect_database_backend()
@@ -62,10 +79,13 @@ async def lifespan(app: FastAPI):
         else:
             print("⚠️  SQLITE_VOLUME_BACKUP_PATH not configured - database will NOT persist across container restarts")
 
-    # NOTE: This is a *fallback* safety net for deployments that don't run `just db-bootstrap`.
-    # It is designed to be safe under multi-process servers (e.g., gunicorn with multiple
-    # Uvicorn workers) via an inter-process lock.
-    maybe_bootstrap_db_on_startup()
+    # Under gunicorn, migrations are handled by the on_starting hook in gunicorn_conf.py
+    # (runs once in the master process before workers fork). Only run the lifespan
+    # fallback when using uvicorn directly (dev mode).
+    if "gunicorn" not in sys.modules:
+        maybe_bootstrap_db_on_startup()
+    else:
+        print("ℹ️  Skipping lifespan bootstrap (handled by gunicorn on_starting hook)")
 
     # Safety net: ensure tables exist even if Alembic bootstrap failed/skipped.
     # For SQLite the .db file may exist but be empty; for PG the schema may be missing.

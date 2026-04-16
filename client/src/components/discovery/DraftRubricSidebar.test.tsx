@@ -29,13 +29,30 @@ describe('DraftRubricSidebar', () => {
     expect(screen.queryByText('Finding')).not.toBeInTheDocument();
   });
 
-  it('renders trace reference badges', () => {
+  it('renders inline markdown origin links and routes clicks', async () => {
+    const user = userEvent.setup();
+    const onNavigateToOrigin = vi.fn();
+    const itemsWithLinks = [
+      {
+        ...mockItems[0],
+        text: 'The agent [retried the query](trace-123#m2) before recovery.',
+      },
+    ];
+
     render(wrap(
-      <DraftRubricSidebar items={mockItems} workshopId="ws-1" userId="user-1" onCreateRubric={vi.fn()} />
+      <DraftRubricSidebar
+        items={itemsWithLinks}
+        workshopId="ws-1"
+        userId="user-1"
+        onCreateRubric={vi.fn()}
+        onNavigateToOrigin={onNavigateToOrigin}
+      />
     ));
-    // Trace IDs should be shown as compact badges
-    expect(screen.getByText(/t1/)).toBeInTheDocument();
-    expect(screen.getByText(/t2/)).toBeInTheDocument();
+
+    const link = screen.getByRole('link', { name: /retried the query/i });
+    expect(link).toBeInTheDocument();
+    await user.click(link);
+    expect(onNavigateToOrigin).toHaveBeenCalledWith('trace-123#m2');
   });
 
   it('shows grouped items under group names', () => {

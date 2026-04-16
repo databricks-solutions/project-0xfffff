@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { TraceViewer, TraceData } from '@/components/TraceViewer';
+import { TraceViewer, type TraceData } from '@/components/TraceViewer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -25,10 +25,11 @@ import {
 } from 'lucide-react';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useUser, useRoleCheck } from '@/context/UserContext';
-import { useTraces, useRubric, useUserAnnotations, useSubmitAnnotation, useMLflowConfig, refetchAllWorkshopQueries, useWorkshop, useParticipantNotes, useSubmitParticipantNote, useDeleteParticipantNote } from '@/hooks/useWorkshopApi';
+import { useTraces, useRubric, useUserAnnotations, useSubmitAnnotation, useMLflowConfig, refetchAllWorkshopQueries, useWorkshopAnnotationConfig, useParticipantNotes, useSubmitParticipantNote, useDeleteParticipantNote } from '@/hooks/useWorkshopApi';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Trace, Rubric, Annotation } from '@/client';
 import { parseRubricQuestions as parseQuestions } from '@/utils/rubricUtils';
+import { convertTraceToTraceData } from '@/utils/traceUtils';
 import { toast } from 'sonner';
 
 /**
@@ -121,18 +122,6 @@ const FormattedRubricDescription: React.FC<{ description: string }> = ({ descrip
     </div>
   );
 };
-
-// Convert API trace to TraceData format
-const convertTraceToTraceData = (trace: Trace): TraceData => ({
-  id: trace.id,
-  input: trace.input,
-  output: trace.output,
-  context: trace.context || undefined,
-  mlflow_trace_id: trace.mlflow_trace_id || undefined,
-  mlflow_url: trace.mlflow_url || undefined,
-  mlflow_host: trace.mlflow_host || undefined,
-  mlflow_experiment_id: trace.mlflow_experiment_id || undefined
-});
 
 // Parse rubric question from API format - includes judgeType for each question
 const parseRubricQuestions = (rubric: Rubric) => {
@@ -231,7 +220,7 @@ export function AnnotationDemo() {
   const queryClient = useQueryClient();
 
   // Workshop data (for show_participant_notes flag)
-  const { data: workshopData } = useWorkshop(workshopId || '');
+  const { data: workshopData } = useWorkshopAnnotationConfig(workshopId || '');
   const notesEnabled = workshopData?.show_participant_notes ?? false;
 
   // Annotation notes (only fetch when enabled)
@@ -1172,9 +1161,9 @@ export function AnnotationDemo() {
                     if (currentTrace.mlflow_url) {
                       // Use the pre-generated MLflow URL from the trace
                       window.open(currentTrace.mlflow_url, '_blank');
-                    } else if (mlflowConfig) {
+                    } else if (currentTrace.mlflow_host && mlflowConfig) {
                       // Fallback: construct URL using mlflowConfig
-                      const host = mlflowConfig.databricks_host;
+                      const host = currentTrace.mlflow_host;
                       const experiment_id = mlflowConfig.experiment_id;
                       const trace_id = currentTrace.mlflow_trace_id;
                       const mlflowUrl = `${host}/ml/experiments/${experiment_id}/traces?selectedEvaluationId=${trace_id}`;

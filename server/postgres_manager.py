@@ -36,11 +36,12 @@ ALLOWED_TABLES: set[str] = {
     "rubrics",
     "annotations",
     "mlflow_intake_config",
-    "databricks_tokens",
     "judge_prompts",
     "judge_evaluations",
     "user_trace_orders",
     "custom_llm_provider_config",
+    "trace_criteria",
+    "criterion_evaluations",
 }
 
 
@@ -78,6 +79,7 @@ _TABLE_DDL: list[str] = [
         auto_evaluation_job_id      VARCHAR,
         auto_evaluation_prompt      TEXT,
         auto_evaluation_model       VARCHAR,
+        mode            VARCHAR DEFAULT 'workshop',
         created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """,
@@ -182,12 +184,41 @@ _TABLE_DDL: list[str] = [
         created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """,
+    # -- trace_criteria --
+    """
+    CREATE TABLE IF NOT EXISTS trace_criteria (
+        id               VARCHAR PRIMARY KEY,
+        trace_id         VARCHAR NOT NULL REFERENCES traces(id) ON DELETE CASCADE,
+        workshop_id      VARCHAR NOT NULL REFERENCES workshops(id) ON DELETE CASCADE,
+        text             TEXT NOT NULL,
+        criterion_type   VARCHAR NOT NULL,
+        weight           INTEGER DEFAULT 1,
+        source_finding_id VARCHAR,
+        created_by       VARCHAR NOT NULL,
+        "order"          INTEGER DEFAULT 0,
+        created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    # -- criterion_evaluations --
+    """
+    CREATE TABLE IF NOT EXISTS criterion_evaluations (
+        id               VARCHAR PRIMARY KEY,
+        criterion_id     VARCHAR NOT NULL REFERENCES trace_criteria(id) ON DELETE CASCADE,
+        trace_id         VARCHAR NOT NULL REFERENCES traces(id) ON DELETE CASCADE,
+        workshop_id      VARCHAR NOT NULL REFERENCES workshops(id) ON DELETE CASCADE,
+        judge_model      VARCHAR NOT NULL,
+        met              BOOLEAN NOT NULL,
+        rationale        TEXT,
+        raw_response     JSON,
+        created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
     # -- mlflow_intake_config --
     """
     CREATE TABLE IF NOT EXISTS mlflow_intake_config (
         id                  VARCHAR PRIMARY KEY,
         workshop_id         VARCHAR NOT NULL UNIQUE REFERENCES workshops(id),
-        databricks_host     VARCHAR NOT NULL,
         experiment_id       VARCHAR NOT NULL,
         max_traces          INTEGER DEFAULT 100,
         filter_string       TEXT,
@@ -197,15 +228,6 @@ _TABLE_DDL: list[str] = [
         error_message       TEXT,
         created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-    """,
-    # -- databricks_tokens --
-    """
-    CREATE TABLE IF NOT EXISTS databricks_tokens (
-        workshop_id     VARCHAR PRIMARY KEY REFERENCES workshops(id),
-        token           TEXT NOT NULL,
-        created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """,
     # -- judge_prompts --
@@ -296,7 +318,7 @@ class PostgresManager:
     # Initialisation
     # ------------------------------------------------------------------
     def __init__(self) -> None:
-        from .db_config import LakebaseConfig, get_token_manager
+        from .db_config import LakebaseConfig, get_credential_manager
 
         self._config = LakebaseConfig.from_env()
         if self._config is None:
@@ -305,7 +327,8 @@ class PostgresManager:
                 "(PGHOST, PGDATABASE, PGUSER). Set them or use SQLite instead."
             )
 
-        self._token_manager = get_token_manager()
+        self._credential_manager = get_credential_manager()
+        self._endpoint_name = os.getenv("ENDPOINT_NAME")
         # Derive schema name the same way as db_config.py (hyphens → underscores)
         self._schema_name = self._config.app_name.replace("-", "_")
         self._pool = None  # lazy init
@@ -322,8 +345,8 @@ class PostgresManager:
     # Connection helpers
     # ------------------------------------------------------------------
     def _build_conn_string(self) -> str:
-        """Build a libpq-style connection string with a fresh OAuth token."""
-        password = self._token_manager.get_token()
+        """Build a libpq-style connection string with a fresh credential."""
+        password = self._credential_manager.get_password(self._endpoint_name)
         cfg = self._config
         return (
             f"dbname={cfg.database} "
@@ -336,29 +359,51 @@ class PostgresManager:
         )
 
     def _ensure_pool(self):
-        """Create or recreate the connection pool when the token has expired."""
+        """Create the connection pool (once).
+
+        Uses a custom connection class that injects fresh credentials on
+        each new physical connection.  The pool is never recreated for token
+        refresh — existing connections remain valid after credential expiry.
+        Reference: https://docs.databricks.com/aws/en/lakebase/connect/custom-app.html
+        """
+        if self._pool is not None:
+            return self._pool
+
+        import psycopg
         from psycopg.rows import dict_row
         from psycopg_pool import ConnectionPool
 
-        needs_new_pool = self._pool is None or self._token_manager.needs_refresh
+        cred_mgr = self._credential_manager
+        ep_name = self._endpoint_name
 
-        if needs_new_pool:
-            # Close old pool if present
-            if self._pool is not None:
-                try:
-                    self._pool.close()
-                except Exception:
-                    pass
+        class _OAuthConnection(psycopg.Connection):
+            """Connection subclass that injects a fresh credential on connect."""
 
-            conn_string = self._build_conn_string()
-            self._pool = ConnectionPool(
-                conn_string,
-                min_size=2,
-                max_size=10,
-                kwargs={"row_factory": dict_row},
-            )
-            self._pool_created_at = time.time()
-            logger.info("PostgresManager: connection pool created/refreshed")
+            @classmethod
+            def connect(cls, conninfo="", **kwargs):
+                kwargs["password"] = cred_mgr.get_password(ep_name)
+                return super().connect(conninfo, **kwargs)
+
+        cfg = self._config
+        conninfo = (
+            f"dbname={cfg.database} "
+            f"user={cfg.user} "
+            f"host={cfg.host} "
+            f"port={cfg.port} "
+            f"sslmode={cfg.sslmode} "
+            f"options='-csearch_path={self._schema_name},public'"
+        )
+
+        self._pool = ConnectionPool(
+            conninfo,
+            connection_class=_OAuthConnection,
+            min_size=1,
+            max_size=10,
+            kwargs={"row_factory": dict_row},
+            open=True,
+        )
+        self._pool_created_at = time.time()
+        logger.info("PostgresManager: connection pool created")
 
         return self._pool
 

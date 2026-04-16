@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Literal
 
 from server.models import MLflowIntakeConfig, MLflowTraceInfo, TraceUpload
 from server.services.database_service import DatabaseService
+from server.services.databricks_service import get_databricks_host, normalize_experiment_id
 
 
 def sanitize_for_json(obj: Any) -> Any:
@@ -33,38 +34,27 @@ class MLflowIntakeService:
   def __init__(self, db_service: DatabaseService):
     self.db_service = db_service
 
-  def configure_mlflow(self, config: MLflowIntakeConfig) -> None:
-    """Configure MLflow with Databricks credentials."""
-    try:
-      # Validate configuration
-      if not config.databricks_host or not config.databricks_token:
-        raise ValueError('Databricks host and token are required')
+  def configure_mlflow(self) -> None:
+    """Configure MLflow for Databricks.
 
-      # Validate host format
-      if not config.databricks_host.startswith('https://'):
-        raise ValueError('Databricks host must start with https://')
-
-      # Set tracking URI to Databricks
-      mlflow.set_tracking_uri('databricks')
-
-      # Set authentication
-      import os
-
-      os.environ['DATABRICKS_HOST'] = config.databricks_host.rstrip('/')
-      os.environ['DATABRICKS_TOKEN'] = config.databricks_token
-
-    except Exception as e:
-      raise ValueError(f'Failed to configure MLflow: {str(e)}')
+    Auth is handled by the Databricks SDK — service principal on Apps,
+    CLI profile locally.  DATABRICKS_HOST and auth credentials are
+    already in the environment.
+    """
+    mlflow.set_tracking_uri('databricks')
 
   def search_traces(self, config: MLflowIntakeConfig) -> List[MLflowTraceInfo]:
     """Search for traces in MLflow experiment with proper error handling."""
     try:
       # Configure MLflow
-      self.configure_mlflow(config)
+      self.configure_mlflow()
+      experiment_id = normalize_experiment_id(config.experiment_id)
+      if not experiment_id:
+        raise ValueError("MLflow experiment ID is empty after normalization.")
 
       # Search for traces with error handling
       traces = mlflow.search_traces(
-        experiment_ids=[config.experiment_id],
+        locations=[experiment_id],
         max_results=config.max_traces or 100,
         filter_string=config.filter_string,
         return_type='list',
@@ -93,7 +83,7 @@ class MLflowIntakeService:
               status=getattr(trace.info, 'status', 'UNKNOWN'),
               timestamp_ms=getattr(trace.info, 'timestamp_ms', 0),
               tags=dict(trace.info.tags) if hasattr(trace.info, 'tags') and trace.info.tags else None,
-              mlflow_url=self._generate_mlflow_url(config.databricks_host, config.experiment_id, trace.info.request_id),
+              mlflow_url=self._generate_mlflow_url(get_databricks_host(), experiment_id, trace.info.request_id),
             )
             trace_info_list.append(trace_info)
         except Exception as trace_error:
@@ -121,6 +111,10 @@ class MLflowIntakeService:
   def ingest_traces(self, workshop_id: str, config: MLflowIntakeConfig) -> int:
     """Ingest traces from MLflow into the workshop."""
     try:
+      experiment_id = normalize_experiment_id(config.experiment_id)
+      if not experiment_id:
+        raise ValueError("MLflow experiment ID is empty after normalization.")
+
       # Search for traces
       trace_infos = self.search_traces(config)
 
@@ -166,13 +160,13 @@ class MLflowIntakeService:
             },
             trace_metadata={
               'mlflow_trace_id': trace_info.trace_id,
-              'mlflow_host': config.databricks_host,
-              'mlflow_experiment_id': config.experiment_id,
+              'mlflow_host': get_databricks_host(),
+              'mlflow_experiment_id': experiment_id,
             },
             mlflow_trace_id=trace_info.trace_id,
-            mlflow_url=self._generate_mlflow_url(config.databricks_host, config.experiment_id, trace_info.trace_id),
-            mlflow_host=config.databricks_host,
-            mlflow_experiment_id=config.experiment_id,
+            mlflow_url=self._generate_mlflow_url(get_databricks_host(), experiment_id, trace_info.trace_id),
+            mlflow_host=get_databricks_host(),
+            mlflow_experiment_id=experiment_id,
           )
           trace_uploads.append(trace_upload)
 
@@ -431,23 +425,30 @@ class MLflowIntakeService:
 
   def test_connection(self, config: MLflowIntakeConfig) -> Dict[str, Any]:
     """Test MLflow connection and return experiment info."""
+    experiment_id = normalize_experiment_id(config.experiment_id)
     try:
       # Configure MLflow
-      self.configure_mlflow(config)
+      self.configure_mlflow()
+      if not experiment_id:
+        return {
+          'success': False,
+          'error': 'Invalid experiment ID',
+          'message': 'MLflow experiment ID is empty after normalization.',
+        }
 
       # Try to get experiment info
-      experiment = mlflow.get_experiment(config.experiment_id)
+      experiment = mlflow.get_experiment(experiment_id)
       if not experiment:
         return {
           'success': False,
           'error': 'Experiment not found',
-          'message': f'Experiment {config.experiment_id} not found',
+          'message': f'Experiment {experiment_id} not found',
         }
 
       # Try to search for traces to verify access (with minimal request)
       try:
         traces = mlflow.search_traces(
-          locations=[config.experiment_id],
+          locations=[experiment_id],
           max_results=1,
           return_type='list',
         )
@@ -459,7 +460,7 @@ class MLflowIntakeService:
       return {
         'success': True,
         'experiment_name': experiment.name,
-        'experiment_id': config.experiment_id,
+        'experiment_id': experiment_id,
         'trace_count': trace_count,
         'message': f"Connection successful. Found experiment '{experiment.name}' accessible traces.",
       }
@@ -476,6 +477,6 @@ class MLflowIntakeService:
         return {
           'success': False,
           'error': 'Experiment not found',
-          'message': f'Experiment {config.experiment_id} not found. Please check your experiment ID.',
+          'message': f'Experiment {experiment_id} not found. Please check your experiment ID.',
         }
       return {'success': False, 'error': str(e), 'message': f'Connection failed: {str(e)}'}

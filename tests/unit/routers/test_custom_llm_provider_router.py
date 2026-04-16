@@ -103,7 +103,7 @@ async def test_get_custom_llm_provider_configured(async_client, override_get_db,
             return config
 
     # Mock token storage to indicate key exists
-    with patch("server.routers.workshops.token_storage") as mock_token_storage:
+    with patch("server.services.token_storage_service.token_storage") as mock_token_storage:
         mock_token_storage.get_token.return_value = "fake-api-key"
         monkeypatch.setattr(workshops_router, "DatabaseService", FakeDatabaseService)
 
@@ -164,7 +164,7 @@ async def test_create_custom_llm_provider(async_client, override_get_db, monkeyp
             return created_config
 
     # Mock token storage
-    with patch("server.routers.workshops.token_storage") as mock_token_storage:
+    with patch("server.services.token_storage_service.token_storage") as mock_token_storage:
         monkeypatch.setattr(workshops_router, "DatabaseService", FakeDatabaseService)
 
         resp = await async_client.post(
@@ -227,7 +227,7 @@ async def test_delete_custom_llm_provider(async_client, override_get_db, monkeyp
             deleted = True
             return True
 
-    with patch("server.routers.workshops.token_storage") as mock_token_storage:
+    with patch("server.services.token_storage_service.token_storage") as mock_token_storage:
         monkeypatch.setattr(workshops_router, "DatabaseService", FakeDatabaseService)
 
         resp = await async_client.delete("/workshops/w1/custom-llm-provider")
@@ -283,7 +283,7 @@ async def test_test_custom_llm_provider_success(async_client, override_get_db, m
             return config
 
     # Mock token storage and httpx
-    with patch("server.routers.workshops.token_storage") as mock_token_storage:
+    with patch("server.services.token_storage_service.token_storage") as mock_token_storage:
         mock_token_storage.get_token.return_value = "fake-api-key"
 
         with patch("server.routers.workshops.httpx.AsyncClient") as mock_client_cls:
@@ -346,7 +346,7 @@ async def test_test_custom_llm_provider_auth_failure(async_client, override_get_
         def get_custom_llm_provider_config(self, workshop_id: str):
             return config
 
-    with patch("server.routers.workshops.token_storage") as mock_token_storage:
+    with patch("server.services.token_storage_service.token_storage") as mock_token_storage:
         mock_token_storage.get_token.return_value = "invalid-key"
 
         with patch("server.routers.workshops.httpx.AsyncClient") as mock_client_cls:
@@ -448,7 +448,7 @@ async def test_test_custom_llm_provider_no_api_key(async_client, override_get_db
         def get_custom_llm_provider_config(self, workshop_id: str):
             return config
 
-    with patch("server.routers.workshops.token_storage") as mock_token_storage:
+    with patch("server.services.token_storage_service.token_storage") as mock_token_storage:
         mock_token_storage.get_token.return_value = None  # No API key
 
         monkeypatch.setattr(workshops_router, "DatabaseService", FakeDatabaseService)

@@ -6,13 +6,18 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useWorkshopContext } from './WorkshopContext';
-import { useAllTraces, useFindings, useRubric, useAnnotations, useWorkshop } from '@/hooks/useWorkshopApi';
+import { useAllTraces, useFindings, useRubric, useAnnotations, useWorkshopPhase } from '@/hooks/useWorkshopApi';
 import { useQuery } from '@tanstack/react-query';
 import { useUser } from './UserContext';
 
 interface WorkflowContextType {
   currentPhase: string;
   completedPhases: string[];
+  workshopMode: 'workshop' | 'eval';
+  isEvalMode: boolean;
+  supportsGlobalRubric: boolean;
+  supportsPerTraceCriteria: boolean;
+  getDefaultRouteForPhase: (phase: string) => string;
   setCurrentPhase: (phase: string) => void;
   markPhaseComplete: (phase: string) => void;
   isPhaseComplete: (phase: string) => boolean;
@@ -37,7 +42,11 @@ export function WorkflowProvider({ children }: WorkflowProviderProps) {
   // Without the user gate, stale workshopId from localStorage causes polling
   // on the login page, hammering the backend with requests (503 storms).
   const isAuthenticated = !!workshopId && !!user;
-  const { data: workshop } = useWorkshop(isAuthenticated ? workshopId : '');
+  const { data: workshop } = useWorkshopPhase(isAuthenticated ? workshopId : '');
+  const workshopMode: 'workshop' | 'eval' = workshop?.mode === 'eval' ? 'eval' : 'workshop';
+  const isEvalMode = workshopMode === 'eval';
+  const supportsGlobalRubric = workshopMode === 'workshop';
+  const supportsPerTraceCriteria = workshopMode === 'eval';
   const { data: participants } = useQuery({
     queryKey: ['workshop-participants', workshopId],
     queryFn: async () => {
@@ -155,11 +164,23 @@ export function WorkflowProvider({ children }: WorkflowProviderProps) {
     return { completed, total, percentage };
   };
 
+  const getDefaultRouteForPhase = (phase: string) => {
+    if (workshopId) {
+      return `/workshop/${workshopId}/${phase}`;
+    }
+    return '/';
+  };
+
   return (
     <WorkflowContext.Provider
       value={{
         currentPhase,
         completedPhases,
+        workshopMode,
+        isEvalMode,
+        supportsGlobalRubric,
+        supportsPerTraceCriteria,
+        getDefaultRouteForPhase,
         setCurrentPhase,
         markPhaseComplete,
         isPhaseComplete,

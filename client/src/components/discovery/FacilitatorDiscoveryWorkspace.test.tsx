@@ -24,8 +24,17 @@ vi.mock('@/hooks/useWorkshopApi', () => ({
   useApplyGroups: () => ({ mutate: vi.fn(), isPending: false }),
   useCreateRubricFromDraft: () => ({ mutate: vi.fn(), isPending: false }),
   useWorkshop: () => ({ data: { id: 'ws-1', current_phase: 'discovery', discovery_started: true, active_discovery_trace_ids: ['t1', 't2'] } }),
+  useWorkshopDiscoveryConfig: () => ({ data: { discovery_questions_model_name: null, discovery_randomize_traces: false, active_discovery_trace_ids: ['t1', 't2'] } }),
+  useWorkshopPhase: () => ({ data: { current_phase: 'discovery', completed_phases: [], discovery_started: true, annotation_started: false } }),
   useMLflowConfig: () => ({ data: null }),
   useUpdateDiscoveryModel: () => ({ mutate: vi.fn() }),
+  useUpdateDiscoverySettings: () => ({ mutate: vi.fn(), isPending: false }),
+  useAvailableModels: () => ({ data: undefined }),
+  useDiscoveryComments: () => ({ data: [], refetch: vi.fn() }),
+  useCreateDiscoveryComment: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useVoteDiscoveryComment: () => ({ mutate: vi.fn(), isPending: false }),
+  useDeleteDiscoveryComment: () => ({ mutate: vi.fn(), isPending: false }),
+  useDiscoveryAgentRun: () => ({ data: undefined }),
 }));
 
 vi.mock('@/context/WorkshopContext', () => ({
@@ -48,7 +57,7 @@ describe('FacilitatorDiscoveryWorkspace', () => {
     );
     // Overview bar stats
     expect(screen.getByText(/1 participants/)).toBeInTheDocument();
-    expect(screen.getByText(/2 traces/)).toBeInTheDocument();
+    expect(screen.getByText(/2 active traces/)).toBeInTheDocument();
 
     // Trace content shown (not IDs)
     expect(screen.getByText(/User question 1/)).toBeInTheDocument();

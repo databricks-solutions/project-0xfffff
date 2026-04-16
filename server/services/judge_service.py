@@ -20,6 +20,7 @@ from server.models import (
     JudgePrompt,
 )
 from server.services.database_service import DatabaseService
+from server.utils.trace_display_utils import get_display_text
 
 try:
     import mlflow
@@ -78,33 +79,15 @@ class JudgeService:
                     detail="MLflow configuration required for AI judge evaluation. Configure in Intake phase.",
                 )
 
-            # Get token from memory storage
-            from server.services.token_storage_service import token_storage
-
-            databricks_token = token_storage.get_token(workshop_id)
-            if not databricks_token:
-                databricks_token = self.db_service.get_databricks_token(workshop_id)
-                if databricks_token:
-                    token_storage.store_token(workshop_id, databricks_token)
-            if not databricks_token:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Databricks token not found. Please configure MLflow intake with your token.",
-                )
-
-            # Validate MLflow credentials before proceeding
-            if not mlflow_config.databricks_host:
-                raise HTTPException(status_code=400, detail="Invalid MLflow configuration: missing Databricks host")
-
-            # Update the config with the token from memory
-            mlflow_config.databricks_token = databricks_token
-
             # Validate the effective model has a valid non-demo model
             if not effective_model or effective_model == "demo":
                 raise HTTPException(
                     status_code=400,
                     detail="Cannot use MLflow evaluation with demo model. Select a real model (databricks-*, openai-*)",
                 )
+
+        # Fetch workshop for display pipeline (span filter + JSONPath)
+        workshop = self.db_service.get_workshop(workshop_id)
 
         # Calculate mode-based ground truth at the evaluate_prompt level for meaningful aggregation
         from collections import Counter
@@ -133,19 +116,25 @@ class JudgeService:
                 mode_rating = rating_counts.most_common(1)[0][0]  # Most frequent rating
 
                 trace = trace_objects[trace_id]
+                has_summary = bool(getattr(trace, "summary", None))
+                display_input, display_output = get_display_text(
+                    trace,
+                    workshop,
+                    include_milestone_context=has_summary,
+                )
 
                 # Evaluate using either MLflow or simulation
                 if use_mlflow:
                     try:
                         predicted_rating, reasoning = self._evaluate_with_mlflow(
-                            workshop_id, prompt, trace.input, trace.output, mlflow_config
+                            workshop_id, prompt, display_input, display_output, mlflow_config
                         )
                     except Exception as e:
                         # Don't fallback - propagate the error
                         raise HTTPException(status_code=503, detail=f"MLflow evaluation failed: {e!s}") from e
                 else:
                     predicted_rating = self._simulate_judge_rating(
-                        prompt.prompt_text, trace.input, trace.output, mode_rating
+                        prompt.prompt_text, display_input, display_output, mode_rating
                     )
                     reasoning = "Test judge evaluation (development mode)"
 
@@ -214,11 +203,8 @@ class JudgeService:
                     detail="MLflow configuration required for AI judge evaluation. Configure in Intake phase.",
                 )
 
-            # Validate MLflow credentials before proceeding
-            if not mlflow_config.databricks_host or not mlflow_config.databricks_token:
-                raise HTTPException(
-                    status_code=400, detail="Invalid MLflow configuration: missing Databricks host or token"
-                )
+        # Fetch workshop for display pipeline (span filter + JSONPath)
+        workshop = self.db_service.get_workshop(workshop_id)
 
         # Calculate mode-based ground truth
         from collections import Counter
@@ -247,18 +233,24 @@ class JudgeService:
                 mode_rating = rating_counts.most_common(1)[0][0]
 
                 trace = trace_objects[trace_id]
+                has_summary = bool(getattr(trace, "summary", None))
+                display_input, display_output = get_display_text(
+                    trace,
+                    workshop,
+                    include_milestone_context=has_summary,
+                )
 
                 # Evaluate using either MLflow or simulation
                 if use_mlflow:
                     try:
                         predicted_rating, reasoning = self._evaluate_with_mlflow(
-                            workshop_id, temp_prompt, trace.input, trace.output, mlflow_config
+                            workshop_id, temp_prompt, display_input, display_output, mlflow_config
                         )
                     except Exception as e:
                         raise HTTPException(status_code=503, detail=f"MLflow evaluation failed: {e!s}") from e
                 else:
                     predicted_rating = self._simulate_judge_rating(
-                        temp_prompt.prompt_text, trace.input, trace.output, mode_rating
+                        temp_prompt.prompt_text, display_input, display_output, mode_rating
                     )
                     reasoning = "Test judge evaluation (development mode)"
 
@@ -285,18 +277,6 @@ class JudgeService:
         self, workshop_id: str, prompt: JudgePrompt, input_text: str, output_text: str, mlflow_config
     ) -> tuple[int, str]:
         """Evaluate using real MLflow LLM judge."""
-        # Set up MLflow with Databricks credentials
-        os.environ["DATABRICKS_HOST"] = mlflow_config.databricks_host.rstrip("/")
-        os.environ["DATABRICKS_TOKEN"] = mlflow_config.databricks_token
-
-        # Validate credentials format
-        if not mlflow_config.databricks_host.startswith("https://"):
-            raise ValueError("Databricks host must start with https://")
-        if not mlflow_config.databricks_token.startswith("dapi"):
-            print(
-                f"Warning: Databricks token should typically start with 'dapi'. Current token starts with: {mlflow_config.databricks_token[:10]}..."
-            )
-
         # Initialize MLflow with proper experiment context
         try:
             # Use same method as intake service - "databricks" URI with environment variables
@@ -542,6 +522,9 @@ class JudgeService:
         # Get rubric for context
         rubric = self.db_service.get_rubric(workshop_id)
 
+        # Fetch workshop for display pipeline (span filter + JSONPath)
+        workshop = self.db_service.get_workshop(workshop_id)
+
         # Get few-shot examples if requested
         few_shot_examples = []
         if export_config.include_examples and prompt.few_shot_examples:
@@ -554,11 +537,17 @@ class JudgeService:
                     # Use the most common rating if multiple annotations
                     ratings = [a.rating for a in trace_annotations]
                     most_common_rating = max(set(ratings), key=ratings.count)
+                    has_summary = bool(getattr(trace, "summary", None))
+                    display_input, display_output = get_display_text(
+                        trace,
+                        workshop,
+                        include_milestone_context=has_summary,
+                    )
 
                     few_shot_examples.append(
                         {
-                            "input": trace.input,
-                            "output": trace.output,
+                            "input": display_input,
+                            "output": display_output,
                             "rating": most_common_rating,
                             "reasoning": f"This response rates {most_common_rating}/5 based on the evaluation criteria.",
                         }

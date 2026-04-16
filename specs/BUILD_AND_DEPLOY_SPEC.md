@@ -109,6 +109,7 @@ The project uses Alembic for SQLite database migrations with batch mode support 
 | `migrations/env.py` | Migration environment setup |
 | `migrations/versions/*.py` | Individual migration scripts |
 | `server/db_bootstrap.py` | Bootstrap module |
+| `gunicorn_conf.py` | Gunicorn server hooks (runs migrations in master before workers fork) |
 
 ### Migration Commands (via justfile)
 
@@ -145,11 +146,13 @@ This creates a new table, copies data, drops old table, and renames.
 
 **Development**: `just api-dev`, `just api`, and `just dev` automatically run `just db-bootstrap` before starting.
 
-**Production**: Run `just db-bootstrap` as a separate step before starting the server.
+**Production (Gunicorn)**: The `gunicorn_conf.py` `on_starting` hook runs `bootstrap_database(full=True)` once in the master process before workers fork. This ensures pending migrations are applied before any worker accepts traffic. If migrations fail, gunicorn exits.
+
+**Production (Manual)**: Run `just db-bootstrap` as a separate step before starting the server.
 
 ### Startup Fallback
 
-If the API starts without running migrations:
+When running under **uvicorn directly** (dev mode, no gunicorn master), the FastAPI lifespan calls `maybe_bootstrap_db_on_startup()` as a fallback. This is skipped under gunicorn since the `on_starting` hook handles it.
 
 | Scenario | Behavior |
 |----------|----------|
@@ -202,8 +205,9 @@ uv run uvicorn server.app:app --host 0.0.0.0 --port 8000
 ### Production Server
 
 ```bash
-# With Gunicorn (multiple workers)
+# With Gunicorn (multiple workers + automatic migrations)
 uv run gunicorn server.app:app \
+  -c gunicorn_conf.py \
   -w 4 \
   -k uvicorn.workers.UvicornWorker \
   --bind 0.0.0.0:8000
@@ -213,11 +217,20 @@ uv run gunicorn server.app:app \
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `DATABASE_URL` | Database connection string | `sqlite:///workshop.db` |
+| `DATABASE_URL` | Database connection string (SQLite only) | `sqlite:///workshop.db` |
+| `DATABASE_ENV` | Database backend: `postgres` (Lakebase) or `sqlite` | `sqlite` |
 | `DB_BOOTSTRAP_ON_STARTUP` | Auto-run migrations on startup | `false` |
-| `MLFLOW_TRACKING_URI` | MLflow server URL | (required) |
-| `DATABRICKS_HOST` | Databricks workspace URL | (required) |
-| `DATABRICKS_TOKEN` | Databricks access token | (required) |
+| `MLFLOW_TRACKING_URI` | MLflow server URL (set to `databricks` on Apps) | (required) |
+| `DATABRICKS_HOST` | Databricks workspace URL (set by platform on Apps, developer locally) | (required) |
+| `MLFLOW_EXPERIMENT_ID` | MLflow experiment ID (from app.yaml resource declaration) | (required) |
+| `DATABRICKS_TOKEN` | Databricks access token (fallback — SDK auth preferred) | (optional) |
+| `PGHOST` | Lakebase endpoint hostname | (required for Lakebase) |
+| `PGDATABASE` | Lakebase database name | `databricks_postgres` |
+| `PGUSER` | Lakebase username (service principal `DATABRICKS_CLIENT_ID`) | (required for Lakebase) |
+| `PGPORT` | Lakebase port | `5432` |
+| `PGSSLMODE` | Lakebase SSL mode | `require` |
+| `PGAPPNAME` | Application name for connection tracking / schema derivation | `human-eval-workshop` |
+| `ENDPOINT_NAME` | Lakebase endpoint for credential generation (`projects/<id>/branches/<id>/endpoints/<id>`) | (required for Lakebase) |
 
 ---
 
@@ -303,6 +316,7 @@ project-with-build.zip
 - [ ] Migrations apply without errors
 - [ ] Batch mode works for SQLite ALTER TABLE
 - [ ] File lock prevents race conditions with multiple workers
+- [ ] Pending Alembic migrations are applied automatically before workers accept traffic
 
 ### Deployment
 - [ ] Full deployment completes successfully
@@ -349,11 +363,17 @@ persistence by backing up to Unity Catalog Volumes.
 
 ### Databricks Apps Authentication
 
-Databricks Apps automatically provides authentication to workspace resources via a dedicated **service principal**. Key points:
+Databricks Apps automatically provides authentication to workspace resources via a dedicated **service principal**. The application uses Databricks SDK unified auth exclusively — no PAT tokens are accepted from users or stored.
 
-**Automatic Credentials**:
-- `DATABRICKS_CLIENT_ID` - Automatically injected
-- `DATABRICKS_CLIENT_SECRET` - Automatically injected
+**Automatic Credentials** (injected by the platform):
+- `DATABRICKS_CLIENT_ID` - Service principal client ID
+- `DATABRICKS_CLIENT_SECRET` - Service principal client secret
+
+**How it works**:
+- `resolve_databricks_token()` in `server/services/databricks_service.py` calls `WorkspaceClient().config.authenticate()` which auto-detects the injected credentials
+- MLflow uses the same SDK auth via `mlflow.set_tracking_uri('databricks')`
+- No token input fields exist in the UI — auth is fully automatic
+- See [AUTHENTICATION_SPEC](./AUTHENTICATION_SPEC.md) § Databricks API Authentication for the full contract
 
 **Best Practices**:
 - Never hardcode personal access tokens (PATs) in code
@@ -477,4 +497,12 @@ Limitations:
 - Uses Databricks SDK Files API (FUSE mounts NOT supported in Apps)
 - The rescue module copies the entire DB file; not suitable for very large databases
 - Brief data loss possible if container crashes between backups (up to backup interval worth of writes)
+
+## Implementation Log
+
+| Date | Plan | Status | Summary |
+|------|------|--------|---------|
+| 2026-04-10 | [SDK Auth Migration](../.claude/plans/2026-04-10-sdk-auth-migration.md) | complete | Replace PAT token auth with SDK auth; update Databricks Apps auth section; add Lakebase env vars |
+| 2026-04-11 | (inline) | complete | Fix Lakebase connection pool: `do_connect` token injection, `pool_recycle=3600`, `pool_pre_ping=False`, `generate_database_credential()` API |
+| 2026-04-11 | [Gunicorn on_starting hook](../.claude/plans/jaunty-leaping-lighthouse.md) | complete | Run Alembic migrations in gunicorn master before workers fork |
 

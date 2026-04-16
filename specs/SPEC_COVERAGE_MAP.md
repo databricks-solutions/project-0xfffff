@@ -1,6 +1,6 @@
 # Spec Test Coverage Map
 
-**Generated**: 2026-03-13 10:35:28
+**Generated**: 2026-04-16 00:07:27
 
 This report shows test coverage for each specification's success criteria.
 
@@ -8,189 +8,147 @@ This report shows test coverage for each specification's success criteria.
 
 | Type | Count | Description |
 |------|-------|-------------|
-| Unit | 136 | pytest unit tests, Vitest tests |
-| Integration | 0 | pytest with real DB/API |
-| E2E (Mocked) | 0 | Playwright with mocked API |
+| Unit | 252 | pytest unit tests, Vitest tests |
+| Integration | 4 | pytest with real DB/API |
+| E2E (Mocked) | 8 | Playwright with mocked API |
 | E2E (Real) | 19 | Playwright with real API |
 
 ## Coverage Summary
 
 | Spec | Reqs | Covered | Cover% | Unit | Int | E2E-M | E2E-R | BE-only |
 |------|------|---------|--------|------|-----|-------|-------|---------|
-| [ANNOTATION_SPEC](#annotation-spec) | 21 | 13 | 61% | 47 | 0 | 0 | 10 | **7** |
-| [JUDGE_EVALUATION_SPEC](#judge-evaluation-spec) | 25 | 25 | 100% | 89 | 0 | 0 | 9 | **18** |
+| [DISCOVERY_SPEC](#discovery-spec) | 72 | 59 | 81% | 252 | 4 | 8 | 19 | **23** |
 
-**Total**: 38/46 requirements covered (82%)
+**Total**: 59/72 requirements covered (81%)
 
 ---
 
-## ANNOTATION_SPEC
+## DISCOVERY_SPEC
 
-**Coverage**: 13/21 requirements (61%)
+**Coverage**: 59/72 requirements (81%)
 
 ### Uncovered Requirements
 
-- [ ] No toast when navigating without changes
-- [ ] Comments display with proper line breaks
-- [ ] Bulk resync re-exports all annotations when rubric titles change
-- [ ] Failed saves are queued and retried automatically with exponential backoff
-- [ ] Navigation is optimistic (UI advances immediately, save completes in background)
-- [ ] Navigation debounced at 300ms to prevent duplicate saves
-- [ ] Freeform question responses are optional (not required for navigation)
-- [ ] Freeform responses are encoded in the comment field as JSON
+- [ ] Facilitator can switch Discovery workspace between `analysis` mode and `social` mode
+- [ ] In social mode, users can create trace-level comments
+- [ ] In social mode, users can create milestone-level comments
+- [ ] Users can reply to comments in-thread
+- [ ] Users can upvote/downvote comments (single vote per user per comment with toggle behavior)
+- [ ] Thread updates appear live in the workspace while participants collaborate
+- [ ] Facilitator `@assistant summarize this thread` returns a grounded summary as a thread reply
+- [ ] Facilitator `@assistant` tool-availability questions for a milestone return grounded context as a thread reply
+- [ ] Facilitator `@agent` starts a bounded tool-calling run and posts streamed partial output in the thread
+- [ ] `@agent` run lifecycle is visible (`running`, `completed`, `failed`, `timeout`) with final persisted reply
+- [ ] Non-facilitator mentions do not trigger assistant/agent execution (treated as plain text mentions)
+- [ ] When follow-up questions are disabled, participant flow is GOOD/BAD + comment only
+- [ ] Social mode provides a modern live collaboration experience with streamed in-thread updates for assistant/agent responses
 
 ### Backend-Only Requirements (no frontend tests)
 
 These requirements are covered by backend tests only. UI regressions won't be caught:
 
-- :warning: Users can edit previously submitted annotations (unit)
-- :warning: Annotations sync to MLflow as feedback on save (one entry per rubric question) (unit)
-- :warning: MLflow trace tagged with `label: "align"` and `workshop_id` on annotation (unit)
-- :warning: Feedback source is HUMAN with annotator's user_id (unit)
-- :warning: Annotation comment maps to MLflow feedback rationale (unit)
-- :warning: Duplicate feedback entries are detected and skipped (unit)
-- :warning: Legacy single-rating format loads correctly alongside multi-rating format (unit)
+- :warning: Facilitator can start Discovery phase with configurable trace limit (unit)
+- :warning: Participants view traces and provide GOOD/BAD + comment (unit)
+- :warning: AI generates 3 follow-up questions per trace based on feedback (unit)
+- :warning: Questions build progressively on prior answers (unit)
+- :warning: All 3 questions required before moving to next trace (unit)
+- :warning: Error handling with retry for LLM failures (unit)
+- :warning: Completion status shows % of participants finished (integration, unit)
+- :warning: System aggregates feedback by trace (unit)
+- :warning: Disagreements detected at 3 priority levels (deterministic, no LLM) (unit)
+- :warning: LLM distills evaluation criteria with evidence from trace IDs (unit)
+- :warning: LLM analyzes disagreements with follow-up questions and suggestions (unit)
+- :warning: Analysis record stores which template was used (unit)
+- :warning: Re-runnable — new analysis as more feedback comes in, prior analyses retained (unit)
+- :warning: One feedback record per (workshop, trace, user) — upsert behavior (integration, unit)
+- :warning: Q&A pairs appended in order to JSON array (integration, unit)
+- :warning: Multiple analysis records per workshop allowed (history preserved) (unit)
+- :warning: Draft rubric items track promotion source and promoter (unit)
+- :warning: Fallback question if LLM unavailable after retries (unit)
+- :warning: Form validation prevents empty submissions (unit)
+- :warning: Trace-specific analysis findings appear on the trace card, pinned above feedback (collapsible) (unit)
+- :warning: Promote action visibly moves items from trace feed/summary into the sidebar (unit)
+- :warning: Draft rubric items show trace reference badges (interactive: hover for preview, click to scroll) (unit)
+- :warning: "Create Rubric →" in sidebar transitions to rubric creation with groups pre-populated as criteria (unit)
 
 ### Covered Requirements
 
-- [x] Users can edit previously submitted annotations (unit) **[BE-only]**
-- [x] Changes automatically save on navigation (Next/Previous) (e2e-real, unit)
-- [x] Toast shows "Annotation saved!" for new submissions (e2e-real)
-- [x] Toast shows "Annotation updated!" only when changes detected (e2e-real)
-- [x] Multi-line comments preserved throughout the stack (e2e-real)
-- [x] Next button enabled for annotated traces (allows re-navigation) (e2e-real)
-- [x] Annotation count reflects unique submissions (not re-submissions) (e2e-real, unit)
-- [x] Annotations sync to MLflow as feedback on save (one entry per rubric question) (unit) **[BE-only]**
-- [x] MLflow trace tagged with `label: "align"` and `workshop_id` on annotation (unit) **[BE-only]**
-- [x] Feedback source is HUMAN with annotator's user_id (unit) **[BE-only]**
-- [x] Annotation comment maps to MLflow feedback rationale (unit) **[BE-only]**
-- [x] Duplicate feedback entries are detected and skipped (unit) **[BE-only]**
-- [x] Legacy single-rating format loads correctly alongside multi-rating format (unit) **[BE-only]**
+- [x] Facilitator can start Discovery phase with configurable trace limit (unit) **[BE-only]**
+- [x] Participants view traces and provide GOOD/BAD + comment (unit) **[BE-only]**
+- [x] Facilitator can select LLM model for follow-up question generation in Discovery dashboard (e2e-mocked, unit)
+- [x] AI generates 3 follow-up questions per trace based on feedback (unit) **[BE-only]**
+- [x] Questions build progressively on prior answers (unit) **[BE-only]**
+- [x] All 3 questions required before moving to next trace (unit) **[BE-only]**
+- [x] Previous Q&A visible while answering new questions (unit)
+- [x] Loading spinner during LLM generation (1-3s) (unit)
+- [x] Error handling with retry for LLM failures (unit) **[BE-only]**
+- [x] Feedback saved incrementally (no data loss on failure) (e2e-real, unit)
+- [x] Completion status shows % of participants finished (integration, unit) **[BE-only]**
+- [x] Facilitator can view participant feedback details (label, comment, follow-up Q&A) (e2e-real, integration, unit)
+- [x] Facilitator can trigger analysis at any time (even partial feedback) (e2e-mocked, unit)
+- [x] Facilitator selects analysis template (Evaluation Criteria or Themes & Patterns) before running (e2e-mocked, unit)
+- [x] System aggregates feedback by trace (unit) **[BE-only]**
+- [x] Disagreements detected at 3 priority levels (deterministic, no LLM) (unit) **[BE-only]**
+- [x] LLM distills evaluation criteria with evidence from trace IDs (unit) **[BE-only]**
+- [x] LLM analyzes disagreements with follow-up questions and suggestions (unit) **[BE-only]**
+- [x] Analysis record stores which template was used (unit) **[BE-only]**
+- [x] Each analysis run creates a new record (history preserved) (e2e-mocked, unit)
+- [x] Re-runnable — new analysis as more feedback comes in, prior analyses retained (unit) **[BE-only]**
+- [x] Warning if < 2 participants (not an error) (e2e-mocked, unit)
+- [x] Data freshness banner (participant count, last run timestamp) (unit)
+- [x] Results organized by priority (HIGH → MEDIUM → LOWER) (unit)
+- [x] Facilitator can promote distilled criteria to draft rubric (e2e-real, unit)
+- [x] Facilitator can promote disagreement insights to draft rubric (e2e-real, unit)
+- [x] Facilitator can promote raw participant feedback to draft rubric (e2e-real, unit)
+- [x] Facilitator can manually add draft rubric items (e2e-real, unit)
+- [x] Draft rubric items editable and removable (e2e-real, unit)
+- [x] "Suggest Groups" returns LLM proposal without persisting (e2e-real, unit)
+- [x] Facilitator can review, adjust, and apply group proposal (e2e-real, unit)
+- [x] Manual grouping: create groups, name them, move items between groups (e2e-real, unit)
+- [x] Each group maps to one rubric question (group name = question title) (e2e-real, unit)
+- [x] Draft rubric items available during Rubric Creation phase (e2e-real, unit)
+- [x] Source traceability maintained (which traces support each item) (e2e-real, unit)
+- [x] One feedback record per (workshop, trace, user) — upsert behavior (integration, unit) **[BE-only]**
+- [x] Q&A pairs appended in order to JSON array (integration, unit) **[BE-only]**
+- [x] Multiple analysis records per workshop allowed (history preserved) (unit) **[BE-only]**
+- [x] Draft rubric items track promotion source and promoter (unit) **[BE-only]**
+- [x] LLM failures show error toast with retry (unit)
+- [x] Fallback question if LLM unavailable after retries (unit) **[BE-only]**
+- [x] Fallback warning banner shown only to facilitators, never to participants/SMEs (unit)
+- [x] Analysis shows warning (not error) if < 2 participants (unit)
+- [x] Form validation prevents empty submissions (unit) **[BE-only]**
+- [x] Progressive disclosure (one question at a time) (e2e-real, unit)
+- [x] Submit buttons disabled until required fields filled (unit)
+- [x] Clear progress indication (X of Y traces completed) (e2e-real)
+- [x] Smooth transitions between feedback states (unit)
+- [x] Single two-panel workspace replaces multi-page flow (no FacilitatorDashboard discovery tabs, no FindingsReviewPage) (unit)
+- [x] Trace feed shows actual trace content (input/output), not trace ID badges (unit)
+- [x] Trace-specific analysis findings appear on the trace card, pinned above feedback (collapsible) (unit) **[BE-only]**
+- [x] Cross-trace analysis findings appear in collapsible summary section above the feed (unit)
+- [x] Overview bar shows stats inline + compact controls (Run Analysis, Add Traces, Pause, Model selector) (unit)
+- [x] Draft rubric sidebar is always visible while browsing traces (e2e-mocked)
+- [x] Promote action visibly moves items from trace feed/summary into the sidebar (unit) **[BE-only]**
+- [x] Draft rubric items show trace reference badges (interactive: hover for preview, click to scroll) (unit) **[BE-only]**
+- [x] Draft rubric items do NOT show source-type badges (Finding, Disagreement, etc.) (unit)
+- [x] Disagreements color-coded by priority (red/yellow/blue) on trace cards (unit)
+- [x] "Create Rubric →" in sidebar transitions to rubric creation with groups pre-populated as criteria (unit) **[BE-only]**
 
 ### Tests Without Requirement Links
 
 These tests are tagged with the spec but don't link to specific requirements:
 
-- `tests/unit/routers/test_annotation_crud.py` (test_upsert_creates_new_annotation) [unit]
-- `tests/unit/routers/test_participant_notes.py` (test_create_discovery_note) [unit]
-- `tests/unit/routers/test_participant_notes.py` (test_create_annotation_note) [unit]
-- `tests/unit/routers/test_participant_notes.py` (test_create_note_defaults_to_discovery_phase) [unit]
-- `tests/unit/routers/test_participant_notes.py` (test_create_note_without_trace_id) [unit]
-- `tests/unit/routers/test_participant_notes.py` (test_create_note_missing_workshop_returns_404) [unit]
-- `tests/unit/routers/test_participant_notes.py` (test_create_note_service_error_returns_500) [unit]
-- `tests/unit/routers/test_participant_notes.py` (test_get_all_notes) [unit]
-- `tests/unit/routers/test_participant_notes.py` (test_get_notes_filtered_by_user) [unit]
-- `tests/unit/routers/test_participant_notes.py` (test_get_notes_filtered_by_discovery_phase) [unit]
-- `tests/unit/routers/test_participant_notes.py` (test_get_notes_filtered_by_annotation_phase) [unit]
-- `tests/unit/routers/test_participant_notes.py` (test_get_notes_filtered_by_user_and_phase) [unit]
-- `tests/unit/routers/test_participant_notes.py` (test_get_notes_missing_workshop_returns_404) [unit]
-- `tests/unit/routers/test_participant_notes.py` (test_delete_note_success) [unit]
-- `tests/unit/routers/test_participant_notes.py` (test_delete_nonexistent_note_returns_404) [unit]
-- `tests/unit/routers/test_participant_notes.py` (test_delete_note_missing_workshop_returns_404) [unit]
-- `tests/unit/routers/test_participant_notes.py` (test_multiple_notes_same_user_same_trace_append) [unit]
-- `tests/unit/routers/test_participant_notes.py` (test_notes_from_both_phases_coexist) [unit]
-- `tests/unit/routers/test_participant_notes.py` (test_toggle_participant_notes_enables) [unit]
-- `tests/unit/routers/test_participant_notes.py` (test_toggle_participant_notes_disables) [unit]
-- `tests/unit/routers/test_participant_notes.py` (test_toggle_missing_workshop_returns_404) [unit]
-- `tests/unit/routers/test_participant_notes.py` (test_multiple_annotators_notes_during_annotation) [unit]
-- `tests/unit/routers/test_participant_notes.py` (test_participant_note_create_model_defaults) [unit]
-- `tests/unit/routers/test_participant_notes.py` (test_participant_note_create_model_with_annotation_phase) [unit]
-- `tests/unit/routers/test_participant_notes.py` (test_participant_note_model_serialization) [unit]
-- `tests/unit/services/test_database_service_participant_notes.py` (test_add_participant_note_discovery) [unit]
-- `tests/unit/services/test_database_service_participant_notes.py` (test_add_participant_note_annotation) [unit]
-- `tests/unit/services/test_database_service_participant_notes.py` (test_add_participant_note_without_trace) [unit]
-- `tests/unit/services/test_database_service_participant_notes.py` (test_add_participant_note_always_creates_new) [unit]
-- `tests/unit/services/test_database_service_participant_notes.py` (test_get_participant_notes_no_filters) [unit]
-- `tests/unit/services/test_database_service_participant_notes.py` (test_get_participant_notes_filtered_by_user) [unit]
-- `tests/unit/services/test_database_service_participant_notes.py` (test_get_participant_notes_filtered_by_phase) [unit]
-- `tests/unit/services/test_database_service_participant_notes.py` (test_get_participant_notes_filtered_by_user_and_phase) [unit]
-- `tests/unit/services/test_database_service_participant_notes.py` (test_get_participant_notes_empty_result) [unit]
-- `tests/unit/services/test_database_service_participant_notes.py` (test_delete_participant_note_success) [unit]
-- `tests/unit/services/test_database_service_participant_notes.py` (test_delete_participant_note_not_found) [unit]
-
-- [x] Participants only see traces in current active discovery dataset (e2e-real, unit)
-- [x] When new discovery round starts, old traces hidden (not deleted) (e2e-real)
-- [x] Switching between discovery rounds hides/shows appropriate traces (unit) **[BE-only]**
-- [x] Phase/round context properly scoped in database (unit) **[BE-only]**
-- [x] Annotation traces randomized per (user_id, trace_set) pair (unit) **[BE-only]**
-- [x] Randomization persistent across page reloads for same trace set (e2e-real, unit)
-- [x] When annotation dataset changes mid-round, new traces appended (unit) **[BE-only]**
-- [x] When annotation round changes, full re-randomization applied (unit) **[BE-only]**
-- [x] Randomization context includes phase and round info (unit) **[BE-only]**
-- [x] Dataset operations (union, subtract) work correctly and maintain audit trail (unit) **[BE-only]**
-- [x] Multiple participants can see same trace with different orders (unit) **[BE-only]**
-- [x] Assignment metadata properly tracks all context (unit)
-- [x] Inter-rater reliability (IRR) can be measured (same traces, different orders) (unit) **[BE-only]**
-
-**Coverage**: 25/25 requirements (100%)
-
-### Backend-Only Requirements (no frontend tests)
-
-These requirements are covered by backend tests only. UI regressions won't be caught:
-
-- :warning: Fallback conversion handles Likert-style returns for binary (unit)
-- :warning: Evaluation results persisted to database (unit)
-- :warning: Results reload correctly in UI (unit)
-- :warning: Judge prompt auto-derived from rubric questions (unit)
-- :warning: Per-question judge_type parsed from rubric (`[JUDGE_TYPE:xxx]`) (unit)
-- :warning: Binary rubrics evaluated with 0/1 scale (not 1-5) (unit)
-- :warning: Re-evaluate loads registered judge with aligned instructions (unit)
-- :warning: Uses same model as initial auto-evaluation (unit)
-- :warning: Results stored against correct prompt version (unit)
-- :warning: Alignment jobs run asynchronously (unit)
-- :warning: MemAlign distills semantic memory (guidelines) (unit)
-- :warning: Aligned judge registered to MLflow (unit)
-- :warning: Metrics reported (guideline count, example count) (unit)
-- :warning: Works for both Likert and Binary scales (unit)
-- :warning: Krippendorff's Alpha calculated correctly (unit)
-- :warning: Cohen's Kappa calculated for rater pairs (unit)
-- :warning: Handles edge cases (no variation, single rater) (unit)
-- :warning: Updates when new annotations added (unit)
-
-### Covered Requirements
-
-- [x] Likert judges return values 1-5 (unit)
-- [x] Binary judges return values 0 or 1 (unit)
-- [x] Fallback conversion handles Likert-style returns for binary (unit) **[BE-only]**
-- [x] Evaluation results persisted to database (unit) **[BE-only]**
-- [x] Results reload correctly in UI (unit) **[BE-only]**
-- [x] Auto-evaluation runs in background when annotation phase starts (e2e-real, unit)
-- [x] Judge prompt auto-derived from rubric questions (unit) **[BE-only]**
-- [x] Per-question judge_type parsed from rubric (`[JUDGE_TYPE:xxx]`) (unit) **[BE-only]**
-- [x] Binary rubrics evaluated with 0/1 scale (not 1-5) (unit) **[BE-only]**
-- [x] Auto-evaluation model stored for re-evaluation consistency (e2e-real)
-- [x] Results appear in Judge Tuning page (e2e-real)
-- [x] Re-evaluate loads registered judge with aligned instructions (unit) **[BE-only]**
-- [x] Uses same model as initial auto-evaluation (unit) **[BE-only]**
-- [x] Spinner stops when re-evaluation completes (e2e-real)
-- [x] Results stored against correct prompt version (unit) **[BE-only]**
-- [x] Pre-align and post-align scores directly comparable (e2e-real)
-- [x] Alignment jobs run asynchronously (unit) **[BE-only]**
-- [x] MemAlign distills semantic memory (guidelines) (unit) **[BE-only]**
-- [x] Aligned judge registered to MLflow (unit) **[BE-only]**
-- [x] Metrics reported (guideline count, example count) (unit) **[BE-only]**
-- [x] Works for both Likert and Binary scales (unit) **[BE-only]**
-- [x] Krippendorff's Alpha calculated correctly (unit) **[BE-only]**
-- [x] Cohen's Kappa calculated for rater pairs (unit) **[BE-only]**
-- [x] Handles edge cases (no variation, single rater) (unit) **[BE-only]**
-- [x] Updates when new annotations added (unit) **[BE-only]**
-
-### Tests Without Requirement Links
-
-These tests are tagged with the spec but don't link to specific requirements:
-
-- `tests/unit/routers/test_workshops_begin_annotation.py` (test_begin_annotation_requires_rubric) [unit]
-- `tests/unit/routers/test_workshops_re_evaluate.py` (test_re_evaluate_tags_traces_before_evaluation) [unit]
-- `tests/unit/routers/test_workshops_re_evaluate.py` (test_re_evaluate_tags_traces_fallback_when_no_active_annotation_ids) [unit]
-- `tests/unit/services/test_alignment_service.py` (test_likert_agreement_metric_from_store_is_one_when_equal) [unit]
-- `tests/unit/services/test_cohens_kappa.py` (test_interpret_cohens_kappa_bucket_edges) [unit]
-- `tests/unit/services/test_cohens_kappa.py` (test_is_cohens_kappa_acceptable_default_threshold) [unit]
-- `tests/unit/services/test_evaluation_tag_overwrite.py` (test_search_tagged_traces_uses_dedicated_align_key) [unit]
-- `tests/unit/services/test_evaluation_tag_overwrite.py` (test_run_evaluation_yields_error_when_no_eval_tagged_traces) [unit]
-- `tests/unit/services/test_irr_utils.py` (test_format_irr_result_rounding_and_ready_flag) [unit]
-- `client/tests/e2e/evaluation-tagging.spec.ts` (re-evaluate endpoint tags traces before searching MLflow) [e2e-real]
-- `client/tests/e2e/evaluation-tagging.spec.ts` (begin-annotation auto-eval creates job and attempts tagging) [e2e-real]
-- `client/tests/e2e/evaluation-tagging.spec.ts` (begin-annotation without eval model skips auto-eval) [e2e-real]
+- `tests/unit/services/test_discovery_analysis_service.py` (test_draft_items_expose_source_trace_ids_for_display) [unit]
+- `tests/unit/services/test_draft_rubric_items.py` (test_ungrouped_items_each_become_question) [unit]
+- `tests/unit/services/test_draft_rubric_items.py` (test_no_items_raises_400) [unit]
+- `tests/unit/services/test_draft_rubric_items.py` (test_mixed_grouped_and_ungrouped) [unit]
+- `client/src/components/DraftRubricPanel.test.tsx` (renders trace ID badges for items with source_trace_ids) [unit]
+- `client/src/components/DraftRubricPanel.test.tsx` (does not render trace badges for manual items with no trace IDs) [unit]
+- `client/src/components/DraftRubricPanel.test.tsx` (renders source type badges for each item) [unit]
+- `client/src/components/DraftRubricPanel.test.tsx` (shows item count in header) [unit]
+- `client/src/components/DraftRubricPanel.test.tsx` (creates a new manual group from item controls) [unit]
+- `client/src/components/DraftRubricPanel.test.tsx` (moves an item into an existing group from item controls) [unit]
+- `client/src/components/DiscoveryAnalysisTab.evidence.test.tsx` (renders evidence trace IDs for findings (truncated to 8 chars)) [unit]
+- `client/src/components/DiscoveryAnalysisTab.evidence.test.tsx` (shows trace ID badge for each disagreement item) [unit]
 
 ---
 

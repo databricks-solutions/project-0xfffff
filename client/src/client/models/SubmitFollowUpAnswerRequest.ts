@@ -7,5 +7,6 @@ export type SubmitFollowUpAnswerRequest = {
     user_id: string;
     question: string;
     answer: string;
+    milestone_references?: Array<string>;
 };
 

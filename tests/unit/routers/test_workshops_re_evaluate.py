@@ -134,11 +134,8 @@ async def test_re_evaluate_tags_traces_before_evaluation(async_client, override_
     fake_db = FakeDatabaseService(None)
     monkeypatch.setattr(workshops_router, "DatabaseService", lambda db: fake_db)
 
-    mock_token_storage = MagicMock()
-    mock_token_storage.get_token.return_value = "test-token"
-
     with patch("server.routers.workshops.create_job") as mock_create_job, \
-         patch("server.services.token_storage_service.token_storage", mock_token_storage):
+         patch("server.services.databricks_service.resolve_databricks_token", return_value="test-token"):
         mock_job = MagicMock()
         mock_create_job.return_value = mock_job
 
@@ -183,11 +180,8 @@ async def test_re_evaluate_tags_traces_fallback_when_no_active_annotation_ids(
     fake_db = FakeDatabaseService(None, workshop=workshop)
     monkeypatch.setattr(workshops_router, "DatabaseService", lambda db: fake_db)
 
-    mock_token_storage = MagicMock()
-    mock_token_storage.get_token.return_value = "test-token"
-
     with patch("server.routers.workshops.create_job") as mock_create_job, \
-         patch("server.services.token_storage_service.token_storage", mock_token_storage):
+         patch("server.services.databricks_service.resolve_databricks_token", return_value="test-token"):
         mock_job = MagicMock()
         mock_create_job.return_value = mock_job
 

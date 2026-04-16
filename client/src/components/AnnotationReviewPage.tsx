@@ -9,12 +9,12 @@ import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { TraceViewer, TraceData } from '@/components/TraceViewer';
-import { 
+import { TraceViewer } from '@/components/TraceViewer';
+import {
   Star,
-  ChevronLeft, 
-  ChevronRight, 
-  FileText, 
+  ChevronLeft,
+  ChevronRight,
+  FileText,
   CheckCircle,
   Clock,
   MessageCircle,
@@ -25,15 +25,7 @@ import { useUser } from '@/context/UserContext';
 import { useTraces, useRubric, useUserAnnotations } from '@/hooks/useWorkshopApi';
 import type { Trace, Annotation } from '@/client';
 import { parseRubricQuestions as parseQuestions } from '@/utils/rubricUtils';
-
-// Convert API trace to TraceData format
-const convertTraceToTraceData = (trace: Trace): TraceData => ({
-  id: trace.id,
-  input: trace.input,
-  output: trace.output,
-  context: trace.context || undefined,
-  mlflow_trace_id: trace.mlflow_trace_id || undefined
-});
+import { convertTraceToTraceData } from '@/utils/traceUtils';
 
 // Parse rubric question from API format
 const parseRubricQuestions = (rubric: any) => {

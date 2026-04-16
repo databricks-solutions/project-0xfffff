@@ -7,17 +7,9 @@
  */
 export type MLflowIntakeConfigCreate = {
     /**
-     * Databricks workspace host URL
+     * MLflow experiment ID — resolved from MLFLOW_EXPERIMENT_ID env var if not provided
      */
-    databricks_host: string;
-    /**
-     * Databricks access token
-     */
-    databricks_token: string;
-    /**
-     * MLflow experiment ID to pull traces from
-     */
-    experiment_id: string;
+    experiment_id?: (string | null);
     /**
      * Maximum number of traces to pull
      */

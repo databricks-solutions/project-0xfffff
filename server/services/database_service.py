@@ -12,9 +12,11 @@ from sqlalchemy.orm import Session
 from server.database import (
   AnnotationDB,
   ClassifiedFindingDB,
-  DatabricksTokenDB,
   DisagreementDB,
   DiscoveryAnalysisDB,
+  DiscoveryAgentRunDB,
+  DiscoveryCommentDB,
+  DiscoveryCommentVoteDB,
   DiscoveryFeedbackDB,
   DiscoveryFindingDB,
   DiscoveryQuestionDB,
@@ -25,8 +27,11 @@ from server.database import (
   JudgePromptDB,
   MLflowIntakeConfigDB,
   ParticipantNoteDB,
+  CriterionEvaluationDB,
   RubricDB,
+  SummarizationJobDB,
   TraceDB,
+  TraceCriterionDB,
   TraceDiscoveryThresholdDB,
   UserDB,
   UserDiscoveryCompletionDB,
@@ -38,6 +43,10 @@ from server.models import (
   Annotation,
   AnnotationCreate,
   DiscoveryFeedback,
+  DiscoveryAgentRun,
+  DiscoveryComment,
+  DiscoveryCommentCreate,
+  DiscoveryCommentVoteRequest,
   DiscoveryFeedbackCreate,
   DiscoveryFinding,
   DiscoveryFindingCreate,
@@ -65,10 +74,10 @@ from server.models import (
   UserTraceOrder,
   Workshop,
   WorkshopCreate,
+  WorkshopMode,
   WorkshopParticipant,
   WorkshopPhase,
 )
-from server.services.token_storage_service import token_storage
 from server.utils.config import get_facilitator_config
 from server.utils.password import generate_default_password, hash_password, verify_password
 
@@ -133,6 +142,7 @@ class DatabaseService:
       name=workshop_data.name,
       description=workshop_data.description,
       facilitator_id=workshop_data.facilitator_id,
+      mode=workshop_data.mode.value if hasattr(workshop_data.mode, "value") else str(workshop_data.mode),
     )
     self.db.add(db_workshop)
     self.db.commit()
@@ -159,6 +169,8 @@ class DatabaseService:
       annotation_randomize_traces=getattr(db_workshop, 'annotation_randomize_traces', False) or False,
       judge_name=db_workshop.judge_name or 'workshop_judge',
       discovery_questions_model_name=getattr(db_workshop, 'discovery_questions_model_name', 'demo') or 'demo',
+      discovery_mode=(getattr(db_workshop, "discovery_mode", "analysis") or "analysis"),
+      discovery_followups_enabled=getattr(db_workshop, "discovery_followups_enabled", True),
       input_jsonpath=getattr(db_workshop, 'input_jsonpath', None),
       output_jsonpath=getattr(db_workshop, 'output_jsonpath', None),
       auto_evaluation_job_id=getattr(db_workshop, 'auto_evaluation_job_id', None),
@@ -166,6 +178,10 @@ class DatabaseService:
       auto_evaluation_model=getattr(db_workshop, 'auto_evaluation_model', None),
       show_participant_notes=getattr(db_workshop, 'show_participant_notes', False) or False,
       span_attribute_filter=getattr(db_workshop, 'span_attribute_filter', None),
+      summarization_enabled=getattr(db_workshop, 'summarization_enabled', False) or False,
+      summarization_model=getattr(db_workshop, 'summarization_model', None),
+      summarization_guidance=getattr(db_workshop, 'summarization_guidance', None),
+      mode=WorkshopMode(getattr(db_workshop, 'mode', WorkshopMode.WORKSHOP.value) or WorkshopMode.WORKSHOP.value),
       created_at=db_workshop.created_at,
     )
 
@@ -256,6 +272,32 @@ class DatabaseService:
 
     return self.get_workshop(workshop_id)
 
+  def get_workshop_mode(self, workshop_id: str) -> Optional[WorkshopMode]:
+    """Get the persisted workshop mode."""
+    db_workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if not db_workshop:
+      return None
+    mode = getattr(db_workshop, "mode", WorkshopMode.WORKSHOP.value) or WorkshopMode.WORKSHOP.value
+    return WorkshopMode(mode)
+
+  def is_eval_mode(self, workshop_id: str) -> bool:
+    mode = self.get_workshop_mode(workshop_id)
+    return mode == WorkshopMode.EVAL if mode else False
+
+  def update_workshop_mode(self, workshop_id: str, mode: WorkshopMode) -> Optional[Workshop]:
+    """Set workshop mode once; mode is immutable after creation."""
+    db_workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if not db_workshop:
+      return None
+
+    current_mode = getattr(db_workshop, "mode", WorkshopMode.WORKSHOP.value) or WorkshopMode.WORKSHOP.value
+    requested = mode.value if hasattr(mode, "value") else str(mode)
+    if current_mode != requested:
+      raise ValueError("Workshop mode is immutable after creation")
+
+    # No-op update preserves immutable contract while returning current state.
+    return self._workshop_from_db(db_workshop)
+
   def update_discovery_questions_model_name(self, workshop_id: str, model_name: str) -> Optional[Workshop]:
     """Update the discovery questions model name for a workshop."""
     db_workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
@@ -320,6 +362,136 @@ class DatabaseService:
     self.db.refresh(db_workshop)
 
     return self.get_workshop(workshop_id)
+
+  def update_workshop_summarization_settings(
+    self,
+    workshop_id: str,
+    summarization_enabled: bool,
+    summarization_model: str | None,
+    summarization_guidance: str | None,
+  ) -> Optional[Workshop]:
+    """Update trace summarization settings for a workshop."""
+    db_workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if not db_workshop:
+      return None
+
+    db_workshop.summarization_enabled = summarization_enabled
+    db_workshop.summarization_model = summarization_model
+    db_workshop.summarization_guidance = summarization_guidance
+    self.db.commit()
+    self.db.refresh(db_workshop)
+
+    return self.get_workshop(workshop_id)
+
+  def update_trace_summary(self, trace_id: str, summary: dict | None) -> None:
+    """Update a trace's summary (structured milestone view)."""
+    db_trace = self.db.query(TraceDB).filter(TraceDB.id == trace_id).first()
+    if db_trace:
+      db_trace.summary = summary
+      self.db.commit()
+
+  # --- Summarization Job CRUD ---
+
+  def create_summarization_job(self, workshop_id: str, total: int) -> "SummarizationJob":
+    """Create a new summarization job for tracking batch progress."""
+    from server.models import SummarizationJob
+
+    db_job = SummarizationJobDB(
+      workshop_id=workshop_id,
+      status="pending",
+      total=total,
+      completed_traces=[],
+      failed_traces=[],
+    )
+    self.db.add(db_job)
+    self.db.commit()
+    self.db.refresh(db_job)
+    return self._job_from_db(db_job)
+
+  def get_summarization_job(self, job_id: str) -> "SummarizationJob | None":
+    """Get a summarization job by ID."""
+    db_job = self.db.query(SummarizationJobDB).filter(SummarizationJobDB.id == job_id).first()
+    if not db_job:
+      return None
+    return self._job_from_db(db_job)
+
+  def update_summarization_job_status(self, job_id: str, status: str) -> "SummarizationJob | None":
+    """Update the status of a summarization job."""
+    db_job = self.db.query(SummarizationJobDB).filter(SummarizationJobDB.id == job_id).first()
+    if not db_job:
+      return None
+    db_job.status = status
+    self.db.commit()
+    self.db.refresh(db_job)
+    return self._job_from_db(db_job)
+
+  def add_summarization_job_completed(self, job_id: str, trace_id: str) -> "SummarizationJob | None":
+    """Append a trace ID to the job's completed list."""
+    db_job = self.db.query(SummarizationJobDB).filter(SummarizationJobDB.id == job_id).first()
+    if not db_job:
+      return None
+    completed = list(db_job.completed_traces or [])
+    completed.append(trace_id)
+    db_job.completed_traces = completed
+    self.db.commit()
+    self.db.refresh(db_job)
+    return self._job_from_db(db_job)
+
+  def add_summarization_job_failed(self, job_id: str, trace_id: str, error: str) -> "SummarizationJob | None":
+    """Append a failed trace entry to the job's failed list."""
+    db_job = self.db.query(SummarizationJobDB).filter(SummarizationJobDB.id == job_id).first()
+    if not db_job:
+      return None
+    failed = list(db_job.failed_traces or [])
+    failed.append({"trace_id": trace_id, "error": error})
+    db_job.failed_traces = failed
+    self.db.commit()
+    self.db.refresh(db_job)
+    return self._job_from_db(db_job)
+
+  def get_latest_summarization_job(self, workshop_id: str) -> "SummarizationJob | None":
+    """Get the most recent summarization job for a workshop."""
+    db_job = (
+      self.db.query(SummarizationJobDB)
+      .filter(SummarizationJobDB.workshop_id == workshop_id)
+      .order_by(SummarizationJobDB.created_at.desc())
+      .first()
+    )
+    if not db_job:
+      return None
+    return self._job_from_db(db_job)
+
+  def get_summarization_status(self, workshop_id: str) -> dict:
+    """Get summary coverage stats and last job for a workshop."""
+    with_summary = self.db.query(TraceDB).filter(
+      TraceDB.workshop_id == workshop_id,
+      TraceDB.summary.isnot(None),
+    ).count()
+    without_summary = self.db.query(TraceDB).filter(
+      TraceDB.workshop_id == workshop_id,
+      TraceDB.summary.is_(None),
+    ).count()
+    last_job = self.get_latest_summarization_job(workshop_id)
+    return {
+      "traces_with_summaries": with_summary,
+      "traces_without_summaries": without_summary,
+      "last_job": last_job,
+    }
+
+  def _job_from_db(self, db_job: SummarizationJobDB) -> "SummarizationJob":
+    """Convert a SummarizationJobDB row to a Pydantic model."""
+    from server.models import SummarizationJob
+
+    return SummarizationJob(
+      id=db_job.id,
+      workshop_id=db_job.workshop_id,
+      status=db_job.status,
+      total=db_job.total,
+      completed_traces=db_job.completed_traces or [],
+      failed_traces=db_job.failed_traces or [],
+      created_at=db_job.created_at,
+      updated_at=db_job.updated_at,
+    )
 
   def update_workshop_phase(self, workshop_id: str, new_phase: WorkshopPhase) -> Optional[Workshop]:
     """Update the current phase of a workshop."""
@@ -414,6 +586,26 @@ class DatabaseService:
     self.db.commit()
     self.db.refresh(db_workshop)
 
+    return self._workshop_from_db(db_workshop)
+
+  def update_discovery_settings(
+    self,
+    workshop_id: str,
+    discovery_mode: Optional[str] = None,
+    discovery_followups_enabled: Optional[bool] = None,
+  ) -> Optional[Workshop]:
+    """Update discovery mode and/or follow-up toggle for a workshop."""
+    db_workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if not db_workshop:
+      return None
+
+    if discovery_mode is not None:
+      db_workshop.discovery_mode = discovery_mode
+    if discovery_followups_enabled is not None:
+      db_workshop.discovery_followups_enabled = discovery_followups_enabled
+
+    self.db.commit()
+    self.db.refresh(db_workshop)
     return self._workshop_from_db(db_workshop)
 
   def update_annotation_randomize_setting(self, workshop_id: str, randomize: bool) -> Optional[Workshop]:
@@ -1990,16 +2182,17 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       .filter(MLflowIntakeConfigDB.workshop_id == workshop_id)
       .first()
     )
-    if not config or not config.databricks_host or not config.experiment_id:
+    if not config or not config.experiment_id:
       logger.debug('Skipping MLflow sync: config missing for workshop %s', workshop_id)
       result['error'] = 'config missing'
       return result
 
-    databricks_token = token_storage.get_token(workshop_id)
-    if not databricks_token:
-      databricks_token = self.get_databricks_token(workshop_id)
-      if databricks_token:
-        token_storage.store_token(workshop_id, databricks_token)
+    from server.services.databricks_service import resolve_databricks_token
+
+    try:
+      databricks_token = resolve_databricks_token()
+    except RuntimeError:
+      databricks_token = None
     if not databricks_token:
       logger.debug('Skipping MLflow sync: token missing for workshop %s', workshop_id)
       result['error'] = 'token missing'
@@ -2012,11 +2205,6 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       logger.warning('MLflow is not available; cannot sync annotation feedback.')
       result['error'] = 'mlflow not available'
       return result
-
-    os.environ['DATABRICKS_HOST'] = config.databricks_host.rstrip('/')
-    os.environ['DATABRICKS_TOKEN'] = databricks_token
-    os.environ.pop('DATABRICKS_CLIENT_ID', None)
-    os.environ.pop('DATABRICKS_CLIENT_SECRET', None)
 
     mlflow.set_tracking_uri('databricks')
 
@@ -2330,15 +2518,16 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       .filter(MLflowIntakeConfigDB.workshop_id == workshop_id)
       .first()
     )
-    if not config or not config.databricks_host or not config.experiment_id:
+    if not config or not config.experiment_id:
       logger.warning('Skipping MLflow eval sync: config missing for workshop %s', workshop_id)
       return {'synced': 0, 'error': 'MLflow config missing'}
 
-    databricks_token = token_storage.get_token(workshop_id)
-    if not databricks_token:
-      databricks_token = self.get_databricks_token(workshop_id)
-      if databricks_token:
-        token_storage.store_token(workshop_id, databricks_token)
+    from server.services.databricks_service import resolve_databricks_token
+
+    try:
+      databricks_token = resolve_databricks_token()
+    except RuntimeError:
+      databricks_token = None
     if not databricks_token:
       logger.warning('Skipping MLflow eval sync: token missing for workshop %s', workshop_id)
       return {'synced': 0, 'error': 'Databricks token missing'}
@@ -2349,11 +2538,6 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
     except ImportError:
       logger.warning('MLflow is not available; cannot sync evaluation feedback.')
       return {'synced': 0, 'error': 'MLflow not available'}
-
-    os.environ['DATABRICKS_HOST'] = config.databricks_host.rstrip('/')
-    os.environ['DATABRICKS_TOKEN'] = databricks_token
-    os.environ.pop('DATABRICKS_CLIENT_ID', None)
-    os.environ.pop('DATABRICKS_CLIENT_SECRET', None)
 
     mlflow.set_tracking_uri('databricks')
 
@@ -2480,8 +2664,13 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       logger.warning('Skipping MLflow tagging: config missing for workshop %s', workshop_id)
       return {'tagged': 0, 'failed': trace_ids, 'error': 'MLflow config missing'}
 
-    # Get token from token storage
-    databricks_token = token_storage.get_token(workshop_id)
+    # Get token via SDK auth
+    from server.services.databricks_service import resolve_databricks_token
+
+    try:
+      databricks_token = resolve_databricks_token()
+    except RuntimeError:
+      databricks_token = None
     if not databricks_token:
       logger.warning('Skipping MLflow tagging: token missing for workshop %s', workshop_id)
       return {'tagged': 0, 'failed': trace_ids, 'error': 'Databricks token missing'}
@@ -2491,12 +2680,6 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
     except ImportError:
       logger.warning('MLflow is not available; cannot tag traces.')
       return {'tagged': 0, 'failed': trace_ids, 'error': 'MLflow not available'}
-
-    # Set up MLflow credentials
-    os.environ['DATABRICKS_HOST'] = config.databricks_host.rstrip('/')
-    os.environ['DATABRICKS_TOKEN'] = databricks_token
-    os.environ.pop('DATABRICKS_CLIENT_ID', None)
-    os.environ.pop('DATABRICKS_CLIENT_SECRET', None)
 
     mlflow.set_tracking_uri('databricks')
 
@@ -3147,7 +3330,7 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
     workshop_id: str,
     trace_id: str,
     user_id: str,
-    qna: Dict[str, str],
+    qna: Dict[str, Any],
   ) -> DiscoveryFeedback:
     """Append a Q&A pair to an existing feedback record (DI-2)."""
     row = (
@@ -3342,7 +3525,6 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
 
     if existing_config:
       # Update existing config
-      existing_config.databricks_host = config_data.databricks_host
       existing_config.experiment_id = config_data.experiment_id
       existing_config.max_traces = config_data.max_traces
       existing_config.filter_string = config_data.filter_string
@@ -3355,8 +3537,6 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       self.db.refresh(existing_config)
 
       return MLflowIntakeConfig(
-        databricks_host=existing_config.databricks_host,
-        databricks_token=config_data.databricks_token,  # Return the provided token, not from DB
         experiment_id=existing_config.experiment_id,
         max_traces=existing_config.max_traces,
         filter_string=existing_config.filter_string,
@@ -3367,7 +3547,6 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       db_config = MLflowIntakeConfigDB(
         id=config_id,
         workshop_id=workshop_id,
-        databricks_host=config_data.databricks_host,
         experiment_id=config_data.experiment_id,
         max_traces=config_data.max_traces,
         filter_string=config_data.filter_string,
@@ -3378,50 +3557,23 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       self.db.refresh(db_config)
 
       return MLflowIntakeConfig(
-        databricks_host=db_config.databricks_host,
-        databricks_token=config_data.databricks_token,  # Return the provided token, not from DB
         experiment_id=db_config.experiment_id,
         max_traces=db_config.max_traces,
         filter_string=db_config.filter_string,
       )
 
   def get_mlflow_config(self, workshop_id: str) -> Optional[MLflowIntakeConfig]:
-    """Get MLflow intake configuration for a workshop (without token)."""
+    """Get MLflow intake configuration for a workshop."""
     db_config = self.db.query(MLflowIntakeConfigDB).filter(MLflowIntakeConfigDB.workshop_id == workshop_id).first()
 
     if not db_config:
       return None
 
     return MLflowIntakeConfig(
-      databricks_host=db_config.databricks_host,
-      databricks_token='',  # Token is not stored in database
       experiment_id=db_config.experiment_id,
       max_traces=db_config.max_traces,
       filter_string=db_config.filter_string,
     )
-
-  def set_databricks_token(self, workshop_id: str, token: str) -> None:
-    """Persist Databricks token for a workshop."""
-    if not token:
-      return
-
-    db_token = self.db.query(DatabricksTokenDB).filter(DatabricksTokenDB.workshop_id == workshop_id).first()
-
-    if db_token:
-      db_token.token = token
-      db_token.updated_at = datetime.now()
-    else:
-      db_token = DatabricksTokenDB(workshop_id=workshop_id, token=token)
-      self.db.add(db_token)
-
-    self.db.commit()
-
-  def get_databricks_token(self, workshop_id: str) -> Optional[str]:
-    """Retrieve persisted Databricks token for a workshop."""
-    db_token = self.db.query(DatabricksTokenDB).filter(DatabricksTokenDB.workshop_id == workshop_id).first()
-    if db_token:
-      return db_token.token
-    return None
 
   def update_mlflow_ingestion_status(self, workshop_id: str, trace_count: int, error_message: Optional[str] = None) -> None:
     """Update MLflow ingestion status for a workshop."""
@@ -3448,12 +3600,17 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       return MLflowIntakeStatus(workshop_id=workshop_id, is_configured=False, is_ingested=False, trace_count=0)
 
     config = MLflowIntakeConfig(
-      databricks_host=db_config.databricks_host,
-      databricks_token='',  # Token is not stored in database
       experiment_id=db_config.experiment_id,
       max_traces=db_config.max_traces,
       filter_string=db_config.filter_string,
     )
+
+    from server.services.databricks_service import get_databricks_host
+
+    try:
+      host = get_databricks_host()
+    except RuntimeError:
+      host = None
 
     return MLflowIntakeStatus(
       workshop_id=workshop_id,
@@ -3463,6 +3620,7 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       last_ingestion_time=db_config.last_ingestion_time,
       error_message=db_config.error_message,
       config=config,
+      databricks_host=host,
     )
 
   # Judge Tuning operations
@@ -3566,7 +3724,14 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       self.db.commit()
 
   def store_judge_evaluations(self, evaluations: List[JudgeEvaluation]) -> None:
-    """Store judge evaluation results."""
+    """Store judge evaluation results.
+
+    .. deprecated::
+        Use AlignmentService.store_evaluation_results() for re-evaluations.
+        This method deletes all existing evaluations for the prompt before inserting,
+        which destroys pre-alignment baselines. It is still used by initial evaluation
+        call sites where delete-all is the correct behavior.
+    """
     # Clear existing evaluations for this prompt
     if evaluations:
       self.db.query(JudgeEvaluationDB).filter(JudgeEvaluationDB.prompt_id == evaluations[0].prompt_id).delete()
@@ -3691,6 +3856,27 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
   def clear_judge_evaluations(self, workshop_id: str, prompt_id: str) -> None:
     """Clear all evaluation results for a specific judge prompt."""
     self.db.query(JudgeEvaluationDB).filter(and_(JudgeEvaluationDB.workshop_id == workshop_id, JudgeEvaluationDB.prompt_id == prompt_id)).delete()
+    self.db.commit()
+
+  def _insert_judge_evaluations(self, evaluations: list) -> None:
+    """Insert judge evaluations without clearing existing ones.
+
+    Used by AlignmentService.store_evaluation_results() which handles
+    prompt versioning and rating normalization at a higher level.
+    """
+    for evaluation in evaluations:
+      db_eval = JudgeEvaluationDB(
+        id=evaluation.id,
+        workshop_id=evaluation.workshop_id,
+        prompt_id=evaluation.prompt_id,
+        trace_id=evaluation.trace_id,
+        predicted_rating=evaluation.predicted_rating,
+        human_rating=evaluation.human_rating,
+        confidence=evaluation.confidence,
+        reasoning=evaluation.reasoning,
+        predicted_feedback=evaluation.predicted_feedback,
+      )
+      self.db.add(db_eval)
     self.db.commit()
 
   def get_latest_evaluations(self, workshop_id: str) -> List[JudgeEvaluation]:
@@ -3819,6 +4005,7 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       mlflow_experiment_id=db_trace.mlflow_experiment_id,
       include_in_alignment=db_trace.include_in_alignment if db_trace.include_in_alignment is not None else True,
       sme_feedback=db_trace.sme_feedback,
+      summary=getattr(db_trace, 'summary', None),
       created_at=db_trace.created_at,
     )
 
@@ -3886,30 +4073,34 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
     # Import all related models
     from server.database import (
       AnnotationDB, UserTraceOrderDB, RubricDB, MLflowIntakeConfigDB,
-      DiscoveryFindingDB, UserDiscoveryCompletionDB, JudgePromptDB, JudgeEvaluationDB
+      DiscoveryFindingDB, UserDiscoveryCompletionDB, JudgePromptDB, JudgeEvaluationDB,
+      DiscoveryFeedbackDB, DiscoveryQuestionDB, ParticipantNoteDB,
+      ClassifiedFindingDB, DisagreementDB, TraceDiscoveryQuestionDB,
+      TraceDiscoveryThresholdDB, DraftRubricItemDB
     )
-    
+
     # Get trace IDs first
     trace_ids = [t.id for t in self.db.query(TraceDB).filter(TraceDB.workshop_id == workshop_id).all()]
-    
+
     if trace_ids:
-      # Delete annotations for these traces
+      # Delete all child rows that reference traces via FK
       self.db.query(AnnotationDB).filter(AnnotationDB.trace_id.in_(trace_ids)).delete(synchronize_session=False)
-      # Delete judge evaluations for these traces
       self.db.query(JudgeEvaluationDB).filter(JudgeEvaluationDB.trace_id.in_(trace_ids)).delete(synchronize_session=False)
-    
-    # Delete user trace orders for this workshop
+      self.db.query(DiscoveryFindingDB).filter(DiscoveryFindingDB.trace_id.in_(trace_ids)).delete(synchronize_session=False)
+      self.db.query(DiscoveryFeedbackDB).filter(DiscoveryFeedbackDB.trace_id.in_(trace_ids)).delete(synchronize_session=False)
+      self.db.query(DiscoveryQuestionDB).filter(DiscoveryQuestionDB.trace_id.in_(trace_ids)).delete(synchronize_session=False)
+      self.db.query(ParticipantNoteDB).filter(ParticipantNoteDB.trace_id.in_(trace_ids)).delete(synchronize_session=False)
+      self.db.query(ClassifiedFindingDB).filter(ClassifiedFindingDB.trace_id.in_(trace_ids)).delete(synchronize_session=False)
+      self.db.query(DisagreementDB).filter(DisagreementDB.trace_id.in_(trace_ids)).delete(synchronize_session=False)
+      self.db.query(TraceDiscoveryQuestionDB).filter(TraceDiscoveryQuestionDB.trace_id.in_(trace_ids)).delete(synchronize_session=False)
+      self.db.query(TraceDiscoveryThresholdDB).filter(TraceDiscoveryThresholdDB.trace_id.in_(trace_ids)).delete(synchronize_session=False)
+
+    # Delete workshop-level child data (no trace FK, just workshop FK)
     self.db.query(UserTraceOrderDB).filter(UserTraceOrderDB.workshop_id == workshop_id).delete(synchronize_session=False)
-    
-    # Delete discovery findings for this workshop
-    self.db.query(DiscoveryFindingDB).filter(DiscoveryFindingDB.workshop_id == workshop_id).delete(synchronize_session=False)
-    
-    # Delete user discovery completions for this workshop
     self.db.query(UserDiscoveryCompletionDB).filter(UserDiscoveryCompletionDB.workshop_id == workshop_id).delete(synchronize_session=False)
-    
-    # Delete judge prompts for this workshop (after evaluations are deleted)
     self.db.query(JudgePromptDB).filter(JudgePromptDB.workshop_id == workshop_id).delete(synchronize_session=False)
-    
+    self.db.query(DraftRubricItemDB).filter(DraftRubricItemDB.workshop_id == workshop_id).delete(synchronize_session=False)
+
     # Delete all traces
     deleted_count = self.db.query(TraceDB).filter(TraceDB.workshop_id == workshop_id).delete(synchronize_session=False)
     
@@ -4524,3 +4715,278 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
     return self.db.query(DiscoveryAnalysisDB).filter(
       DiscoveryAnalysisDB.id == analysis_id
     ).first()
+
+  # =========================================================================
+  # Discovery social thread operations
+  # =========================================================================
+
+  def _build_discovery_comment(self, row: DiscoveryCommentDB, viewer_user_id: Optional[str] = None) -> DiscoveryComment:
+    user = self.db.query(UserDB).filter(UserDB.id == row.user_id).first()
+    votes = self.db.query(DiscoveryCommentVoteDB).filter(DiscoveryCommentVoteDB.comment_id == row.id).all()
+    upvotes = sum(1 for v in votes if int(v.value) > 0)
+    downvotes = sum(1 for v in votes if int(v.value) < 0)
+    viewer_vote = 0
+    if viewer_user_id:
+      existing = next((v for v in votes if v.user_id == viewer_user_id), None)
+      if existing:
+        viewer_vote = int(existing.value)
+
+    user_name = "Unknown User"
+    user_email = ""
+    user_role = "participant"
+    if user:
+      user_name = user.name
+      user_email = user.email
+      user_role = user.role
+    elif row.author_type == "assistant":
+      user_name = "Assistant"
+      user_role = "assistant"
+    elif row.author_type == "agent":
+      user_name = "Agent"
+      user_role = "agent"
+
+    return DiscoveryComment(
+      id=row.id,
+      workshop_id=row.workshop_id,
+      trace_id=row.trace_id,
+      milestone_ref=row.milestone_ref,
+      parent_comment_id=row.parent_comment_id,
+      user_id=row.user_id,
+      user_name=user_name,
+      user_email=user_email,
+      user_role=user_role,
+      author_type=row.author_type,
+      body=row.body,
+      upvotes=upvotes,
+      downvotes=downvotes,
+      score=upvotes - downvotes,
+      viewer_vote=viewer_vote,
+      created_at=row.created_at,
+      updated_at=row.updated_at,
+    )
+
+  def create_discovery_comment(
+    self,
+    workshop_id: str,
+    data: DiscoveryCommentCreate,
+    author_type: str = "human",
+  ) -> DiscoveryComment:
+    row = DiscoveryCommentDB(
+      id=str(uuid.uuid4()),
+      workshop_id=workshop_id,
+      trace_id=data.trace_id,
+      milestone_ref=data.milestone_ref,
+      parent_comment_id=data.parent_comment_id,
+      user_id=data.user_id,
+      author_type=author_type,
+      body=data.body,
+    )
+    self.db.add(row)
+    self.db.commit()
+    self.db.refresh(row)
+    return self._build_discovery_comment(row, viewer_user_id=data.user_id)
+
+  def get_discovery_comment(self, comment_id: str, viewer_user_id: Optional[str] = None) -> Optional[DiscoveryComment]:
+    row = self.db.query(DiscoveryCommentDB).filter(DiscoveryCommentDB.id == comment_id).first()
+    if not row:
+      return None
+    return self._build_discovery_comment(row, viewer_user_id=viewer_user_id)
+
+  def list_discovery_comments(
+    self,
+    workshop_id: str,
+    trace_id: str,
+    milestone_ref: Optional[str] = None,
+    viewer_user_id: Optional[str] = None,
+  ) -> List[DiscoveryComment]:
+    query = self.db.query(DiscoveryCommentDB).filter(
+      DiscoveryCommentDB.workshop_id == workshop_id,
+      DiscoveryCommentDB.trace_id == trace_id,
+    )
+    if milestone_ref is None:
+      query = query.filter(DiscoveryCommentDB.milestone_ref.is_(None))
+    else:
+      query = query.filter(DiscoveryCommentDB.milestone_ref == milestone_ref)
+    rows = query.order_by(DiscoveryCommentDB.created_at.asc()).all()
+    return [self._build_discovery_comment(r, viewer_user_id=viewer_user_id) for r in rows]
+
+  def vote_discovery_comment(
+    self,
+    workshop_id: str,
+    comment_id: str,
+    vote_data: DiscoveryCommentVoteRequest,
+  ) -> DiscoveryComment:
+    if vote_data.value not in (-1, 1):
+      raise ValueError("vote value must be -1 or 1")
+
+    comment = self.db.query(DiscoveryCommentDB).filter(
+      DiscoveryCommentDB.id == comment_id,
+      DiscoveryCommentDB.workshop_id == workshop_id,
+    ).first()
+    if not comment:
+      raise ValueError("Comment not found")
+
+    existing = self.db.query(DiscoveryCommentVoteDB).filter(
+      DiscoveryCommentVoteDB.comment_id == comment_id,
+      DiscoveryCommentVoteDB.user_id == vote_data.user_id,
+    ).first()
+    if existing:
+      if int(existing.value) == int(vote_data.value):
+        # Toggle off same vote
+        self.db.delete(existing)
+      else:
+        existing.value = int(vote_data.value)
+    else:
+      self.db.add(
+        DiscoveryCommentVoteDB(
+          id=str(uuid.uuid4()),
+          workshop_id=workshop_id,
+          comment_id=comment_id,
+          user_id=vote_data.user_id,
+          value=int(vote_data.value),
+        )
+      )
+    self.db.commit()
+    self.db.refresh(comment)
+    return self._build_discovery_comment(comment, viewer_user_id=vote_data.user_id)
+
+  def delete_discovery_comment(self, workshop_id: str, comment_id: str) -> bool:
+    root_comment = self.db.query(DiscoveryCommentDB).filter(
+      DiscoveryCommentDB.id == comment_id,
+      DiscoveryCommentDB.workshop_id == workshop_id,
+    ).first()
+    if not root_comment:
+      return False
+
+    comment_ids: list[str] = [root_comment.id]
+    idx = 0
+    while idx < len(comment_ids):
+      parent_id = comment_ids[idx]
+      child_rows = self.db.query(DiscoveryCommentDB.id).filter(
+        DiscoveryCommentDB.workshop_id == workshop_id,
+        DiscoveryCommentDB.parent_comment_id == parent_id,
+      ).all()
+      for child_row in child_rows:
+        child_id = str(child_row.id)
+        if child_id not in comment_ids:
+          comment_ids.append(child_id)
+      idx += 1
+
+    self.db.query(DiscoveryCommentVoteDB).filter(
+      DiscoveryCommentVoteDB.comment_id.in_(comment_ids)
+    ).delete(synchronize_session=False)
+    self.db.query(DiscoveryAgentRunDB).filter(
+      DiscoveryAgentRunDB.workshop_id == workshop_id,
+      DiscoveryAgentRunDB.trigger_comment_id.in_(comment_ids),
+    ).delete(synchronize_session=False)
+    self.db.query(DiscoveryCommentDB).filter(
+      DiscoveryCommentDB.workshop_id == workshop_id,
+      DiscoveryCommentDB.id.in_(comment_ids),
+    ).delete(synchronize_session=False)
+    self.db.commit()
+    return True
+
+  def create_discovery_agent_run(
+    self,
+    workshop_id: str,
+    trace_id: str,
+    trigger_comment_id: str,
+    created_by: str,
+    milestone_ref: Optional[str] = None,
+  ) -> DiscoveryAgentRun:
+    row = DiscoveryAgentRunDB(
+      id=str(uuid.uuid4()),
+      workshop_id=workshop_id,
+      trace_id=trace_id,
+      milestone_ref=milestone_ref,
+      trigger_comment_id=trigger_comment_id,
+      status="running",
+      tool_calls_count=0,
+      partial_output="",
+      created_by=created_by,
+    )
+    self.db.add(row)
+    self.db.commit()
+    self.db.refresh(row)
+    return DiscoveryAgentRun(
+      id=row.id,
+      workshop_id=row.workshop_id,
+      trace_id=row.trace_id,
+      milestone_ref=row.milestone_ref,
+      trigger_comment_id=row.trigger_comment_id,
+      status=row.status,
+      tool_calls_count=row.tool_calls_count or 0,
+      partial_output=row.partial_output or "",
+      final_output=row.final_output,
+      error=row.error,
+      created_by=row.created_by,
+      completed_at=row.completed_at,
+      created_at=row.created_at,
+      updated_at=row.updated_at,
+    )
+
+  def get_discovery_agent_run(self, run_id: str) -> Optional[DiscoveryAgentRun]:
+    row = self.db.query(DiscoveryAgentRunDB).filter(DiscoveryAgentRunDB.id == run_id).first()
+    if not row:
+      return None
+    return DiscoveryAgentRun(
+      id=row.id,
+      workshop_id=row.workshop_id,
+      trace_id=row.trace_id,
+      milestone_ref=row.milestone_ref,
+      trigger_comment_id=row.trigger_comment_id,
+      status=row.status,
+      tool_calls_count=row.tool_calls_count or 0,
+      partial_output=row.partial_output or "",
+      final_output=row.final_output,
+      error=row.error,
+      created_by=row.created_by,
+      completed_at=row.completed_at,
+      created_at=row.created_at,
+      updated_at=row.updated_at,
+    )
+
+  def update_discovery_agent_run(
+    self,
+    run_id: str,
+    *,
+    status: Optional[str] = None,
+    tool_calls_count: Optional[int] = None,
+    partial_output: Optional[str] = None,
+    final_output: Optional[str] = None,
+    error: Optional[str] = None,
+    completed: bool = False,
+  ) -> Optional[DiscoveryAgentRun]:
+    row = self.db.query(DiscoveryAgentRunDB).filter(DiscoveryAgentRunDB.id == run_id).first()
+    if not row:
+      return None
+    if status is not None:
+      row.status = status
+    if tool_calls_count is not None:
+      row.tool_calls_count = tool_calls_count
+    if partial_output is not None:
+      row.partial_output = partial_output
+    if final_output is not None:
+      row.final_output = final_output
+    if error is not None:
+      row.error = error
+    if completed:
+      row.completed_at = datetime.utcnow()
+    self.db.commit()
+    self.db.refresh(row)
+    return DiscoveryAgentRun(
+      id=row.id,
+      workshop_id=row.workshop_id,
+      trace_id=row.trace_id,
+      milestone_ref=row.milestone_ref,
+      trigger_comment_id=row.trigger_comment_id,
+      status=row.status,
+      tool_calls_count=row.tool_calls_count or 0,
+      partial_output=row.partial_output or "",
+      final_output=row.final_output,
+      error=row.error,
+      created_by=row.created_by,
+      completed_at=row.completed_at,
+      created_at=row.created_at,
+      updated_at=row.updated_at,
+    )
