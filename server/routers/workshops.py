@@ -166,6 +166,7 @@ from server.models import (
     TraceUpload,
     Workshop,
     WorkshopCreate,
+    WorkshopMode,
     WorkshopPhase,
 )
 from server.services.database_service import DatabaseService
@@ -250,6 +251,16 @@ class SimpleEvaluationRequest(BaseModel):
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _ensure_global_rubric_mode(workshop: Workshop) -> None:
+    """Global rubric endpoints are only valid for workshop mode."""
+    mode = getattr(workshop, "mode", WorkshopMode.WORKSHOP.value) or WorkshopMode.WORKSHOP.value
+    if mode == WorkshopMode.EVAL.value:
+        raise HTTPException(
+            status_code=409,
+            detail="Global rubric endpoints are disabled for eval mode; use per-trace criteria endpoints.",
+        )
 
 
 @router.get("/")
@@ -989,6 +1000,7 @@ async def create_rubric(workshop_id: str, rubric_data: RubricCreate, db: Session
     workshop = db_service.get_workshop(workshop_id)
     if not workshop:
         raise HTTPException(status_code=404, detail="Workshop not found")
+    _ensure_global_rubric_mode(workshop)
 
     rubric = db_service.create_rubric(workshop_id, rubric_data)
 
@@ -1019,6 +1031,7 @@ async def update_rubric(workshop_id: str, rubric_data: RubricCreate, db: Session
     workshop = db_service.get_workshop(workshop_id)
     if not workshop:
         raise HTTPException(status_code=404, detail="Workshop not found")
+    _ensure_global_rubric_mode(workshop)
 
     rubric = db_service.create_rubric(workshop_id, rubric_data)
 
@@ -1046,6 +1059,7 @@ async def get_rubric(workshop_id: str, db: Session = Depends(get_db)) -> Rubric:
     workshop = db_service.get_workshop(workshop_id)
     if not workshop:
         raise HTTPException(status_code=404, detail="Workshop not found")
+    _ensure_global_rubric_mode(workshop)
 
     rubric = db_service.get_rubric(workshop_id)
     if not rubric:
@@ -1066,6 +1080,7 @@ async def update_rubric_question(
     workshop = db_service.get_workshop(workshop_id)
     if not workshop:
         raise HTTPException(status_code=404, detail="Workshop not found")
+    _ensure_global_rubric_mode(workshop)
 
     title = question_data.get("title")
     description = question_data.get("description")
@@ -1100,6 +1115,7 @@ async def delete_rubric_question(workshop_id: str, question_id: str, db: Session
     workshop = db_service.get_workshop(workshop_id)
     if not workshop:
         raise HTTPException(status_code=404, detail="Workshop not found")
+    _ensure_global_rubric_mode(workshop)
 
     rubric = db_service.delete_rubric_question(workshop_id, question_id)
 
@@ -1287,6 +1303,7 @@ async def clear_rubric(workshop_id: str, db: Session = Depends(get_db)):
     workshop = db_service.get_workshop(workshop_id)
     if not workshop:
         raise HTTPException(status_code=404, detail="Workshop not found")
+    _ensure_global_rubric_mode(workshop)
 
     db_service.clear_rubric(workshop_id)
     return {"message": "Rubric cleared successfully"}

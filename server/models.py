@@ -23,6 +23,11 @@ class WorkshopPhase(StrEnum):
     UNITY_VOLUME = "unity_volume"
 
 
+class WorkshopMode(StrEnum):
+    WORKSHOP = "workshop"
+    EVAL = "eval"
+
+
 class UserRole(StrEnum):
     FACILITATOR = "facilitator"
     SME = "sme"  # Subject Matter Expert
@@ -41,6 +46,11 @@ class JudgeType(StrEnum):
     LIKERT = "likert"  # Likert scale rubric-based scoring (1-5 scale)
     BINARY = "binary"  # Pass/Fail or Yes/No evaluation
     FREEFORM = "freeform"  # Free-form feedback without structured ratings
+
+
+class TraceCriterionType(StrEnum):
+    STANDARD = "standard"
+    HURDLE = "hurdle"
 
 
 # User Models
@@ -140,6 +150,7 @@ class WorkshopCreate(BaseModel):
     name: str
     description: str | None = None
     facilitator_id: str
+    mode: WorkshopMode = WorkshopMode.WORKSHOP
 
 
 class Workshop(BaseModel):
@@ -168,7 +179,77 @@ class Workshop(BaseModel):
     summarization_enabled: bool = False
     summarization_model: str | None = None
     summarization_guidance: str | None = None
+    mode: WorkshopMode = WorkshopMode.WORKSHOP
     created_at: datetime = Field(default_factory=datetime.now)
+
+
+class TraceCriterionCreate(BaseModel):
+    text: str
+    criterion_type: TraceCriterionType
+    weight: int = Field(default=1, ge=-10, le=10)
+    source_finding_id: str | None = None
+    order: int = 0
+    created_by: str
+
+
+class TraceCriterionUpdate(BaseModel):
+    text: str | None = None
+    criterion_type: TraceCriterionType | None = None
+    weight: int | None = Field(default=None, ge=-10, le=10)
+    order: int | None = None
+
+
+class TraceCriterion(BaseModel):
+    id: str
+    trace_id: str
+    workshop_id: str
+    text: str
+    criterion_type: TraceCriterionType
+    weight: int = 1
+    source_finding_id: str | None = None
+    created_by: str
+    order: int = 0
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+
+class CriterionEvaluation(BaseModel):
+    id: str
+    criterion_id: str
+    trace_id: str
+    workshop_id: str
+    judge_model: str
+    met: bool
+    rationale: str | None = None
+    raw_response: dict[str, Any] | None = None
+    created_at: datetime = Field(default_factory=datetime.now)
+
+
+class CriterionScoreResult(BaseModel):
+    criterion_id: str
+    criterion_text: str
+    criterion_type: TraceCriterionType
+    weight: int
+    met: bool
+    rationale: str | None = None
+    score: float = 0.0
+
+
+class TraceEvalScore(BaseModel):
+    trace_id: str
+    hurdle_passed: bool
+    hurdle_results: list[CriterionScoreResult] = Field(default_factory=list)
+    criteria_results: list[CriterionScoreResult] = Field(default_factory=list)
+    raw_score: float = 0.0
+    max_possible: float = 0.0
+    normalized_score: float = 0.0
+
+
+class TraceRubric(BaseModel):
+    trace_id: str
+    workshop_id: str
+    criteria: list[TraceCriterion] = Field(default_factory=list)
+    markdown: str
 
 
 class TraceUpload(BaseModel):

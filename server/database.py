@@ -168,6 +168,7 @@ class WorkshopDB(Base):
     summarization_enabled = Column(Boolean, default=False)
     summarization_model = Column(String, nullable=True)
     summarization_guidance = Column(Text, nullable=True)
+    mode = Column(String, default="workshop")
     created_at = Column(DateTime, default=func.now())
 
     # Relationships
@@ -200,6 +201,8 @@ class WorkshopDB(Base):
     discovery_feedback = relationship("DiscoveryFeedbackDB", back_populates="workshop", cascade="all, delete-orphan")
     draft_rubric_items = relationship("DraftRubricItemDB", back_populates="workshop", cascade="all, delete-orphan")
     discovery_analyses = relationship("DiscoveryAnalysisDB", back_populates="workshop", cascade="all, delete-orphan")
+    trace_criteria = relationship("TraceCriterionDB", back_populates="workshop", cascade="all, delete-orphan")
+    criterion_evaluations = relationship("CriterionEvaluationDB", back_populates="workshop", cascade="all, delete-orphan")
 
 
 class TraceDB(Base):
@@ -231,6 +234,8 @@ class TraceDB(Base):
     disagreements = relationship("DisagreementDB", back_populates="trace", cascade="all, delete-orphan")
     trace_discovery_questions = relationship("TraceDiscoveryQuestionDB", back_populates="trace", cascade="all, delete-orphan")
     trace_discovery_thresholds = relationship("TraceDiscoveryThresholdDB", back_populates="trace", cascade="all, delete-orphan")
+    trace_criteria = relationship("TraceCriterionDB", back_populates="trace", cascade="all, delete-orphan")
+    criterion_evaluations = relationship("CriterionEvaluationDB", back_populates="trace", cascade="all, delete-orphan")
 
 
 class SummarizationJobDB(Base):
@@ -348,6 +353,50 @@ class RubricDB(Base):
 
     # Relationships
     workshop = relationship("WorkshopDB", back_populates="rubrics")
+
+
+class TraceCriterionDB(Base):
+    """Database model for eval-mode per-trace criteria."""
+
+    __tablename__ = "trace_criteria"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    trace_id = Column(String, ForeignKey("traces.id", ondelete="CASCADE"), nullable=False, index=True)
+    workshop_id = Column(String, ForeignKey("workshops.id", ondelete="CASCADE"), nullable=False, index=True)
+    text = Column(Text, nullable=False)
+    criterion_type = Column(String, nullable=False)  # standard|hurdle
+    weight = Column(Integer, default=1)
+    source_finding_id = Column(String, nullable=True)
+    created_by = Column(String, nullable=False)
+    order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    # Relationships
+    trace = relationship("TraceDB", back_populates="trace_criteria")
+    workshop = relationship("WorkshopDB", back_populates="trace_criteria")
+    evaluations = relationship("CriterionEvaluationDB", back_populates="criterion", cascade="all, delete-orphan")
+
+
+class CriterionEvaluationDB(Base):
+    """Database model for criterion-level evaluation results."""
+
+    __tablename__ = "criterion_evaluations"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    criterion_id = Column(String, ForeignKey("trace_criteria.id", ondelete="CASCADE"), nullable=False, index=True)
+    trace_id = Column(String, ForeignKey("traces.id", ondelete="CASCADE"), nullable=False, index=True)
+    workshop_id = Column(String, ForeignKey("workshops.id", ondelete="CASCADE"), nullable=False, index=True)
+    judge_model = Column(String, nullable=False)
+    met = Column(Boolean, nullable=False)
+    rationale = Column(Text, nullable=True)
+    raw_response = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=func.now())
+
+    # Relationships
+    criterion = relationship("TraceCriterionDB", back_populates="evaluations")
+    trace = relationship("TraceDB", back_populates="criterion_evaluations")
+    workshop = relationship("WorkshopDB", back_populates="criterion_evaluations")
 
 
 class AnnotationDB(Base):

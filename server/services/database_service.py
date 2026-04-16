@@ -24,9 +24,11 @@ from server.database import (
   JudgePromptDB,
   MLflowIntakeConfigDB,
   ParticipantNoteDB,
+  CriterionEvaluationDB,
   RubricDB,
   SummarizationJobDB,
   TraceDB,
+  TraceCriterionDB,
   TraceDiscoveryThresholdDB,
   UserDB,
   UserDiscoveryCompletionDB,
@@ -65,6 +67,7 @@ from server.models import (
   UserTraceOrder,
   Workshop,
   WorkshopCreate,
+  WorkshopMode,
   WorkshopParticipant,
   WorkshopPhase,
 )
@@ -132,6 +135,7 @@ class DatabaseService:
       name=workshop_data.name,
       description=workshop_data.description,
       facilitator_id=workshop_data.facilitator_id,
+      mode=workshop_data.mode.value if hasattr(workshop_data.mode, "value") else str(workshop_data.mode),
     )
     self.db.add(db_workshop)
     self.db.commit()
@@ -168,6 +172,7 @@ class DatabaseService:
       summarization_enabled=getattr(db_workshop, 'summarization_enabled', False) or False,
       summarization_model=getattr(db_workshop, 'summarization_model', None),
       summarization_guidance=getattr(db_workshop, 'summarization_guidance', None),
+      mode=WorkshopMode(getattr(db_workshop, 'mode', WorkshopMode.WORKSHOP.value) or WorkshopMode.WORKSHOP.value),
       created_at=db_workshop.created_at,
     )
 
@@ -257,6 +262,32 @@ class DatabaseService:
     self.db.refresh(db_workshop)
 
     return self.get_workshop(workshop_id)
+
+  def get_workshop_mode(self, workshop_id: str) -> Optional[WorkshopMode]:
+    """Get the persisted workshop mode."""
+    db_workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if not db_workshop:
+      return None
+    mode = getattr(db_workshop, "mode", WorkshopMode.WORKSHOP.value) or WorkshopMode.WORKSHOP.value
+    return WorkshopMode(mode)
+
+  def is_eval_mode(self, workshop_id: str) -> bool:
+    mode = self.get_workshop_mode(workshop_id)
+    return mode == WorkshopMode.EVAL if mode else False
+
+  def update_workshop_mode(self, workshop_id: str, mode: WorkshopMode) -> Optional[Workshop]:
+    """Set workshop mode once; mode is immutable after creation."""
+    db_workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if not db_workshop:
+      return None
+
+    current_mode = getattr(db_workshop, "mode", WorkshopMode.WORKSHOP.value) or WorkshopMode.WORKSHOP.value
+    requested = mode.value if hasattr(mode, "value") else str(mode)
+    if current_mode != requested:
+      raise ValueError("Workshop mode is immutable after creation")
+
+    # No-op update preserves immutable contract while returning current state.
+    return self._workshop_from_db(db_workshop)
 
   def update_discovery_questions_model_name(self, workshop_id: str, model_name: str) -> Optional[Workshop]:
     """Update the discovery questions model name for a workshop."""

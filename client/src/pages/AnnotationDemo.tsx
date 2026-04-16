@@ -1161,9 +1161,9 @@ export function AnnotationDemo() {
                     if (currentTrace.mlflow_url) {
                       // Use the pre-generated MLflow URL from the trace
                       window.open(currentTrace.mlflow_url, '_blank');
-                    } else if (mlflowConfig) {
+                    } else if (currentTrace.mlflow_host && mlflowConfig) {
                       // Fallback: construct URL using mlflowConfig
-                      const host = mlflowConfig.databricks_host;
+                      const host = currentTrace.mlflow_host;
                       const experiment_id = mlflowConfig.experiment_id;
                       const trace_id = currentTrace.mlflow_trace_id;
                       const mlflowUrl = `${host}/ml/experiments/${experiment_id}/traces?selectedEvaluationId=${trace_id}`;

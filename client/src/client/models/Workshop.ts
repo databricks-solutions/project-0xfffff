@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { WorkshopMode } from './WorkshopMode';
 import type { WorkshopPhase } from './WorkshopPhase';
 import type { WorkshopStatus } from './WorkshopStatus';
 export type Workshop = {
@@ -30,6 +31,7 @@ export type Workshop = {
     summarization_enabled?: boolean;
     summarization_model?: (string | null);
     summarization_guidance?: (string | null);
+    mode?: WorkshopMode;
     created_at?: string;
 };
 

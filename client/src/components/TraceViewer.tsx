@@ -1731,7 +1731,7 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({
     }
 
     // Build from trace fields or workshop MLflow config as fallback
-    const hostCandidate = trace.mlflow_host || mlflowConfig?.databricks_host;
+    const hostCandidate = trace.mlflow_host;
     const experimentId = trace.mlflow_experiment_id || mlflowConfig?.experiment_id;
     const traceId = trace.mlflow_trace_id;
 

@@ -13,5 +13,5 @@ export const convertTraceToTraceData = (trace: Trace): TraceData => ({
   mlflow_url: trace.mlflow_url || undefined,
   mlflow_host: trace.mlflow_host || undefined,
   mlflow_experiment_id: trace.mlflow_experiment_id || undefined,
-  summary: trace.summary || undefined,
+  summary: (trace.summary as TraceData['summary']) || undefined,
 });

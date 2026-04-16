@@ -9,6 +9,7 @@ import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useUser } from '@/context/UserContext';
 import { useCreateWorkshop, useListWorkshops } from '@/hooks/useWorkshopApi';
 import type { Workshop } from '@/client';
+import { WorkshopMode } from '@/client/models/WorkshopMode';
 
 export function WorkshopCreationPage() {
   const { setWorkshopId } = useWorkshopContext();
@@ -22,7 +23,8 @@ export function WorkshopCreationPage() {
   const [showExisting, setShowExisting] = useState(true);
   const [formData, setFormData] = useState({
     name: 'LLM Judge Calibration Workshop',
-    description: ''
+    description: '',
+    mode: WorkshopMode.WORKSHOP,
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -42,7 +44,8 @@ export function WorkshopCreationPage() {
       const workshop = await createWorkshop.mutateAsync({
         name: formData.name.trim(),
         description: formData.description.trim(),
-        facilitator_id: user?.id || 'demo_facilitator'
+        facilitator_id: user?.id || 'demo_facilitator',
+        mode: formData.mode,
       });
       
       
@@ -179,6 +182,19 @@ export function WorkshopCreationPage() {
                 required
                 className="h-10 text-sm bg-white border-indigo-200 focus:border-indigo-400 focus:ring-indigo-400"
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="mode" className="text-sm font-medium text-gray-700">Mode</Label>
+              <select
+                id="mode"
+                value={formData.mode}
+                onChange={(e) => setFormData({ ...formData, mode: e.target.value as WorkshopMode })}
+                className="h-10 w-full rounded-md border border-indigo-200 bg-white px-3 text-sm focus:border-indigo-400 focus:outline-none"
+              >
+                <option value="workshop">Workshop (global rubric)</option>
+                <option value="eval">Eval (per-trace criteria)</option>
+              </select>
             </div>
 
             <div className="space-y-2">

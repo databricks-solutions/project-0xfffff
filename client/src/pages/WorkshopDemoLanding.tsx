@@ -43,6 +43,7 @@ import { PhasePausedView } from '@/components/PhasePausedView';
 import { GeneralDashboard } from '@/components/GeneralDashboard';
 import { ErrorBoundary, PageErrorFallback } from '@/components/ErrorBoundary';
 import { FacilitatorDiscoveryWorkspace } from '@/components/discovery/FacilitatorDiscoveryWorkspace';
+import { EvalModeWorkspace } from '@/components/eval/EvalModeWorkspace';
 
 
 
@@ -54,7 +55,7 @@ export function WorkshopDemoLanding() {
   // ALL HOOKS MUST BE CALLED FIRST (React Rules of Hooks)
   // ========================================
   const { workshopId, setWorkshopId } = useWorkshopContext();
-  const { currentPhase, completedPhases, setCurrentPhase } = useWorkflowContext();
+  const { currentPhase, completedPhases, setCurrentPhase, supportsPerTraceCriteria } = useWorkflowContext();
   const { user, setUser } = useUser();
   const { isFacilitator, isSME, canCreateRubric, canAnnotate, canViewResults, canViewRubric, canViewAllAnnotations } = useRoleCheck();
   const queryClient = useQueryClient();
@@ -518,10 +519,16 @@ export function WorkshopDemoLanding() {
       case 'annotation-pending':
         return <AnnotationPendingPage />;
       case 'rubric-create':
+        if (supportsPerTraceCriteria) {
+          return <EvalModeWorkspace />;
+        }
         return <RubricCreationDemo />;
       case 'rubric-waiting':
         return <RubricWaitingView />;
       case 'rubric-view':
+        if (supportsPerTraceCriteria) {
+          return <EvalModeWorkspace />;
+        }
         return <RubricViewPage />;
       case 'annotation-monitor':
         return <FacilitatorDashboard onNavigate={handleNavigation} focusPhase={'annotation'} />;
@@ -534,6 +541,9 @@ export function WorkshopDemoLanding() {
       case 'annotation-review':
         return <PhasePausedView phase="annotation" onBack={user?.role === 'facilitator' ? () => handleNavigation('annotation') : undefined} />;
       case 'results-view':
+        if (supportsPerTraceCriteria) {
+          return <EvalModeWorkspace />;
+        }
         return <IRRResultsDemo />;
       case 'results-waiting':
         return <ResultsWaitingView />;

@@ -23,11 +23,15 @@ from server.models import (
     DraftRubricItemUpdate,
     Rubric,
     RubricCreate,
+    TraceCriterionCreate,
+    TraceCriterionType,
+    WorkshopMode,
     WorkshopPhase,
 )
 from server.services.databricks_service import get_databricks_host, resolve_databricks_token
 from server.services.database_service import DatabaseService
 from server.services.discovery_dspy import QUESTION_CATEGORIES
+from server.services.eval_criteria_service import EvalCriteriaService
 
 logger = logging.getLogger(__name__)
 
@@ -432,7 +436,7 @@ class DiscoveryService:
             }
 
     def set_discovery_questions_model(self, workshop_id: str, model_name: str) -> str:
-        self._get_workshop_or_404(workshop_id)
+        workshop = self._get_workshop_or_404(workshop_id)
         updated = self.db_service.update_discovery_questions_model_name(workshop_id, model_name)
         if not updated:
             raise HTTPException(status_code=500, detail="Failed to update discovery questions model")
@@ -763,7 +767,7 @@ class DiscoveryService:
             raise HTTPException(status_code=502, detail=f"Failed to generate summaries: {e!s}") from e
 
     def get_discovery_summaries(self, workshop_id: str) -> dict[str, Any]:
-        self._get_workshop_or_404(workshop_id)
+        workshop = self._get_workshop_or_404(workshop_id)
         cached = self.db_service.get_latest_discovery_summary(workshop_id)
         if not cached or not isinstance(cached.get("payload"), dict):
             raise HTTPException(status_code=404, detail="No discovery summaries found for this workshop")
@@ -773,7 +777,7 @@ class DiscoveryService:
     # Findings
     # ---------------------------------------------------------------------
     def submit_finding(self, workshop_id: str, finding: DiscoveryFindingCreate) -> DiscoveryFinding:
-        self._get_workshop_or_404(workshop_id)
+        workshop = self._get_workshop_or_404(workshop_id)
         return self.db_service.add_finding(workshop_id, finding)
 
     def get_findings(self, workshop_id: str, user_id: str | None = None) -> list[DiscoveryFinding]:
@@ -1540,7 +1544,7 @@ class DiscoveryService:
 
         Creates a DraftRubricItem from a classified finding.
         """
-        self._get_workshop_or_404(workshop_id)
+        workshop = self._get_workshop_or_404(workshop_id)
 
         # Look up finding text (graceful degradation if finding row not found)
         finding_text = ""
@@ -1559,6 +1563,34 @@ class DiscoveryService:
         except Exception:
             pass  # Finding lookup failure is non-critical
 
+        if getattr(workshop, "mode", WorkshopMode.WORKSHOP.value) == WorkshopMode.EVAL.value:
+            trace_id = source_trace_ids[0] if source_trace_ids else None
+            if not trace_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot promote finding to eval criteria without a trace reference",
+                )
+
+            eval_service = EvalCriteriaService(self.db)
+            criterion = eval_service.create_criterion(
+                workshop_id=workshop_id,
+                trace_id=trace_id,
+                data=TraceCriterionCreate(
+                    text=finding_text or f"Promoted from finding {finding_id}",
+                    criterion_type=TraceCriterionType.STANDARD,
+                    weight=1,
+                    source_finding_id=finding_id,
+                    created_by=promoter_id,
+                ),
+            )
+            return {
+                "id": criterion.id,
+                "finding_id": finding_id,
+                "promoted_by": promoter_id,
+                "status": "promoted",
+                "target": "trace_criteria",
+            }
+
         data = DraftRubricItemCreate(
             text=finding_text or f"Promoted from finding {finding_id}",
             source_type="finding",
@@ -1571,6 +1603,7 @@ class DiscoveryService:
             "finding_id": finding_id,
             "promoted_by": promoter_id,
             "status": "promoted",
+            "target": "draft_rubric_items",
         }
 
     # -----------------------------------------------------------------

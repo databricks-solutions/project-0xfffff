@@ -17,6 +17,8 @@ function App() {
             <Router>
               <Routes>
                 <Route path="/" element={<WorkshopDemoLanding />} />
+                <Route path="/workshop/:workshopId" element={<WorkshopDemoLanding />} />
+                <Route path="/workshop/:workshopId/:phase" element={<WorkshopDemoLanding />} />
                 <Route path="/trace-viewer-demo" element={<TraceDataViewerDemo />} />
               </Routes>
             </Router>

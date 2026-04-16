@@ -1,6 +1,6 @@
 # Spec Test Coverage Map
 
-**Generated**: 2026-04-15 11:36:42
+**Generated**: 2026-04-15 20:29:00
 
 This report shows test coverage for each specification's success criteria.
 
@@ -8,60 +8,91 @@ This report shows test coverage for each specification's success criteria.
 
 | Type | Count | Description |
 |------|-------|-------------|
-| Unit | 89 | pytest unit tests, Vitest tests |
+| Unit | 22 | pytest unit tests, Vitest tests |
 | Integration | 0 | pytest with real DB/API |
-| E2E (Mocked) | 0 | Playwright with mocked API |
-| E2E (Real) | 7 | Playwright with real API |
+| E2E (Mocked) | 1 | Playwright with mocked API |
+| E2E (Real) | 0 | Playwright with real API |
 
 ## Coverage Summary
 
 | Spec | Reqs | Covered | Cover% | Unit | Int | E2E-M | E2E-R | BE-only |
 |------|------|---------|--------|------|-----|-------|-------|---------|
-| [TRACE_DISPLAY_SPEC](#trace-display-spec) | 18 | 18 | 100% | 89 | 0 | 0 | 7 | **10** |
+| [EVAL_MODE_SPEC](#eval-mode-spec) | 35 | 13 | 37% | 22 | 0 | 1 | 0 | **13** |
 
-**Total**: 18/18 requirements covered (100%)
+**Total**: 13/35 requirements covered (37%)
 
 ---
 
-## TRACE_DISPLAY_SPEC
+## EVAL_MODE_SPEC
 
-**Coverage**: 18/18 requirements (100%)
+**Coverage**: 13/35 requirements (37%)
+
+### Uncovered Requirements
+
+- [ ] Criteria can be authored directly (without discovery)
+- [ ] Discovery analysis uses trace summaries when available
+- [ ] Discovery analysis can run agent loops over trace spans as alternative to summaries
+- [ ] Richer findings surface example-specific observations
+- [ ] Negative-weight criteria penalize when met
+- [ ] Normalized score = raw / max_possible, clipped to [0, 1]
+- [ ] One independent judge call per criterion
+- [ ] Judge sees trace content + single criterion, not other criteria
+- [ ] Judge returns met (boolean) + rationale
+- [ ] Evaluation runs as background job with progress tracking
+- [ ] Judge scores optionally hidden from human reviewer
+- [ ] One task-level judge aligned using all criteria across all traces as examples
+- [ ] Each criterion's human met/not-met decision stored as a separate MLflow assessment on the trace
+- [ ] All assessments share the judge name; extraction yields all (not just most recent)
+- [ ] Semantic memory distills guidelines from overlapping criteria patterns
+- [ ] Episodic memory indexes specific criterion examples for retrieval
+- [ ] Aligned judge registered to MLflow
+- [ ] Re-hydration rebuilds episodic memory from trace assessments without external state
+- [ ] Re-evaluation compares pre/post alignment accuracy on same trace set
+- [ ] Export produces trace → criteria mapping
+- [ ] Export includes scoring configuration (types, weights, aggregation rules)
+- [ ] Exported eval can be re-run via `mlflow.genai.evaluate()`
 
 ### Backend-Only Requirements (no frontend tests)
 
 These requirements are covered by backend tests only. UI regressions won't be caught:
 
-- :warning: JSONPath fields are optional and clearly labeled as such (unit)
-- :warning: Multiple JSONPath matches are concatenated with newlines (unit)
-- :warning: Facilitator can configure span attribute filter with span name, span type, attribute key, and attribute value (unit)
-- :warning: Filter criteria are AND-combined and first matching span wins (unit)
-- :warning: Span filter is applied before JSONPath extraction in TraceViewer (unit)
-- :warning: Empty filter config results in no filtering and root trace data is used (unit)
-- :warning: String span inputs and outputs are returned as-is without double-serialization (unit)
-- :warning: All backend services that consume trace input/output apply the same span filter and JSONPath pipeline as the TraceViewer (unit)
-- :warning: JSONPath evaluation does not noticeably slow down trace display (unit)
-- :warning: Preview responds within 500ms (unit)
+- :warning: Workshop can be created with `mode: "eval"` (unit)
+- :warning: Mode is immutable after creation (unit)
+- :warning: Eval-mode workshops do not use the global rubric system (unit)
+- :warning: Existing workshop-mode behavior is unchanged (unit)
+- :warning: Facilitator can create criteria on a specific trace (unit)
+- :warning: Each criterion has a type (standard or hurdle) and weight (-10 to +10) (unit)
+- :warning: Criteria can be promoted from discovery findings (unit)
+- :warning: Criteria are editable and deletable (unit)
+- :warning: Per-trace rubric is rendered as markdown (unit)
+- :warning: Hurdle criteria gate the entire trace — any hurdle failure → score 0 (unit)
+- :warning: Standard criteria scored as met (1) or not met (0) × weight (unit)
+- :warning: Scoring handles edge cases: no criteria, all hurdles, all negative weights (unit)
+- :warning: Results stored per-criterion with rationale (unit)
 
 ### Covered Requirements
 
-- [x] Facilitator can configure input/output JSONPath in settings panel (e2e-real)
-- [x] JSONPath fields are optional and clearly labeled as such (unit) **[BE-only]**
-- [x] Preview shows extraction results against first workshop trace (e2e-real)
-- [x] TraceViewer applies JSONPath when configured (unit)
-- [x] Multiple JSONPath matches are concatenated with newlines (unit) **[BE-only]**
-- [x] System falls back to raw display when JSONPath is not configured, JSON parsing fails, JSONPath query fails, or JSONPath returns null/empty (e2e-real, unit)
-- [x] Settings are persisted per workshop (e2e-real)
-- [x] Facilitator can configure span attribute filter with span name, span type, attribute key, and attribute value (unit) **[BE-only]**
-- [x] Filter criteria are AND-combined and first matching span wins (unit) **[BE-only]**
-- [x] Attribute value input is disabled until attribute key has a value (unit)
-- [x] Span filter preview shows match status and filtered inputs/outputs against first trace (e2e-real)
-- [x] Span filter is applied before JSONPath extraction in TraceViewer (unit) **[BE-only]**
-- [x] Empty filter config results in no filtering and root trace data is used (unit) **[BE-only]**
-- [x] String span inputs and outputs are returned as-is without double-serialization (unit) **[BE-only]**
-- [x] All backend services that consume trace input/output apply the same span filter and JSONPath pipeline as the TraceViewer (unit) **[BE-only]**
-- [x] JSONPath evaluation does not noticeably slow down trace display (unit) **[BE-only]**
-- [x] Preview responds within 500ms (unit) **[BE-only]**
-- [x] Invalid JSONPath syntax shows helpful error message in preview (e2e-real, unit)
+- [x] Workshop can be created with `mode: "eval"` (unit) **[BE-only]**
+- [x] Mode is immutable after creation (unit) **[BE-only]**
+- [x] Eval-mode workshops do not use the global rubric system (unit) **[BE-only]**
+- [x] Existing workshop-mode behavior is unchanged (unit) **[BE-only]**
+- [x] Facilitator can create criteria on a specific trace (unit) **[BE-only]**
+- [x] Each criterion has a type (standard or hurdle) and weight (-10 to +10) (unit) **[BE-only]**
+- [x] Criteria can be promoted from discovery findings (unit) **[BE-only]**
+- [x] Criteria are editable and deletable (unit) **[BE-only]**
+- [x] Per-trace rubric is rendered as markdown (unit) **[BE-only]**
+- [x] Hurdle criteria gate the entire trace — any hurdle failure → score 0 (unit) **[BE-only]**
+- [x] Standard criteria scored as met (1) or not met (0) × weight (unit) **[BE-only]**
+- [x] Scoring handles edge cases: no criteria, all hurdles, all negative weights (unit) **[BE-only]**
+- [x] Results stored per-criterion with rationale (unit) **[BE-only]**
+
+### Tests Without Requirement Links
+
+These tests are tagged with the spec but don't link to specific requirements:
+
+- `client/tests/e2e/eval-mode-workflow.spec.ts` (eval mode supports per-trace criteria and scoring) [e2e-mocked]
+- `client/src/components/eval/CriterionEditor.eval.test.tsx` (shows empty state when no criteria) [unit]
+- `client/src/components/eval/CriterionEditor.eval.test.tsx` (submits a new criterion) [unit]
 
 ---
 

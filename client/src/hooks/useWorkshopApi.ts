@@ -26,6 +26,49 @@ import type { DraftRubricItem } from '@/client/models/DraftRubricItem';
 import type { CreateDraftRubricItemRequest } from '@/client/models/CreateDraftRubricItemRequest';
 import type { UpdateDraftRubricItemRequest } from '@/client/models/UpdateDraftRubricItemRequest';
 
+export type TraceCriterionType = 'standard' | 'hurdle';
+
+export interface TraceCriterion {
+  id: string;
+  trace_id: string;
+  workshop_id: string;
+  text: string;
+  criterion_type: TraceCriterionType;
+  weight: number;
+  source_finding_id?: string | null;
+  created_by: string;
+  order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TraceRubric {
+  trace_id: string;
+  workshop_id: string;
+  criteria: TraceCriterion[];
+  markdown: string;
+}
+
+export interface CriterionScoreResult {
+  criterion_id: string;
+  criterion_text: string;
+  criterion_type: TraceCriterionType;
+  weight: number;
+  met: boolean;
+  rationale?: string | null;
+  score: number;
+}
+
+export interface TraceEvalScore {
+  trace_id: string;
+  hurdle_passed: boolean;
+  hurdle_results: CriterionScoreResult[];
+  criteria_results: CriterionScoreResult[];
+  raw_score: number;
+  max_possible: number;
+  normalized_score: number;
+}
+
 // Query keys
 const QUERY_KEYS = {
   workshops: () => ['workshops'],
@@ -42,6 +85,9 @@ const QUERY_KEYS = {
   availableModels: (workshopId: string) => ['availableModels', workshopId],
   summarizationJob: (workshopId: string, jobId: string) => ['summarization-job', workshopId, jobId],
   summarizationStatus: (workshopId: string) => ['summarization-status', workshopId],
+  traceCriteria: (workshopId: string, traceId: string) => ['trace-criteria', workshopId, traceId],
+  traceRubric: (workshopId: string, traceId: string) => ['trace-rubric', workshopId, traceId],
+  evalResults: (workshopId: string, traceId?: string) => ['eval-results', workshopId, traceId],
 };
 
 // Helper function to invalidate all workshop-related queries
@@ -147,6 +193,7 @@ export function useWorkshopPhase(workshopId: string) {
   return useQuery({
     ...workshopQueryOpts(workshopId),
     select: (w: Workshop) => ({
+      mode: (w as Workshop & { mode?: 'workshop' | 'eval' }).mode ?? 'workshop',
       current_phase: w.current_phase,
       completed_phases: w.completed_phases,
       discovery_started: w.discovery_started,
@@ -238,6 +285,130 @@ export function useCreateWorkshop() {
     onSuccess: (workshop) => {
       queryClient.setQueryData(QUERY_KEYS.workshop(workshop.id), workshop);
     },
+  });
+}
+
+// Eval mode hooks
+export function useTraceCriteria(workshopId: string, traceId: string) {
+  return useQuery<TraceCriterion[]>({
+    queryKey: QUERY_KEYS.traceCriteria(workshopId, traceId),
+    queryFn: async () => {
+      const response = await fetch(`/workshops/${workshopId}/traces/${traceId}/criteria`);
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to fetch criteria' }));
+        throw new Error(error.detail || 'Failed to fetch criteria');
+      }
+      return response.json();
+    },
+    enabled: !!workshopId && !!traceId,
+  });
+}
+
+export function useCreateTraceCriterion(workshopId: string, traceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: {
+      text: string;
+      criterion_type: TraceCriterionType;
+      weight: number;
+      created_by: string;
+      source_finding_id?: string;
+    }): Promise<TraceCriterion> => {
+      const response = await fetch(`/workshops/${workshopId}/traces/${traceId}/criteria`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to create criterion' }));
+        throw new Error(error.detail || 'Failed to create criterion');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.traceCriteria(workshopId, traceId) });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.traceRubric(workshopId, traceId) });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.evalResults(workshopId, traceId) });
+    },
+  });
+}
+
+export function useUpdateTraceCriterion(workshopId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      criterionId,
+      updates,
+    }: {
+      criterionId: string;
+      updates: { text?: string; criterion_type?: TraceCriterionType; weight?: number };
+    }): Promise<TraceCriterion> => {
+      const response = await fetch(`/workshops/${workshopId}/criteria/${criterionId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to update criterion' }));
+        throw new Error(error.detail || 'Failed to update criterion');
+      }
+      return response.json();
+    },
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.traceCriteria(workshopId, updated.trace_id) });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.traceRubric(workshopId, updated.trace_id) });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.evalResults(workshopId, updated.trace_id) });
+    },
+  });
+}
+
+export function useDeleteTraceCriterion(workshopId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (criterionId: string): Promise<void> => {
+      const response = await fetch(`/workshops/${workshopId}/criteria/${criterionId}`, { method: 'DELETE' });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to delete criterion' }));
+        throw new Error(error.detail || 'Failed to delete criterion');
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['trace-criteria', workshopId] });
+      queryClient.invalidateQueries({ queryKey: ['trace-rubric', workshopId] });
+      queryClient.invalidateQueries({ queryKey: ['eval-results', workshopId] });
+    },
+  });
+}
+
+export function useTraceRubric(workshopId: string, traceId: string) {
+  return useQuery<TraceRubric | null>({
+    queryKey: QUERY_KEYS.traceRubric(workshopId, traceId),
+    queryFn: async () => {
+      const response = await fetch(`/workshops/${workshopId}/traces/${traceId}/rubric`);
+      if (response.status === 404) return null;
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to fetch trace rubric' }));
+        throw new Error(error.detail || 'Failed to fetch trace rubric');
+      }
+      return response.json();
+    },
+    enabled: !!workshopId && !!traceId,
+  });
+}
+
+export function useEvalResults(workshopId: string, traceId?: string) {
+  return useQuery<TraceEvalScore[]>({
+    queryKey: QUERY_KEYS.evalResults(workshopId, traceId),
+    queryFn: async () => {
+      const query = traceId ? `?trace_id=${encodeURIComponent(traceId)}` : '';
+      const response = await fetch(`/workshops/${workshopId}/eval-results${query}`);
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to fetch eval results' }));
+        throw new Error(error.detail || 'Failed to fetch eval results');
+      }
+      return response.json();
+    },
+    enabled: !!workshopId,
   });
 }
 

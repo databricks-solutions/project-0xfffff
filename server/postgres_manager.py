@@ -40,6 +40,8 @@ ALLOWED_TABLES: set[str] = {
     "judge_evaluations",
     "user_trace_orders",
     "custom_llm_provider_config",
+    "trace_criteria",
+    "criterion_evaluations",
 }
 
 
@@ -77,6 +79,7 @@ _TABLE_DDL: list[str] = [
         auto_evaluation_job_id      VARCHAR,
         auto_evaluation_prompt      TEXT,
         auto_evaluation_model       VARCHAR,
+        mode            VARCHAR DEFAULT 'workshop',
         created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """,
@@ -179,6 +182,36 @@ _TABLE_DDL: list[str] = [
         ratings         JSON,
         comment         TEXT,
         created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    # -- trace_criteria --
+    """
+    CREATE TABLE IF NOT EXISTS trace_criteria (
+        id               VARCHAR PRIMARY KEY,
+        trace_id         VARCHAR NOT NULL REFERENCES traces(id) ON DELETE CASCADE,
+        workshop_id      VARCHAR NOT NULL REFERENCES workshops(id) ON DELETE CASCADE,
+        text             TEXT NOT NULL,
+        criterion_type   VARCHAR NOT NULL,
+        weight           INTEGER DEFAULT 1,
+        source_finding_id VARCHAR,
+        created_by       VARCHAR NOT NULL,
+        "order"          INTEGER DEFAULT 0,
+        created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    # -- criterion_evaluations --
+    """
+    CREATE TABLE IF NOT EXISTS criterion_evaluations (
+        id               VARCHAR PRIMARY KEY,
+        criterion_id     VARCHAR NOT NULL REFERENCES trace_criteria(id) ON DELETE CASCADE,
+        trace_id         VARCHAR NOT NULL REFERENCES traces(id) ON DELETE CASCADE,
+        workshop_id      VARCHAR NOT NULL REFERENCES workshops(id) ON DELETE CASCADE,
+        judge_model      VARCHAR NOT NULL,
+        met              BOOLEAN NOT NULL,
+        rationale        TEXT,
+        raw_response     JSON,
+        created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """,
     # -- mlflow_intake_config --
