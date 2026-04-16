@@ -505,13 +505,21 @@ py-install-dev:
 
 [group('dev')]
 api-dev port="8000":
+  #!/usr/bin/env bash
+  set -euo pipefail
+  PORT=$(just _find-port "{{port}}")
+  echo "🔌 API dev server on port $PORT"
   just db-bootstrap
-  uv run uvicorn {{server-dir}}.app:app --reload --port {{port}} --log-level "${UVICORN_LOG_LEVEL:-info}"
+  uv run uvicorn {{server-dir}}.app:app --reload --port "$PORT" --log-level "${UVICORN_LOG_LEVEL:-info}"
 
 [group('dev')]
 api port="8000":
+  #!/usr/bin/env bash
+  set -euo pipefail
+  PORT=$(just _find-port "{{port}}")
+  echo "🔌 API server on port $PORT"
   just db-bootstrap
-  uv run uvicorn {{server-dir}}.app:app --port {{port}} --log-level "${UVICORN_LOG_LEVEL:-info}"
+  uv run uvicorn {{server-dir}}.app:app --port "$PORT" --log-level "${UVICORN_LOG_LEVEL:-info}"
 
 [group('app')]
 deploy:
@@ -554,8 +562,8 @@ dev api_port="8000" ui_port="5173": openapi
   #!/usr/bin/env bash
   set -euo pipefail
 
-  API_PORT="{{api_port}}"
-  UI_PORT="{{ui_port}}"
+  API_PORT=$(just _find-port "{{api_port}}")
+  UI_PORT=$(just _find-port "{{ui_port}}")
 
   echo "🚀 Starting dev environment"
   echo "  API: http://localhost:${API_PORT}"
@@ -568,9 +576,8 @@ dev api_port="8000" ui_port="5173": openapi
   (uv run uvicorn {{server-dir}}.app:app --reload --port "$API_PORT" --log-level "${UVICORN_LOG_LEVEL:-info}") &
   api_pid=$!
 
-  # Start UI
-  # Note: Vite's port is controlled in client config; `UI_PORT` is informational unless wired into Vite args.
-  (npm -C {{client-dir}} run dev) &
+  # Start UI (pass port to Vite so it matches what we print)
+  (npm -C {{client-dir}} run dev -- --port "$UI_PORT") &
   ui_pid=$!
 
   cleanup() {
