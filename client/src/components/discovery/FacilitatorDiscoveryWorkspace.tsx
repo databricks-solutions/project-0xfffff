@@ -150,7 +150,12 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
       {
         text: payload.text,
         source_type: payload.source_type,
-        source_trace_ids: payload.source_trace_ids,
+        source_trace_ids: Array.from(
+          new Set([
+            ...(payload.source_trace_ids || []),
+            ...(payload.source_milestone_refs || []),
+          ])
+        ),
         promoted_by: user?.id || '',
       },
       {
@@ -196,6 +201,38 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
       }
     );
   }, [createDraftItem, deleteDraftItem, user?.id]);
+
+  const handleNavigateToOrigin = useCallback((originRef: string) => {
+    const ref = (originRef || '').trim();
+    if (!ref) return;
+
+    let targetId: string | null = null;
+    if (ref.includes(':')) {
+      const [traceId, segment] = ref.split(':', 2);
+      if (traceId && segment) {
+        if (segment === 'all') {
+          targetId = `discovery-trace-${traceId}`;
+        } else if (segment.startsWith('m')) {
+          targetId = `discovery-trace-${traceId}-${segment.toLowerCase()}`;
+        } else {
+          targetId = `discovery-trace-${traceId}`;
+        }
+      }
+    } else {
+      targetId = `discovery-trace-${ref}`;
+    }
+
+    const target = targetId ? document.getElementById(targetId) : null;
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+
+    // Fallback: if milestone anchor isn't currently mounted, scroll to trace card.
+    const traceIdFallback = ref.includes(':') ? ref.split(':', 1)[0] : ref;
+    const traceCard = document.getElementById(`discovery-trace-${traceIdFallback}`);
+    traceCard?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, []);
 
   const handleModelChange = (value: string) => {
     updateModelMutation.mutate({ model_name: value });
@@ -329,6 +366,7 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
             newItemIds={newItemIds}
             onFocusWithinChange={setIsDraftPaneExpanded}
             onTogglePopout={() => setIsDraftPaneModalOpen(true)}
+            onNavigateToOrigin={handleNavigateToOrigin}
           />
         </div>
       )}
@@ -343,6 +381,7 @@ export const FacilitatorDiscoveryWorkspace: React.FC<FacilitatorDiscoveryWorkspa
             newItemIds={newItemIds}
             isModal
             onTogglePopout={() => setIsDraftPaneModalOpen(false)}
+            onNavigateToOrigin={handleNavigateToOrigin}
           />
         </DialogContent>
       </Dialog>

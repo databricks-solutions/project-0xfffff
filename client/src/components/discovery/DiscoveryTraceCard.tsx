@@ -10,6 +10,7 @@ import type { DiscoveryFeedbackWithUser } from '@/client';
 interface Finding {
   text: string;
   evidence_trace_ids: string[];
+  evidence_milestone_refs?: string[];
   priority: string;
 }
 
@@ -26,6 +27,7 @@ export interface PromotePayload {
   text: string;
   source_type: 'finding' | 'disagreement';
   source_trace_ids: string[];
+  source_milestone_refs?: string[];
 }
 
 interface DiscoveryTraceCardProps {
@@ -116,7 +118,7 @@ export const DiscoveryTraceCard: React.FC<DiscoveryTraceCardProps> = ({
   const hasAnalysis = (findings && findings.length > 0) || (disagreements && disagreements.length > 0);
 
   return (
-    <Card className="overflow-hidden">
+    <Card id={`discovery-trace-${trace.id}`} className="overflow-hidden">
       <CardContent className="p-5">
         {/* Toggle between summary and raw content */}
         {hasSummary && (
@@ -154,6 +156,7 @@ export const DiscoveryTraceCard: React.FC<DiscoveryTraceCardProps> = ({
               executiveSummary={trace.summary!.executive_summary}
               milestones={trace.summary!.milestones}
               showPaths={false}
+              anchorPrefix={`discovery-trace-${trace.id}`}
             />
           </div>
         ) : (
@@ -245,12 +248,29 @@ export const DiscoveryTraceCard: React.FC<DiscoveryTraceCardProps> = ({
                   return (
                     <div key={key} className={`finding-item rounded-lg border ${priorityColor} p-3${promotedKeys.has(key) ? ' promoted-collapsing' : ''}`}>
                       <p className="text-sm text-slate-800 font-medium">{f.text}</p>
+                      {f.evidence_milestone_refs && f.evidence_milestone_refs.length > 0 && (
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {f.evidence_milestone_refs.map((ref) => (
+                            <Badge key={ref} variant="outline" className="text-[10px] text-indigo-700 border-indigo-200 bg-indigo-50">
+                              {ref}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
                       <Button
                         variant="outline"
                         size="sm"
                         className="mt-2 text-xs"
                         disabled={promotedKeys.has(key)}
-                        onClick={() => onPromote({ key, text: f.text, source_type: 'finding', source_trace_ids: f.evidence_trace_ids })}
+                        onClick={() =>
+                          onPromote({
+                            key,
+                            text: f.text,
+                            source_type: 'finding',
+                            source_trace_ids: f.evidence_trace_ids,
+                            source_milestone_refs: f.evidence_milestone_refs ?? [],
+                          })
+                        }
                       >
                         <ArrowUpRight className="w-3 h-3 mr-1" />
                         {promotedKeys.has(key) ? 'Added' : 'Add to Draft'}

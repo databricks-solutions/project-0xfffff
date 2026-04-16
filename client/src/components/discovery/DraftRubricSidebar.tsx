@@ -21,6 +21,7 @@ interface DraftRubricSidebarProps {
   onFocusWithinChange?: (isFocused: boolean) => void;
   isModal?: boolean;
   onTogglePopout?: () => void;
+  onNavigateToOrigin?: (originRef: string) => void;
 }
 
 const CREATE_GROUP_OPTION = '__create_new_group__';
@@ -34,6 +35,7 @@ export const DraftRubricSidebar: React.FC<DraftRubricSidebarProps> = ({
   onFocusWithinChange,
   isModal = false,
   onTogglePopout,
+  onNavigateToOrigin,
 }) => {
   const createMutation = useCreateDraftRubricItem(workshopId);
   const updateMutation = useUpdateDraftRubricItem(workshopId);
@@ -188,14 +190,36 @@ export const DraftRubricSidebar: React.FC<DraftRubricSidebarProps> = ({
 
   const groupCount = Object.keys(grouped.groups).length;
 
+  const formatOriginLabel = (originRef: string) => {
+    const trimmed = originRef.trim();
+    if (!trimmed) return trimmed;
+    if (trimmed.includes(':')) {
+      const [traceId, segment] = trimmed.split(':', 2);
+      if (segment === 'all') return `${traceId.slice(0, 8)} · all milestones`;
+      if (segment.startsWith('m')) return `${traceId.slice(0, 8)} · ${segment.toUpperCase()}`;
+      return `${traceId.slice(0, 8)} · ${segment}`;
+    }
+    return trimmed.slice(0, 8);
+  };
+
   const renderTraceBadges = (item: DraftRubricItem) => {
     if (!item.source_trace_ids || item.source_trace_ids.length === 0) return null;
     return (
       <>
-        {item.source_trace_ids.slice(0, 3).map((tid) => (
-          <Badge key={tid} variant="outline" className="text-xs font-mono">
-            {tid.slice(0, 8)}
-          </Badge>
+        {item.source_trace_ids.slice(0, 3).map((originRef) => (
+          <button
+            key={originRef}
+            type="button"
+            onClick={() => onNavigateToOrigin?.(originRef)}
+            className="inline-flex"
+          >
+            <Badge
+              variant="outline"
+              className="text-xs font-mono cursor-pointer hover:bg-indigo-50 hover:border-indigo-300"
+            >
+              {formatOriginLabel(originRef)}
+            </Badge>
+          </button>
         ))}
         {item.source_trace_ids.length > 3 && (
           <Badge variant="outline" className="text-xs">

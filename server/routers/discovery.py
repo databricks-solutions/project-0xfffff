@@ -297,6 +297,7 @@ async def submit_followup_answer(
         user_id=request.user_id,
         question=request.question,
         answer=request.answer,
+        milestone_references=request.milestone_references,
     )
 
 

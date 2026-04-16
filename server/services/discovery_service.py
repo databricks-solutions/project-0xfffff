@@ -1048,6 +1048,7 @@ class DiscoveryService:
             trace=trace,
             feedback=feedback,
             question_number=question_number,
+            use_case_description=(getattr(workshop, "description", None) or ""),
             workspace_url=workspace_url,
             databricks_token=databricks_token,
             model_name=model_name,
@@ -1065,6 +1066,7 @@ class DiscoveryService:
         user_id: str,
         question: str,
         answer: str,
+        milestone_references: list[str] | None = None,
     ) -> dict[str, Any]:
         """Append a Q&A pair to the feedback record."""
         self._get_workshop_or_404(workshop_id)
@@ -1072,9 +1074,19 @@ class DiscoveryService:
         if not answer or not answer.strip():
             raise HTTPException(status_code=422, detail="Answer is required")
 
+        cleaned_refs = [
+            str(ref).strip()
+            for ref in (milestone_references or [])
+            if isinstance(ref, str) and str(ref).strip()
+        ]
+
         feedback = self.db_service.append_followup_qna(
             workshop_id, trace_id, user_id,
-            {"question": question, "answer": answer},
+            {
+                "question": question,
+                "answer": answer,
+                "milestone_references": cleaned_refs,
+            },
         )
         return {
             "feedback_id": feedback.id,

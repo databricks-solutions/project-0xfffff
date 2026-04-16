@@ -745,6 +745,7 @@ export function TraceViewerDemo() {
             workshopId={workshopId!}
             traceId={currentTrace.id}
             userId={user.id}
+            traceSummary={currentTrace.summary}
             existingFeedback={discoveryFeedbackList?.find(f => f.trace_id === currentTrace.id) ?? null}
             isFacilitator={isFacilitator}
             onComplete={() => {

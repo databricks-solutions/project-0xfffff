@@ -1062,7 +1062,7 @@ export interface DiscoveryFeedbackData {
   user_id: string;
   feedback_label: FeedbackLabel;
   comment: string;
-  followup_qna: Array<{ question: string; answer: string }>;
+  followup_qna: Array<{ question: string; answer: string; milestone_references?: string[] }>;
   created_at: string;
   updated_at: string;
 }
@@ -1074,7 +1074,7 @@ export interface DiscoveryAnalysis {
   workshop_id: string;
   template_used: string;
   analysis_data: string;
-  findings: Array<{ text: string; evidence_trace_ids: string[]; priority: string }>;
+  findings: Array<{ text: string; evidence_trace_ids: string[]; evidence_milestone_refs?: string[]; priority: string }>;
   disagreements: {
     high: Array<{
       trace_id: string;
@@ -1246,7 +1246,7 @@ export function useSubmitFollowUpAnswer(workshopId: string) {
   return useMutation<
     { feedback_id: string; qna_count: number; complete: boolean },
     Error,
-    { trace_id: string; user_id: string; question: string; answer: string }
+    { trace_id: string; user_id: string; question: string; answer: string; milestone_references?: string[] }
   >({
     mutationFn: async (data) => {
       const response = await fetch(`/workshops/${workshopId}/submit-followup-answer`, {

@@ -2,15 +2,11 @@ import React from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useQueryClient } from '@tanstack/react-query';
 import { useWorkshopContext } from '@/context/WorkshopContext';
-import { useWorkflowContext } from '@/context/WorkflowContext';
-import { WorkshopsService } from '@/client';
-import { useAllTraces, useWorkshopDiscoveryConfig, useMLflowConfig, useUpdateDiscoveryModel, useAvailableModels } from '@/hooks/useWorkshopApi';
+import { useAllTraces, useWorkshopDiscoveryConfig, useUpdateDiscoveryModel, useAvailableModels } from '@/hooks/useWorkshopApi';
 import { buildModelOptions, getDisplayName } from '@/utils/modelMapping';
 import { Play, Users, Search, Lightbulb, Database, Settings, Shuffle, Brain } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
@@ -24,8 +20,6 @@ export const DiscoveryStartPage: React.FC<DiscoveryStartPageProps> = ({ onStartD
   const { workshopId } = useWorkshopContext();
   const queryClient = useQueryClient();
   const [isStarting, setIsStarting] = React.useState(false);
-  const [traceLimit, setTraceLimit] = React.useState<string>('10');
-  const [customLimit, setCustomLimit] = React.useState<string>('10');
   const [randomizeTraces, setRandomizeTraces] = React.useState<boolean>(false);
 
   // Get total number of traces
@@ -34,7 +28,6 @@ export const DiscoveryStartPage: React.FC<DiscoveryStartPageProps> = ({ onStartD
 
   // Model selection
   const { data: workshop } = useWorkshopDiscoveryConfig(workshopId!);
-  const { data: mlflowConfig } = useMLflowConfig(workshopId!);
   const { data: availableModels } = useAvailableModels(workshopId!);
   const updateModelMutation = useUpdateDiscoveryModel(workshopId!);
   const [customProviderStatus, setCustomProviderStatus] = React.useState<{ is_configured: boolean; is_enabled: boolean; provider_name?: string | null } | null>(null);
@@ -63,19 +56,12 @@ export const DiscoveryStartPage: React.FC<DiscoveryStartPageProps> = ({ onStartD
   const startDiscoveryPhase = async () => {
     try {
       setIsStarting(true);
-      
-      // Calculate actual limit based on selection
-      const limit = traceLimit === 'custom' ? parseInt(customLimit) : parseInt(traceLimit);
-      
 
-      
-      // Make direct API call with trace_limit and randomize parameters
+      // Start discovery over the full active trace set.
       const params = new URLSearchParams();
-      if (limit) params.append('trace_limit', limit.toString());
       params.append('randomize', randomizeTraces.toString());
       const url = `/workshops/${workshopId}/begin-discovery?${params.toString()}`;
-      
-      
+
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -87,7 +73,7 @@ export const DiscoveryStartPage: React.FC<DiscoveryStartPageProps> = ({ onStartD
         throw new Error('Failed to start discovery phase');
       }
       
-      const result = await response.json();
+      await response.json();
       // Invalidate queries to refresh the UI
       queryClient.invalidateQueries({ queryKey: ['workshop', workshopId] });
       queryClient.invalidateQueries({ queryKey: ['traces', workshopId] });
@@ -188,43 +174,9 @@ export const DiscoveryStartPage: React.FC<DiscoveryStartPageProps> = ({ onStartD
             <span className="text-xs text-gray-500">{totalTraces} traces available</span>
           </div>
 
-          <RadioGroup value={traceLimit} onValueChange={setTraceLimit} className="space-y-2">
-            <div className="flex items-center space-x-3 p-2.5 rounded-md border border-gray-200 hover:border-gray-300 transition-colors">
-              <RadioGroupItem value="10" id="traces-standard" />
-              <Label htmlFor="traces-standard" className="flex-1 cursor-pointer">
-                <div className="text-sm font-medium">Standard (10 traces)</div>
-                <div className="text-xs text-gray-500">Recommended for most workshops</div>
-              </Label>
-            </div>
-            <div className="flex items-center space-x-3 p-2.5 rounded-md border border-gray-200 hover:border-gray-300 transition-colors">
-              <RadioGroupItem value="custom" id="traces-custom" />
-              <Label htmlFor="traces-custom" className="flex-1 cursor-pointer">
-                <div className="text-sm font-medium">Custom</div>
-                <div className="text-xs text-gray-500">Choose your own number of traces</div>
-              </Label>
-            </div>
-          </RadioGroup>
-
-          {traceLimit === 'custom' && (
-            <div className="p-3 bg-gray-50 rounded-md border border-gray-200">
-              <Label htmlFor="custom-trace-count" className="text-xs font-medium text-gray-700">
-                Number of traces
-              </Label>
-              <Input
-                id="custom-trace-count"
-                type="number"
-                min="1"
-                max={totalTraces}
-                value={customLimit}
-                onChange={(e) => setCustomLimit(e.target.value)}
-                className="mt-1.5 h-8"
-                placeholder="Enter number"
-              />
-              <div className="text-xs text-gray-500 mt-1">
-                Max: {totalTraces} available
-              </div>
-            </div>
-          )}
+          <div className="rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-900">
+            Discovery will run over all available traces, one at a time.
+          </div>
 
           <div className="flex items-center justify-between pt-2 border-t border-gray-100">
             <Label htmlFor="randomize-toggle" className="text-sm text-gray-600 cursor-pointer flex items-center gap-2">
@@ -270,15 +222,10 @@ export const DiscoveryStartPage: React.FC<DiscoveryStartPageProps> = ({ onStartD
           {/* Summary */}
           <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-50 rounded-md px-3 py-2">
             <span className="font-medium text-gray-700">Summary:</span>
-            {traceLimit === 'custom' ? `${customLimit} traces` : `${traceLimit} traces`}
+            {totalTraces} traces
             {randomizeTraces && ' · randomized per user'}
             {' · '}
             {currentModel === 'demo' ? 'demo model' : currentModel === 'custom' ? `custom: ${customProviderStatus?.provider_name || 'Custom'}` : getDisplayName(currentModel)}
-            {parseInt(traceLimit === 'custom' ? customLimit : traceLimit) < totalTraces && (
-              <span className="ml-auto text-gray-400">
-                ({totalTraces - parseInt(traceLimit === 'custom' ? customLimit : traceLimit)} unused)
-              </span>
-            )}
           </div>
         </CardContent>
       </Card>

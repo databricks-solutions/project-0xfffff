@@ -3270,7 +3270,7 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
     workshop_id: str,
     trace_id: str,
     user_id: str,
-    qna: Dict[str, str],
+    qna: Dict[str, Any],
   ) -> DiscoveryFeedback:
     """Append a Q&A pair to an existing feedback record (DI-2)."""
     row = (

@@ -81,6 +81,11 @@ export const CrossTraceAnalysisSummary: React.FC<CrossTraceAnalysisSummaryProps>
                         <span className="text-xs text-slate-500">
                           Linked to {f.evidence_trace_ids.length} traces
                         </span>
+                        {f.evidence_milestone_refs && f.evidence_milestone_refs.length > 0 && (
+                          <div className="mt-1 text-[11px] text-indigo-700">
+                            Milestones: {f.evidence_milestone_refs.join(', ')}
+                          </div>
+                        )}
                       </div>
                       <Button
                         variant="outline"
@@ -88,7 +93,13 @@ export const CrossTraceAnalysisSummary: React.FC<CrossTraceAnalysisSummaryProps>
                         className="text-xs shrink-0 ml-3"
                         disabled={promotedKeys.has(key)}
                         onClick={() =>
-                          onPromote({ key, text: f.text, source_type: 'finding', source_trace_ids: f.evidence_trace_ids })
+                          onPromote({
+                            key,
+                            text: f.text,
+                            source_type: 'finding',
+                            source_trace_ids: f.evidence_trace_ids,
+                            source_milestone_refs: f.evidence_milestone_refs ?? [],
+                          })
                         }
                       >
                         <ArrowUpRight className="w-3 h-3 mr-1" />

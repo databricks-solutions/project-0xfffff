@@ -21,6 +21,8 @@ interface MilestoneViewProps {
   milestones: Milestone[];
   /** Show span path labels (span_name → jsonpath). Useful for facilitators, noisy for SMEs. */
   showPaths?: boolean;
+  /** Optional prefix used to create stable anchor IDs for milestone scrolling. */
+  anchorPrefix?: string;
 }
 
 function formatValue(value: unknown): string {
@@ -72,7 +74,7 @@ function SpanDataItem({ dataRef, showPath = true }: { dataRef: SpanDataRef; show
   );
 }
 
-export function MilestoneView({ executiveSummary, milestones, showPaths = true }: MilestoneViewProps) {
+export function MilestoneView({ executiveSummary, milestones, showPaths = true, anchorPrefix }: MilestoneViewProps) {
   return (
     <div className="space-y-4">
       {/* Executive Summary */}
@@ -85,19 +87,32 @@ export function MilestoneView({ executiveSummary, milestones, showPaths = true }
       {/* Milestones */}
       <div className="space-y-3">
         {milestones.map((milestone) => (
-          <MilestoneCard key={milestone.number} milestone={milestone} showPaths={showPaths} />
+          <MilestoneCard
+            key={milestone.number}
+            milestone={milestone}
+            showPaths={showPaths}
+            anchorId={anchorPrefix ? `${anchorPrefix}-m${milestone.number}` : undefined}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-function MilestoneCard({ milestone, showPaths = true }: { milestone: Milestone; showPaths?: boolean }) {
+function MilestoneCard({
+  milestone,
+  showPaths = true,
+  anchorId,
+}: {
+  milestone: Milestone;
+  showPaths?: boolean;
+  anchorId?: string;
+}) {
   const [expanded, setExpanded] = useState(true);
   const hasData = milestone.inputs.length > 0 || milestone.outputs.length > 0;
 
   return (
-    <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+    <div id={anchorId} className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors text-left"

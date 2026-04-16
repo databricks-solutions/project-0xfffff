@@ -286,6 +286,7 @@ def test_submit_followup_answer(discovery_service, workshop_with_traces):
         user_id="u-1",
         question="What specifically was wrong?",
         answer="The tone was off.",
+        milestone_references=["all", "m2"],
     )
 
     assert result["qna_count"] == 1
@@ -296,6 +297,7 @@ def test_submit_followup_answer(discovery_service, workshop_with_traces):
     assert len(feedbacks[0].followup_qna) == 1
     assert feedbacks[0].followup_qna[0]["question"] == "What specifically was wrong?"
     assert feedbacks[0].followup_qna[0]["answer"] == "The tone was off."
+    assert feedbacks[0].followup_qna[0]["milestone_references"] == ["all", "m2"]
 
 
 @pytest.mark.spec("DISCOVERY_SPEC")

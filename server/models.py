@@ -712,7 +712,7 @@ class DiscoveryFeedback(BaseModel):
     user_id: str
     feedback_label: FeedbackLabel
     comment: str
-    followup_qna: list[dict[str, str]] = Field(default_factory=list)
+    followup_qna: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 
@@ -729,7 +729,7 @@ class DiscoveryFeedbackWithUser(BaseModel):
     user_role: str
     feedback_label: FeedbackLabel
     comment: str
-    followup_qna: list[dict[str, str]] = Field(default_factory=list)
+    followup_qna: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -744,6 +744,7 @@ class SubmitFollowUpAnswerRequest(BaseModel):
     user_id: str
     question: str
     answer: str
+    milestone_references: list[str] = Field(default_factory=list)
 
 
 class ClassifiedFinding(BaseModel):
@@ -915,6 +916,7 @@ class Finding(BaseModel):
 
     text: str
     evidence_trace_ids: list[str] = Field(default_factory=list)
+    evidence_milestone_refs: list[str] = Field(default_factory=list)
     priority: str = "medium"  # 'high' | 'medium' | 'low'
 
 
