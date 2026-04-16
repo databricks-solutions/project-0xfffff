@@ -503,6 +503,26 @@ e2e-wait-ready api_port="8000" ui_port="3000" timeout_s="60":
 py-install-dev:
   uv pip install -e ".[dev]"
 
+# Stop dev servers for this worktree (or all worktrees with --all)
+[group('dev')]
+dev-stop *args:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  if [[ "{{args}}" == *"--all"* ]]; then
+    echo "🧹 Stopping ALL dev servers across all worktrees..."
+    just _dev-pidfile cleanup-all
+  else
+    echo "🧹 Stopping dev servers for this worktree..."
+    just _dev-pidfile cleanup
+  fi
+  echo "✅ Done"
+
+# Show running dev servers across all worktrees
+[group('dev')]
+dev-status:
+  @echo "📋 Dev servers:"
+  @just _dev-pidfile list
+
 [group('dev')]
 api-dev port="8000":
   #!/usr/bin/env bash
@@ -562,6 +582,9 @@ dev api_port="8000" ui_port="5173": openapi
   #!/usr/bin/env bash
   set -euo pipefail
 
+  # Kill any leftover servers from a previous run of this worktree
+  just _dev-pidfile cleanup
+
   API_PORT=$(just _find-port "{{api_port}}")
   UI_PORT=$(just _find-port "{{ui_port}}")
 
@@ -580,8 +603,12 @@ dev api_port="8000" ui_port="5173": openapi
   (npm -C {{client-dir}} run dev -- --port "$UI_PORT") &
   ui_pid=$!
 
+  # Record PIDs so a future `just dev` or `just dev-cleanup` can kill them
+  just _dev-pidfile write "$api_pid $ui_pid"
+
   cleanup() {
     kill "$api_pid" "$ui_pid" 2>/dev/null || true
+    just _dev-pidfile remove
   }
   trap cleanup INT TERM EXIT
 
@@ -721,6 +748,99 @@ _find-port start_port:
         print(p)
         exit(0)
   exit(1)
+
+# Write a PID file for the current worktree's dev servers so they can be
+# cleaned up later (even after terminal close / IDE crash).
+# Keyed by a hash of the repo root path so multiple worktrees don't collide.
+[script]
+_dev-pidfile action *pids:
+  import hashlib, json, os, signal, sys, time
+
+  repo_root = os.path.realpath(os.getcwd())
+  key = hashlib.sha256(repo_root.encode()).hexdigest()[:12]
+  pid_dir = os.path.expanduser("~/.cache/project-dev-servers")
+  os.makedirs(pid_dir, exist_ok=True)
+  pidfile = os.path.join(pid_dir, f"{key}.json")
+
+  action = "{{action}}"
+
+  if action == "write":
+      pids = [int(p) for p in "{{pids}}".split() if p.strip()]
+      data = {"root": repo_root, "pids": pids, "ts": time.time()}
+      with open(pidfile, "w") as f:
+          json.dump(data, f)
+
+  elif action == "cleanup":
+      # Kill any stale servers from a previous run of THIS worktree
+      if os.path.exists(pidfile):
+          try:
+              with open(pidfile) as f:
+                  data = json.load(f)
+              for pid in data.get("pids", []):
+                  try:
+                      os.kill(pid, signal.SIGTERM)
+                  except ProcessLookupError:
+                      pass
+              os.remove(pidfile)
+          except Exception:
+              pass
+
+  elif action == "cleanup-all":
+      # Kill dev servers from ALL worktrees (nuclear option)
+      killed = 0
+      for fname in os.listdir(pid_dir):
+          fpath = os.path.join(pid_dir, fname)
+          if not fname.endswith(".json"):
+              continue
+          try:
+              with open(fpath) as f:
+                  data = json.load(f)
+              root = data.get("root", "?")
+              for pid in data.get("pids", []):
+                  try:
+                      os.kill(pid, signal.SIGTERM)
+                      killed += 1
+                      print(f"  killed pid {pid} ({root})")
+                  except ProcessLookupError:
+                      pass
+              os.remove(fpath)
+          except Exception:
+              pass
+      if killed == 0:
+          print("  no stale dev servers found")
+
+  elif action == "list":
+      if not os.path.isdir(pid_dir):
+          print("  no dev servers tracked")
+          sys.exit(0)
+      for fname in sorted(os.listdir(pid_dir)):
+          fpath = os.path.join(pid_dir, fname)
+          if not fname.endswith(".json"):
+              continue
+          try:
+              with open(fpath) as f:
+                  data = json.load(f)
+              root = data.get("root", "?")
+              pids = data.get("pids", [])
+              alive = []
+              for pid in pids:
+                  try:
+                      os.kill(pid, 0)
+                      alive.append(str(pid))
+                  except ProcessLookupError:
+                      pass
+              status = f"alive: {', '.join(alive)}" if alive else "stale (all dead)"
+              print(f"  {root}  [{status}]")
+          except Exception:
+              pass
+
+  elif action == "remove":
+      if os.path.exists(pidfile):
+          os.remove(pidfile)
+
+  else:
+      print(f"Unknown action: {action}", file=sys.stderr)
+      sys.exit(1)
 
 # Run E2E tests (writes JSON report to .test-results/ for token-efficient summaries)
 # Loads environment variables from .env file (not .env.local) for CI secrets
