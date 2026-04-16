@@ -25,6 +25,24 @@ def _get_token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()[:16]
 
 
+def normalize_experiment_id(experiment_id: str | None) -> str | None:
+    """Normalize MLflow experiment IDs from env/form inputs.
+
+    Databricks App env var values and form values can occasionally include
+    surrounding quotes (e.g. '"12345"' or "'12345'"), which MLflow then treats
+    as a literal ID and returns "experiment not found".
+    """
+    if experiment_id is None:
+        return None
+    normalized = str(experiment_id).strip()
+    while len(normalized) >= 2 and (
+        (normalized.startswith('"') and normalized.endswith('"'))
+        or (normalized.startswith("'") and normalized.endswith("'"))
+    ):
+        normalized = normalized[1:-1].strip()
+    return normalized or None
+
+
 def _get_sdk_token() -> str | None:
     """Get an OAuth token via the Databricks SDK (unified auth).
 
@@ -107,7 +125,7 @@ def get_experiment_id() -> str:
     Raises:
         RuntimeError: If MLFLOW_EXPERIMENT_ID is not set.
     """
-    exp_id = os.getenv("MLFLOW_EXPERIMENT_ID")
+    exp_id = normalize_experiment_id(os.getenv("MLFLOW_EXPERIMENT_ID"))
     if exp_id:
         return exp_id
     raise RuntimeError(

@@ -3045,9 +3045,9 @@ async def configure_mlflow_intake(
         raise HTTPException(status_code=404, detail="Workshop not found")
 
     try:
-        from server.services.databricks_service import get_experiment_id
+        from server.services.databricks_service import get_experiment_id, normalize_experiment_id
 
-        experiment_id = config.experiment_id or get_experiment_id()
+        experiment_id = normalize_experiment_id(config.experiment_id) or get_experiment_id()
 
         config_to_save = MLflowIntakeConfig(
             experiment_id=experiment_id,
@@ -3453,9 +3453,9 @@ async def upload_csv_and_log_to_mlflow(
     if not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="File must be a CSV file")
 
-    from server.services.databricks_service import get_experiment_id
+    from server.services.databricks_service import get_experiment_id, normalize_experiment_id
 
-    exp_id = experiment_id or get_experiment_id()
+    exp_id = normalize_experiment_id(experiment_id) or get_experiment_id()
 
     try:
         import mlflow
