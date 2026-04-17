@@ -41,6 +41,8 @@ import type { DiscoveryQuestionsResponse } from '../models/DiscoveryQuestionsRes
 import type { DiscoverySettingsConfig } from '../models/DiscoverySettingsConfig';
 import type { DiscoverySummariesResponse } from '../models/DiscoverySummariesResponse';
 import type { DraftRubricItem } from '../models/DraftRubricItem';
+import type { EvalAlignRequest } from '../models/EvalAlignRequest';
+import type { EvalEvaluateRequest } from '../models/EvalEvaluateRequest';
 import type { FacilitatorConfigCreate } from '../models/FacilitatorConfigCreate';
 import type { GenerateFollowUpRequest } from '../models/GenerateFollowUpRequest';
 import type { IRRResult } from '../models/IRRResult';
@@ -2713,18 +2715,13 @@ export class ApiService {
         });
     }
     /**
-     * Get Alignment Status
-     * Get the current alignment status for a workshop.
-     *
-     * Returns information about:
-     * - Number of traces available for alignment
-     * - Whether evaluation has been run
-     * - Whether alignment is ready to run
+     * Get Eval Alignment Status
+     * Get eval-mode alignment readiness status.
      * @param workshopId
      * @returns any Successful Response
      * @throws ApiError
      */
-    public static getAlignmentStatusWorkshopsWorkshopIdAlignmentStatusGet(
+    public static getEvalAlignmentStatusWorkshopsWorkshopIdAlignmentStatusGet(
         workshopId: string,
     ): CancelablePromise<Record<string, any>> {
         return __request(OpenAPI, {
@@ -3844,6 +3841,106 @@ export class ApiService {
                 'trace_id': traceId,
                 'judge_model': judgeModel,
             },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Start Eval Judge Run
+     * Start a background judge evaluation job for eval-mode criteria.
+     * @param workshopId
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static startEvalJudgeRunWorkshopsWorkshopIdEvaluatePost(
+        workshopId: string,
+        requestBody: EvalEvaluateRequest,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/evaluate',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Eval Job Status
+     * Poll eval-mode judge evaluation job progress.
+     * @param workshopId
+     * @param jobId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getEvalJobStatusWorkshopsWorkshopIdEvalJobJobIdGet(
+        workshopId: string,
+        jobId: string,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/eval-job/{job_id}',
+            path: {
+                'workshop_id': workshopId,
+                'job_id': jobId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Eval Irr
+     * Compute eval-mode IRR (pairwise agreement on criterion decisions).
+     * @param workshopId
+     * @param traceId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getEvalIrrWorkshopsWorkshopIdEvalIrrGet(
+        workshopId: string,
+        traceId?: (string | null),
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/eval-irr',
+            path: {
+                'workshop_id': workshopId,
+            },
+            query: {
+                'trace_id': traceId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Start Eval Alignment
+     * Start eval-mode judge alignment using criterion-level assessments.
+     * @param workshopId
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static startEvalAlignmentWorkshopsWorkshopIdAlignPost(
+        workshopId: string,
+        requestBody: EvalAlignRequest,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/align',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },

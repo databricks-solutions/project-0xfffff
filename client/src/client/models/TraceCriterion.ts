@@ -11,6 +11,8 @@ export type TraceCriterion = {
     criterion_type: TraceCriterionType;
     weight?: number;
     source_finding_id?: (string | null);
+    milestone_refs?: Array<string>;
+    lineage_scope?: (string | null);
     created_by: string;
     order?: number;
     created_at?: string;

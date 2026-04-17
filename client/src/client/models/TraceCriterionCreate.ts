@@ -8,6 +8,8 @@ export type TraceCriterionCreate = {
     criterion_type: TraceCriterionType;
     weight?: number;
     source_finding_id?: (string | null);
+    milestone_refs?: Array<string>;
+    lineage_scope?: (string | null);
     order?: number;
     created_by: string;
 };

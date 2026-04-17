@@ -2441,32 +2441,6 @@ export class WorkshopsService {
         });
     }
     /**
-     * Get Alignment Status
-     * Get the current alignment status for a workshop.
-     *
-     * Returns information about:
-     * - Number of traces available for alignment
-     * - Whether evaluation has been run
-     * - Whether alignment is ready to run
-     * @param workshopId
-     * @returns any Successful Response
-     * @throws ApiError
-     */
-    public static getAlignmentStatusWorkshopsWorkshopIdAlignmentStatusGet(
-        workshopId: string,
-    ): CancelablePromise<Record<string, any>> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/workshops/{workshop_id}/alignment-status',
-            path: {
-                'workshop_id': workshopId,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * Get Custom Llm Provider Status
      * Get the status of custom LLM provider configuration for a workshop.
      *

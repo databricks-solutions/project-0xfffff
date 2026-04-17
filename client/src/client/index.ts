@@ -55,6 +55,8 @@ export type { DiscoverySettingsConfig } from './models/DiscoverySettingsConfig';
 export type { DiscoverySummariesResponse } from './models/DiscoverySummariesResponse';
 export type { DiscussionPromptResponse } from './models/DiscussionPromptResponse';
 export type { DraftRubricItem } from './models/DraftRubricItem';
+export type { EvalAlignRequest } from './models/EvalAlignRequest';
+export type { EvalEvaluateRequest } from './models/EvalEvaluateRequest';
 export type { FacilitatorConfigCreate } from './models/FacilitatorConfigCreate';
 export { FeedbackLabel } from './models/FeedbackLabel';
 export type { GenerateFollowUpRequest } from './models/GenerateFollowUpRequest';
