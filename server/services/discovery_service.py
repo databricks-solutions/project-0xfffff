@@ -1190,6 +1190,7 @@ class DiscoveryService:
         workshop_id: str,
         trace_id: str,
         milestone_ref: str | None = None,
+        include_all: bool = False,
         user_id: str | None = None,
     ) -> list[DiscoveryComment]:
         self._get_workshop_or_404(workshop_id)
@@ -1197,6 +1198,7 @@ class DiscoveryService:
             workshop_id=workshop_id,
             trace_id=trace_id,
             milestone_ref=milestone_ref,
+            include_all=include_all,
             viewer_user_id=user_id,
         )
 

@@ -638,13 +638,16 @@ async def list_discovery_comments(
     trace_id: str,
     milestone_ref: str | None = None,
     user_id: str | None = None,
+    request: Request = None,
     db: Session = Depends(get_db),
 ) -> list[DiscoveryComment]:
     svc = DiscoveryService(db)
+    include_all = request is not None and "milestone_ref" not in request.query_params
     return svc.list_discovery_comments(
         workshop_id=workshop_id,
         trace_id=trace_id,
         milestone_ref=milestone_ref,
+        include_all=include_all,
         user_id=user_id,
     )
 
@@ -1121,9 +1124,11 @@ async def stream_discovery_comments(
     trace_id: str,
     milestone_ref: str | None = None,
     user_id: str | None = None,
+    request: Request = None,
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
     svc = DiscoveryService(db)
+    include_all = request is not None and "milestone_ref" not in request.query_params
 
     def event_generator():
         last_signature = ""
@@ -1132,6 +1137,7 @@ async def stream_discovery_comments(
                 workshop_id=workshop_id,
                 trace_id=trace_id,
                 milestone_ref=milestone_ref,
+                include_all=include_all,
                 user_id=user_id,
             )
             signature = f"{len(comments)}:{comments[-1].updated_at if comments else ''}"

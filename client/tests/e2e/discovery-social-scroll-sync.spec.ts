@@ -1,10 +1,9 @@
 /**
- * E2E Test: Discovery Social Thread — Milestone Scroll Sync
+ * E2E Test: Discovery Social Thread — Scope by Active Milestone
  *
- * Verifies that when a milestone becomes active in the MilestoneView (left),
- * the social thread (right) scrolls so the first comment for that milestone
- * aligns near the top of the scroll container — matching the sticky milestone
- * blob position.
+ * Verifies that selecting a milestone in the MilestoneView (left) scopes the
+ * social thread (right) to only that milestone's comments, and that the
+ * composer scope indicator reflects the current selection.
  *
  * Uses mocked API for fast, deterministic execution.
  */
@@ -27,14 +26,14 @@ function buildMilestones(count: number) {
 function buildComment(
   workshopId: string,
   traceId: string,
-  milestoneRef: string,
+  milestoneRef: string | null,
   userId: string,
   userName: string,
   body: string,
   index: number,
 ): MockDiscoveryComment {
   return {
-    id: `comment-${milestoneRef}-${index}`,
+    id: `comment-${milestoneRef ?? 'trace'}-${index}`,
     workshop_id: workshopId,
     trace_id: traceId,
     milestone_ref: milestoneRef,
@@ -54,11 +53,11 @@ function buildComment(
   };
 }
 
-test.describe('Discovery Social Thread: Milestone Scroll Sync', {
+test.describe('Discovery Social Thread: Scope By Milestone', {
   tag: ['@spec:DISCOVERY_SPEC'],
 }, () => {
 
-  test('social thread scrolls to align with active milestone', {
+  test('selecting a milestone scopes the thread to that milestone\'s comments', {
     tag: [
       '@spec:DISCOVERY_SPEC',
       '@req:Trace- and milestone-level comments with threaded replies',
@@ -67,7 +66,7 @@ test.describe('Discovery Social Thread: Milestone Scroll Sync', {
     const milestones = buildMilestones(5);
 
     const scenario = await TestScenario.create(page)
-      .withWorkshop({ name: 'Scroll Sync Test' })
+      .withWorkshop({ name: 'Scope Test' })
       .withFacilitator()
       .withParticipants(3)
       .withTraces(1)
@@ -77,39 +76,38 @@ test.describe('Discovery Social Thread: Milestone Scroll Sync', {
     const trace = scenario.traces[0];
     const workshopId = scenario.workshop.id;
 
-    // Set discovery_mode to 'social' and add milestone summary to the trace
     (scenario.workshop as Record<string, unknown>).discovery_mode = 'social';
     (trace as Record<string, unknown>).summary = {
       executive_summary: 'This agent analyzed a real estate closing workflow and produced five key milestones.',
       milestones,
     };
 
-    // Seed comments across different milestones so the thread is scrollable
     const participants = scenario.users.participant;
     const comments: MockDiscoveryComment[] = [];
+    // One distinctive comment per milestone so we can assert on exact bodies
     for (let m = 1; m <= 5; m++) {
-      for (let c = 0; c < 3; c++) {
-        const p = participants[c % participants.length];
-        comments.push(buildComment(
-          workshopId,
-          trace.id,
-          `m${m}`,
-          p.id,
-          p.name,
-          `Comment ${c + 1} on milestone ${m}: This part of the trace is important because it shows step ${m}.`,
-          m * 10 + c,
-        ));
-      }
+      const p = participants[(m - 1) % participants.length];
+      comments.push(buildComment(
+        workshopId,
+        trace.id,
+        `m${m}`,
+        p.id,
+        p.name,
+        `MARKER-M${m} unique discussion for milestone ${m}`,
+        m,
+      ));
     }
+    // A trace-level comment (no milestone_ref)
+    comments.push(buildComment(
+      workshopId,
+      trace.id,
+      null,
+      participants[0].id,
+      participants[0].name,
+      `MARKER-TRACE unique trace-level discussion`,
+      999,
+    ));
 
-    // Inject comments into the mock store via the scenario's mocker
-    // The mocker reads from store.discoveryComments; we access it through the exposed traces ref's parent
-    // Since we can't directly access the store, add comments via the mock route by updating the page's route handler
-    // Actually, the simplest way: modify the store through the already-installed mock route handler
-    // The api-mocker reads from this.store.discoveryComments. We can seed them via page.evaluate + fetch.
-    // Better: use route.fulfill override to inject comments.
-
-    // Approach: intercept the comments endpoint before the page loads and return our seeded data
     await page.route('**/discovery-comments/stream**', async (route) => {
       const url = new URL(route.request().url());
       const traceId = url.searchParams.get('trace_id');
@@ -134,71 +132,41 @@ test.describe('Discovery Social Thread: Milestone Scroll Sync', {
 
     await scenario.loginAs(scenario.facilitator);
 
-    // Wait for the milestone view to render
     await expect(page.getByRole('heading', { name: 'Milestone 1 Title' })).toBeVisible({ timeout: 15000 });
 
-    // The social thread panel starts CLOSED (isChatOpen=false, translate-x-[120%]).
-    // Click the FAB to open it.
+    // Open the thread via the FAB (panel starts closed)
     const chatFab = page.locator('button.rounded-full.shadow-lg.w-12.h-12');
     await expect(chatFab).toBeVisible({ timeout: 5000 });
     await chatFab.click();
 
-    // Wait for the social thread to slide in and render comments
-    const threadPanel = page.locator('.flex.flex-col.h-full.overflow-hidden').filter({
-      has: page.getByRole('heading', { name: 'Discussion Flow' }),
+    const threadPanel = page.locator('div.flex.flex-col.h-full').filter({
+      has: page.locator('textarea[placeholder*="summarize"]'),
     });
     await expect(threadPanel).toBeVisible({ timeout: 5000 });
 
-    // Wait for milestone dividers to render (comments loaded via SSE)
-    const m1Anchor = page.locator('[data-milestone-anchor="m1"]');
-    await expect(m1Anchor).toBeVisible({ timeout: 5000 });
-
-    // Identify the scroll container (the overflow-y-auto div inside the thread panel)
-    const threadScrollable = threadPanel.locator('div.overflow-y-auto').first();
-    await expect(threadScrollable).toBeVisible({ timeout: 3000 });
-
-    // Helper: compute the distance between an anchor's top and the container's top,
-    // evaluated inside the browser so we avoid Playwright bounding-box flakiness.
-    const distanceFromContainerTop = async (milestone: string): Promise<number> => {
-      return await threadScrollable.evaluate((el, ref) => {
-        const anchor = el.querySelector(`[data-milestone-anchor="${ref}"]`) as HTMLElement | null;
-        if (!anchor) return Number.POSITIVE_INFINITY;
-        const containerRect = el.getBoundingClientRect();
-        const anchorRect = anchor.getBoundingClientRect();
-        return anchorRect.top - containerRect.top;
-      }, milestone);
-    };
-
-    // Click on milestone 3 in the milestone view to activate it.
-    // Target the milestone card (has id attr) not comment dividers.
+    // Click milestone 3 on the left
     await page.locator('[data-milestone-ref="m3"][id]').first().click();
 
-    // Wait for scroll to settle (smooth scroll takes ~300ms)
-    await expect.poll(async () => distanceFromContainerTop('m3'), {
-      timeout: 3000,
-      intervals: [100, 200, 300, 500],
-    }).toBeLessThan(80);
+    // Thread should show ONLY M3's comment
+    await expect(threadPanel.getByText('MARKER-M3 unique discussion for milestone 3')).toBeVisible({ timeout: 3000 });
+    await expect(threadPanel.getByText('MARKER-M1 unique discussion for milestone 1')).toHaveCount(0);
+    await expect(threadPanel.getByText('MARKER-M2 unique discussion for milestone 2')).toHaveCount(0);
+    await expect(threadPanel.getByText('MARKER-M4 unique discussion for milestone 4')).toHaveCount(0);
+    await expect(threadPanel.getByText('MARKER-TRACE unique trace-level discussion')).toHaveCount(0);
 
-    const m3Distance = await distanceFromContainerTop('m3');
-    expect(m3Distance).toBeGreaterThanOrEqual(-10);
-    expect(m3Distance).toBeLessThan(80);
+    // Composer scope indicator should reflect M3
+    await expect(threadPanel.getByText(/Commenting on Milestone 3/)).toBeVisible();
 
-    // Click on milestone 1 and verify scroll syncs back
+    // Click milestone 1
     await page.locator('[data-milestone-ref="m1"][id]').first().click();
-
-    await expect.poll(async () => distanceFromContainerTop('m1'), {
-      timeout: 3000,
-      intervals: [100, 200, 300, 500],
-    }).toBeLessThan(80);
-
-    const m1Distance = await distanceFromContainerTop('m1');
-    expect(m1Distance).toBeGreaterThanOrEqual(-10);
-    expect(m1Distance).toBeLessThan(80);
+    await expect(threadPanel.getByText('MARKER-M1 unique discussion for milestone 1')).toBeVisible({ timeout: 3000 });
+    await expect(threadPanel.getByText('MARKER-M3 unique discussion for milestone 3')).toHaveCount(0);
+    await expect(threadPanel.getByText(/Commenting on Milestone 1/)).toBeVisible();
 
     await scenario.cleanup();
   });
 
-  test('social thread scrolls to top when trace-level summary is selected', {
+  test('selecting the agent synthesis scopes the thread to trace-level comments', {
     tag: [
       '@spec:DISCOVERY_SPEC',
       '@req:Trace- and milestone-level comments with threaded replies',
@@ -207,7 +175,7 @@ test.describe('Discovery Social Thread: Milestone Scroll Sync', {
     const milestones = buildMilestones(4);
 
     const scenario = await TestScenario.create(page)
-      .withWorkshop({ name: 'Scroll To Top Test' })
+      .withWorkshop({ name: 'Trace Scope Test' })
       .withFacilitator()
       .withParticipants(2)
       .withTraces(1)
@@ -226,11 +194,10 @@ test.describe('Discovery Social Thread: Milestone Scroll Sync', {
     const participants = scenario.users.participant;
     const comments: MockDiscoveryComment[] = [];
     for (let m = 1; m <= 4; m++) {
-      for (let c = 0; c < 3; c++) {
-        const p = participants[c % participants.length];
-        comments.push(buildComment(workshopId, trace.id, `m${m}`, p.id, p.name, `M${m} comment ${c + 1}`, m * 10 + c));
-      }
+      const p = participants[(m - 1) % participants.length];
+      comments.push(buildComment(workshopId, trace.id, `m${m}`, p.id, p.name, `MARKER-M${m} discussion`, m));
     }
+    comments.push(buildComment(workshopId, trace.id, null, participants[0].id, participants[0].name, `MARKER-TRACE-ONLY seen only at trace scope`, 999));
 
     await page.route('**/discovery-comments/stream**', async (route) => {
       const filtered = comments.filter(c => c.trace_id === trace.id);
@@ -252,31 +219,31 @@ test.describe('Discovery Social Thread: Milestone Scroll Sync', {
     await scenario.loginAs(scenario.facilitator);
     await expect(page.getByRole('heading', { name: 'Milestone 1 Title' })).toBeVisible({ timeout: 15000 });
 
-    // Open the social thread panel via the FAB
     const chatFab = page.locator('button.rounded-full.shadow-lg.w-12.h-12');
     await expect(chatFab).toBeVisible({ timeout: 5000 });
     await chatFab.click();
 
-    const threadPanel = page.locator('.flex.flex-col.h-full.overflow-hidden').filter({
-      has: page.getByRole('heading', { name: 'Discussion Flow' }),
+    const threadPanel = page.locator('div.flex.flex-col.h-full').filter({
+      has: page.locator('textarea[placeholder*="summarize"]'),
     });
     await expect(threadPanel).toBeVisible({ timeout: 5000 });
 
-    // Wait for milestone dividers to render
-    await expect(page.locator('[data-milestone-anchor="m1"]')).toBeVisible({ timeout: 5000 });
+    // Start by selecting a milestone
+    await page.locator('[data-milestone-ref="m2"][id]').first().click();
+    await expect(threadPanel.getByText('MARKER-M2 discussion')).toBeVisible({ timeout: 3000 });
 
-    // First scroll to milestone 4
-    await page.locator('[data-milestone-ref="m4"][id]').first().click();
-    await page.waitForTimeout(1000);
-
-    // Then click the executive summary / trace-level section
+    // Now click the trace-level (executive summary / agent synthesis) card
     await page.locator('[data-milestone-ref="trace"]').click();
-    await page.waitForTimeout(1000);
 
-    // The social thread should have scrolled back to the top
-    const threadScrollable = threadPanel.locator('div.overflow-y-auto').first();
-    const scrollTop = await threadScrollable.evaluate((el) => el.scrollTop);
-    expect(scrollTop).toBe(0);
+    // Only the trace-level comment should be visible, no milestone comments
+    await expect(threadPanel.getByText('MARKER-TRACE-ONLY seen only at trace scope')).toBeVisible({ timeout: 3000 });
+    await expect(threadPanel.getByText('MARKER-M1 discussion')).toHaveCount(0);
+    await expect(threadPanel.getByText('MARKER-M2 discussion')).toHaveCount(0);
+    await expect(threadPanel.getByText('MARKER-M3 discussion')).toHaveCount(0);
+    await expect(threadPanel.getByText('MARKER-M4 discussion')).toHaveCount(0);
+
+    // Composer should show trace-level scope
+    await expect(threadPanel.getByText(/Commenting at trace level/)).toBeVisible();
 
     await scenario.cleanup();
   });

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { ChevronDown, ChevronRight, ArrowDown, Database, Code2, FileJson, MessageSquare } from 'lucide-react';
 import { GenerativeBlob, getHash, MILESTONE_THEMES } from './GenerativeBlob';
+import { CommentPill } from './discovery/CommentPill';
 
 interface SpanDataRef {
   span_name: string;
@@ -34,6 +35,8 @@ interface MilestoneViewProps {
   onOpenChat?: () => void;
   /** Currently hovered milestone ref from grading panel */
   hoveredMilestoneRef?: string | null;
+  /** Sync active milestone while scrolling the timeline (can jitter near boundaries) */
+  syncActiveOnScroll?: boolean;
 }
 
 function formatValue(value: unknown): string {
@@ -99,11 +102,22 @@ function SpanDataItem({ dataRef, showPath = true, type }: { dataRef: SpanDataRef
   );
 }
 
-export function MilestoneView({ executiveSummary, milestones, showPaths = true, anchorPrefix, onActiveMilestoneChange, activeMilestoneRef, comments = [], onOpenChat, hoveredMilestoneRef }: MilestoneViewProps) {
+export function MilestoneView({
+  executiveSummary,
+  milestones,
+  showPaths = true,
+  anchorPrefix,
+  onActiveMilestoneChange,
+  activeMilestoneRef,
+  comments = [],
+  onOpenChat,
+  hoveredMilestoneRef,
+  syncActiveOnScroll = true,
+}: MilestoneViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!onActiveMilestoneChange || !containerRef.current) return;
+    if (!syncActiveOnScroll || !onActiveMilestoneChange || !containerRef.current) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -134,17 +148,16 @@ export function MilestoneView({ executiveSummary, milestones, showPaths = true, 
     elements.forEach((el) => observer.observe(el));
 
     return () => observer.disconnect();
-  }, [onActiveMilestoneChange]);
+  }, [onActiveMilestoneChange, syncActiveOnScroll]);
 
   const traceComments = comments.filter(c => !c.milestone_ref);
-  const uniqueTraceUsers = Array.from(new Map(traceComments.map(c => [c.user_name, c])).values());
 
   return (
     <div className="bg-slate-50/30 rounded-xl p-5 md:p-6" ref={containerRef}>
       {/* Executive Summary */}
-      <div 
+      <div
         data-milestone-ref="trace"
-        className={`mb-8 relative overflow-hidden rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 p-[1px] shadow-sm transition-all cursor-pointer pr-8 ${activeMilestoneRef === null ? 'ring-2 ring-indigo-500 ring-offset-2' : 'hover:ring-2 hover:ring-indigo-500/50 hover:ring-offset-1'}`}
+        className={`mb-8 relative overflow-visible rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 p-[1px] shadow-sm transition-all cursor-pointer pr-14 ${activeMilestoneRef === null ? 'ring-2 ring-indigo-500 ring-offset-2' : 'hover:ring-2 hover:ring-indigo-500/50 hover:ring-offset-1'}`}
         onClick={() => {
           onActiveMilestoneChange?.(null);
           onOpenChat?.();
@@ -161,31 +174,21 @@ export function MilestoneView({ executiveSummary, milestones, showPaths = true, 
             {executiveSummary}
           </p>
         </div>
-        
-        {/* Vertical Comment Avatars */}
+
+        {/* Sticky margin pill — stays in sight while reading this section */}
         {traceComments.length > 0 && (
-          <div className="absolute right-0 top-4 bottom-4 flex flex-col items-center justify-between z-20 pointer-events-none opacity-60 hover:opacity-100 transition-opacity">
-            {traceComments.map((c) => (
-              <div 
-                key={c.id} 
-                className="pointer-events-auto cursor-pointer hover:scale-125 transition-transform shadow-sm rounded-full border-2 border-white"
-                onClick={(e) => {
-                  e.stopPropagation();
+          <div className="absolute right-1 top-0 bottom-0 w-12 pointer-events-none z-20">
+            <div className="sticky top-[40vh] flex justify-center pointer-events-auto">
+              <CommentPill
+                count={traceComments.length}
+                users={traceComments}
+                ariaLabel={`${traceComments.length} trace-level comments`}
+                onActivate={() => {
                   onActiveMilestoneChange?.(null);
                   onOpenChat?.();
                 }}
-              >
-                <GenerativeBlob 
-                  hash={getHash(c.user_name)} 
-                  sizeClassName="w-6 h-6"
-                  centerContent={
-                    <span className="text-[8px] font-bold text-white drop-shadow-sm">
-                      {c.user_name.substring(0, 2).toUpperCase()}
-                    </span>
-                  }
-                />
-              </div>
-            ))}
+              />
+            </div>
           </div>
         )}
       </div>
@@ -261,14 +264,14 @@ function MilestoneCard({
   const milestoneComments = comments.filter(c => c.milestone_ref === `m${milestone.number}`);
 
   return (
-    <div 
-      id={anchorId} 
+    <div
+      id={anchorId}
       data-milestone-ref={`m${milestone.number}`}
-      className={`relative group cursor-pointer transition-all duration-300 rounded-2xl p-2 -ml-2 pr-8 ${
-        isHovered 
-          ? 'bg-indigo-50/30 shadow-md ring-2 ring-indigo-400 ring-offset-1' 
-          : isActive 
-            ? 'bg-white/60 shadow-sm ring-1 ring-slate-200' 
+      className={`relative group cursor-pointer transition-all duration-300 rounded-2xl p-2 -ml-2 pr-14 ${
+        isHovered
+          ? 'bg-indigo-50/30 shadow-md ring-2 ring-indigo-400 ring-offset-1'
+          : isActive
+            ? 'bg-white/60 shadow-sm ring-1 ring-slate-200'
             : 'hover:bg-white/40'
       }`}
       onClick={() => {
@@ -291,30 +294,20 @@ function MilestoneCard({
         </div>
       </div>
 
-      {/* Vertical Comment Avatars */}
+      {/* Sticky margin pill — stays in sight while reading this milestone */}
       {milestoneComments.length > 0 && (
-        <div className="absolute right-0 top-12 bottom-12 flex flex-col items-center justify-between z-20 pointer-events-none opacity-60 group-hover:opacity-100 transition-opacity">
-          {milestoneComments.map((c) => (
-            <div 
-              key={c.id} 
-              className="pointer-events-auto cursor-pointer hover:scale-125 transition-transform shadow-sm rounded-full border-2 border-white"
-              onClick={(e) => {
-                e.stopPropagation();
+        <div className="absolute right-1 top-0 bottom-0 w-12 pointer-events-none z-20">
+          <div className="sticky top-[40vh] flex justify-center pointer-events-auto">
+            <CommentPill
+              count={milestoneComments.length}
+              users={milestoneComments}
+              ariaLabel={`${milestoneComments.length} comments on ${milestone.title}`}
+              onActivate={() => {
                 onClick?.();
                 onOpenChat?.();
               }}
-            >
-              <GenerativeBlob 
-                hash={getHash(c.user_name)} 
-                sizeClassName="w-6 h-6"
-                centerContent={
-                  <span className="text-[8px] font-bold text-white drop-shadow-sm">
-                    {c.user_name.substring(0, 2).toUpperCase()}
-                  </span>
-                }
-              />
-            </div>
-          ))}
+            />
+          </div>
         </div>
       )}
 

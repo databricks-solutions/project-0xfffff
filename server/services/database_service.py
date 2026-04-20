@@ -4808,13 +4808,16 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
     workshop_id: str,
     trace_id: str,
     milestone_ref: Optional[str] = None,
+    include_all: bool = False,
     viewer_user_id: Optional[str] = None,
   ) -> List[DiscoveryComment]:
     query = self.db.query(DiscoveryCommentDB).filter(
       DiscoveryCommentDB.workshop_id == workshop_id,
       DiscoveryCommentDB.trace_id == trace_id,
     )
-    if milestone_ref is None:
+    if include_all:
+      pass
+    elif milestone_ref is None:
       query = query.filter(DiscoveryCommentDB.milestone_ref.is_(None))
     else:
       query = query.filter(DiscoveryCommentDB.milestone_ref == milestone_ref)

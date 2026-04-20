@@ -11,6 +11,7 @@ import type { Trace } from '@/client';
 import type { DiscoveryFeedbackWithUser } from '@/client';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { createPortal } from 'react-dom';
 import {
   useCreateDiscoveryComment,
   useDeleteDiscoveryComment,
@@ -86,6 +87,7 @@ function DiscoverySocialThread({
 
   const [body, setBody] = useState('');
   const [replyToId, setReplyToId] = useState<string | null>(null);
+  const [collapsedReplyParents, setCollapsedReplyParents] = useState<Set<string>>(new Set());
   const [streamedComments, setStreamedComments] = useState<DiscoveryCommentData[] | null>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [streamedAgentText, setStreamedAgentText] = useState('');
@@ -105,16 +107,93 @@ function DiscoverySocialThread({
   const activeRunStorageKey = `discovery-agui-active-run:${workshopId}:${trace.id}:${currentUserId}`;
 
   const displayedComments = streamedComments ?? comments;
-  const milestoneOptions = useMemo(
-    () =>
-      (trace.summary?.milestones || []).map(
-        (m: { number?: number; title?: string }, i: number) => ({
-          value: `m${m.number || i + 1}`,
-          label: `Milestone ${m.number || i + 1}: ${m.title || 'Untitled'}`,
-        }),
-      ),
-    [trace.summary?.milestones],
-  );
+
+  const activeMilestone = useMemo(() => {
+    if (!activeMilestoneRef) return null;
+    const n = parseInt(activeMilestoneRef.replace('m', ''), 10);
+    if (!Number.isFinite(n)) return null;
+    const m = trace.summary?.milestones?.find(
+      (x: { number?: number; title?: string }) => x.number === n,
+    );
+    return { number: n, title: m?.title || `Milestone ${n}` };
+  }, [activeMilestoneRef, trace.summary?.milestones]);
+
+  const scopeTitle = activeMilestone
+    ? `Milestone ${activeMilestone.number}: ${activeMilestone.title}`
+    : 'Trace-level discussion';
+
+  // Scope the thread to the active milestone using each comment's effective
+  // milestone (its own milestone_ref or nearest ancestor's milestone_ref).
+  // This keeps milestone-tagged replies even when they are nested under a
+  // trace-level root, which is common in long discussion threads.
+  const scopedComments = useMemo(() => {
+    const all = displayedComments;
+    const byId = new Map(all.map((c) => [c.id, c]));
+    const effectiveMilestoneCache = new Map<string, string | null>();
+
+    const getEffectiveMilestone = (comment: DiscoveryCommentData): string | null => {
+      const cached = effectiveMilestoneCache.get(comment.id);
+      if (cached !== undefined) return cached;
+
+      if (comment.milestone_ref) {
+        effectiveMilestoneCache.set(comment.id, comment.milestone_ref);
+        return comment.milestone_ref;
+      }
+
+      let parentId = comment.parent_comment_id || null;
+      while (parentId) {
+        const parent = byId.get(parentId);
+        if (!parent) break;
+        const parentCached = effectiveMilestoneCache.get(parent.id);
+        if (parentCached !== undefined) {
+          effectiveMilestoneCache.set(comment.id, parentCached);
+          return parentCached;
+        }
+        if (parent.milestone_ref) {
+          effectiveMilestoneCache.set(parent.id, parent.milestone_ref);
+          effectiveMilestoneCache.set(comment.id, parent.milestone_ref);
+          return parent.milestone_ref;
+        }
+        parentId = parent.parent_comment_id || null;
+      }
+
+      effectiveMilestoneCache.set(comment.id, null);
+      return null;
+    };
+
+    const matchesScope = (c: DiscoveryCommentData) =>
+      activeMilestoneRef === null
+        ? getEffectiveMilestone(c) === null
+        : getEffectiveMilestone(c) === activeMilestoneRef;
+
+    const included = new Set(all.filter(matchesScope).map((c) => c.id));
+
+    // Preserve parent context for scoped comments so threaded replies remain
+    // readable even when the parent is trace-level.
+    for (const c of all) {
+      if (!included.has(c.id)) continue;
+      let parentId = c.parent_comment_id || null;
+      while (parentId) {
+        const parent = byId.get(parentId);
+        if (!parent) break;
+        if (included.has(parent.id)) break;
+        included.add(parent.id);
+        parentId = parent.parent_comment_id || null;
+      }
+    }
+
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const c of all) {
+        if (c.parent_comment_id && included.has(c.parent_comment_id) && !included.has(c.id)) {
+          included.add(c.id);
+          changed = true;
+        }
+      }
+    }
+    return all.filter((c) => included.has(c.id));
+  }, [displayedComments, activeMilestoneRef]);
 
   useEffect(() => {
     setStreamedComments(null);
@@ -230,13 +309,13 @@ function DiscoverySocialThread({
 
   const byParent = useMemo(() => {
     const map = new Map<string | null, DiscoveryCommentData[]>();
-    for (const c of displayedComments) {
+    for (const c of scopedComments) {
       const key = c.parent_comment_id || null;
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(c);
     }
     return map;
-  }, [displayedComments]);
+  }, [scopedComments]);
 
   const orderedComments = useMemo(() => {
     const roots = (byParent.get(null) || []).slice();
@@ -250,19 +329,30 @@ function DiscoverySocialThread({
     return out;
   }, [byParent]);
 
-  const milestoneFirstIds = useMemo(() => {
-    const seen = new Set<string>();
-    const map = new Map<string, string>();
-    for (const c of orderedComments) {
-      if (c.milestone_ref && c.depth === 0 && !seen.has(c.milestone_ref)) {
-        seen.add(c.milestone_ref);
-        map.set(c.id, c.milestone_ref);
-      }
+  const commentById = useMemo(() => {
+    return new Map(scopedComments.map((comment) => [comment.id, comment]));
+  }, [scopedComments]);
+
+  const replyCountByCommentId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const [parentId, replies] of byParent.entries()) {
+      if (!parentId) continue;
+      map.set(parentId, replies.length);
     }
     return map;
-  }, [orderedComments]);
+  }, [byParent]);
 
-  const milestoneAnchorCount = milestoneFirstIds.size;
+  const visibleComments = useMemo(() => {
+    const isHiddenByCollapsedAncestor = (comment: DiscoveryCommentData) => {
+      let parentId = comment.parent_comment_id;
+      while (parentId) {
+        if (collapsedReplyParents.has(parentId)) return true;
+        parentId = commentById.get(parentId)?.parent_comment_id || null;
+      }
+      return false;
+    };
+    return orderedComments.filter((comment) => !isHiddenByCollapsedAncestor(comment));
+  }, [orderedComments, collapsedReplyParents, commentById]);
 
   const appendToolResult = (toolCallId: string | undefined, summary: string) => {
     setToolEvents((prev) => {
@@ -444,6 +534,11 @@ function DiscoverySocialThread({
       parent_comment_id: replyToId || undefined,
       suppress_auto_agent_run: usesAgUiAssistant,
     });
+    // Show newly posted comments immediately in the current thread scope.
+    setStreamedComments((prev) => {
+      const base = prev ?? comments;
+      return [...base, created.comment];
+    });
     setBody('');
     setReplyToId(null);
     if (usesAgUiAssistant) {
@@ -526,43 +621,27 @@ function DiscoverySocialThread({
   };
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const hasSyncedInitialRef = useRef(false);
 
+  // When the scope changes, reset the thread scroll to the top so the user
+  // starts reading the new milestone's discussion from the beginning.
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
-
-    if (!activeMilestoneRef) {
-      container.scrollTo({ top: 0, behavior: 'smooth' });
-      return;
-    }
-
-    const anchor = container.querySelector(
-      `[data-milestone-anchor="${activeMilestoneRef}"]`
-    ) as HTMLElement | null;
-    const target = anchor || container.querySelector(
-      `[data-milestone-ref="${activeMilestoneRef}"]`
-    ) as HTMLElement | null;
-
-    if (target) {
-      const containerRect = container.getBoundingClientRect();
-      const targetRect = target.getBoundingClientRect();
-      const scrollTop = container.scrollTop + (targetRect.top - containerRect.top);
-      // First sync after comments load uses auto (no animation) so the initial
-      // state is immediately aligned; later syncs animate smoothly.
-      const behavior: ScrollBehavior = hasSyncedInitialRef.current ? 'smooth' : 'auto';
-      container.scrollTo({ top: Math.max(0, scrollTop), behavior });
-      hasSyncedInitialRef.current = true;
-    }
-  }, [activeMilestoneRef, milestoneAnchorCount]);
+    container.scrollTo({ top: 0, behavior: 'auto' });
+  }, [activeMilestoneRef]);
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-white/80 backdrop-blur-2xl rounded-2xl">
-      <div className="flex items-center justify-between px-4 pt-4 pb-2">
-        <h3 className="text-lg font-bold text-slate-900 tracking-tight">
-          Discussion Flow
-        </h3>
-        <div className="flex items-center gap-2">
+    <div className="relative flex flex-col h-full min-h-0 overflow-hidden bg-white/80 backdrop-blur-2xl rounded-2xl">
+      <div className="flex items-center justify-between px-4 pt-4 pb-2 gap-3 shrink-0">
+        <div className="min-w-0">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-600 truncate">
+            {activeMilestone ? `Milestone ${activeMilestone.number}` : 'Trace'}
+          </p>
+          <h3 className="text-base font-bold text-slate-900 tracking-tight truncate" title={scopeTitle}>
+            {activeMilestone ? activeMilestone.title : 'Trace-level discussion'}
+          </h3>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
           <Button
             type="button"
             variant="outline"
@@ -591,9 +670,9 @@ function DiscoverySocialThread({
           </div>
         </div>
       )}
-      <div 
+      <div
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto px-4 pt-2 pb-4 space-y-6 custom-scrollbar max-h-[calc(100vh-200px)]"
+        className="flex-1 min-h-0 overflow-y-auto px-4 pt-2 pb-40 space-y-6 custom-scrollbar"
       >
         {orderedComments.length === 0 && (
           <div className="py-12 flex flex-col items-center justify-center text-slate-400">
@@ -601,37 +680,25 @@ function DiscoverySocialThread({
               <MessageSquare className="h-6 w-6 text-slate-300" />
             </div>
             <p className="text-sm font-medium text-slate-600">No comments yet</p>
-            <p className="text-xs mt-1 text-center max-w-[200px]">Start the discussion about this trace below.</p>
+            <p className="text-xs mt-1 text-center max-w-[220px]">
+              {activeMilestone
+                ? `Start the discussion on ${activeMilestone.title} below.`
+                : 'Start the trace-level discussion below.'}
+            </p>
           </div>
         )}
-        {orderedComments.map((comment) => {
+        {visibleComments.map((comment) => {
           const isMilestoneComment = comment.milestone_ref && comment.depth === 0;
           const milestoneNumber = isMilestoneComment ? parseInt(comment.milestone_ref!.replace('m', ''), 10) : null;
           const milestoneTitle = milestoneNumber
             ? trace.summary?.milestones?.find((m: { number?: number; title?: string }) => m.number === milestoneNumber)?.title
             : null;
           const milestoneHash = milestoneTitle ? getHash(milestoneTitle, milestoneNumber!) : getHash('trace');
-          const milestoneDividerRef = milestoneFirstIds.get(comment.id);
+          const replyCount = replyCountByCommentId.get(comment.id) || 0;
+          const isCollapsed = collapsedReplyParents.has(comment.id);
 
           return (
           <React.Fragment key={comment.id}>
-          {milestoneDividerRef && (
-            <div
-              data-milestone-anchor={milestoneDividerRef}
-              className="flex items-center gap-2 mt-4 mb-1 first:mt-0"
-            >
-              <div className="flex-1 h-px bg-slate-200/60" />
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2 flex items-center gap-1.5">
-                <GenerativeBlob
-                  hash={milestoneHash}
-                  sizeClassName="w-3.5 h-3.5"
-                  subtle
-                />
-                {milestoneTitle || `Milestone ${milestoneDividerRef.replace('m', '')}`}
-              </span>
-              <div className="flex-1 h-px bg-slate-200/60" />
-            </div>
-          )}
           <div
             data-milestone-ref={comment.milestone_ref}
             className="relative group transition-all duration-200"
@@ -747,6 +814,27 @@ function DiscoverySocialThread({
                         <CornerDownRight className="mr-1.5 h-3.5 w-3.5" />
                         Reply
                       </button>
+                      {replyCount > 0 && (
+                        <button
+                          type="button"
+                          className="flex items-center text-xs font-semibold text-slate-500 hover:text-indigo-600 transition-colors px-2 py-1 rounded-full hover:bg-indigo-50"
+                          onClick={() => {
+                            setCollapsedReplyParents((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(comment.id)) {
+                                next.delete(comment.id);
+                              } else {
+                                next.add(comment.id);
+                              }
+                              return next;
+                            });
+                          }}
+                        >
+                          {isCollapsed
+                            ? `Show ${replyCount} repl${replyCount === 1 ? 'y' : 'ies'}`
+                            : `Hide ${replyCount} repl${replyCount === 1 ? 'y' : 'ies'}`}
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -824,23 +912,42 @@ function DiscoverySocialThread({
         </div>
       )}
 
-      <div className="mt-auto pt-4 border-t border-slate-100/50 relative bg-white/50 p-4">
-        {replyToId && (
-          <div className="absolute -top-3 left-4 flex items-center justify-between rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-[11px] font-medium text-indigo-700 shadow-sm">
-            <span className="flex items-center gap-1.5">
-              <CornerDownRight className="w-3 h-3" />
-              Replying to comment
-            </span>
-            <button type="button" onClick={() => setReplyToId(null)} className="ml-3 text-indigo-400 hover:text-indigo-800 transition-colors">
-              Cancel
-            </button>
-          </div>
-        )}
+      <div className="absolute inset-x-0 bottom-0 z-30 border-t border-slate-100/50 bg-white/95 backdrop-blur-xl p-4">
+        <div className="absolute -top-3 left-4 right-4 flex items-center justify-between gap-2 pointer-events-none">
+          {replyToId ? (
+            <div className="flex items-center justify-between rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-[11px] font-medium text-indigo-700 shadow-sm pointer-events-auto">
+              <span className="flex items-center gap-1.5">
+                <CornerDownRight className="w-3 h-3" />
+                Replying to comment
+              </span>
+              <button type="button" onClick={() => setReplyToId(null)} className="ml-3 text-indigo-400 hover:text-indigo-800 transition-colors">
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-600 shadow-sm pointer-events-auto max-w-full">
+              <GenerativeBlob
+                hash={activeMilestone ? getHash(activeMilestone.title, activeMilestone.number) : getHash('trace')}
+                sizeClassName="w-3 h-3"
+                subtle
+              />
+              <span className="truncate" title={scopeTitle}>
+                {activeMilestone
+                  ? `Commenting on Milestone ${activeMilestone.number}: ${activeMilestone.title}`
+                  : 'Commenting at trace level'}
+              </span>
+            </div>
+          )}
+        </div>
         <div className="relative group">
           <textarea
             value={body}
             onChange={(e) => setBody(e.target.value)}
-            placeholder="Comment on this trace. Use @assistant to summarize or @agent to investigate..."
+            placeholder={
+              activeMilestone
+                ? `Comment on ${activeMilestone.title}. Use @assistant to summarize or @agent to investigate...`
+                : 'Comment on this trace. Use @assistant to summarize or @agent to investigate...'
+            }
             className="min-h-[100px] w-full resize-none rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all"
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -981,6 +1088,7 @@ export const DiscoveryTraceCard: React.FC<DiscoveryTraceCardProps> = ({
   const [traceComments, setTraceComments] = useState<DiscoveryCommentData[]>([]);
   const [rightPaneMode, setRightPaneMode] = useState<'discussion' | 'grading'>('discussion');
   const [hoveredMilestoneRef, setHoveredMilestoneRef] = useState<string | null>(null);
+  const [isClient, setIsClient] = useState(false);
   const { isEvalMode } = useWorkflowMode();
   
   // Lifted state for social thread sync
@@ -988,6 +1096,10 @@ export const DiscoveryTraceCard: React.FC<DiscoveryTraceCardProps> = ({
     const first = trace.summary?.milestones?.[0];
     return first ? `m${first.number || 1}` : null;
   });
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   const inputText = tryParseContent(trace.input);
   const outputText = tryParseContent(trace.output);
@@ -1300,67 +1412,71 @@ export const DiscoveryTraceCard: React.FC<DiscoveryTraceCardProps> = ({
           )}
         </div>
 
-        {mode === 'social' && (
-          <div className="lg:sticky lg:top-6 lg:self-start lg:h-[calc(100vh-120px)] flex justify-end z-30 pointer-events-none absolute right-0 top-0 bottom-0">
-            <div className={`w-[400px] h-full bg-white/90 backdrop-blur-2xl border border-slate-200/60 shadow-2xl rounded-2xl transform transition-transform duration-500 pointer-events-auto flex flex-col ${isChatOpen ? 'translate-x-0 mr-6' : 'translate-x-[120%] absolute right-0'}`}>
-              {isEvalMode && (
-                <div className="flex items-center gap-2 p-2 bg-slate-100/50 border-b border-slate-200/60 rounded-t-2xl">
-                  <button
-                    type="button"
-                    onClick={() => setRightPaneMode('discussion')}
-                    className={`flex-1 py-1.5 px-3 text-xs font-bold rounded-lg transition-all ${
-                      rightPaneMode === 'discussion'
-                        ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200/50'
-                        : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
-                    }`}
-                  >
-                    Discussion
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRightPaneMode('grading')}
-                    className={`flex-1 py-1.5 px-3 text-xs font-bold rounded-lg transition-all ${
-                      rightPaneMode === 'grading'
-                        ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200/50'
-                        : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
-                    }`}
-                  >
-                    Grading
-                  </button>
+        {mode === 'social' && isClient && createPortal(
+          <>
+            <div className="fixed z-40 pointer-events-none inset-x-2 top-20 bottom-2 sm:inset-auto sm:right-6 sm:top-6 sm:bottom-6">
+              <div className={`w-full h-full min-h-0 sm:w-[400px] bg-white/90 backdrop-blur-2xl border border-slate-200/60 shadow-2xl rounded-2xl transform transition-transform duration-500 pointer-events-auto flex flex-col ${isChatOpen ? 'translate-x-0' : 'translate-x-[110%] sm:translate-x-[120%]'}`}>
+                {isEvalMode && (
+                  <div className="shrink-0 flex items-center gap-2 p-2 bg-slate-100/50 border-b border-slate-200/60 rounded-t-2xl">
+                    <button
+                      type="button"
+                      onClick={() => setRightPaneMode('discussion')}
+                      className={`flex-1 py-1.5 px-3 text-xs font-bold rounded-lg transition-all ${
+                        rightPaneMode === 'discussion'
+                          ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200/50'
+                          : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
+                      }`}
+                    >
+                      Discussion
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRightPaneMode('grading')}
+                      className={`flex-1 py-1.5 px-3 text-xs font-bold rounded-lg transition-all ${
+                        rightPaneMode === 'grading'
+                          ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200/50'
+                          : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
+                      }`}
+                    >
+                      Grading
+                    </button>
+                  </div>
+                )}
+                <div className="flex-1 min-h-0 h-full overflow-hidden">
+                  {rightPaneMode === 'discussion' ? (
+                    <DiscoverySocialThread
+                      workshopId={workshopId}
+                      trace={trace}
+                      currentUserId={currentUserId}
+                      canModerateComments={canModerateComments}
+                      activeMilestoneRef={activeMilestoneRef}
+                      onCommentsUpdate={setTraceComments}
+                      onClose={() => setIsChatOpen(false)}
+                    />
+                  ) : (
+                    <EvalGradingPanel
+                      workshopId={workshopId}
+                      traceId={trace.id}
+                      activeMilestoneRef={activeMilestoneRef}
+                      onHoverCriterion={setHoveredMilestoneRef}
+                      onClose={() => setIsChatOpen(false)}
+                    />
+                  )}
                 </div>
-              )}
-              {rightPaneMode === 'discussion' ? (
-                <DiscoverySocialThread
-                  workshopId={workshopId}
-                  trace={trace}
-                  currentUserId={currentUserId}
-                  canModerateComments={canModerateComments}
-                  activeMilestoneRef={activeMilestoneRef}
-                  onCommentsUpdate={setTraceComments}
-                  onClose={() => setIsChatOpen(false)}
-                />
-              ) : (
-                <EvalGradingPanel
-                  workshopId={workshopId}
-                  traceId={trace.id}
-                  activeMilestoneRef={activeMilestoneRef}
-                  onHoverCriterion={setHoveredMilestoneRef}
-                  onClose={() => setIsChatOpen(false)}
-                />
-              )}
+              </div>
             </div>
-            
-            <div className="pointer-events-auto absolute top-6 right-6">
+
+            <div className="pointer-events-auto fixed right-4 bottom-4 sm:right-6 sm:top-6 sm:bottom-auto z-50">
               <Button
-                className={`rounded-full shadow-lg w-12 h-12 transition-all duration-500 p-0 overflow-hidden ${isChatOpen ? 'bg-white text-slate-600 hover:bg-slate-50 -translate-x-[416px]' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+                className={`rounded-full shadow-lg w-12 h-12 transition-all duration-500 p-0 overflow-hidden ${isChatOpen ? 'bg-white text-slate-600 hover:bg-slate-50 -translate-x-[calc(100vw-1.5rem)] sm:-translate-x-[416px]' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
                 onClick={() => setIsChatOpen(!isChatOpen)}
               >
                 {isChatOpen ? (
                   <ChevronRight className="w-5 h-5" />
                 ) : activeUsers.length > 0 ? (
                   <div className="w-full h-full relative flex items-center justify-center group">
-                    <GenerativeBlob 
-                      hash={getHash(activeUsers[0].user_name)} 
+                    <GenerativeBlob
+                      hash={getHash(activeUsers[0].user_name)}
                       sizeClassName="w-full h-full"
                       centerContent={
                         <span className="text-sm font-bold text-white drop-shadow-sm">
@@ -1387,7 +1503,8 @@ export const DiscoveryTraceCard: React.FC<DiscoveryTraceCardProps> = ({
                 )}
               </Button>
             </div>
-          </div>
+          </>,
+          document.body
         )}
       </CardContent>
     </Card>
