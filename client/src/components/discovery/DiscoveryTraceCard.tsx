@@ -262,6 +262,8 @@ function DiscoverySocialThread({
     return map;
   }, [orderedComments]);
 
+  const milestoneAnchorCount = milestoneFirstIds.size;
+
   const appendToolResult = (toolCallId: string | undefined, summary: string) => {
     setToolEvents((prev) => {
       const next = prev.slice();
@@ -524,6 +526,7 @@ function DiscoverySocialThread({
   };
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const hasSyncedInitialRef = useRef(false);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -545,9 +548,13 @@ function DiscoverySocialThread({
       const containerRect = container.getBoundingClientRect();
       const targetRect = target.getBoundingClientRect();
       const scrollTop = container.scrollTop + (targetRect.top - containerRect.top);
-      container.scrollTo({ top: Math.max(0, scrollTop), behavior: 'smooth' });
+      // First sync after comments load uses auto (no animation) so the initial
+      // state is immediately aligned; later syncs animate smoothly.
+      const behavior: ScrollBehavior = hasSyncedInitialRef.current ? 'smooth' : 'auto';
+      container.scrollTo({ top: Math.max(0, scrollTop), behavior });
+      hasSyncedInitialRef.current = true;
     }
-  }, [activeMilestoneRef]);
+  }, [activeMilestoneRef, milestoneAnchorCount]);
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-white/80 backdrop-blur-2xl rounded-2xl">

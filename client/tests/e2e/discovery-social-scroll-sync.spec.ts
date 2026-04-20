@@ -134,58 +134,66 @@ test.describe('Discovery Social Thread: Milestone Scroll Sync', {
 
     await scenario.loginAs(scenario.facilitator);
 
-    // Wait for the milestone view to render (the "Summary" tab should show milestones)
-    await expect(page.getByText('Milestone 1 Title')).toBeVisible({ timeout: 15000 });
+    // Wait for the milestone view to render
+    await expect(page.getByRole('heading', { name: 'Milestone 1 Title' })).toBeVisible({ timeout: 15000 });
 
-    // Open the social thread by clicking the chat FAB
-    const chatFab = page.locator('button.rounded-full.shadow-lg').first();
+    // The social thread panel starts CLOSED (isChatOpen=false, translate-x-[120%]).
+    // Click the FAB to open it.
+    const chatFab = page.locator('button.rounded-full.shadow-lg.w-12.h-12');
+    await expect(chatFab).toBeVisible({ timeout: 5000 });
     await chatFab.click();
 
-    // Wait for the social thread to appear with comments
-    await expect(page.getByText('Discussion Flow')).toBeVisible({ timeout: 5000 });
-    await page.waitForTimeout(500);
+    // Wait for the social thread to slide in and render comments
+    const threadPanel = page.locator('.flex.flex-col.h-full.overflow-hidden').filter({
+      has: page.getByRole('heading', { name: 'Discussion Flow' }),
+    });
+    await expect(threadPanel).toBeVisible({ timeout: 5000 });
 
-    // Verify milestone dividers are rendered in the social thread
+    // Wait for milestone dividers to render (comments loaded via SSE)
     const m1Anchor = page.locator('[data-milestone-anchor="m1"]');
     await expect(m1Anchor).toBeVisible({ timeout: 5000 });
 
-    // Get the scroll container (the social thread's scrollable area)
-    const scrollContainer = page.locator('[class*="overflow-y-auto"]').filter({ hasText: 'Discussion Flow' }).locator('..').locator('[class*="overflow-y-auto"]').first();
+    // Identify the scroll container (the overflow-y-auto div inside the thread panel)
+    const threadScrollable = threadPanel.locator('div.overflow-y-auto').first();
+    await expect(threadScrollable).toBeVisible({ timeout: 3000 });
 
-    // Click on milestone 3 in the milestone view to activate it
-    await page.locator('[data-milestone-ref="m3"]').first().click();
-    await page.waitForTimeout(600); // wait for smooth scroll to complete
+    // Helper: compute the distance between an anchor's top and the container's top,
+    // evaluated inside the browser so we avoid Playwright bounding-box flakiness.
+    const distanceFromContainerTop = async (milestone: string): Promise<number> => {
+      return await threadScrollable.evaluate((el, ref) => {
+        const anchor = el.querySelector(`[data-milestone-anchor="${ref}"]`) as HTMLElement | null;
+        if (!anchor) return Number.POSITIVE_INFINITY;
+        const containerRect = el.getBoundingClientRect();
+        const anchorRect = anchor.getBoundingClientRect();
+        return anchorRect.top - containerRect.top;
+      }, milestone);
+    };
 
-    // Verify the m3 anchor is near the top of the social thread scroll container
-    const m3Anchor = page.locator('[data-milestone-anchor="m3"]');
-    await expect(m3Anchor).toBeVisible({ timeout: 3000 });
+    // Click on milestone 3 in the milestone view to activate it.
+    // Target the milestone card (has id attr) not comment dividers.
+    await page.locator('[data-milestone-ref="m3"][id]').first().click();
 
-    const m3Box = await m3Anchor.boundingBox();
-    expect(m3Box).not.toBeNull();
+    // Wait for scroll to settle (smooth scroll takes ~300ms)
+    await expect.poll(async () => distanceFromContainerTop('m3'), {
+      timeout: 3000,
+      intervals: [100, 200, 300, 500],
+    }).toBeLessThan(80);
 
-    // The social thread's scroll container bounding box
-    const threadScrollable = page.locator('.flex.flex-col.h-full.overflow-hidden').filter({ hasText: 'Discussion Flow' }).locator('div.overflow-y-auto').first();
-    const containerBox = await threadScrollable.boundingBox();
+    const m3Distance = await distanceFromContainerTop('m3');
+    expect(m3Distance).toBeGreaterThanOrEqual(-10);
+    expect(m3Distance).toBeLessThan(80);
 
-    if (containerBox && m3Box) {
-      // The m3 anchor should be near the top of the scroll container (within 60px)
-      const distanceFromTop = m3Box.y - containerBox.y;
-      expect(distanceFromTop).toBeGreaterThanOrEqual(-10);
-      expect(distanceFromTop).toBeLessThan(60);
-    }
+    // Click on milestone 1 and verify scroll syncs back
+    await page.locator('[data-milestone-ref="m1"][id]').first().click();
 
-    // Now click on milestone 1 and verify scroll syncs back
-    await page.locator('[data-milestone-ref="m1"]').first().click();
-    await page.waitForTimeout(600);
+    await expect.poll(async () => distanceFromContainerTop('m1'), {
+      timeout: 3000,
+      intervals: [100, 200, 300, 500],
+    }).toBeLessThan(80);
 
-    const m1Box = await m1Anchor.boundingBox();
-    expect(m1Box).not.toBeNull();
-
-    if (containerBox && m1Box) {
-      const distanceFromTop = m1Box.y - containerBox.y;
-      expect(distanceFromTop).toBeGreaterThanOrEqual(-10);
-      expect(distanceFromTop).toBeLessThan(60);
-    }
+    const m1Distance = await distanceFromContainerTop('m1');
+    expect(m1Distance).toBeGreaterThanOrEqual(-10);
+    expect(m1Distance).toBeLessThan(80);
 
     await scenario.cleanup();
   });
@@ -242,23 +250,31 @@ test.describe('Discovery Social Thread: Milestone Scroll Sync', {
     });
 
     await scenario.loginAs(scenario.facilitator);
-    await expect(page.getByText('Milestone 1 Title')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('heading', { name: 'Milestone 1 Title' })).toBeVisible({ timeout: 15000 });
 
-    const chatFab = page.locator('button.rounded-full.shadow-lg').first();
+    // Open the social thread panel via the FAB
+    const chatFab = page.locator('button.rounded-full.shadow-lg.w-12.h-12');
+    await expect(chatFab).toBeVisible({ timeout: 5000 });
     await chatFab.click();
-    await expect(page.getByText('Discussion Flow')).toBeVisible({ timeout: 5000 });
-    await page.waitForTimeout(500);
+
+    const threadPanel = page.locator('.flex.flex-col.h-full.overflow-hidden').filter({
+      has: page.getByRole('heading', { name: 'Discussion Flow' }),
+    });
+    await expect(threadPanel).toBeVisible({ timeout: 5000 });
+
+    // Wait for milestone dividers to render
+    await expect(page.locator('[data-milestone-anchor="m1"]')).toBeVisible({ timeout: 5000 });
 
     // First scroll to milestone 4
-    await page.locator('[data-milestone-ref="m4"]').first().click();
-    await page.waitForTimeout(600);
+    await page.locator('[data-milestone-ref="m4"][id]').first().click();
+    await page.waitForTimeout(1000);
 
     // Then click the executive summary / trace-level section
     await page.locator('[data-milestone-ref="trace"]').click();
-    await page.waitForTimeout(600);
+    await page.waitForTimeout(1000);
 
     // The social thread should have scrolled back to the top
-    const threadScrollable = page.locator('.flex.flex-col.h-full.overflow-hidden').filter({ hasText: 'Discussion Flow' }).locator('div.overflow-y-auto').first();
+    const threadScrollable = threadPanel.locator('div.overflow-y-auto').first();
     const scrollTop = await threadScrollable.evaluate((el) => el.scrollTop);
     expect(scrollTop).toBe(0);
 

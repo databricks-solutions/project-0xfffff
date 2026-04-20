@@ -1,9 +1,52 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react-swc'
 import path from 'path'
+import fs from 'fs'
 
 // https://vitejs.dev/config/
 const apiTarget = process.env.E2E_API_URL ?? 'http://localhost:8000';
+
+function removeAtRuleBlock(css: string, token: string): string {
+  const start = css.indexOf(token);
+  if (start === -1) {
+    return css;
+  }
+
+  let depth = 0;
+  let end = -1;
+  for (let i = start; i < css.length; i += 1) {
+    const ch = css[i];
+    if (ch === '{') {
+      depth += 1;
+    } else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
+  }
+
+  if (end === -1) {
+    return css;
+  }
+  return css.slice(0, start) + css.slice(end + 1);
+}
+
+function sanitizeCopilotCss(rawCss: string): string {
+  // Tailwind v4 "properties" layer sets --tw-* variables on global * selectors.
+  // In a Tailwind v3 app this can change non-Copilot visuals (e.g. blob effects).
+  let css = removeAtRuleBlock(rawCss, '@layer properties{');
+
+  // Remove global custom-property registrations from TW v4 output.
+  css = css.replace(/@property\s+--tw-[^}]+\}\s*/g, '');
+
+  // Keep Copilot styles, but avoid Tailwind v3 directive normalization checks.
+  return css
+    .replace(/@layer base\b/g, '@layer cpk_base')
+    .replace(/@layer components\b/g, '@layer cpk_components')
+    .replace(/@layer utilities\b/g, '@layer cpk_utilities');
+}
 
 export default defineConfig({
   plugins: [
@@ -12,6 +55,7 @@ export default defineConfig({
       enforce: 'pre',
       resolveId(source, importer) {
         const copilotV2CssPath = '/node_modules/@copilotkit/react-core/dist/v2/index.css';
+        const virtualCopilotCssId = '\0copilotkit-v2-sanitized.css';
         if (
           // Raw module import from CopilotKit source.
           (source === './index.css' &&
@@ -19,9 +63,34 @@ export default defineConfig({
           // Prebundled dep import emitted by Vite (absolute filesystem path).
           source.includes(copilotV2CssPath) ||
           // Direct stylesheet import from app code.
-          source === '@copilotkit/react-core/v2/styles.css'
+          source === '@copilotkit/react-core/v2/styles.css' ||
+          source === '@copilotkit/react-core/dist/v2/index.css'
         ) {
-          return path.resolve(__dirname, './src/styles/copilotkit-empty.css');
+          return virtualCopilotCssId;
+        }
+        return null;
+      },
+      load(id) {
+        if (id !== '\0copilotkit-v2-sanitized.css') {
+          return null;
+        }
+
+        const copilotCssPath = path.resolve(
+          __dirname,
+          './node_modules/@copilotkit/react-core/dist/v2/index.css',
+        );
+        const css = fs.readFileSync(copilotCssPath, 'utf-8');
+        return sanitizeCopilotCss(css);
+      },
+      transform(code, id) {
+        // Vite's prebundle can emit an absolute filesystem CSS import here,
+        // e.g. import "/Users/.../@copilotkit/react-core/dist/v2/index.css";
+        // Rewrite it before import-analysis so resolution cannot fail.
+        if (id.includes('/node_modules/.vite/deps/@copilotkit_react-core_v2.js')) {
+          return code.replace(
+            /import\s+["']\/.*@copilotkit\/react-core\/dist\/v2\/index\.css["'];?/g,
+            'import "@copilotkit/react-core/dist/v2/index.css";',
+          );
         }
         return null;
       },
@@ -34,22 +103,13 @@ export default defineConfig({
       // this Tailwind v3/PostCSS pipeline. Redirect all entrypoints to a no-op.
       {
         find: '@copilotkit/react-core/v2/styles.css',
-        replacement: path.resolve(__dirname, './src/styles/copilotkit-empty.css'),
-      },
-      {
-        find: /@copilotkit\/react-core\/dist\/v2\/index\.css$/,
-        replacement: path.resolve(__dirname, './src/styles/copilotkit-empty.css'),
+        replacement: '@copilotkit/react-core/dist/v2/index.css',
       },
       {
         find: '@',
         replacement: path.resolve(__dirname, './src'),
       },
     ],
-  },
-  optimizeDeps: {
-    // Prevent Vite from rewriting CopilotKit v2 imports into .vite/deps
-    // absolute CSS imports that bypass the standard alias shims.
-    exclude: ['@copilotkit/react-core', '@copilotkit/react-core/v2'],
   },
   test: {
     environment: 'jsdom',

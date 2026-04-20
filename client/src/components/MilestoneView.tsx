@@ -273,6 +273,7 @@ function MilestoneCard({
       }`}
       onClick={() => {
         onClick?.();
+        onOpenChat?.();
       }}
     >
       {/* Minimalist Generative Timeline Node - Sticky Container */}

@@ -599,8 +599,9 @@ dev api_port="8000" ui_port="5173": openapi
   (uv run uvicorn {{server-dir}}.app:app --reload --port "$API_PORT" --log-level "${UVICORN_LOG_LEVEL:-info}") &
   api_pid=$!
 
-  # Start UI (pass port to Vite so it matches what we print)
-  (npm -C {{client-dir}} run dev -- --port "$UI_PORT") &
+  # Start UI and proxy to the selected API port.
+  # Vite reads E2E_API_URL in client/vite.config.ts for backend proxy target.
+  (E2E_API_URL="http://127.0.0.1:${API_PORT}" npm -C {{client-dir}} run dev -- --port "$UI_PORT") &
   ui_pid=$!
 
   # Record PIDs so a future `just dev` or `just dev-cleanup` can kill them
