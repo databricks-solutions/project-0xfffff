@@ -15,10 +15,8 @@ import { createPortal } from 'react-dom';
 import {
   useCreateDiscoveryComment,
   useDeleteDiscoveryComment,
-  useDiscoveryAgentRun,
   useDiscoveryComments,
   useVoteDiscoveryComment,
-  type DiscoveryAgentRunData,
   type DiscoveryCommentData,
 } from '@/hooks/useWorkshopApi';
 
@@ -82,18 +80,10 @@ function DiscoverySocialThread({
   onCommentsUpdate?: (comments: DiscoveryCommentData[]) => void;
   onClose?: () => void;
 }) {
-  type ToolEventRow = { id?: string; label: string; summary?: string; status: 'running' | 'done' | 'failed' };
-  type AgUiEvent = Record<string, unknown> & { type?: string };
-
   const [body, setBody] = useState('');
   const [replyToId, setReplyToId] = useState<string | null>(null);
   const [collapsedReplyParents, setCollapsedReplyParents] = useState<Set<string>>(new Set());
   const [streamedComments, setStreamedComments] = useState<DiscoveryCommentData[] | null>(null);
-  const [activeRunId, setActiveRunId] = useState<string | null>(null);
-  const [streamedAgentText, setStreamedAgentText] = useState('');
-  const [streamStatus, setStreamStatus] = useState<'running' | 'completed' | 'failed' | null>(null);
-  const [toolEvents, setToolEvents] = useState<ToolEventRow[]>([]);
-  const [reasoningEvents, setReasoningEvents] = useState<string[]>([]);
   const [showCopilotChat, setShowCopilotChat] = useState(false);
 
   const milestoneRef = activeMilestoneRef;
@@ -101,10 +91,7 @@ function DiscoverySocialThread({
   const createComment = useCreateDiscoveryComment(workshopId);
   const voteComment = useVoteDiscoveryComment(workshopId);
   const deleteComment = useDeleteDiscoveryComment(workshopId);
-  const { data: activeRun } = useDiscoveryAgentRun(workshopId, activeRunId);
   const pendingCommentOpsRef = useRef(0);
-  const agUiAbortRef = useRef<AbortController | null>(null);
-  const activeRunStorageKey = `discovery-agui-active-run:${workshopId}:${trace.id}:${currentUserId}`;
 
   const displayedComments = streamedComments ?? comments;
 
@@ -232,81 +219,6 @@ function DiscoverySocialThread({
     onCommentsUpdate?.(displayedComments);
   }, [displayedComments, onCommentsUpdate]);
 
-  useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem(activeRunStorageKey);
-      if (stored) setActiveRunId(stored);
-    } catch {
-      // ignore storage errors
-    }
-  }, [activeRunStorageKey]);
-
-  useEffect(() => {
-    return () => {
-      agUiAbortRef.current?.abort();
-      agUiAbortRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!activeRun) return;
-    if (typeof activeRun.partial_output === 'string') {
-      setStreamedAgentText(activeRun.partial_output);
-    }
-
-    const events = Array.isArray((activeRun as DiscoveryAgentRunData).events) ? activeRun.events : [];
-    if (events.length > 0) {
-      const mappedTools = events
-        .filter((evt) => evt.event === 'tool_start' || evt.event === 'tool_result' || evt.event === 'run_failed')
-        .map((evt) => {
-          if (evt.event === 'tool_start') {
-            return {
-              id: evt.tool_call_id,
-              label: `Running ${evt.tool_name || 'tool'}`,
-              status: 'running' as const,
-            };
-          }
-          if (evt.event === 'run_failed') {
-            return {
-              label: evt.error || 'Run failed',
-              status: 'failed' as const,
-            };
-          }
-          return {
-            id: evt.tool_call_id,
-            label: `${evt.tool_name || 'Tool'} completed`,
-            summary: evt.result_summary,
-            status: 'done' as const,
-          };
-        });
-      setToolEvents(mappedTools.slice(-12));
-
-      const mappedReasoning = events
-        .filter((evt) => evt.event === 'reasoning_delta' && typeof evt.reasoning === 'string')
-        .map((evt) => String(evt.reasoning).trim())
-        .filter(Boolean);
-      if (mappedReasoning.length > 0) setReasoningEvents(mappedReasoning.slice(-12));
-    }
-
-    if (activeRun.status === 'running') {
-      setStreamStatus('running');
-    } else if (activeRun.status === 'completed') {
-      setStreamStatus('completed');
-      try {
-        window.localStorage.removeItem(activeRunStorageKey);
-      } catch {
-        // ignore storage errors
-      }
-    } else if (activeRun.status === 'failed' || activeRun.status === 'timeout') {
-      setStreamStatus('failed');
-      try {
-        window.localStorage.removeItem(activeRunStorageKey);
-      } catch {
-        // ignore storage errors
-      }
-    }
-  }, [activeRun, activeRunStorageKey]);
-
   const byParent = useMemo(() => {
     const map = new Map<string | null, DiscoveryCommentData[]>();
     for (const c of scopedComments) {
@@ -354,185 +266,15 @@ function DiscoverySocialThread({
     return orderedComments.filter((comment) => !isHiddenByCollapsedAncestor(comment));
   }, [orderedComments, collapsedReplyParents, commentById]);
 
-  const appendToolResult = (toolCallId: string | undefined, summary: string) => {
-    setToolEvents((prev) => {
-      const next = prev.slice();
-      if (toolCallId) {
-        const idx = next.findIndex((evt) => evt.id === toolCallId && evt.status === 'running');
-        if (idx >= 0) {
-          next[idx] = { ...next[idx], label: `${next[idx].label.replace(/^Running\s+/, '')} completed`, summary, status: 'done' };
-          return next;
-        }
-      }
-      next.push({ id: toolCallId, label: 'Tool completed', summary, status: 'done' });
-      return next;
-    });
-  };
-
-  const handleAgUiEvent = (event: AgUiEvent) => {
-    const type = String(event.type || '').toUpperCase();
-    if (!type) return;
-
-    if (type === 'RUN_STARTED') {
-      setStreamStatus('running');
-      return;
-    }
-    if (type === 'RUN_FINISHED') {
-      setStreamStatus('completed');
-      void refetch();
-      try {
-        window.localStorage.removeItem(activeRunStorageKey);
-      } catch {
-        // ignore storage errors
-      }
-      return;
-    }
-    if (type === 'RUN_ERROR') {
-      const message = typeof event.message === 'string' ? event.message : 'Run failed';
-      setStreamStatus('failed');
-      setToolEvents((prev) => [...prev, { label: message, status: 'failed' }]);
-      try {
-        window.localStorage.removeItem(activeRunStorageKey);
-      } catch {
-        // ignore storage errors
-      }
-      return;
-    }
-    if (type === 'TEXT_MESSAGE_CONTENT') {
-      const delta = typeof event.delta === 'string' ? event.delta : '';
-      if (delta) setStreamedAgentText((prev) => `${prev}${delta}`);
-      return;
-    }
-    if (type === 'TOOL_CALL_START') {
-      const toolName = typeof event.toolCallName === 'string' ? event.toolCallName : 'tool';
-      const toolCallId = typeof event.toolCallId === 'string' ? event.toolCallId : undefined;
-      setToolEvents((prev) => [...prev, { id: toolCallId, label: `Running ${toolName}`, status: 'running' }]);
-      return;
-    }
-    if (type === 'TOOL_CALL_RESULT') {
-      const toolCallId = typeof event.toolCallId === 'string' ? event.toolCallId : undefined;
-      const content = typeof event.content === 'string' ? event.content : JSON.stringify(event.content ?? '');
-      const summary = content.replace(/\s+/g, ' ').trim().slice(0, 180);
-      appendToolResult(toolCallId, summary);
-      return;
-    }
-    if (type === 'THINKING_TEXT_MESSAGE_CONTENT') {
-      const delta = typeof event.delta === 'string' ? event.delta.trim() : '';
-      if (!delta) return;
-      setReasoningEvents((prev) => [...prev, delta].slice(-12));
-    }
-  };
-
-  const runAgUiAssistant = async (args: {
-    endpoint: 'thread-assistant' | 'summarization-assistant';
-    prompt: string;
-    runId: string;
-    triggerCommentId: string;
-    parentCommentId: string | null;
-    milestoneRef: string | null;
-  }) => {
-    agUiAbortRef.current?.abort();
-    const abortController = new AbortController();
-    agUiAbortRef.current = abortController;
-    setStreamedAgentText('');
-    setStreamStatus('running');
-    setToolEvents([]);
-    setReasoningEvents([]);
-
-    const payload = {
-      threadId: `discovery-${trace.id}`,
-      runId: args.runId,
-      state: {},
-      messages: [{ id: crypto.randomUUID(), role: 'user', content: args.prompt }],
-      tools: [],
-      context: [],
-      forwardedProps: {},
-    };
-    const params = new URLSearchParams();
-    if (args.endpoint === 'thread-assistant') {
-      params.set('user_id', currentUserId);
-      params.set('trigger_comment_id', args.triggerCommentId);
-      if (args.milestoneRef) params.set('milestone_ref', args.milestoneRef);
-      if (args.parentCommentId) params.set('parent_comment_id', args.parentCommentId);
-    } else {
-      params.set('user_id', currentUserId);
-      params.set('trigger_comment_id', args.triggerCommentId);
-    }
-    const url = `/workshops/${workshopId}/traces/${trace.id}/ag-ui/${args.endpoint}${params.toString() ? `?${params.toString()}` : ''}`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'text/event-stream',
-      },
-      body: JSON.stringify(payload),
-      signal: abortController.signal,
-    });
-    if (!response.ok || !response.body) {
-      let detail = '';
-      try {
-        detail = await response.text();
-      } catch {
-        // ignore body parse errors
-      }
-      throw new Error(detail || 'Failed to stream AG-UI assistant response');
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    const processChunk = (chunk: string) => {
-      buffer += chunk.replace(/\r\n/g, '\n');
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        const sep = buffer.indexOf('\n\n');
-        if (sep < 0) return;
-        const rawEvent = buffer.slice(0, sep).trim();
-        buffer = buffer.slice(sep + 2);
-        if (!rawEvent) continue;
-        const dataLines = rawEvent
-          .split('\n')
-          .map((line) => line.trim())
-          .filter((line) => line.startsWith('data:'))
-          .map((line) => line.slice(5).trim());
-        if (dataLines.length === 0) continue;
-        const dataText = dataLines.join('\n');
-        if (!dataText || dataText === '[DONE]') continue;
-        try {
-          const event = JSON.parse(dataText) as AgUiEvent;
-          handleAgUiEvent(event);
-        } catch {
-          // Ignore malformed events
-        }
-      }
-    };
-
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      processChunk(decoder.decode(value, { stream: true }));
-    }
-    processChunk(decoder.decode());
-    setStreamStatus((prev) => (prev === 'failed' ? prev : 'completed'));
-    void refetch();
-  };
-
   const submitComment = async () => {
     const trimmed = body.trim();
     if (!trimmed) return;
-    const lower = trimmed.toLowerCase();
-    const usesThreadAssistant = lower.includes('@agent');
-    const usesSummarizationAssistant = lower.includes('@assistant');
-    const usesAgUiAssistant = usesThreadAssistant || usesSummarizationAssistant;
     const created = await createComment.mutateAsync({
       trace_id: trace.id,
       user_id: currentUserId,
       body: trimmed,
       milestone_ref: milestoneRef || undefined,
       parent_comment_id: replyToId || undefined,
-      suppress_auto_agent_run: usesAgUiAssistant,
     });
     // Show newly posted comments immediately in the current thread scope.
     setStreamedComments((prev) => {
@@ -541,28 +283,6 @@ function DiscoverySocialThread({
     });
     setBody('');
     setReplyToId(null);
-    if (usesAgUiAssistant) {
-      const runId = crypto.randomUUID();
-      setActiveRunId(runId);
-      try {
-        window.localStorage.setItem(activeRunStorageKey, runId);
-      } catch {
-        // ignore storage errors
-      }
-      try {
-        await runAgUiAssistant({
-          endpoint: usesThreadAssistant ? 'thread-assistant' : 'summarization-assistant',
-          prompt: trimmed,
-          runId,
-          triggerCommentId: created.comment.id,
-          parentCommentId: created.comment.id,
-          milestoneRef,
-        });
-      } catch {
-        setStreamStatus('failed');
-        setToolEvents((prev) => [...prev, { label: 'AG-UI stream failed', status: 'failed' }]);
-      }
-    }
     void refetch();
   };
 
@@ -863,55 +583,6 @@ function DiscoverySocialThread({
         })}
       </div>
 
-      {streamStatus === 'running' && (
-        <div className="relative mt-4 rounded-3xl border border-white/60 bg-white/40 backdrop-blur-xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] p-5 overflow-hidden animate-in fade-in slide-in-from-bottom-2">
-          {/* Soft background glow */}
-          <div className="absolute -top-24 -right-24 w-48 h-48 bg-indigo-400/20 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-indigo-400/20 rounded-full blur-3xl pointer-events-none" />
-          
-          <div className="relative z-10">
-            <div className="flex items-center gap-3 mb-3">
-              <GenerativeBlob hash={getHash('agent')} sizeClassName="w-5 h-5" subtle />
-              <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-800">
-                Agent Analyzing
-              </p>
-            </div>
-            <p className="text-[13px] text-slate-700 leading-relaxed font-mono font-medium whitespace-pre-wrap break-words">{streamedAgentText || 'Streaming response...'}</p>
-            {toolEvents.length > 0 && (
-              <div className="mt-4 space-y-1.5 rounded-2xl border border-white/40 bg-white/30 backdrop-blur-md p-3 shadow-sm">
-                {toolEvents.slice(-5).map((evt, idx) => (
-                  <p
-                    key={`${evt.label}-${idx}`}
-                    className={`text-xs font-medium ${
-                      evt.status === 'failed'
-                        ? 'text-rose-600'
-                        : evt.status === 'running'
-                          ? 'text-indigo-600 animate-pulse'
-                          : 'text-slate-600'
-                    }`}
-                  >
-                    {evt.label}
-                    {evt.summary ? `: ${evt.summary}` : ''}
-                  </p>
-                ))}
-              </div>
-            )}
-            {reasoningEvents.length > 0 && (
-              <div className="mt-3 rounded-2xl border border-indigo-100/70 bg-indigo-50/50 p-3">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-700 mb-1.5">Reasoning Stream</p>
-                <div className="space-y-1">
-                  {reasoningEvents.slice(-6).map((item, idx) => (
-                    <p key={`${idx}-${item.slice(0, 24)}`} className="text-xs text-indigo-900/90 font-mono leading-relaxed">
-                      {item}
-                    </p>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       <div className="absolute inset-x-0 bottom-0 z-30 border-t border-slate-100/50 bg-white/95 backdrop-blur-xl p-4">
         <div className="absolute -top-3 left-4 right-4 flex items-center justify-between gap-2 pointer-events-none">
           {replyToId ? (
@@ -945,8 +616,8 @@ function DiscoverySocialThread({
             onChange={(e) => setBody(e.target.value)}
             placeholder={
               activeMilestone
-                ? `Comment on ${activeMilestone.title}. Use @assistant to summarize or @agent to investigate...`
-                : 'Comment on this trace. Use @assistant to summarize or @agent to investigate...'
+                ? `Comment on ${activeMilestone.title}.`
+                : 'Comment on this trace.'
             }
             className="min-h-[100px] w-full resize-none rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all"
             onKeyDown={(e) => {

@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic_ai.ui.ag_ui import AGUIAdapter
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
 
 from server.database import get_db
@@ -589,6 +589,42 @@ def _extract_ag_ui_context_value(run_input: Any, *keys: str) -> Any:
 
 def _extract_latest_user_message_text(run_input: Any) -> str | None:
     """Best-effort extraction of the latest user message from AG-UI run input."""
+
+    def _extract_text_content(content: Any) -> str | None:
+        if isinstance(content, str):
+            text = content.strip()
+            return text or None
+        if isinstance(content, dict):
+            text_value = content.get("text")
+            if isinstance(text_value, str) and text_value.strip():
+                return text_value.strip()
+            nested_content = content.get("content")
+            if nested_content is not None:
+                return _extract_text_content(nested_content)
+            return None
+        if isinstance(content, list):
+            parts: list[str] = []
+            for item in content:
+                part_text: str | None = None
+                if isinstance(item, str):
+                    part_text = item.strip() or None
+                elif isinstance(item, dict):
+                    text_value = item.get("text")
+                    if isinstance(text_value, str) and text_value.strip():
+                        part_text = text_value.strip()
+                else:
+                    text_value = getattr(item, "text", None)
+                    if isinstance(text_value, str) and text_value.strip():
+                        part_text = text_value.strip()
+                if part_text:
+                    parts.append(part_text)
+            if parts:
+                return " ".join(parts).strip() or None
+        text_attr = getattr(content, "text", None)
+        if isinstance(text_attr, str) and text_attr.strip():
+            return text_attr.strip()
+        return None
+
     messages = getattr(run_input, "messages", None)
     if not isinstance(messages, list):
         return None
@@ -604,11 +640,33 @@ def _extract_latest_user_message_text(run_input: Any) -> str | None:
             content = getattr(message, "content", None)
         if str(role or "").lower() != "user":
             continue
-        if isinstance(content, str):
-            text = content.strip()
-            if text:
-                return text
+        text = _extract_text_content(content)
+        if text:
+            return text
     return None
+
+
+def _extract_ag_ui_payload_body(raw_body: bytes) -> bytes:
+    """Unwrap CopilotKit single-endpoint envelopes into a RunAgentInput payload."""
+    try:
+        parsed = json.loads(raw_body)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return raw_body
+
+    if not isinstance(parsed, dict):
+        return raw_body
+
+    body_payload = parsed.get("body")
+    if isinstance(body_payload, dict):
+        return json.dumps(body_payload).encode("utf-8")
+
+    params = parsed.get("params")
+    if isinstance(params, dict):
+        nested_body = params.get("body")
+        if isinstance(nested_body, dict):
+            return json.dumps(nested_body).encode("utf-8")
+
+    return raw_body
 
 
 @router.post("/{workshop_id}/discovery-comments", response_model=dict[str, Any])
@@ -759,8 +817,14 @@ async def run_thread_assistant_ag_ui(
     if not trace or trace.workshop_id != workshop_id:
         raise HTTPException(status_code=404, detail="Trace not found")
 
-    body = await request.body()
-    run_input = AGUIAdapter.build_run_input(body)
+    body = _extract_ag_ui_payload_body(await request.body())
+    try:
+        run_input = AGUIAdapter.build_run_input(body)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "Invalid AG-UI payload", "errors": exc.errors(include_input=False)},
+        ) from exc
     resolved_user_id = user_id or _extract_ag_ui_context_value(run_input, "user_id", "userId")
     resolved_trigger_comment_id = trigger_comment_id or _extract_ag_ui_context_value(
         run_input, "trigger_comment_id", "triggerCommentId"
@@ -772,9 +836,7 @@ async def run_thread_assistant_ag_ui(
     if not isinstance(resolved_user_id, str) or not resolved_user_id.strip():
         raise HTTPException(status_code=422, detail="Missing required context: user_id")
     if not isinstance(resolved_trigger_comment_id, str) or not resolved_trigger_comment_id.strip():
-        trigger_body = _extract_latest_user_message_text(run_input)
-        if not trigger_body:
-            raise HTTPException(status_code=422, detail="Missing required context: trigger_comment_id")
+        trigger_body = _extract_latest_user_message_text(run_input) or "Copilot chat request"
         created_trigger = svc.db_service.create_discovery_comment(
             workshop_id,
             DiscoveryCommentCreate(
@@ -1041,8 +1103,14 @@ async def run_summarization_assistant_ag_ui(
     if not trace or trace.workshop_id != workshop_id:
         raise HTTPException(status_code=404, detail="Trace not found")
 
-    body = await request.body()
-    run_input = AGUIAdapter.build_run_input(body)
+    body = _extract_ag_ui_payload_body(await request.body())
+    try:
+        run_input = AGUIAdapter.build_run_input(body)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "Invalid AG-UI payload", "errors": exc.errors(include_input=False)},
+        ) from exc
     resolved_user_id = user_id or _extract_ag_ui_context_value(run_input, "user_id", "userId")
     resolved_trigger_comment_id = trigger_comment_id or _extract_ag_ui_context_value(
         run_input, "trigger_comment_id", "triggerCommentId"
@@ -1050,9 +1118,7 @@ async def run_summarization_assistant_ag_ui(
     if not isinstance(resolved_user_id, str) or not resolved_user_id.strip():
         raise HTTPException(status_code=422, detail="Missing required context: user_id")
     if not isinstance(resolved_trigger_comment_id, str) or not resolved_trigger_comment_id.strip():
-        trigger_body = _extract_latest_user_message_text(run_input)
-        if not trigger_body:
-            raise HTTPException(status_code=422, detail="Missing required context: trigger_comment_id")
+        trigger_body = _extract_latest_user_message_text(run_input) or "Copilot chat request"
         created_trigger = svc.db_service.create_discovery_comment(
             workshop_id,
             DiscoveryCommentCreate(

@@ -5,6 +5,7 @@ import {
   useConfigureSuggestions,
 } from '@copilotkit/react-core/v2';
 import { CopilotKit } from '@copilotkit/react-core';
+import { HttpAgent } from '@ag-ui/client';
 
 interface DiscoveryCopilotChatProps {
   workshopId: string;
@@ -26,8 +27,21 @@ export const DiscoveryCopilotChat: React.FC<DiscoveryCopilotChatProps> = ({
     return `/workshops/${workshopId}/traces/${traceId}/ag-ui/thread-assistant?${params.toString()}`;
   }, [workshopId, traceId, userId, milestoneRef]);
 
+  const selfManagedAgents = React.useMemo(
+    () => ({
+      thread_assistant: new HttpAgent({ url: runtimeUrl }),
+    }),
+    [runtimeUrl],
+  );
+
   return (
-    <CopilotKit runtimeUrl={runtimeUrl} showDevConsole={false} agent="thread_assistant">
+    <CopilotKit
+      runtimeUrl={runtimeUrl}
+      useSingleEndpoint
+      showDevConsole={false}
+      agent="thread_assistant"
+      selfManagedAgents={selfManagedAgents}
+    >
       <DiscoveryCopilotChatInner
         userId={userId}
         traceId={traceId}
