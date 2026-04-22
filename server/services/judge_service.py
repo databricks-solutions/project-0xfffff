@@ -20,6 +20,7 @@ from server.models import (
     JudgePrompt,
 )
 from server.services.database_service import DatabaseService
+from server.utils.trace_display_utils import get_display_text
 
 try:
     import mlflow
@@ -42,6 +43,9 @@ class JudgeService:
         prompt = self.db_service.get_judge_prompt(workshop_id, evaluation_request.prompt_id)
         if not prompt:
             raise ValueError(f"Judge prompt {evaluation_request.prompt_id} not found")
+
+        # Load workshop for display pipeline (span filter + JSONPath)
+        workshop = self.db_service.get_workshop(workshop_id)
 
         # Clear old cached evaluations for this prompt to prevent stale data
         self.db_service.clear_judge_evaluations(workshop_id, evaluation_request.prompt_id)
@@ -130,19 +134,20 @@ class JudgeService:
                 mode_rating = rating_counts.most_common(1)[0][0]  # Most frequent rating
 
                 trace = trace_objects[trace_id]
+                display_input, display_output = get_display_text(trace, workshop)
 
                 # Evaluate using either MLflow or simulation
                 if use_mlflow:
                     try:
                         predicted_rating, reasoning = self._evaluate_with_mlflow(
-                            workshop_id, prompt, trace.input, trace.output, mlflow_config
+                            workshop_id, prompt, display_input, display_output, mlflow_config
                         )
                     except Exception as e:
                         # Don't fallback - propagate the error
                         raise HTTPException(status_code=503, detail=f"MLflow evaluation failed: {e!s}") from e
                 else:
                     predicted_rating = self._simulate_judge_rating(
-                        prompt.prompt_text, trace.input, trace.output, mode_rating
+                        prompt.prompt_text, display_input, display_output, mode_rating
                     )
                     reasoning = "Test judge evaluation (development mode)"
 
@@ -188,6 +193,9 @@ class JudgeService:
             created_at=datetime.now(),
             performance_metrics=None,
         )
+
+        # Load workshop for display pipeline (span filter + JSONPath)
+        workshop = self.db_service.get_workshop(workshop_id)
 
         # Get annotations for evaluation
         annotations = self.db_service.get_annotations(workshop_id)
@@ -244,18 +252,19 @@ class JudgeService:
                 mode_rating = rating_counts.most_common(1)[0][0]
 
                 trace = trace_objects[trace_id]
+                display_input, display_output = get_display_text(trace, workshop)
 
                 # Evaluate using either MLflow or simulation
                 if use_mlflow:
                     try:
                         predicted_rating, reasoning = self._evaluate_with_mlflow(
-                            workshop_id, temp_prompt, trace.input, trace.output, mlflow_config
+                            workshop_id, temp_prompt, display_input, display_output, mlflow_config
                         )
                     except Exception as e:
                         raise HTTPException(status_code=503, detail=f"MLflow evaluation failed: {e!s}") from e
                 else:
                     predicted_rating = self._simulate_judge_rating(
-                        temp_prompt.prompt_text, trace.input, trace.output, mode_rating
+                        temp_prompt.prompt_text, display_input, display_output, mode_rating
                     )
                     reasoning = "Test judge evaluation (development mode)"
 
@@ -534,6 +543,9 @@ class JudgeService:
         # Get rubric for context
         rubric = self.db_service.get_rubric(workshop_id)
 
+        # Load workshop for display pipeline (span filter + JSONPath)
+        workshop = self.db_service.get_workshop(workshop_id)
+
         # Get few-shot examples if requested
         few_shot_examples = []
         if export_config.include_examples and prompt.few_shot_examples:
@@ -547,10 +559,11 @@ class JudgeService:
                     ratings = [a.rating for a in trace_annotations]
                     most_common_rating = max(set(ratings), key=ratings.count)
 
+                    display_input, display_output = get_display_text(trace, workshop)
                     few_shot_examples.append(
                         {
-                            "input": trace.input,
-                            "output": trace.output,
+                            "input": display_input,
+                            "output": display_output,
                             "rating": most_common_rating,
                             "reasoning": f"This response rates {most_common_rating}/5 based on the evaluation criteria.",
                         }

@@ -27,6 +27,7 @@ from server.models import (
 )
 from server.services.database_service import DatabaseService
 from server.services.discovery_dspy import QUESTION_CATEGORIES
+from server.utils.trace_display_utils import get_display_text
 
 logger = logging.getLogger(__name__)
 
@@ -321,14 +322,16 @@ class DiscoveryService:
                 self._trim(txt, 600) for txt in other_findings_texts if txt and self._trim(txt, 600)
             ]
 
+            display_input, display_output = get_display_text(trace, workshop)
+
             result = run_predict(
                 predictor,
                 lm,
                 workshop_id=workshop_id,
                 user_id=user_id,
                 trace_id=trace_id,
-                trace_input=self._trim(trace.input or "", 2000),
-                trace_output=self._trim(trace.output or "", 2000),
+                trace_input=self._trim(display_input or "", 2000),
+                trace_output=self._trim(display_output or "", 2000),
                 trace_context_json=self._trim(trace_context_json, 2000),
                 user_prior_finding=self._trim(user_prior_finding_text, 1200),
                 previous_questions=previous_prompts,
@@ -1363,12 +1366,14 @@ class DiscoveryService:
             if len(findings_with_users) < 2:
                 return []
 
+            display_input, display_output = get_display_text(trace, workshop)
+
             result = run_predict(
                 predictor,
                 lm,
                 trace_id=trace_id,
-                trace_input=self._trim(trace.input or "", 1000),
-                trace_output=self._trim(trace.output or "", 1000),
+                trace_input=self._trim(display_input or "", 1000),
+                trace_output=self._trim(display_output or "", 1000),
                 findings_with_users=findings_with_users,
             )
 

@@ -338,29 +338,60 @@ class TestTraceDisplayPipelineConsistency:
         assert span_ok is True
         assert span_extracted == EXPECTED_INPUT
 
-    def test_all_consumers_call_apply_span_filter_and_apply_jsonpath(self):
-        """Verify that all known backend consumers import and can call
-        both apply_span_filter and apply_jsonpath.
+    def test_get_display_text_applies_full_pipeline(self):
+        """get_display_text applies span filter then JSONPath."""
+        from server.utils.trace_display_utils import get_display_text
+        from server.models import Trace, Workshop
 
-        This is a structural check: the modules that consume trace data
-        must import both pipeline functions.
+        workshop = Workshop(
+            id="ws", name="test", facilitator_id="f",
+            input_jsonpath=INPUT_JSONPATH,
+            output_jsonpath=OUTPUT_JSONPATH,
+            span_attribute_filter=SPAN_FILTER_CONFIG,
+        )
+        trace = Trace(
+            id="t", workshop_id="ws", input=ROOT_INPUT, output=ROOT_OUTPUT,
+            context=TRACE_CONTEXT, trace_metadata={}, mlflow_trace_id="m",
+        )
+        result_input, result_output = get_display_text(trace, workshop)
+        assert result_input == EXPECTED_INPUT
+        assert result_output == EXPECTED_OUTPUT
+
+    def test_get_display_text_no_config(self):
+        """get_display_text returns raw input/output when no filters configured."""
+        from server.utils.trace_display_utils import get_display_text
+        from server.models import Trace, Workshop
+
+        workshop = Workshop(id="ws", name="test", facilitator_id="f")
+        trace = Trace(
+            id="t", workshop_id="ws", input=ROOT_INPUT, output=ROOT_OUTPUT,
+            context=TRACE_CONTEXT, trace_metadata={}, mlflow_trace_id="m",
+        )
+        result_input, result_output = get_display_text(trace, workshop)
+        assert result_input == ROOT_INPUT
+        assert result_output == ROOT_OUTPUT
+
+    def test_all_consumers_use_display_pipeline(self):
+        """Verify that all known backend consumers use the trace display pipeline.
+
+        Services that read trace input/output for LLM evaluation or analysis
+        must go through the shared get_display_text helper. This structural
+        check ensures no service reads trace.input/trace.output without
+        applying the pipeline.
         """
         import importlib
         import inspect
 
-        # Known consumers that must use the pipeline
-        consumer_modules = [
-            "server.routers.workshops",
+        helper_consumers = [
             "server.services.discovery_analysis_service",
+            "server.services.judge_service",
+            "server.services.discovery_service",
         ]
 
-        for module_name in consumer_modules:
+        for module_name in helper_consumers:
             mod = importlib.import_module(module_name)
             source = inspect.getsource(mod)
 
-            assert "apply_span_filter" in source, (
-                f"{module_name} does not reference apply_span_filter"
-            )
-            assert "apply_jsonpath" in source, (
-                f"{module_name} does not reference apply_jsonpath"
+            assert "get_display_text" in source, (
+                f"{module_name} does not reference get_display_text"
             )
