@@ -2294,10 +2294,14 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
             skipped_count += 1
             continue
 
-          # Case (c): SME edit — update in place so MemAlign trains on the fresh value
-          def _update_assessment(_tid=mlflow_trace_id, _aid=existing_assessment_id, _name=judge_name, _val=rating_value, _src=source, _rat=rationale_for_this):
+          # Case (c): SME edit — update in place so MemAlign trains on the fresh value.
+          # name=None: Databricks MLflow treats assessment name as immutable. Passing a non-null name
+          # (even unchanged) triggers "assessmentName may not be updated". The store's update_assessment
+          # (databricks_rest_store.py:638) uses a field mask — None excludes name from the mask and
+          # leaves the existing name intact.
+          def _update_assessment(_tid=mlflow_trace_id, _aid=existing_assessment_id, _val=rating_value, _src=source, _rat=rationale_for_this):
             new_feedback = Feedback(
-              name=_name,
+              name=None,
               value=_val,
               source=_src,
               rationale=_rat,
@@ -2358,10 +2362,10 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
           logger.info(f"✓ Skipping legacy {judge_name} for user {current_user_id} - same value ({rating_val}) already on trace {mlflow_trace_id[:12]}...")
           return {'logged': 0, 'updated': 0, 'skipped': 1, 'error': None}
 
-        # Value changed — update in place
-        def _update_legacy_assessment(_tid=mlflow_trace_id, _aid=existing_assessment_id, _name=judge_name, _val=rating_val, _src=source, _rat=rationale):
+        # Value changed — update in place. See _update_assessment() above for rationale on name=None.
+        def _update_legacy_assessment(_tid=mlflow_trace_id, _aid=existing_assessment_id, _val=rating_val, _src=source, _rat=rationale):
           new_feedback = Feedback(
-            name=_name,
+            name=None,
             value=_val,
             source=_src,
             rationale=_rat,

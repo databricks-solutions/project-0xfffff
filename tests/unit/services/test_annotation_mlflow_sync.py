@@ -291,13 +291,15 @@ class TestEditOverwriteBehavior:
             assert mock_log.call_count == 0, "Should NOT log_feedback on edit (would create duplicate)"
             assert mock_update.call_count == 1, "Should call update_assessment exactly once"
 
-            # Verify the update was targeted at the correct assessment_id and carried the new value
+            # Verify the update was targeted at the correct assessment_id and carried the new value.
+            # name is deliberately None — Databricks MLflow treats name as immutable on update,
+            # so passing None signals "don't touch the name" via the store's field-mask pattern.
             call_kwargs = mock_update.call_args.kwargs
             assert call_kwargs["trace_id"] == "tr-abc123"
             assert call_kwargs["assessment_id"] == "asmt-abc-123"
             new_assessment = call_kwargs["assessment"]
             assert new_assessment.value == 2
-            assert new_assessment.name == "helpfulness_judge"
+            assert new_assessment.name is None, "name must be None to avoid 'assessmentName may not be updated' server error"
 
             assert result["updated"] == 1
             assert result.get("logged", 0) == 0
