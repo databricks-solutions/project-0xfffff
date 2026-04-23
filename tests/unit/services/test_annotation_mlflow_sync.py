@@ -209,19 +209,30 @@ class TestCommentToRationale:
             assert rationale == "This response was very helpful and accurate."
 
 
+def _build_existing_assessment(*, name, source_id, value, assessment_id="asmt-existing-1"):
+    """Helper: construct a mock MLflow assessment with the shape `_sync_annotation_with_mlflow` reads."""
+    from mlflow.entities import AssessmentSourceType
+
+    mock = MagicMock()
+    mock.name = name
+    mock.assessment_id = assessment_id
+    mock.source = MagicMock()
+    mock.source.source_type = AssessmentSourceType.HUMAN
+    mock.source.source_id = source_id
+    mock.feedback = MagicMock()
+    mock.feedback.value = value
+    return mock
+
+
 @pytest.mark.spec("ANNOTATION_SPEC")
-@pytest.mark.req("Duplicate feedback entries are detected and skipped")
-class TestDuplicateDetection:
-    """Test that existing feedback entries are detected and skipped."""
+@pytest.mark.req("Annotation edits propagate to MLflow via update_assessment; identical re-syncs skip")
+class TestEditOverwriteBehavior:
+    """Three-way branch: no-existing -> log, same-value -> skip, different-value -> update."""
 
     @patch.dict(os.environ, {}, clear=False)
     @patch("server.services.databricks_service.resolve_databricks_token", return_value="test-token")
-    def test_existing_assessment_skipped(self, mock_resolve_token):
-        """When an assessment already exists for (judge_name, user_id), skip it."""
-        from mlflow.entities import AssessmentSource, AssessmentSourceType
-
-        # resolve_databricks_token is already mocked to return "test-token"
-
+    def test_same_value_resync_skipped(self, mock_resolve_token):
+        """Re-syncing the same rating value is a no-op (no log_feedback, no update_assessment)."""
         service, annotation_db = _make_db_service_with_mocks(
             annotation_user_id="user-1",
             annotation_ratings={"rubric-1_0": 4},
@@ -231,23 +242,98 @@ class TestDuplicateDetection:
              patch("mlflow.set_experiment"), \
              patch("mlflow.set_trace_tag"), \
              patch("mlflow.get_trace") as mock_get_trace, \
-             patch("mlflow.log_feedback") as mock_log:
-            # Simulate existing assessment for this user + judge name
-            # The derived judge name from "Helpfulness" is "helpfulness_judge"
-            existing_assessment = MagicMock()
-            existing_assessment.name = "helpfulness_judge"
-            existing_assessment.source = MagicMock()
-            existing_assessment.source.source_type = AssessmentSourceType.HUMAN
-            existing_assessment.source.source_id = "user-1"
-
+             patch("mlflow.log_feedback") as mock_log, \
+             patch("mlflow.update_assessment") as mock_update:
+            # Existing assessment has the SAME value (4) — should skip
+            existing = _build_existing_assessment(
+                name="helpfulness_judge", source_id="user-1", value=4,
+            )
             mock_trace = MagicMock()
-            mock_trace.info.assessments = [existing_assessment]
+            mock_trace.info.assessments = [existing]
             mock_get_trace.return_value = mock_trace
 
             result = service._sync_annotation_with_mlflow("ws-1", annotation_db)
 
-            assert mock_log.call_count == 0, "Should not log feedback when duplicate exists"
-            assert result['skipped'] == 1
+            assert mock_log.call_count == 0, "Should not log_feedback when value is unchanged"
+            assert mock_update.call_count == 0, "Should not update_assessment when value is unchanged"
+            assert result["skipped"] == 1
+            assert result.get("updated", 0) == 0
+            assert result.get("logged", 0) == 0
+
+    @patch.dict(os.environ, {}, clear=False)
+    @patch("server.services.databricks_service.resolve_databricks_token", return_value="test-token")
+    def test_different_value_edit_overwrites(self, mock_resolve_token):
+        """SME edit (new rating differs from MLflow) calls update_assessment, not log_feedback."""
+        service, annotation_db = _make_db_service_with_mocks(
+            annotation_user_id="user-1",
+            annotation_ratings={"rubric-1_0": 2},  # SME changed their mind from 4 → 2
+        )
+
+        with patch("mlflow.set_tracking_uri"), \
+             patch("mlflow.set_experiment"), \
+             patch("mlflow.set_trace_tag"), \
+             patch("mlflow.get_trace") as mock_get_trace, \
+             patch("mlflow.log_feedback") as mock_log, \
+             patch("mlflow.update_assessment") as mock_update:
+            # Existing assessment has value 4, new rating is 2 — should update
+            existing = _build_existing_assessment(
+                name="helpfulness_judge",
+                source_id="user-1",
+                value=4,
+                assessment_id="asmt-abc-123",
+            )
+            mock_trace = MagicMock()
+            mock_trace.info.assessments = [existing]
+            mock_get_trace.return_value = mock_trace
+
+            result = service._sync_annotation_with_mlflow("ws-1", annotation_db)
+
+            assert mock_log.call_count == 0, "Should NOT log_feedback on edit (would create duplicate)"
+            assert mock_update.call_count == 1, "Should call update_assessment exactly once"
+
+            # Verify the update was targeted at the correct assessment_id and carried the new value
+            call_kwargs = mock_update.call_args.kwargs
+            assert call_kwargs["trace_id"] == "tr-abc123"
+            assert call_kwargs["assessment_id"] == "asmt-abc-123"
+            new_assessment = call_kwargs["assessment"]
+            assert new_assessment.value == 2
+            assert new_assessment.name == "helpfulness_judge"
+
+            assert result["updated"] == 1
+            assert result.get("logged", 0) == 0
+            assert result.get("skipped", 0) == 0
+
+    @patch.dict(os.environ, {}, clear=False)
+    @patch("server.services.databricks_service.resolve_databricks_token", return_value="test-token")
+    def test_update_failure_does_not_log_duplicate(self, mock_resolve_token):
+        """If update_assessment fails after retries, do NOT fall through to log_feedback
+        (would leave duplicate entries in MLflow)."""
+        service, annotation_db = _make_db_service_with_mocks(
+            annotation_user_id="user-1",
+            annotation_ratings={"rubric-1_0": 2},
+        )
+
+        with patch("mlflow.set_tracking_uri"), \
+             patch("mlflow.set_experiment"), \
+             patch("mlflow.set_trace_tag"), \
+             patch("mlflow.get_trace") as mock_get_trace, \
+             patch("mlflow.log_feedback") as mock_log, \
+             patch("mlflow.update_assessment", side_effect=RuntimeError("MLflow unavailable")):
+            existing = _build_existing_assessment(
+                name="helpfulness_judge",
+                source_id="user-1",
+                value=4,
+                assessment_id="asmt-abc-123",
+            )
+            mock_trace = MagicMock()
+            mock_trace.info.assessments = [existing]
+            mock_get_trace.return_value = mock_trace
+
+            result = service._sync_annotation_with_mlflow("ws-1", annotation_db)
+
+            assert mock_log.call_count == 0, "Must NOT log_feedback when update fails — would create duplicate"
+            assert result.get("updated", 0) == 0
+            assert result.get("logged", 0) == 0
 
 
 @pytest.mark.spec("ANNOTATION_SPEC")
