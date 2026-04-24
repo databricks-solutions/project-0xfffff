@@ -8,5 +8,6 @@ export type AnnotationCreate = {
     rating: number;
     ratings?: (Record<string, number> | null);
     comment?: (string | null);
+    rationales?: (Record<string, string> | null);
 };
 

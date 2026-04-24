@@ -10,6 +10,8 @@ export type Annotation = {
     rating: number;
     ratings?: (Record<string, number> | null);
     comment?: (string | null);
+    rationales?: (Record<string, string> | null);
+    legacy_comment?: (string | null);
     mlflow_trace_id?: (string | null);
     created_at?: string;
 };

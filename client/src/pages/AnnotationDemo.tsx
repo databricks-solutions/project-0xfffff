@@ -153,7 +153,10 @@ export function AnnotationDemo() {
   const [currentTraceIndex, setCurrentTraceIndex] = useState(0);
   const [currentRatings, setCurrentRatings] = useState<Record<string, number>>({});
   const [freeformResponses, setFreeformResponses] = useState<Record<string, string>>({});
-  const [comment, setComment] = useState<string>('');
+  // Per-question rationale dict — replaces the old singular `comment` state.
+  // Keys are rubric question_ids; values are the SME's "Why this rating?" text.
+  const [rationales, setRationales] = useState<Record<string, string>>({});
+  const [legacyBannerDismissed, setLegacyBannerDismissed] = useState<boolean>(false);
   const [submittedAnnotations, setSubmittedAnnotations] = useState<Set<string>>(new Set());
   const [hasNavigatedManually, setHasNavigatedManually] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -164,7 +167,7 @@ export function AnnotationDemo() {
   interface SavedAnnotationState {
     ratings: Record<string, number>;
     freeformResponses: Record<string, string>;
-    comment: string;
+    rationales: Record<string, string>;
   }
   const savedStateRef = useRef<Map<string, SavedAnnotationState>>(new Map());
   const savingTracesRef = useRef<Set<string>>(new Set()); // Track which traces are currently saving
@@ -177,7 +180,7 @@ export function AnnotationDemo() {
     traceId: string;
     ratings: Record<string, number>;
     freeformResponses: Record<string, string>;
-    comment: string;
+    rationales: Record<string, string>;
     attempts: number;
     lastAttempt: number;
   }
@@ -262,36 +265,55 @@ export function AnnotationDemo() {
     return numericRatings;
   };
   
-  // Helper function to build combined comment with freeform responses
-  // Uses JSON for freeform to preserve multi-line content
-  const buildCombinedComment = (
-    commentOverride?: string,
+  // Helper function to build the `comment` field for the API.
+  // Post-Fix-1, `comment` is PURELY the freeform-answers packing container.
+  // Per-question rationale text lives in `rationales: Record<string, string>`,
+  // not in `comment`. This helper only packages freeform-question responses
+  // into the `|||FREEFORM_JSON|||...|||END_FREEFORM|||` wrapper that
+  // `parseLoadedComment` expects on load.
+  const deriveCommentForApi = (
     freeformOverride?: Record<string, string>
-  ) => {
-    const commentToUse = commentOverride !== undefined ? commentOverride : comment;
+  ): string | null => {
     const freeformToUse = freeformOverride || freeformResponses;
-    let combined = commentToUse.trim();
-    
-    // Add freeform responses to comment as JSON to preserve multi-line content
     const freeformEntries = Object.entries(freeformToUse).filter(([_, v]) => v.trim());
-    if (freeformEntries.length > 0) {
-      // Build a map of title -> response for human readability
-      const freeformMap: Record<string, string> = {};
-      for (const [questionId, response] of freeformEntries) {
-        const question = rubricQuestions.find(q => q.id === questionId);
-        freeformMap[question?.title || questionId] = response.trim();
-      }
-      
-      const freeformJson = JSON.stringify(freeformMap);
-      
-      if (combined) {
-        combined = `${combined}\n\n|||FREEFORM_JSON|||${freeformJson}|||END_FREEFORM|||`;
-      } else {
-        combined = `|||FREEFORM_JSON|||${freeformJson}|||END_FREEFORM|||`;
+    if (freeformEntries.length === 0) return null;
+
+    const freeformMap: Record<string, string> = {};
+    for (const [questionId, response] of freeformEntries) {
+      const question = rubricQuestions.find(q => q.id === questionId);
+      freeformMap[question?.title || questionId] = response.trim();
+    }
+
+    const freeformJson = JSON.stringify(freeformMap);
+    return `|||FREEFORM_JSON|||${freeformJson}|||END_FREEFORM|||`;
+  };
+
+  // Normalize a rationales dict by dropping empty-string values, so that
+  // {q1: "", q2: ""} compares equal to {} and undefined. Prevents spurious
+  // "Annotation updated!" toasts when an SME opens a legacy annotation
+  // (where we initialize all keys to "") and navigates away without typing.
+  const normalizeRationales = (r: Record<string, string> | null | undefined): Record<string, string> => {
+    if (!r) return {};
+    return Object.fromEntries(Object.entries(r).filter(([_, v]) => v !== ''));
+  };
+
+  const rationalesEqual = (a: Record<string, string> | null | undefined, b: Record<string, string> | null | undefined): boolean => {
+    return JSON.stringify(normalizeRationales(a)) === JSON.stringify(normalizeRationales(b));
+  };
+
+  // Initialize rationales state for a fresh or legacy annotation.
+  // All Likert/Binary question_ids get mapped to "" so:
+  //   (1) the UI can render bound textareas for every scored criterion
+  //   (2) the user's saved state is an authoritative dict (rationales is not null),
+  //       which triggers the per-question sync path in the backend.
+  const initEmptyRationales = (): Record<string, string> => {
+    const init: Record<string, string> = {};
+    for (const q of rubricQuestions) {
+      if (q.judgeType === 'likert' || q.judgeType === 'binary') {
+        init[q.id] = '';
       }
     }
-    
-    return combined || null;
+    return init;
   };
   
   // Helper function to parse combined comment back into separate parts
@@ -363,7 +385,7 @@ export function AnnotationDemo() {
     setSubmittedAnnotations(new Set());
     setCurrentRatings({});
     setFreeformResponses({});
-    setComment('');
+    setRationales(initEmptyRationales());
     setCurrentTraceIndex(0);
     setHasNavigatedManually(false);
     previousTraceId.current = null;
@@ -380,7 +402,8 @@ export function AnnotationDemo() {
       // Reset form for each trace
       setCurrentRatings({});
       setFreeformResponses({});
-      setComment('');
+      setRationales(initEmptyRationales());
+      setLegacyBannerDismissed(false);  // banner may need to re-show for the new trace
       previousTraceId.current = currentTrace.id;
       
       // Check if this trace already has an annotation from existing data
@@ -419,14 +442,23 @@ export function AnnotationDemo() {
           loadedRatings = { [firstQuestionId]: existingAnnotation.rating };
         }
         
-        // Parse comment to separate user comment from freeform responses
+        // Parse `comment` for freeform responses. The user-text portion of
+        // comment is ignored post-Fix-1 (legacy-comment banner handles display
+        // of legacy text; fresh annotations have no user-text in `comment`).
         const rawComment = existingAnnotation.comment || '';
-        const { userComment, freeformData } = parseLoadedComment(rawComment);
-        
+        const { freeformData } = parseLoadedComment(rawComment);
+
+        // Load rationales from annotation.rationales if present (Fix-1+ flow).
+        // For legacy annotations (rationales null), initialize to empty-keyed
+        // dict — banner will show the legacy_comment; SME rewrites per criterion.
+        const loadedRationales = existingAnnotation.rationales
+          ? { ...initEmptyRationales(), ...existingAnnotation.rationales }
+          : initEmptyRationales();
+
         setCurrentRatings(loadedRatings);
-        setComment(userComment);
+        setRationales(loadedRationales);
         setFreeformResponses(freeformData);
-        
+
         // Mark it as submitted
         setSubmittedAnnotations(prev => {
           if (!prev.has(currentTrace.id)) {
@@ -453,14 +485,21 @@ export function AnnotationDemo() {
           loadedRatings = { [firstQuestionId]: annotation.rating };
         }
         
-        // Parse comment to separate user comment from freeform responses
+        // Parse `comment` for freeform responses only (post-Fix-1, comment is
+        // purely the freeform packing container; per-question rationales live
+        // in annotation.rationales). Legacy user-text is ignored for state
+        // restoration — it's preserved for display in legacy_comment banner.
         const rawComment = annotation.comment || '';
-        const { userComment: loadedComment, freeformData } = parseLoadedComment(rawComment);
-        
+        const { freeformData } = parseLoadedComment(rawComment);
+
+        const loadedRationales = annotation.rationales
+          ? { ...initEmptyRationales(), ...annotation.rationales }
+          : initEmptyRationales();
+
         savedStateRef.current.set(annotation.trace_id, {
           ratings: loadedRatings,
           freeformResponses: freeformData,
-          comment: loadedComment
+          rationales: loadedRationales,
         });
       });
     }
@@ -482,7 +521,7 @@ export function AnnotationDemo() {
         setSubmittedAnnotations(new Set());
         setCurrentRatings({});
         setFreeformResponses({});
-        setComment('');
+        setRationales(initEmptyRationales());
         hasInitialized.current = true;
         return;
       }
@@ -513,12 +552,17 @@ export function AnnotationDemo() {
           loadedRatings = { [firstQuestionId]: currentTraceAnnotation.rating };
         }
         
-        // Parse comment to separate user comment from freeform responses
+        // Parse `comment` for freeform responses only.
         const rawComment = currentTraceAnnotation.comment || '';
-        const { userComment: loadedComment, freeformData } = parseLoadedComment(rawComment);
+        const { freeformData } = parseLoadedComment(rawComment);
+
+        const loadedRationales = currentTraceAnnotation.rationales
+          ? { ...initEmptyRationales(), ...currentTraceAnnotation.rationales }
+          : initEmptyRationales();
+
         setFreeformResponses(freeformData);
         setCurrentRatings(loadedRatings);
-        setComment(loadedComment);
+        setRationales(loadedRationales);
       }
       
       // Find first incomplete trace
@@ -539,11 +583,11 @@ export function AnnotationDemo() {
 
   // Save annotation function - can be called synchronously or asynchronously
   const saveAnnotation = async (
-    traceId?: string, 
+    traceId?: string,
     isBackground: boolean = false,
     ratingsOverride?: Record<string, number>,
     freeformOverride?: Record<string, string>,
-    commentOverride?: string
+    rationalesOverride?: Record<string, string>
   ): Promise<boolean> => {
     const targetTraceId = traceId || currentTrace?.id;
     if (!targetTraceId) {
@@ -553,7 +597,7 @@ export function AnnotationDemo() {
     // Use override values if provided (for background saves), otherwise use current state
     const ratingsToSave = ratingsOverride || currentRatings;
     const freeformToSave = freeformOverride || freeformResponses;
-    const commentToSave = commentOverride !== undefined ? commentOverride : comment;
+    const rationalesToSave = rationalesOverride || rationales;
 
     // Check if there are any ratings to save (including 0 values for binary Fail)
     const hasRatings = Object.keys(ratingsToSave).length > 0;
@@ -598,11 +642,13 @@ export function AnnotationDemo() {
           }
         }
         
-        // Also check comment changes
-        if (!hasChanges && commentToSave !== savedState.comment) {
+        // Also check rationale changes. Normalize empty/null/undefined so
+        // opening a legacy annotation (init {q1: "", ...}) and navigating
+        // away without typing doesn't register as a change.
+        if (!hasChanges && !rationalesEqual(rationalesToSave, savedState.rationales)) {
           hasChanges = true;
         }
-        
+
         if (!hasChanges) {
           // Even though we skip the save, ensure the trace is marked as submitted
           // This fixes the issue where "Complete" doesn't record the last trace
@@ -626,8 +672,9 @@ export function AnnotationDemo() {
         trace_id: targetTraceId,
         user_id: currentUserId,
         rating: getLegacyRating(ratingsToSave),  // Legacy field: first likert rating (1-5)
-        ratings: numericRatings,  // New field: all numeric ratings (including 0 for binary Fail)
-        comment: buildCombinedComment(commentToSave, freeformToSave)
+        ratings: numericRatings,  // All numeric ratings (including 0 for binary Fail)
+        rationales: rationalesToSave,  // Per-question rationale dict (Fix 1)
+        comment: deriveCommentForApi(freeformToSave),  // Freeform packing only, post-Fix-1
       };
       
       // Use retry logic for background saves, direct call for user-initiated saves
@@ -643,7 +690,7 @@ export function AnnotationDemo() {
       savedStateRef.current.set(targetTraceId, {
         ratings: { ...ratingsToSave },
         freeformResponses: { ...freeformToSave },
-        comment: commentToSave
+        rationales: { ...rationalesToSave },
       });
       
       return true;
@@ -667,7 +714,7 @@ export function AnnotationDemo() {
             traceId: targetTraceId,
             ratings: { ...ratingsToSave },
             freeformResponses: { ...freeformToSave },
-            comment: commentToSave,
+            rationales: { ...rationalesToSave },
             attempts,
             lastAttempt: Date.now()
           });
@@ -685,7 +732,7 @@ export function AnnotationDemo() {
             ...existingEntry,
             ratings: { ...ratingsToSave },
             freeformResponses: { ...freeformToSave },
-            comment: commentToSave,
+            rationales: { ...rationalesToSave },
             attempts,
             lastAttempt: Date.now()
           });
@@ -751,21 +798,22 @@ export function AnnotationDemo() {
           user_id: currentUserId,
           rating: legacyRating,
           ratings: numericRatings,
-          comment: buildCombinedComment(data.comment, data.freeformResponses)
+          rationales: data.rationales,
+          comment: deriveCommentForApi(data.freeformResponses),
         };
-        
+
         await submitAnnotation.mutateAsync(annotationData);
-        
+
         // Success! Remove from queue
         failedSaveQueueRef.current.delete(traceId);
         setFailedSaveCount(failedSaveQueueRef.current.size);
         setSubmittedAnnotations(prev => new Set([...prev, traceId]));
-        
+
         // Update saved state
         savedStateRef.current.set(traceId, {
           ratings: { ...data.ratings },
           freeformResponses: { ...data.freeformResponses },
-          comment: data.comment
+          rationales: { ...data.rationales },
         });
         
         
@@ -776,7 +824,7 @@ export function AnnotationDemo() {
         // Will be retried on next interval
       }
     }
-  }, [rubricQuestions, currentUserId, submitAnnotation, buildCombinedComment]);
+  }, [rubricQuestions, currentUserId, submitAnnotation, deriveCommentForApi]);
   
   // Set up periodic retry for failed saves
   useEffect(() => {
@@ -834,9 +882,9 @@ export function AnnotationDemo() {
     const currentTraceId = currentTrace.id;
     const ratingsToSave = { ...currentRatings };
     const freeformToSave = { ...freeformResponses };
-    const commentToSave = comment;
+    const rationalesToSave = { ...rationales };
     const hasRatings = Object.keys(ratingsToSave).length > 0;
-    
+
     // Check if we're on the last trace
     if (currentTraceIndex >= traceData.length - 1) {
       // On the last trace, MUST await the save to ensure it completes
@@ -844,7 +892,7 @@ export function AnnotationDemo() {
       setIsNavigating(true);
       try {
         if (hasRatings) {
-          const success = await saveAnnotation(currentTraceId, false, ratingsToSave, freeformToSave, commentToSave);
+          const success = await saveAnnotation(currentTraceId, false, ratingsToSave, freeformToSave, rationalesToSave);
           if (success) {
             toast.success('All complete', { description: 'All traces annotated successfully!' });
           } else {
@@ -876,23 +924,24 @@ export function AnnotationDemo() {
     if (nextSavedState) {
       setCurrentRatings(nextSavedState.ratings);
       setFreeformResponses(nextSavedState.freeformResponses);
-      setComment(nextSavedState.comment);
+      setRationales(nextSavedState.rationales);
     } else {
       setCurrentRatings({});
       setFreeformResponses({});
-      setComment('');
+      setRationales(initEmptyRationales());
     }
+    setLegacyBannerDismissed(false);  // re-evaluate banner for next trace
     // Update ref so the useEffect doesn't re-trigger and cause a double render
     previousTraceId.current = nextTraceId || null;
     setCurrentTraceIndex(nextIndex);
-    
+
     // Clear navigating flag immediately after state update
     setIsNavigating(false);
-    
+
     // Save in background (async, non-blocking)
     if (hasRatings) {
       // Save with the stored values (before form was cleared)
-      saveAnnotation(currentTraceId, true, ratingsToSave, freeformToSave, commentToSave)
+      saveAnnotation(currentTraceId, true, ratingsToSave, freeformToSave, rationalesToSave)
         .catch((error) => {
           // This shouldn't happen as saveAnnotation catches errors, but log just in case
           console.error('nextTrace: Unexpected background save error:', error);
@@ -927,12 +976,12 @@ export function AnnotationDemo() {
     const currentTraceId = currentTrace.id;
     const ratingsToSave = { ...currentRatings };
     const freeformToSave = { ...freeformResponses };
-    const commentToSave = comment;
+    const rationalesToSave = { ...rationales };
     const hasRatings = Object.keys(ratingsToSave).length > 0;
-    
+
     // Navigate immediately (optimistic)
     const prevIndex = currentTraceIndex - 1;
-    
+
     setHasNavigatedManually(true);
     // Pre-populate form with saved state to avoid flash, or clear for new traces
     const prevTraceId = traceData[prevIndex]?.id;
@@ -940,23 +989,24 @@ export function AnnotationDemo() {
     if (prevSavedState) {
       setCurrentRatings(prevSavedState.ratings);
       setFreeformResponses(prevSavedState.freeformResponses);
-      setComment(prevSavedState.comment);
+      setRationales(prevSavedState.rationales);
     } else {
       setCurrentRatings({});
       setFreeformResponses({});
-      setComment('');
+      setRationales(initEmptyRationales());
     }
+    setLegacyBannerDismissed(false);  // re-evaluate banner for prev trace
     // Update ref so the useEffect doesn't re-trigger and cause a double render
     previousTraceId.current = prevTraceId || null;
     setCurrentTraceIndex(prevIndex);
 
     // Clear navigating flag immediately after state update
     setIsNavigating(false);
-    
+
     // Save in background (async, non-blocking)
     if (hasRatings) {
       // Save with the stored values (before navigation)
-      saveAnnotation(currentTraceId, true, ratingsToSave, freeformToSave, commentToSave)
+      saveAnnotation(currentTraceId, true, ratingsToSave, freeformToSave, rationalesToSave)
         .catch((error) => {
           // This shouldn't happen as saveAnnotation catches errors, but log just in case
           console.error('prevTrace: Unexpected background save error:', error);
@@ -1036,17 +1086,18 @@ export function AnnotationDemo() {
           user_id: currentUserId,
           rating: legacyRating,
           ratings: numericRatings,
-          comment: buildCombinedComment(data.comment, data.freeformResponses)
+          rationales: data.rationales,
+          comment: deriveCommentForApi(data.freeformResponses),
         };
-        
+
         await submitAnnotation.mutateAsync(annotationData);
-        
+
         failedSaveQueueRef.current.delete(traceId);
         setSubmittedAnnotations(prev => new Set([...prev, traceId]));
         savedStateRef.current.set(traceId, {
           ratings: { ...data.ratings },
           freeformResponses: { ...data.freeformResponses },
-          comment: data.comment
+          rationales: { ...data.rationales },
         });
         successCount++;
       } catch (error) {
@@ -1185,6 +1236,50 @@ export function AnnotationDemo() {
             )}
           </CardHeader>
           <CardContent className="px-4 space-y-4">
+            {/* Legacy-comment banner: shown for annotations created before Fix 1,
+                where `legacy_comment` holds the original cross-judge text. SMEs
+                select and copy the relevant parts into the per-criterion
+                rationales below. The banner is read-only; dismiss is local-only.
+                (Fix 1 — Phase 1 / Task 7) */}
+            {(() => {
+              const currentAnnotation = existingAnnotations?.find(
+                a => a.trace_id === currentTrace?.id && a.user_id === currentUserId
+              );
+              const legacyRaw = currentAnnotation?.legacy_comment;
+              if (!legacyRaw || legacyBannerDismissed) return null;
+              const { userComment: legacyUserText } = parseLoadedComment(legacyRaw);
+              if (!legacyUserText || !legacyUserText.trim()) return null;
+              return (
+                <div className="rounded-md border border-amber-300 bg-amber-50 p-3 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 space-y-2">
+                      <p className="text-sm font-semibold text-amber-900">Your previous feedback</p>
+                      <blockquote className="text-sm text-amber-900 whitespace-pre-wrap border-l-2 border-amber-400 pl-3 select-text">
+                        {legacyUserText}
+                      </blockquote>
+                      <p className="text-xs text-amber-800">
+                        This comment was written before per-criterion rationales. Please redistribute it to the relevant criteria below (select and copy as needed), and edit to fit each criterion.
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setLegacyBannerDismissed(true)}
+                      className="border-amber-300 text-amber-800 hover:bg-amber-100 h-7 text-xs shrink-0"
+                    >
+                      Dismiss
+                    </Button>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {rubricQuestions.length > 0 && (
+              <p className="text-xs text-gray-600 px-1">
+                <strong>Important:</strong> Your explanations below will be used to train and align the AI judge on each criterion. For each rating, focus on <em>why</em> you scored it that way — what specific aspects of the response influenced your score? This helps the AI judge learn to evaluate similarly.
+              </p>
+            )}
+
             {rubricQuestions.map((question, questionIndex) => (
               <div
                 key={question.id}
@@ -1342,6 +1437,25 @@ export function AnnotationDemo() {
                       </p>
                     </div>
                   )}
+
+                  {/* Per-question rationale (Likert/Binary only — freeform already has its own answer field) */}
+                  {(question.judgeType === 'likert' || question.judgeType === 'binary') && (
+                    <div className="mt-3 space-y-1">
+                      <Label htmlFor={`rationale-${question.id}`} className="text-xs font-medium text-gray-700">
+                        Why this rating?
+                        <span className="text-gray-500 font-normal ml-2">(Optional)</span>
+                      </Label>
+                      <textarea
+                        id={`rationale-${question.id}`}
+                        placeholder={canAnnotate ? `Explain your reasoning for this ${question.title} rating. What specific aspects of the response influenced your score?` : "You don't have permission to submit annotations"}
+                        value={rationales[question.id] || ''}
+                        onChange={(e) => setRationales(prev => ({ ...prev, [question.id]: e.target.value }))}
+                        className="w-full min-h-[60px] p-2 text-sm border border-gray-200 rounded-md whitespace-pre-wrap focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        disabled={!canAnnotate || isSaving}
+                        style={{ whiteSpace: 'pre-wrap' }}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -1352,29 +1466,6 @@ export function AnnotationDemo() {
               </div>
             )}
 
-            {/* Comment Field - Feedback for Judge Alignment */}
-            <div className="space-y-2">
-              <Label htmlFor="comment" className="text-sm font-medium">
-                Feedback for Judge Alignment
-                <span className="text-gray-500 font-normal ml-2">(Optional)</span>
-              </Label>
-              <p className="text-xs text-gray-600 mb-2">
-                <strong>Important:</strong> Your feedback here will be used to train and align the AI judge. 
-                Focus on explaining <em>why</em> you gave this rating - what specific aspects of the response 
-                influenced your score? This helps the AI judge learn to evaluate similarly.
-              </p>
-              <textarea
-                id="comment"
-                placeholder={canAnnotate ? "Explain your reasoning for this rating. What made this response good or poor? What criteria did you focus on? This feedback will be used to train the AI judge..." : "You don't have permission to submit annotations"}
-                value={comment}
-                onChange={(e) => {
-                  setComment(e.target.value);
-                }}
-                className="w-full min-h-[80px] p-2.5 text-sm border border-gray-200 rounded-md whitespace-pre-wrap focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                disabled={!canAnnotate || isSaving}
-                style={{ whiteSpace: 'pre-wrap' }}
-              />
-            </div>
 
             {/* Status indicator */}
             {submittedAnnotations.has(currentTrace.id) && (
