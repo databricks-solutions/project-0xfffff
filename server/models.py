@@ -296,6 +296,7 @@ class AnnotationCreate(BaseModel):
     rating: int = Field(..., ge=1, le=5)  # Legacy: single rating (for backward compatibility)
     ratings: dict[str, int] | None = None  # New: multiple ratings as {"question_id": rating}
     comment: str | None = None
+    rationales: dict[str, str] | None = None  # Per-question rationale dict keyed by rubric question_id
 
 
 class Annotation(BaseModel):
@@ -306,6 +307,8 @@ class Annotation(BaseModel):
     rating: int = Field(..., ge=1, le=5)  # Legacy: single rating (for backward compatibility)
     ratings: dict[str, int] | None = None  # New: multiple ratings as {"question_id": rating}
     comment: str | None = None
+    rationales: dict[str, str] | None = None  # Per-question rationale dict keyed by rubric question_id
+    legacy_comment: str | None = None  # Read-only: archived pre-Fix-1 comment, populated by migration
     mlflow_trace_id: str | None = None
     created_at: datetime = Field(default_factory=datetime.now)
 

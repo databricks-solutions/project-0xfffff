@@ -178,20 +178,32 @@ class TestMlflowTraceTagging:
 
 
 @pytest.mark.spec("ANNOTATION_SPEC")
-@pytest.mark.req("Annotation comment maps to MLflow feedback rationale")
-class TestCommentToRationale:
-    """Test that annotation comment is passed as MLflow feedback rationale."""
+@pytest.mark.req("Per-rubric-question rationale is collected and syncs to the matching MLflow assessment")
+class TestPerQuestionRationale:
+    """Per-question rationales from annotation.rationales[question_id] sync to MLflow per judge."""
+
+    def _mock_mlflow_calls(self):
+        """Common MLflow mock context; returns (get_trace, log_feedback, update_assessment)."""
+        return (
+            patch("mlflow.set_tracking_uri"),
+            patch("mlflow.set_experiment"),
+            patch("mlflow.set_trace_tag"),
+            patch("mlflow.get_trace"),
+            patch("mlflow.log_feedback"),
+            patch("mlflow.update_assessment"),
+        )
 
     @patch.dict(os.environ, {}, clear=False)
     @patch("server.services.databricks_service.resolve_databricks_token", return_value="test-token")
-    def test_comment_maps_to_rationale(self, mock_resolve_token):
-        """Annotation comment is passed as the rationale parameter."""
-        # resolve_databricks_token is already mocked to return "test-token"
-
+    def test_per_question_rationale_syncs_correctly(self, mock_resolve_token):
+        """Each question's rationale attaches to THAT question's log_feedback call."""
+        # Two rubric questions; annotation has a rationale for each
         service, annotation_db = _make_db_service_with_mocks(
-            annotation_ratings={"rubric-1_0": 4},
-            annotation_comment="This response was very helpful and accurate.",
+            rubric_question="Helpfulness: Rate helpfulness---Accuracy: Rate accuracy",
+            annotation_user_id="user-1",
+            annotation_ratings={"rubric-1_0": 4, "rubric-1_1": 5},
         )
+        annotation_db.rationales = {"rubric-1_0": "clear answer", "rubric-1_1": "correct facts"}
 
         with patch("mlflow.set_tracking_uri"), \
              patch("mlflow.set_experiment"), \
@@ -204,18 +216,132 @@ class TestCommentToRationale:
 
             service._sync_annotation_with_mlflow("ws-1", annotation_db)
 
-            call_kwargs = mock_log.call_args
-            rationale = call_kwargs.kwargs.get('rationale') or call_kwargs[1].get('rationale')
-            assert rationale == "This response was very helpful and accurate."
+            assert mock_log.call_count == 2, "Should log_feedback once per rubric question"
+
+            # Collect rationales by judge name
+            per_judge = {
+                call.kwargs["name"]: call.kwargs.get("rationale")
+                for call in mock_log.call_args_list
+            }
+            assert per_judge["helpfulness_judge"] == "clear answer"
+            assert per_judge["accuracy_judge"] == "correct facts"
+
+    @patch.dict(os.environ, {}, clear=False)
+    @patch("server.services.databricks_service.resolve_databricks_token", return_value="test-token")
+    def test_legacy_null_rationales_clears_mlflow(self, mock_resolve_token):
+        """A legacy annotation (rationales=None) with existing MLflow rationale triggers update_assessment(rationale='')."""
+        service, annotation_db = _make_db_service_with_mocks(
+            annotation_user_id="user-1",
+            annotation_ratings={"rubric-1_0": 4},
+            annotation_comment="Legacy cross-judge comment that was misattributed",
+        )
+        annotation_db.rationales = None  # legacy annotation — never touched post-Fix-1
+
+        with patch("mlflow.set_tracking_uri"), \
+             patch("mlflow.set_experiment"), \
+             patch("mlflow.set_trace_tag"), \
+             patch("mlflow.get_trace") as mock_get_trace, \
+             patch("mlflow.log_feedback") as mock_log, \
+             patch("mlflow.update_assessment") as mock_update:
+            # Existing MLflow assessment carries the misattributed cross-judge rationale
+            existing = _build_existing_assessment(
+                name="helpfulness_judge",
+                source_id="user-1",
+                value=4,
+                assessment_id="asmt-stale-1",
+                rationale="Legacy cross-judge comment that was misattributed",
+            )
+            mock_trace = MagicMock()
+            mock_trace.info.assessments = [existing]
+            mock_get_trace.return_value = mock_trace
+
+            service._sync_annotation_with_mlflow("ws-1", annotation_db)
+
+            assert mock_log.call_count == 0, "Should not create new assessment — should update the existing one"
+            assert mock_update.call_count == 1, "Should call update_assessment to clear the stale rationale"
+
+            call_kwargs = mock_update.call_args.kwargs
+            new_feedback = call_kwargs["assessment"]
+            assert new_feedback.rationale == "", (
+                "Legacy-fallback must send rationale='' to clear misattributed cross-judge text"
+            )
+
+    @patch.dict(os.environ, {}, clear=False)
+    @patch("server.services.databricks_service.resolve_databricks_token", return_value="test-token")
+    def test_rationale_change_triggers_update(self, mock_resolve_token):
+        """Same rating, different rationale → update_assessment fires (otherwise re-labeling would be invisible)."""
+        service, annotation_db = _make_db_service_with_mocks(
+            annotation_user_id="user-1",
+            annotation_ratings={"rubric-1_0": 4},
+        )
+        annotation_db.rationales = {"rubric-1_0": "Updated reasoning"}
+
+        with patch("mlflow.set_tracking_uri"), \
+             patch("mlflow.set_experiment"), \
+             patch("mlflow.set_trace_tag"), \
+             patch("mlflow.get_trace") as mock_get_trace, \
+             patch("mlflow.log_feedback") as mock_log, \
+             patch("mlflow.update_assessment") as mock_update:
+            existing = _build_existing_assessment(
+                name="helpfulness_judge",
+                source_id="user-1",
+                value=4,  # same value
+                assessment_id="asmt-stale-1",
+                rationale="Original reasoning",
+            )
+            mock_trace = MagicMock()
+            mock_trace.info.assessments = [existing]
+            mock_get_trace.return_value = mock_trace
+
+            service._sync_annotation_with_mlflow("ws-1", annotation_db)
+
+            assert mock_log.call_count == 0
+            assert mock_update.call_count == 1, "Rationale-only change must trigger update"
+            call_kwargs = mock_update.call_args.kwargs
+            assert call_kwargs["assessment"].rationale == "Updated reasoning"
+
+    @patch.dict(os.environ, {}, clear=False)
+    @patch("server.services.databricks_service.resolve_databricks_token", return_value="test-token")
+    def test_same_value_same_rationale_skipped(self, mock_resolve_token):
+        """True no-op re-sync (same value AND same rationale) → skip, no MLflow calls."""
+        service, annotation_db = _make_db_service_with_mocks(
+            annotation_user_id="user-1",
+            annotation_ratings={"rubric-1_0": 4},
+        )
+        annotation_db.rationales = {"rubric-1_0": "Same reasoning"}
+
+        with patch("mlflow.set_tracking_uri"), \
+             patch("mlflow.set_experiment"), \
+             patch("mlflow.set_trace_tag"), \
+             patch("mlflow.get_trace") as mock_get_trace, \
+             patch("mlflow.log_feedback") as mock_log, \
+             patch("mlflow.update_assessment") as mock_update:
+            existing = _build_existing_assessment(
+                name="helpfulness_judge",
+                source_id="user-1",
+                value=4,
+                assessment_id="asmt-stable-1",
+                rationale="Same reasoning",
+            )
+            mock_trace = MagicMock()
+            mock_trace.info.assessments = [existing]
+            mock_get_trace.return_value = mock_trace
+
+            result = service._sync_annotation_with_mlflow("ws-1", annotation_db)
+
+            assert mock_log.call_count == 0, "No log_feedback on same-value same-rationale"
+            assert mock_update.call_count == 0, "No update_assessment on same-value same-rationale"
+            assert result["skipped"] == 1
 
 
-def _build_existing_assessment(*, name, source_id, value, assessment_id="asmt-existing-1"):
+def _build_existing_assessment(*, name, source_id, value, assessment_id="asmt-existing-1", rationale=None):
     """Helper: construct a mock MLflow assessment with the shape `_sync_annotation_with_mlflow` reads."""
     from mlflow.entities import AssessmentSourceType
 
     mock = MagicMock()
     mock.name = name
     mock.assessment_id = assessment_id
+    mock.rationale = rationale  # explicit None/str — avoids MagicMock auto-attr weirdness
     mock.source = MagicMock()
     mock.source.source_type = AssessmentSourceType.HUMAN
     mock.source.source_id = source_id
@@ -232,11 +358,13 @@ class TestEditOverwriteBehavior:
     @patch.dict(os.environ, {}, clear=False)
     @patch("server.services.databricks_service.resolve_databricks_token", return_value="test-token")
     def test_same_value_resync_skipped(self, mock_resolve_token):
-        """Re-syncing the same rating value is a no-op (no log_feedback, no update_assessment)."""
+        """Re-syncing the same rating value AND same rationale is a no-op."""
         service, annotation_db = _make_db_service_with_mocks(
             annotation_user_id="user-1",
             annotation_ratings={"rubric-1_0": 4},
         )
+        # rationales dict populated so sync doesn't enter legacy-clear mode
+        annotation_db.rationales = {"rubric-1_0": "Same reasoning"}
 
         with patch("mlflow.set_tracking_uri"), \
              patch("mlflow.set_experiment"), \
@@ -244,9 +372,12 @@ class TestEditOverwriteBehavior:
              patch("mlflow.get_trace") as mock_get_trace, \
              patch("mlflow.log_feedback") as mock_log, \
              patch("mlflow.update_assessment") as mock_update:
-            # Existing assessment has the SAME value (4) — should skip
+            # Existing assessment has the SAME value AND rationale — should skip
             existing = _build_existing_assessment(
-                name="helpfulness_judge", source_id="user-1", value=4,
+                name="helpfulness_judge",
+                source_id="user-1",
+                value=4,
+                rationale="Same reasoning",
             )
             mock_trace = MagicMock()
             mock_trace.info.assessments = [existing]
@@ -254,8 +385,8 @@ class TestEditOverwriteBehavior:
 
             result = service._sync_annotation_with_mlflow("ws-1", annotation_db)
 
-            assert mock_log.call_count == 0, "Should not log_feedback when value is unchanged"
-            assert mock_update.call_count == 0, "Should not update_assessment when value is unchanged"
+            assert mock_log.call_count == 0, "Should not log_feedback when value+rationale unchanged"
+            assert mock_update.call_count == 0, "Should not update_assessment when value+rationale unchanged"
             assert result["skipped"] == 1
             assert result.get("updated", 0) == 0
             assert result.get("logged", 0) == 0

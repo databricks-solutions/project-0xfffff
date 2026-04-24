@@ -361,7 +361,9 @@ class AnnotationDB(Base):
     user_id = Column(String, nullable=False)
     rating = Column(Integer, nullable=False)  # Legacy: single rating (for backward compatibility)
     ratings = Column(JSON, nullable=True)  # New: multiple ratings as {"question_id": rating}
-    comment = Column(Text)
+    comment = Column(Text)  # Freeform-answers packing container (see AnnotationDemo.buildCombinedComment)
+    rationales = Column(JSON, nullable=True)  # Per-question rationale dict keyed by rubric question_id
+    legacy_comment = Column(Text, nullable=True)  # Archive of pre-Fix-1 comment; never written at runtime
     created_at = Column(DateTime, default=func.now())
 
     # Relationships
@@ -832,6 +834,34 @@ def _apply_schema_updates():
                 print("✅ Database schema updated for annotations (added ratings column)")
             except Exception as e:
                 print(f"ℹ️ annotations schema update skipped (ratings column may already exist): {e}")
+
+            try:
+                # Add rationales column to annotations table for per-question rationale dict
+                if is_postgres:
+                    conn.execute(text("ALTER TABLE annotations ADD COLUMN IF NOT EXISTS rationales JSON"))
+                else:
+                    conn.execute(text("ALTER TABLE annotations ADD COLUMN rationales JSON"))
+                conn.commit()
+                print("✅ Database schema updated for annotations (added rationales column)")
+            except Exception as e:
+                print(f"ℹ️ annotations schema update skipped (rationales column may already exist): {e}")
+
+            try:
+                # Add legacy_comment column + backfill from comment for pre-Fix-1 archival
+                if is_postgres:
+                    conn.execute(text("ALTER TABLE annotations ADD COLUMN IF NOT EXISTS legacy_comment TEXT"))
+                else:
+                    conn.execute(text("ALTER TABLE annotations ADD COLUMN legacy_comment TEXT"))
+                conn.execute(
+                    text(
+                        "UPDATE annotations SET legacy_comment = comment "
+                        "WHERE comment IS NOT NULL AND legacy_comment IS NULL"
+                    )
+                )
+                conn.commit()
+                print("✅ Database schema updated for annotations (added legacy_comment column + backfill)")
+            except Exception as e:
+                print(f"ℹ️ annotations schema update skipped (legacy_comment column may already exist): {e}")
 
             try:
                 # Add include_in_alignment column to traces table for alignment filtering

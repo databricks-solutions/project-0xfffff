@@ -1911,6 +1911,9 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
           if annotation_data.comment is not None:
             existing_annotation.comment = annotation_data.comment
             logger.info("  → Updated comment")
+          if annotation_data.rationales is not None:
+            existing_annotation.rationales = annotation_data.rationales
+            logger.info(f"  → Updated rationales: {list(annotation_data.rationales.keys())}")
           self.db.commit()
           self.db.refresh(existing_annotation)
           logger.info(f"✅ Annotation updated in DB: id={existing_annotation.id}, ratings={existing_annotation.ratings}")
@@ -1924,6 +1927,8 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
             rating=existing_annotation.rating,
             ratings=existing_annotation.ratings,
             comment=existing_annotation.comment,
+            rationales=existing_annotation.rationales,
+            legacy_comment=existing_annotation.legacy_comment,
             mlflow_trace_id=existing_annotation.trace.mlflow_trace_id,
             created_at=existing_annotation.created_at,
           )
@@ -1938,6 +1943,7 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
             rating=validated_rating,
             ratings=validated_ratings,
             comment=annotation_data.comment,
+            rationales=annotation_data.rationales,
           )
           logger.info(f"📝 New annotation object: rating={validated_rating}, ratings={validated_ratings}")
           self.db.add(db_annotation)
@@ -1954,6 +1960,8 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
             rating=db_annotation.rating,
             ratings=db_annotation.ratings,
             comment=db_annotation.comment,
+            rationales=db_annotation.rationales,
+            legacy_comment=db_annotation.legacy_comment,
             mlflow_trace_id=db_annotation.trace.mlflow_trace_id if db_annotation.trace else None,
             created_at=db_annotation.created_at,
           )
@@ -1986,6 +1994,8 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
                 existing.ratings = validated_ratings
               if annotation_data.comment is not None:
                 existing.comment = annotation_data.comment
+              if annotation_data.rationales is not None:
+                existing.rationales = annotation_data.rationales
               self.db.commit()
               self.db.refresh(existing)
               logger.info(f"✅ Annotation updated after conflict: id={existing.id}")
@@ -1998,6 +2008,8 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
                 rating=existing.rating,
                 ratings=existing.ratings,
                 comment=existing.comment,
+                rationales=existing.rationales,
+                legacy_comment=existing.legacy_comment,
                 mlflow_trace_id=existing.trace.mlflow_trace_id if existing.trace else None,
                 created_at=existing.created_at,
               )
@@ -2214,10 +2226,10 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       source_id=annotation_db.user_id or workshop_id,
     )
 
-    # Check existing assessments on this trace to detect duplicates / edits
-    # Map (name, source_id) -> (assessment_id, value) so we can compare values
-    # and call mlflow.update_assessment() when an SME edits their rating.
-    existing_assessments: dict = {}  # Dict[(name, source_id), (assessment_id, value)]
+    # Check existing assessments on this trace to detect duplicates / edits / rationale changes
+    # Map (name, source_id) -> (assessment_id, value, rationale) so we can compare and
+    # call mlflow.update_assessment() when an SME edits their rating OR their rationale.
+    existing_assessments: dict = {}  # Dict[(name, source_id), (assessment_id, value, rationale)]
     current_user_id = annotation_db.user_id or workshop_id
     try:
       trace = mlflow.get_trace(mlflow_trace_id)
@@ -2234,9 +2246,10 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
                 feedback_obj = getattr(assessment, 'feedback', None)
                 if feedback_obj is not None:
                   existing_value = getattr(feedback_obj, 'value', None)
+                existing_rationale = getattr(assessment, 'rationale', None)
                 # Only track entries we can later update via assessment_id
                 if assessment_id is not None:
-                  existing_assessments[(assessment.name, source_id)] = (assessment_id, existing_value)
+                  existing_assessments[(assessment.name, source_id)] = (assessment_id, existing_value, existing_rationale)
       logger.info(f"📊 Trace {mlflow_trace_id[:12]}... has existing HUMAN assessments: {list(existing_assessments.keys())}")
       logger.info(f"📊 Current user: {current_user_id}")
     except Exception as e:
@@ -2279,22 +2292,34 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
         judge_name = self._derive_judge_name_from_title(question_title)
         logger.info(f"📊 Question {question_id}: index={index} → title='{question_title}' → judge_name='{judge_name}'")
         
+        # Resolve per-question rationale:
+        #   - annotation.rationales is not None → user engaged with per-question UI;
+        #     look up by question_id, default to "" (explicit clear)
+        #   - annotation.rationales is None → truly legacy annotation pre-Fix-1;
+        #     send "" to clear misattributed cross-judge MLflow rationale
+        if annotation_db.rationales is not None:
+          rationale_for_this = annotation_db.rationales.get(question_id, "")
+        else:
+          rationale_for_this = ""
+
         # Three-way branch:
         #  (a) no existing assessment → log_feedback
-        #  (b) existing assessment, same value → skip (no-op re-sync)
-        #  (c) existing assessment, different value → update_assessment (SME edited)
-        rationale_for_this = rationale if (logged_count + updated_count) == 0 else None
+        #  (b) existing assessment, same value AND same rationale → skip (true no-op)
+        #  (c) existing assessment, different value or different rationale → update_assessment
         existing_entry = existing_assessments.get((judge_name, current_user_id))
 
         if existing_entry is not None:
-          existing_assessment_id, existing_value = existing_entry
-          if existing_value == rating_value:
+          existing_assessment_id, existing_value, existing_rationale = existing_entry
+          # Normalize None/"" for comparison — MLflow may store either interchangeably
+          existing_rationale_norm = existing_rationale or ""
+          new_rationale_norm = rationale_for_this or ""
+          if existing_value == rating_value and existing_rationale_norm == new_rationale_norm:
             # Case (b): identical re-sync — preserves "Duplicate feedback entries skipped" spec intent
-            logger.info(f"✓ Skipping {judge_name} for user {current_user_id} - same value ({rating_value}) already on trace {mlflow_trace_id[:12]}...")
+            logger.info(f"✓ Skipping {judge_name} for user {current_user_id} - same value + rationale already on trace {mlflow_trace_id[:12]}...")
             skipped_count += 1
             continue
 
-          # Case (c): SME edit — update in place so MemAlign trains on the fresh value.
+          # Case (c): SME edit — update in place so MemAlign trains on the fresh value/rationale.
           # name=None: Databricks MLflow treats assessment name as immutable. Passing a non-null name
           # (even unchanged) triggers "assessmentName may not be updated". The store's update_assessment
           # (databricks_rest_store.py:638) uses a field mask — None excludes name from the mask and
@@ -2316,7 +2341,7 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
           )
           if api_result:
             updated_count += 1
-            logger.info(f"Updated MLflow feedback: {judge_name}: {existing_value} → {rating_value} for trace {mlflow_trace_id}")
+            logger.info(f"Updated MLflow feedback: {judge_name}: value {existing_value} → {rating_value}, rationale changed: {existing_rationale_norm != new_rationale_norm} for trace {mlflow_trace_id}")
           else:
             # Intentionally do NOT fall through to log_feedback — that would create a duplicate
             logger.warning(f"⚠️ Failed to update existing {judge_name} assessment for user {current_user_id} on trace {mlflow_trace_id}; stale value remains")
@@ -2353,17 +2378,25 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       judge_name = workshop_db.judge_name if workshop_db and workshop_db.judge_name else 'workshop_judge'
       rating_val = annotation_db.rating
 
+      # Legacy single-rating path: no rationales dict to consult. Rationale sourced from
+      # the annotation's `comment` field (unless this is a truly legacy annotation where
+      # we want to clear misattributed MLflow data — but for single-rating workshops,
+      # a single comment naturally scopes to the single judge, so we preserve it).
+      rationale_for_this = rationale  # from `annotation_db.comment` above
+
       # Three-way branch (same shape as the multi-question loop above)
       existing_entry = existing_assessments.get((judge_name, current_user_id))
       if existing_entry is not None:
-        existing_assessment_id, existing_value = existing_entry
-        if existing_value == rating_val:
-          # Same value — no-op re-sync
-          logger.info(f"✓ Skipping legacy {judge_name} for user {current_user_id} - same value ({rating_val}) already on trace {mlflow_trace_id[:12]}...")
+        existing_assessment_id, existing_value, existing_rationale = existing_entry
+        existing_rationale_norm = existing_rationale or ""
+        new_rationale_norm = rationale_for_this or ""
+        if existing_value == rating_val and existing_rationale_norm == new_rationale_norm:
+          # Same value AND same rationale — true no-op re-sync
+          logger.info(f"✓ Skipping legacy {judge_name} for user {current_user_id} - same value + rationale already on trace {mlflow_trace_id[:12]}...")
           return {'logged': 0, 'updated': 0, 'skipped': 1, 'error': None}
 
-        # Value changed — update in place. See _update_assessment() above for rationale on name=None.
-        def _update_legacy_assessment(_tid=mlflow_trace_id, _aid=existing_assessment_id, _val=rating_val, _src=source, _rat=rationale):
+        # Value or rationale changed — update in place. See _update_assessment() above for rationale on name=None.
+        def _update_legacy_assessment(_tid=mlflow_trace_id, _aid=existing_assessment_id, _val=rating_val, _src=source, _rat=rationale_for_this):
           new_feedback = Feedback(
             name=None,
             value=_val,
@@ -2379,7 +2412,7 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
           description=f"update_assessment(legacy {judge_name}) for trace {mlflow_trace_id[:12]}..."
         )
         if api_result:
-          logger.info(f"Updated MLflow legacy feedback: {judge_name}: {existing_value} → {rating_val} for trace {mlflow_trace_id}")
+          logger.info(f"Updated MLflow legacy feedback: {judge_name}: value {existing_value} → {rating_val}, rationale changed: {existing_rationale_norm != new_rationale_norm} for trace {mlflow_trace_id}")
           return {'logged': 0, 'updated': 1, 'skipped': 0, 'error': None}
         logger.warning(f"⚠️ Failed to update legacy {judge_name} assessment for user {current_user_id} on trace {mlflow_trace_id}; stale value remains")
         return {'logged': 0, 'updated': 0, 'skipped': 0, 'error': 'update failed'}
@@ -2772,6 +2805,8 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
         rating=db_annotation.rating,
         ratings=db_annotation.ratings,  # Include multiple ratings
         comment=db_annotation.comment,
+        rationales=db_annotation.rationales,  # Per-question rationale dict
+        legacy_comment=db_annotation.legacy_comment,  # Archived pre-Fix-1 comment (read-only)
         mlflow_trace_id=db_annotation.trace.mlflow_trace_id,
         created_at=db_annotation.created_at,
       )
