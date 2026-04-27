@@ -4,26 +4,28 @@ This directory contains declarative specifications for the Human Evaluation Work
 
 ## Quick Reference
 
-| Spec | Domain | Key Concepts |
-|------|--------|--------------|
-| [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md) | Discovery & Facilitation | discovery, facilitation, findings, classification, promotion, rubric bridge |
-| [DISCOVERY_SPEC](./DISCOVERY_SPEC.md) | Discovery Workspace | discovery workspace, social threads, milestones, facilitator modes, assistant mentions, agent mentions |
-| [AUTHENTICATION_SPEC](./AUTHENTICATION_SPEC.md) | Auth & Sessions | login, permissions, session, Databricks auth, fallback |
-| [ANNOTATION_SPEC](./ANNOTATION_SPEC.md) | Annotation System | annotation, rating, editing, MLflow feedback, comments |
-| [DATASETS_SPEC](./DATASETS_SPEC.md) | Trace Datasets | dataset, labeling dataset, composition, randomization, per-user order |
-| [DISCOVERY_TRACE_ASSIGNMENT_SPEC](./DISCOVERY_TRACE_ASSIGNMENT_SPEC.md) | Trace Assignment | trace, assignment, phase, round, visibility, participant |
-| [ROLE_PERMISSIONS_SPEC](./ROLE_PERMISSIONS_SPEC.md) | Roles & Permissions | role, facilitator, SME, participant, permission, for_role, phase advancement |
-| [RUBRIC_SPEC](./RUBRIC_SPEC.md) | Rubric Management | rubric, question, parsing, delimiter, scale, binary, Likert |
-| [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md) | Judge & Alignment | judge, evaluation, MLflow, binary, SIMBA, IRR, alignment |
-| [EVAL_MODE_SPEC](./EVAL_MODE_SPEC.md) | Eval Mode | per-example rubric, benchmark, hurdle, weighted criteria, offline eval, per-trace criteria |
-| [CUSTOM_LLM_PROVIDER_SPEC](./CUSTOM_LLM_PROVIDER_SPEC.md) | Custom LLM Providers | custom provider, OpenAI-compatible, proxy_url, Azure, vLLM |
-| [UI_COMPONENTS_SPEC](./UI_COMPONENTS_SPEC.md) | UI Components | pagination, trace viewer, table, export, keyboard shortcuts |
-| [BUILD_AND_DEPLOY_SPEC](./BUILD_AND_DEPLOY_SPEC.md) | Build & Deploy | build, deploy, Alembic, migrations, database, bootstrap |
-| [TESTING_SPEC](./TESTING_SPEC.md) | Testing | unit test, e2e, pytest, vitest, playwright, coverage |
-| [DESIGN_SYSTEM_SPEC](./DESIGN_SYSTEM_SPEC.md) | Design System | color, theme, purple, indigo, dark mode, accessibility |
-| [TRACE_DISPLAY_SPEC](./TRACE_DISPLAY_SPEC.md) | Trace Display | JSONPath, input extraction, output extraction, preview, facilitator settings |
-| [TRACE_INGESTION_SPEC](./TRACE_INGESTION_SPEC.md) | Trace Ingestion | ingest, intake, CSV upload, content extraction, deduplication, mlflow_trace_id, upsert |
-| [TRACE_SUMMARIZATION_SPEC](./TRACE_SUMMARIZATION_SPEC.md) | Trace Summarization | milestone view, executive summary, LLM summarization, batch summarization, job tracking, progress UI, re-summarize, summary indicators |
+
+| Spec                                                                    | Domain                   | Key Concepts                                                                                                                           |
+| ----------------------------------------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md)           | Discovery & Facilitation | discovery, facilitation, findings, classification, promotion, rubric bridge                                                            |
+| [DISCOVERY_SPEC](./DISCOVERY_SPEC.md)                                   | Discovery Workspace      | discovery workspace, social threads, milestones, facilitator modes, assistant mentions, agent mentions                                 |
+| [AUTHENTICATION_SPEC](./AUTHENTICATION_SPEC.md)                         | Auth & Sessions          | login, permissions, session, Databricks auth, fallback                                                                                 |
+| [ANNOTATION_SPEC](./ANNOTATION_SPEC.md)                                 | Annotation System        | annotation, rating, editing, MLflow feedback, comments                                                                                 |
+| [DATASETS_SPEC](./DATASETS_SPEC.md)                                     | Trace Datasets           | dataset, labeling dataset, composition, randomization, per-user order                                                                  |
+| [DISCOVERY_TRACE_ASSIGNMENT_SPEC](./DISCOVERY_TRACE_ASSIGNMENT_SPEC.md) | Trace Assignment         | trace, assignment, phase, round, visibility, participant                                                                               |
+| [ROLE_PERMISSIONS_SPEC](./ROLE_PERMISSIONS_SPEC.md)                     | Roles & Permissions      | role, facilitator, SME, participant, permission, for_role, phase advancement                                                           |
+| [RUBRIC_SPEC](./RUBRIC_SPEC.md)                                         | Rubric Management        | rubric, question, parsing, delimiter, scale, binary, Likert                                                                            |
+| [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md)                     | Judge & Alignment        | judge, evaluation, MLflow, binary, SIMBA, IRR, alignment                                                                               |
+| [EVAL_MODE_SPEC](./EVAL_MODE_SPEC.md)                                   | Eval Mode                | per-example rubric, benchmark, hurdle, weighted criteria, offline eval, per-trace criteria                                             |
+| [CUSTOM_LLM_PROVIDER_SPEC](./CUSTOM_LLM_PROVIDER_SPEC.md)               | Custom LLM Providers     | custom provider, OpenAI-compatible, proxy_url, Azure, vLLM                                                                             |
+| [UI_COMPONENTS_SPEC](./UI_COMPONENTS_SPEC.md)                           | UI Components            | pagination, trace viewer, table, export, keyboard shortcuts                                                                            |
+| [BUILD_AND_DEPLOY_SPEC](./BUILD_AND_DEPLOY_SPEC.md)                     | Build & Deploy           | build, deploy, Alembic, migrations, database, bootstrap                                                                                |
+| [TESTING_SPEC](./TESTING_SPEC.md)                                       | Testing                  | unit test, e2e, pytest, vitest, playwright, coverage                                                                                   |
+| [DESIGN_SYSTEM_SPEC](./DESIGN_SYSTEM_SPEC.md)                           | Design System            | color, theme, purple, indigo, dark mode, accessibility                                                                                 |
+| [TRACE_DISPLAY_SPEC](./TRACE_DISPLAY_SPEC.md)                           | Trace Display            | JSONPath, input extraction, output extraction, preview, facilitator settings                                                           |
+| [TRACE_INGESTION_SPEC](./TRACE_INGESTION_SPEC.md)                       | Trace Ingestion          | ingest, intake, CSV upload, content extraction, deduplication, mlflow_trace_id, upsert                                                 |
+| [TRACE_SUMMARIZATION_SPEC](./TRACE_SUMMARIZATION_SPEC.md)               | Trace Summarization      | milestone view, executive summary, LLM summarization, batch summarization, job tracking, progress UI, re-summarize, summary indicators |
+
 
 ---
 
@@ -32,6 +34,7 @@ This directory contains declarative specifications for the Human Evaluation Work
 Use this index to find relevant specs by keyword.
 
 ### Discovery & Assisted Facilitation
+
 - **discovery** → [DISCOVERY_SPEC](./DISCOVERY_SPEC.md), [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md), [DISCOVERY_TRACE_ASSIGNMENT_SPEC](./DISCOVERY_TRACE_ASSIGNMENT_SPEC.md)
 - **discovery workspace** → [DISCOVERY_SPEC](./DISCOVERY_SPEC.md)
 - **social thread** → [DISCOVERY_SPEC](./DISCOVERY_SPEC.md)
@@ -61,6 +64,7 @@ Use this index to find relevant specs by keyword.
 - **ClassifiedFinding** → [ASSISTED_FACILITATION_SPEC](./ASSISTED_FACILITATION_SPEC.md)
 
 ### Authentication & Authorization
+
 - **login** → [AUTHENTICATION_SPEC](./AUTHENTICATION_SPEC.md)
 - **logout** → [AUTHENTICATION_SPEC](./AUTHENTICATION_SPEC.md)
 - **permission** → [AUTHENTICATION_SPEC](./AUTHENTICATION_SPEC.md)
@@ -81,6 +85,7 @@ Use this index to find relevant specs by keyword.
 - **CLI profile** → [AUTHENTICATION_SPEC](./AUTHENTICATION_SPEC.md)
 
 ### Roles & Permissions
+
 - **role** → [ROLE_PERMISSIONS_SPEC](./ROLE_PERMISSIONS_SPEC.md)
 - **facilitator** → [ROLE_PERMISSIONS_SPEC](./ROLE_PERMISSIONS_SPEC.md), [DISCOVERY_TRACE_ASSIGNMENT_SPEC](./DISCOVERY_TRACE_ASSIGNMENT_SPEC.md)
 - **SME** → [ROLE_PERMISSIONS_SPEC](./ROLE_PERMISSIONS_SPEC.md)
@@ -96,6 +101,7 @@ Use this index to find relevant specs by keyword.
 - **UserRole** → [ROLE_PERMISSIONS_SPEC](./ROLE_PERMISSIONS_SPEC.md)
 
 ### Annotation System
+
 - **annotation** → [ANNOTATION_SPEC](./ANNOTATION_SPEC.md)
 - **rating** → [ANNOTATION_SPEC](./ANNOTATION_SPEC.md)
 - **comment** → [ANNOTATION_SPEC](./ANNOTATION_SPEC.md)
@@ -109,6 +115,7 @@ Use this index to find relevant specs by keyword.
 - **AnnotationDemo** → [ANNOTATION_SPEC](./ANNOTATION_SPEC.md)
 
 ### Datasets & Trace Collections
+
 - **dataset** → [DATASETS_SPEC](./DATASETS_SPEC.md)
 - **labeling dataset** → [DATASETS_SPEC](./DATASETS_SPEC.md)
 - **trace set** → [DATASETS_SPEC](./DATASETS_SPEC.md)
@@ -127,6 +134,7 @@ Use this index to find relevant specs by keyword.
 - **bias reduction** → [DATASETS_SPEC](./DATASETS_SPEC.md)
 
 ### Trace Assignment & Phases
+
 - **trace** → [DISCOVERY_TRACE_ASSIGNMENT_SPEC](./DISCOVERY_TRACE_ASSIGNMENT_SPEC.md), [DATASETS_SPEC](./DATASETS_SPEC.md)
 - **trace assignment** → [DISCOVERY_TRACE_ASSIGNMENT_SPEC](./DISCOVERY_TRACE_ASSIGNMENT_SPEC.md)
 - **phase** → [DISCOVERY_TRACE_ASSIGNMENT_SPEC](./DISCOVERY_TRACE_ASSIGNMENT_SPEC.md)
@@ -141,6 +149,7 @@ Use this index to find relevant specs by keyword.
 - **active_annotation_trace_ids** → [DISCOVERY_TRACE_ASSIGNMENT_SPEC](./DISCOVERY_TRACE_ASSIGNMENT_SPEC.md)
 
 ### Rubric System
+
 - **rubric** → [RUBRIC_SPEC](./RUBRIC_SPEC.md)
 - **question** → [RUBRIC_SPEC](./RUBRIC_SPEC.md)
 - **rubric question** → [RUBRIC_SPEC](./RUBRIC_SPEC.md)
@@ -157,6 +166,7 @@ Use this index to find relevant specs by keyword.
 - **Pass/Fail** → [RUBRIC_SPEC](./RUBRIC_SPEC.md), [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md)
 
 ### Judge & Evaluation
+
 - **judge** → [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md)
 - **evaluation** → [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md)
 - **MLflow** → [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md)
@@ -182,6 +192,7 @@ Use this index to find relevant specs by keyword.
 - **JudgeTuningPage** → [JUDGE_EVALUATION_SPEC](./JUDGE_EVALUATION_SPEC.md)
 
 ### Custom LLM Providers
+
 - **custom provider** → [CUSTOM_LLM_PROVIDER_SPEC](./CUSTOM_LLM_PROVIDER_SPEC.md)
 - **custom LLM** → [CUSTOM_LLM_PROVIDER_SPEC](./CUSTOM_LLM_PROVIDER_SPEC.md)
 - **OpenAI-compatible** → [CUSTOM_LLM_PROVIDER_SPEC](./CUSTOM_LLM_PROVIDER_SPEC.md)
@@ -194,6 +205,7 @@ Use this index to find relevant specs by keyword.
 - **FMAPI** → [CUSTOM_LLM_PROVIDER_SPEC](./CUSTOM_LLM_PROVIDER_SPEC.md)
 
 ### UI Components
+
 - **pagination** → [UI_COMPONENTS_SPEC](./UI_COMPONENTS_SPEC.md)
 - **page navigation** → [UI_COMPONENTS_SPEC](./UI_COMPONENTS_SPEC.md)
 - **items per page** → [UI_COMPONENTS_SPEC](./UI_COMPONENTS_SPEC.md)
@@ -207,6 +219,7 @@ Use this index to find relevant specs by keyword.
 - **copy to clipboard** → [UI_COMPONENTS_SPEC](./UI_COMPONENTS_SPEC.md)
 
 ### Build & Deployment
+
 - **build** → [BUILD_AND_DEPLOY_SPEC](./BUILD_AND_DEPLOY_SPEC.md)
 - **deploy** → [BUILD_AND_DEPLOY_SPEC](./BUILD_AND_DEPLOY_SPEC.md)
 - **vite** → [BUILD_AND_DEPLOY_SPEC](./BUILD_AND_DEPLOY_SPEC.md)
@@ -226,6 +239,7 @@ Use this index to find relevant specs by keyword.
 - **justfile** → [BUILD_AND_DEPLOY_SPEC](./BUILD_AND_DEPLOY_SPEC.md)
 
 ### Testing
+
 - **test** → [TESTING_SPEC](./TESTING_SPEC.md)
 - **unit test** → [TESTING_SPEC](./TESTING_SPEC.md)
 - **e2e** → [TESTING_SPEC](./TESTING_SPEC.md)
@@ -238,6 +252,7 @@ Use this index to find relevant specs by keyword.
 - **React Testing Library** → [TESTING_SPEC](./TESTING_SPEC.md)
 
 ### Design System
+
 - **color** → [DESIGN_SYSTEM_SPEC](./DESIGN_SYSTEM_SPEC.md)
 - **theme** → [DESIGN_SYSTEM_SPEC](./DESIGN_SYSTEM_SPEC.md)
 - **purple** → [DESIGN_SYSTEM_SPEC](./DESIGN_SYSTEM_SPEC.md)
@@ -252,6 +267,7 @@ Use this index to find relevant specs by keyword.
 - **button** → [DESIGN_SYSTEM_SPEC](./DESIGN_SYSTEM_SPEC.md)
 
 ### Trace Display Customization
+
 - **JSONPath** → [TRACE_DISPLAY_SPEC](./TRACE_DISPLAY_SPEC.md)
 - **input extraction** → [TRACE_DISPLAY_SPEC](./TRACE_DISPLAY_SPEC.md)
 - **output extraction** → [TRACE_DISPLAY_SPEC](./TRACE_DISPLAY_SPEC.md)
@@ -262,6 +278,7 @@ Use this index to find relevant specs by keyword.
 - **facilitator settings** → [TRACE_DISPLAY_SPEC](./TRACE_DISPLAY_SPEC.md)
 
 ### Trace Ingestion & Identity
+
 - **ingest** → [TRACE_INGESTION_SPEC](./TRACE_INGESTION_SPEC.md)
 - **intake** → [TRACE_INGESTION_SPEC](./TRACE_INGESTION_SPEC.md)
 - **CSV upload** → [TRACE_INGESTION_SPEC](./TRACE_INGESTION_SPEC.md)
@@ -277,6 +294,7 @@ Use this index to find relevant specs by keyword.
 - **_extract_content_from_json** → [TRACE_INGESTION_SPEC](./TRACE_INGESTION_SPEC.md)
 
 ### Trace Summarization
+
 - **summarization** → [TRACE_SUMMARIZATION_SPEC](./TRACE_SUMMARIZATION_SPEC.md)
 - **milestone** → [TRACE_SUMMARIZATION_SPEC](./TRACE_SUMMARIZATION_SPEC.md)
 - **milestone view** → [TRACE_SUMMARIZATION_SPEC](./TRACE_SUMMARIZATION_SPEC.md)
@@ -300,6 +318,7 @@ Use this index to find relevant specs by keyword.
 - **DiscoveryTraceCard summary** → [TRACE_SUMMARIZATION_SPEC](./TRACE_SUMMARIZATION_SPEC.md)
 
 ### Eval Mode & Benchmarking
+
 - **eval mode** → [EVAL_MODE_SPEC](./EVAL_MODE_SPEC.md)
 - **benchmark mode** → [EVAL_MODE_SPEC](./EVAL_MODE_SPEC.md)
 - **per-example rubric** → [EVAL_MODE_SPEC](./EVAL_MODE_SPEC.md)
@@ -319,6 +338,7 @@ Use this index to find relevant specs by keyword.
 - **workshop mode** → [EVAL_MODE_SPEC](./EVAL_MODE_SPEC.md)
 
 ### Build and Deployment
+
 - **SQLite rescue** → [BUILD_AND_DEPLOY_SPEC](./BUILD_AND_DEPLOY_SPEC.md)
 - **Volume backup** → [BUILD_AND_DEPLOY_SPEC](./BUILD_AND_DEPLOY_SPEC.md)
 - **Databricks Apps** → [BUILD_AND_DEPLOY_SPEC](./BUILD_AND_DEPLOY_SPEC.md)
@@ -345,11 +365,13 @@ Each specification follows a consistent structure:
 
 Issues where the spec documents intended behavior but the implementation diverges.
 
-| Spec | Discrepancy | Current Implementation | Spec Says |
-|------|-------------|----------------------|-----------|
-| ROLE_PERMISSIONS_SPEC | Phase advancement has no backend role enforcement | All phase-advance endpoints accept any request; "(facilitator only)" is docstring-only | Only facilitators can advance workshop phases |
-| ROLE_PERMISSIONS_SPEC | Annotation endpoint has no backend permission check | `POST /workshops/{id}/annotations` accepts from any role | Annotation requires `can_annotate` permission |
-| DISCOVERY_TRACE_ASSIGNMENT_SPEC | `update_workshop_participant` is a no-op | Function queries DB but discards result, no commit | Trace assignments should persist |
+
+| Spec                            | Discrepancy                                         | Current Implementation                                                                 | Spec Says                                     |
+| ------------------------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------- |
+| ROLE_PERMISSIONS_SPEC           | Phase advancement has no backend role enforcement   | All phase-advance endpoints accept any request; "(facilitator only)" is docstring-only | Only facilitators can advance workshop phases |
+| ROLE_PERMISSIONS_SPEC           | Annotation endpoint has no backend permission check | `POST /workshops/{id}/annotations` accepts from any role                               | Annotation requires `can_annotate` permission |
+| DISCOVERY_TRACE_ASSIGNMENT_SPEC | `update_workshop_participant` is a no-op            | Function queries DB but discards result, no commit                                     | Trace assignments should persist              |
+
 
 ---
 

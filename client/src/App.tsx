@@ -3,8 +3,11 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { WorkshopProvider } from './context/WorkshopContext';
 import { UserProvider } from './context/UserContext';
 import { WorkflowProvider } from './context/WorkflowContext';
-import { WorkshopDemoLanding } from './pages/WorkshopDemoLanding';
 import { TraceDataViewerDemo } from './pages/TraceDataViewerDemo';
+import { UserShell } from './pages/shell/UserShell';
+import { WorkshopShell } from './pages/shell/WorkshopShell';
+import { WorkflowShell } from './pages/shell/WorkflowShell';
+import { SprintWorkspacePage } from './pages/workspace/SprintWorkspacePage';
 import { ErrorBoundary, RootErrorFallback } from './components/ErrorBoundary';
 import { Toaster } from 'sonner';
 
@@ -16,9 +19,15 @@ function App() {
           <WorkflowProvider>
             <Router>
               <Routes>
-                <Route path="/" element={<WorkshopDemoLanding />} />
-                <Route path="/workshop/:workshopId" element={<WorkshopDemoLanding />} />
-                <Route path="/workshop/:workshopId/:phase" element={<WorkshopDemoLanding />} />
+                <Route element={<UserShell />}>
+                  <Route element={<WorkshopShell />}>
+                    <Route element={<WorkflowShell />}>
+                      <Route index element={<SprintWorkspacePage />} />
+                      <Route path="/workshop/:workshopId" element={<SprintWorkspacePage />} />
+                      <Route path="/workshop/:workshopId/:phase" element={<SprintWorkspacePage />} />
+                    </Route>
+                  </Route>
+                </Route>
                 <Route path="/trace-viewer-demo" element={<TraceDataViewerDemo />} />
               </Routes>
             </Router>

@@ -8,11 +8,12 @@ This specification defines the rubric system for the Human Evaluation Workshop, 
 
 ### Rubric
 - A collection of evaluation questions/criteria for rating traces
-- Associated with a specific workshop
+- Associated with one or more traces, and a workshop
 - Defines the evaluation framework for annotation phase
 - Supports multiple scale types (Likert, Binary)
+- Supports multiple criteria
 
-### Rubric Question
+### Rubric Criterion
 - A single evaluation criterion within a rubric
 - Has a title (short label) and description (detailed guidance)
 - Specifies the rating scale (Likert 1-5 or Binary 0/1)
