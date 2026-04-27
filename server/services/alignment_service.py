@@ -2,11 +2,9 @@
 
 Supports all judge types (Likert, Binary, etc.) using MemAlign's dual memory system.
 MemAlign distills general guidelines from human feedback (semantic memory) and
-incorporates them into the judge's instructions.
-
-Note: Episodic memory (example retrieval) is available during alignment but is not
-persisted when registering the judge. Future MLflow versions may support native
-MemoryAugmentedJudge registration with full memory preservation.
+retrieves similar past examples during evaluation (episodic memory). Both memories
+are persisted when the aligned MemoryAugmentedJudge is registered — MLflow serializes
+semantic guidelines inline and stores episodic trace IDs for lazy reconstruction.
 """
 
 import logging
@@ -1196,38 +1194,55 @@ class AlignmentService:
                 feedback_type = float
                 yield "Creating Likert judge with feedback_value_type=float"
 
-            # Create judge with appropriate feedback_value_type
-            judge = make_judge(
-                name=judge_name,
-                instructions=normalized_judge_prompt,
-                feedback_value_type=feedback_type,
-                model=judge_model_uri,
-            )
+            # Prefer a previously registered MemoryAugmentedJudge so re-alignment
+            # extends existing semantic/episodic memory. Without this, the frontend
+            # hands us the prior run's decorated prompt (containing "Distilled
+            # Guidelines (N):") and make_judge() bakes it into the new base — the
+            # next MemAlign pass then appends a second block on top.
+            judge = None
+            reused_registered_judge = False
+            try:
+                from mlflow.genai.scorers import get_scorer
 
-            logger.info("Judge '%s' created using model '%s' (type=%s)", judge.name, judge_model_uri, judge_type)
+                existing = get_scorer(name=judge_name, experiment_id=experiment_id)
+                if existing is not None and str(getattr(existing, "kind", "")).endswith("MEMORY_AUGMENTED"):
+                    judge = existing
+                    reused_registered_judge = True
+                    yield f"Loaded previously aligned judge '{judge_name}' — re-alignment will extend its memory"
+            except Exception as load_err:
+                logger.info("No prior registered judge to reuse for '%s': %s", judge_name, load_err)
+
+            if judge is None:
+                judge = make_judge(
+                    name=judge_name,
+                    instructions=normalized_judge_prompt,
+                    feedback_value_type=feedback_type,
+                    model=judge_model_uri,
+                )
+
+            logger.info(
+                "Judge '%s' ready using model '%s' (type=%s, reused=%s)",
+                judge.name,
+                judge_model_uri,
+                judge_type,
+                reused_registered_judge,
+            )
             yield f"Initial Judge Text:\n{judge.instructions}"
 
-            # Register or update the judge BEFORE alignment so it exists in MLflow
-            try:
-                # Try to register first
-                judge.register(
-                    experiment_id=experiment_id,
-                    name=judge_name,
-                )
-                yield f"Registered initial judge '{judge_name}' before alignment"
-            except Exception as pre_register_err:
-                # If already registered, try to update instead
-                if "already been registered" in str(pre_register_err):
-                    try:
-                        judge.update(
-                            experiment_id=experiment_id,
-                            name=judge_name,
-                        )
-                        yield f"Updated existing judge '{judge_name}' before alignment"
-                    except Exception as update_err:
-                        yield f"WARNING: Could not update existing judge: {update_err}"
-                else:
-                    yield f"WARNING: Could not pre-register judge: {pre_register_err}"
+            # Register the judge BEFORE alignment so it exists in MLflow (skip if we
+            # already loaded an existing registered scorer via get_scorer).
+            if not reused_registered_judge:
+                try:
+                    judge.register(
+                        experiment_id=experiment_id,
+                        name=judge_name,
+                    )
+                    yield f"Registered initial judge '{judge_name}' before alignment"
+                except Exception as pre_register_err:
+                    if "already been registered" in str(pre_register_err):
+                        yield f"Judge '{judge_name}' already registered — reusing"
+                    else:
+                        yield f"WARNING: Could not pre-register judge: {pre_register_err}"
 
             # Determine model URI for the optimizer
             alignment_model = alignment_model_name or evaluation_model_name
@@ -1373,7 +1388,7 @@ class AlignmentService:
 
             yield f"Aligned judge instructions length: {len(aligned_instructions)} chars"
             yield f"Semantic memory: {guideline_count} distilled guidelines"
-            yield f"Episodic memory: {example_count} examples (not persisted to registered judge)"
+            yield f"Episodic memory: {example_count} examples (trace IDs persisted on registered judge)"
 
             # Explain if no guidelines were distilled (common with Databricks models)
             if guideline_count == 0 and example_count > 0:
@@ -1391,19 +1406,21 @@ class AlignmentService:
                         guideline_text = guideline_text[:200] + "..."
                     yield f"  {i}. {guideline_text}"
 
-            # Log sample episodic memory examples
+            # Log the first 2 episodic memory examples in full (no truncation).
             if episodic_memory:
                 yield "--- Sample Episodic Memory Examples ---"
-                for i, example in enumerate(episodic_memory[:3], 1):  # Show first 3
+                for i, example in enumerate(episodic_memory[:2], 1):
                     ex_dict = dict(example) if hasattr(example, "__iter__") else {}
                     trace_id = getattr(example, "_trace_id", "N/A")
-                    # Get a preview of inputs/outputs
-                    inputs_preview = str(ex_dict.get("inputs", ""))[:80]
-                    if len(str(ex_dict.get("inputs", ""))) > 80:
-                        inputs_preview += "..."
-                    yield f"  Example {i} (trace: {trace_id}): {inputs_preview}"
-                if len(episodic_memory) > 3:
-                    yield f"  ... and {len(episodic_memory) - 3} more examples"
+                    yield f"  Example {i} (trace: {trace_id}):"
+                    if "inputs" in ex_dict:
+                        yield f"    Inputs: {ex_dict['inputs']}"
+                    if "outputs" in ex_dict:
+                        yield f"    Outputs: {ex_dict['outputs']}"
+                    if "expectations" in ex_dict:
+                        yield f"    Expectations: {ex_dict['expectations']}"
+                if len(episodic_memory) > 2:
+                    yield f"  ... and {len(episodic_memory) - 2} more examples"
 
             # Log to MLflow
             mlflow_run = mlflow.active_run()
@@ -1430,51 +1447,49 @@ class AlignmentService:
                 except Exception as artifact_err:
                     logger.warning("Failed to log artifact: %s", artifact_err)
 
-                # Update the existing registered judge with aligned instructions
-                # The aligned_instructions contain the original prompt + distilled guidelines (semantic memory)
-                # Note: Episodic memory (example retrieval) is not preserved - waiting for native MLflow support
+                # Persist the aligned MemoryAugmentedJudge directly. MLflow's
+                # model_dump() serializes it as clean base + structured
+                # semantic_memory + episodic_trace_ids, so re-alignment inherits
+                # memory via _from_serialized() instead of stacking another
+                # "Distilled Guidelines (N):" block on a flattened prompt.
                 registered_judge_name: str | None = None
                 try:
                     from mlflow.genai.scorers import ScorerSamplingConfig
 
-                    # Create judge with aligned instructions using the SAME name
-                    registered_judge_name = judge_name  # Use original name, not _aligned suffix
-                    aligned_judge_for_registration = make_judge(
-                        name=registered_judge_name,
-                        instructions=aligned_instructions,
-                        feedback_value_type=feedback_type,
-                        model=judge_model_uri,
-                    )
-
-                    # Try to update existing scorer first, fall back to register if it doesn't exist
+                    registered_judge_name = judge_name
                     try:
-                        # Use update() for existing scorers - this creates a new version
-                        aligned_judge_for_registration.update(
+                        aligned_judge.update(
                             experiment_id=experiment_id,
                             name=registered_judge_name,
                             sampling_config=ScorerSamplingConfig(sample_rate=0.0),
                         )
-                        yield f"Updated existing judge '{registered_judge_name}' with aligned instructions"
+                        yield (
+                            f"Updated registered judge '{registered_judge_name}' with aligned memory "
+                            f"(semantic guidelines + episodic trace IDs)"
+                        )
                     except Exception as update_err:
-                        # If update fails (scorer doesn't exist), try register
-                        if "not found" in str(update_err).lower() or "does not exist" in str(update_err).lower():
-                            aligned_judge_for_registration.register(
-                                experiment_id=experiment_id,
-                                name=registered_judge_name,
-                            )
-                            yield f"Registered new judge '{registered_judge_name}' with aligned instructions"
-                            # Set sampling config after registration
+                        err_text = str(update_err).lower()
+                        if "not found" in err_text or "does not exist" in err_text:
                             try:
-                                aligned_judge_for_registration.update(
+                                aligned_judge.register(
                                     experiment_id=experiment_id,
                                     name=registered_judge_name,
-                                    sampling_config=ScorerSamplingConfig(sample_rate=0.0),
                                 )
-                                yield f"Set sample_rate=0 for judge '{registered_judge_name}'"
-                            except Exception as config_err:
-                                yield f"WARNING: Could not update sampling config: {config_err}"
+                                yield f"Registered new judge '{registered_judge_name}' with aligned memory"
+                                try:
+                                    aligned_judge.update(
+                                        experiment_id=experiment_id,
+                                        name=registered_judge_name,
+                                        sampling_config=ScorerSamplingConfig(sample_rate=0.0),
+                                    )
+                                    yield f"Set sample_rate=0 for judge '{registered_judge_name}'"
+                                except Exception as config_err:
+                                    yield f"WARNING: Could not set sampling config: {config_err}"
+                            except Exception as register_err:
+                                registered_judge_name = None
+                                yield f"WARNING: Could not register aligned judge: {register_err}"
                         else:
-                            yield f"WARNING: Could not update judge: {update_err}"
+                            yield f"WARNING: Could not update registered judge: {update_err}"
 
                 except Exception as register_err:
                     registered_judge_name = None
@@ -1494,8 +1509,8 @@ class AlignmentService:
                 "trace_count": len(mlflow_traces),
                 "mlflow_run_id": mlflow_run.info.run_id if mlflow_run else None,
                 "registered_judge_name": registered_judge_name,
-                "guideline_count": guideline_count,  # Semantic memory - persisted in instructions
-                "example_count": example_count,  # Episodic memory - not persisted
+                "guideline_count": guideline_count,
+                "example_count": example_count,
             }
         except Exception as e:
             import traceback
