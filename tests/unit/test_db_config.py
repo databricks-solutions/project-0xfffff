@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import logging
 import time
 from unittest.mock import MagicMock, patch
 
@@ -322,6 +323,23 @@ class TestCreateEngineForBackend:
         assert engine is not None
         assert "postgresql" in str(engine.url)
         engine.dispose()
+
+    def test_postgresql_oauth_fallback_is_not_warning(self, monkeypatch, caplog):
+        caplog.set_level(logging.INFO, logger="server.db_config")
+        monkeypatch.setenv("PGHOST", "db.example.com")
+        monkeypatch.setenv("PGDATABASE", "testdb")
+        monkeypatch.setenv("PGUSER", "user@example.com")
+        monkeypatch.setenv("PGPORT", "5432")
+        monkeypatch.setenv("PGSSLMODE", "require")
+        monkeypatch.setenv("PGAPPNAME", "test-app")
+        monkeypatch.delenv("ENDPOINT_NAME", raising=False)
+
+        engine = create_engine_for_backend(DatabaseBackend.POSTGRESQL)
+        try:
+            assert "PostgreSQL engine created" in caplog.text
+            assert "falling back to workspace OAuth token" in caplog.text
+        finally:
+            engine.dispose()
 
 
 # ---------------------------------------------------------------------------

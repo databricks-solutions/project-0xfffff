@@ -217,7 +217,7 @@ uv run gunicorn server.app:app \
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `DATABASE_URL` | Database connection string (SQLite only) | `sqlite:///workshop.db` |
+| `DATABASE_URL` | Database connection string (SQLite default, or Lakebase branch URL for local Postgres development) | `sqlite:///workshop.db` |
 | `DATABASE_ENV` | Database backend: `postgres` (Lakebase) or `sqlite` | `sqlite` |
 | `DB_BOOTSTRAP_ON_STARTUP` | Auto-run migrations on startup | `false` |
 | `MLFLOW_TRACKING_URI` | MLflow server URL (set to `databricks` on Apps) | (required) |
@@ -226,11 +226,24 @@ uv run gunicorn server.app:app \
 | `DATABRICKS_TOKEN` | Databricks access token (fallback — SDK auth preferred) | (optional) |
 | `PGHOST` | Lakebase endpoint hostname | (required for Lakebase) |
 | `PGDATABASE` | Lakebase database name | `databricks_postgres` |
-| `PGUSER` | Lakebase username (service principal `DATABRICKS_CLIENT_ID`) | (required for Lakebase) |
+| `PGUSER` | Lakebase username (Apps service principal in deployment; Databricks user for branch development) | (required for Lakebase) |
 | `PGPORT` | Lakebase port | `5432` |
 | `PGSSLMODE` | Lakebase SSL mode | `require` |
 | `PGAPPNAME` | Application name for connection tracking / schema derivation | `human-eval-workshop` |
-| `ENDPOINT_NAME` | Lakebase endpoint for credential generation (`projects/<id>/branches/<id>/endpoints/<id>`) | (required for Lakebase) |
+| `ENDPOINT_NAME` | Lakebase endpoint for credential generation (`projects/<id>/branches/<id>/endpoints/<id>`) | (optional; workspace OAuth fallback is supported) |
+
+### Lakebase Branch Development
+
+Local PostgreSQL development should use a dedicated Lakebase branch rather than a separate local schema. Create a branch such as `local` in Lakebase, copy that branch's PostgreSQL connection string from the Lakebase Connect modal, then run:
+
+```bash
+just configure-lakebase-local
+just dev postgres
+```
+
+`just configure-lakebase-local` writes `.env.lakebase.local` (ignored by git). It parses the branch `DATABASE_URL` into the `PG*` variables used by the backend, sets `PGUSER` to the authenticated Databricks CLI user, and defaults `PGAPPNAME` to `human-eval-workshop`. The Lakebase branch endpoint provides data isolation; `PGAPPNAME` continues to identify the app schema consistently across production and branch development.
+
+`just dev postgres` loads `.env.lakebase.local`, runs `db-bootstrap`, and starts the API and UI against the selected Lakebase branch. If `ENDPOINT_NAME` is not set, the backend uses Databricks workspace OAuth for Lakebase authentication.
 
 ---
 
@@ -248,7 +261,9 @@ just db-revision      # Create new migration
 ### Development
 
 ```bash
-just dev              # Start full dev environment
+just dev              # Start full dev environment with SQLite
+just dev postgres     # Start full dev environment with a Lakebase branch
+just configure-lakebase-local  # Configure .env.lakebase.local from a branch DATABASE_URL
 just api-dev          # Start API with hot reload
 just client-dev       # Start frontend dev server
 ```
@@ -505,4 +520,5 @@ Limitations:
 | 2026-04-10 | [SDK Auth Migration](../.claude/plans/2026-04-10-sdk-auth-migration.md) | complete | Replace PAT token auth with SDK auth; update Databricks Apps auth section; add Lakebase env vars |
 | 2026-04-11 | (inline) | complete | Fix Lakebase connection pool: `do_connect` token injection, `pool_recycle=3600`, `pool_pre_ping=False`, `generate_database_credential()` API |
 | 2026-04-11 | [Gunicorn on_starting hook](../.claude/plans/jaunty-leaping-lighthouse.md) | complete | Run Alembic migrations in gunicorn master before workers fork |
+| 2026-04-28 | (inline) | complete | Add Lakebase branch development flow for `just dev postgres`; parse branch `DATABASE_URL`; harden Postgres Alembic version table width |
 

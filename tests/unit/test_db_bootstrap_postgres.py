@@ -209,6 +209,7 @@ class TestBootstrapIfMissingPostgres:
 
         _bootstrap_if_missing_postgres(_make_plan())
         mock_stamp.assert_called_once_with("postgresql://test", revision="head")
+        assert mock_widen.call_args_list == [call("postgresql://test"), call("postgresql://test")]
 
     @patch("server.db_bootstrap._widen_alembic_version_column")
     @patch("server.db_bootstrap._list_postgres_tables")
@@ -314,6 +315,7 @@ class TestBootstrapFullPostgres:
 
         _bootstrap_full_postgres(_make_plan())
         mock_stamp.assert_called_once_with("postgresql://test", revision="head")
+        assert mock_widen.call_args_list == [call("postgresql://test"), call("postgresql://test")]
 
     @patch("server.db_bootstrap._widen_alembic_version_column")
     @patch("server.db_bootstrap._list_postgres_tables")

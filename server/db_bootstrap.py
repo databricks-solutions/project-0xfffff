@@ -331,6 +331,7 @@ def _bootstrap_if_missing_postgres(plan: BootstrapPlan) -> None:
             # since Base.metadata.create_all creates the full latest schema.
             print("⚠️  Tables already exist (listing may have failed earlier). Stamping Alembic to head...")
             try:
+                _widen_alembic_version_column(plan.database_url)
                 _run_alembic_stamp_baseline(plan.database_url, revision="head")
                 print("✅ Recovery successful — stamped to head")
             except Exception as recovery_err:
@@ -391,6 +392,7 @@ def _bootstrap_full_postgres(plan: BootstrapPlan) -> None:
             error_str = str(e).lower()
             if "already exists" in error_str or "duplicatetable" in error_str or "stringdataright" in error_str:
                 print("⚠️  Tables already exist (listing may have failed). Stamping to head...")
+                _widen_alembic_version_column(plan.database_url)
                 _run_alembic_stamp_baseline(plan.database_url, revision="head")
                 print("✅ Recovery successful — stamped to head!")
             else:

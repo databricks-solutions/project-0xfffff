@@ -269,10 +269,7 @@ def create_engine_for_backend(backend: DatabaseBackend) -> Engine:
     if endpoint_name:
         logger.info("ENDPOINT_NAME=%s — will use generate_database_credential()", endpoint_name)
     else:
-        logger.warning(
-            "ENDPOINT_NAME not set — falling back to workspace OAuth token. "
-            "Set ENDPOINT_NAME for Lakebase Autoscaling deployments."
-        )
+        logger.info("ENDPOINT_NAME not set — falling back to workspace OAuth token.")
 
     # Derive schema name from PGAPPNAME (hyphens → underscores for SQL safety)
     schema_name = config.app_name.replace("-", "_")

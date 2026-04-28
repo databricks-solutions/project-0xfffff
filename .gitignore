@@ -11,6 +11,7 @@ client/node_modules/
 client/build/*
 .claude/mlflow/claude_tracing.log
 .claude/worktrees/
+.env.lakebase.local
 .coverage
 coverage.xml
 # !client/build/README.md

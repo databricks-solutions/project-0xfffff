@@ -17,5 +17,6 @@ For technical specifications, see the [specs/](../specs/) directory:
 ## Other Documentation
 
 - [Main README](../README.md) - Project overview and configuration
+- [Facilitator Guide](FACILITATOR_GUIDE.md) - Deployment guide, including Lakebase resources and branch-based local development
 - [License](../LICENSE.md) - License information
 - [Security](../SECURITY.md) - Security policies and reporting

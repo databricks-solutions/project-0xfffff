@@ -100,10 +100,21 @@ describe('Shell flow', () => {
 
   it('renders workflow shell outlet when workshop is available', () => {
     const clearInvalidWorkshopId = vi.fn();
+    const setWorkshopId = vi.fn();
+    userContextMock.mockReturnValue({
+      user: { id: 'u1', name: 'Alex', role: UserRole.FACILITATOR },
+      permissions: null,
+      setUser: vi.fn(),
+      login: vi.fn(),
+      logout: vi.fn(),
+      updateLastActive: vi.fn(),
+      isLoading: false,
+      error: null,
+    });
     workshopContextMock.mockReturnValue({
       workshopId: '11111111-1111-1111-1111-111111111111',
       workshop: null,
-      setWorkshopId: vi.fn(),
+      setWorkshopId,
       setWorkshop: vi.fn(),
       workflowMode: 'filled',
       setWorkflowMode: vi.fn(),

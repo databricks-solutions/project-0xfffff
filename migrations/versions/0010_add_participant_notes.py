@@ -18,6 +18,15 @@ branch_labels = None
 depends_on = None
 
 
+def _is_postgres() -> bool:
+    bind = op.get_bind()
+    return bind.dialect.name == "postgresql"
+
+
+def _boolean_false_default() -> sa.TextClause:
+    return sa.text("FALSE") if _is_postgres() else sa.text("0")
+
+
 def upgrade() -> None:
     op.create_table(
         "participant_notes",
@@ -54,7 +63,12 @@ def upgrade() -> None:
     # Add facilitator toggle to workshops table
     with op.batch_alter_table("workshops") as batch_op:
         batch_op.add_column(
-            sa.Column("show_participant_notes", sa.Boolean(), server_default=sa.text("0"), nullable=False)
+            sa.Column(
+                "show_participant_notes",
+                sa.Boolean(),
+                server_default=_boolean_false_default(),
+                nullable=False,
+            )
         )
 
 

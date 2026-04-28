@@ -98,6 +98,17 @@ In the **Configure** step, click **"+ Add resource"** in the **App resources** s
 
 When deployed, Databricks automatically injects these environment variables: `PGHOST`, `PGDATABASE`, `PGUSER`, `PGPORT`, `PGAPPNAME`, and `PGSSLMODE`.
 
+#### Local Development With a Lakebase Branch
+
+For local development, use Lakebase branching instead of sharing the production branch or inventing a separate local schema:
+
+1. In Lakebase, create a branch such as `local` from the same project used by the app.
+2. Open the Connect modal for that branch and copy the PostgreSQL `DATABASE_URL`.
+3. In the repo, run `just configure-lakebase-local` and paste the branch URL.
+4. Start the stack with `just dev postgres`.
+
+The helper writes `.env.lakebase.local` (ignored by git), parses the branch URL into the `PG*` variables expected by the backend, and uses your Databricks CLI user as `PGUSER`. Keep `PGAPPNAME` at its default (`human-eval-workshop`) unless you intentionally want a different schema; the Lakebase branch is the isolation boundary.
+
 #### B. Serving Endpoints
 
 Add a resource for each model serving endpoint used by the workshop's AI features (evaluation LLM, alignment LLM, etc.):

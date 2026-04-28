@@ -334,19 +334,6 @@ export function IntakePage() {
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-5">
-      {/* Header */}
-      <div className="flex items-center gap-3 pb-2">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-100">
-          <Database className="w-5 h-5 text-blue-600" />
-        </div>
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">MLflow Trace Intake</h1>
-          <p className="text-sm text-gray-500">
-            Pull traces from Databricks workspace to begin the workshop.
-          </p>
-        </div>
-      </div>
-
       {/* Status Card */}
       <Card className="border-l-4 border-blue-500">
         <CardContent className="p-4">

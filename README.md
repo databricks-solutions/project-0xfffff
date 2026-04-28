@@ -33,6 +33,23 @@ Download project-with-build.zip which includes pre-built frontend assets.
 
 ## 🚀 Local Development
 
+### Full Stack With `just`
+
+The easiest local workflow starts both the FastAPI backend and Vite frontend:
+
+```bash
+just dev
+```
+
+By default this uses the local SQLite database. To develop against Lakebase Postgres, create a dedicated Lakebase branch such as `local`, copy that branch's PostgreSQL `DATABASE_URL` from the Lakebase Connect modal, then run:
+
+```bash
+just configure-lakebase-local
+just dev postgres
+```
+
+`just configure-lakebase-local` writes `.env.lakebase.local` (git-ignored), parses the branch `DATABASE_URL` into `PGHOST`, `PGDATABASE`, `PGPORT`, and `PGSSLMODE`, and uses your Databricks CLI user as `PGUSER`. The Lakebase branch provides isolation, while `PGAPPNAME` defaults to `human-eval-workshop` so the app schema name stays consistent with deployment.
+
 ### Frontend Setup
 
 1. **Navigate to client directory:**
