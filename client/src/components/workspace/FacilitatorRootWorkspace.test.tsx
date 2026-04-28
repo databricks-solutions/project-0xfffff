@@ -38,7 +38,6 @@ describe('FacilitatorRootWorkspace', () => {
 
     render(<FacilitatorRootWorkspace />);
 
-    expect(screen.getByText('Setup Controls')).toBeInTheDocument();
     expect(screen.getByText('Invite Participants')).toBeInTheDocument();
     expect(screen.getByText('Facilitator Dashboard')).toBeInTheDocument();
     expect(screen.getByText('intake-controls-module')).toBeInTheDocument();

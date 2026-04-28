@@ -153,6 +153,10 @@ class WorkshopCreate(BaseModel):
     mode: WorkshopMode = WorkshopMode.WORKSHOP
 
 
+class WorkshopDescriptionUpdate(BaseModel):
+    description: str | None = None
+
+
 class Workshop(BaseModel):
     id: str
     name: str

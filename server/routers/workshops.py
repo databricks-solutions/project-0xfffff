@@ -166,6 +166,7 @@ from server.models import (
     TraceUpload,
     Workshop,
     WorkshopCreate,
+    WorkshopDescriptionUpdate,
     WorkshopMode,
     WorkshopPhase,
 )
@@ -314,6 +315,18 @@ async def update_judge_name(workshop_id: str, judge_name: str, db: Session = Dep
     # Update the judge name in the database
     db_service.update_workshop_judge_name(workshop_id, judge_name)
     return {"message": "Judge name updated successfully", "judge_name": judge_name}
+
+
+@router.put("/{workshop_id}/description")
+async def update_workshop_description(
+    workshop_id: str, payload: WorkshopDescriptionUpdate, db: Session = Depends(get_db)
+) -> Workshop:
+    """Update workshop use case description."""
+    db_service = DatabaseService(db)
+    updated_workshop = db_service.update_workshop_description(workshop_id, payload.description)
+    if not updated_workshop:
+        raise HTTPException(status_code=404, detail="Workshop not found")
+    return updated_workshop
 
 
 # JSONPath Settings Models

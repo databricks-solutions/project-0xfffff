@@ -32,13 +32,7 @@ export function FacilitatorRootWorkspace() {
     <div className="space-y-8 p-6">
       <section>
         <Card>
-          <CardHeader>
-            <CardTitle>Setup Controls</CardTitle>
-            <CardDescription>
-              Connect data and manage trace intake from this section.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+          <CardContent className="pt-6">
             <IntakePage />
           </CardContent>
         </Card>

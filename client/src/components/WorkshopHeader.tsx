@@ -1,11 +1,14 @@
 import React from 'react';
-import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { WorkshopsService } from '@/client';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useWorkflowContext } from '@/context/WorkflowContext';
+import { useUser } from '@/context/UserContext';
 import { useWorkshopMeta } from '@/hooks/useWorkshopApi';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { toast } from 'sonner';
 
 interface WorkshopHeaderProps {
   showDescription?: boolean;
@@ -21,8 +24,13 @@ export const WorkshopHeader: React.FC<WorkshopHeaderProps> = ({
   variant = 'default'
 }) => {
   const { workshopId } = useWorkshopContext();
+  const { user } = useUser();
   const { currentPhase } = useWorkflowContext();
+  const queryClient = useQueryClient();
   const { data: workshop } = useWorkshopMeta(workshopId!);
+  const [isEditingDescription, setIsEditingDescription] = React.useState(false);
+  const [descriptionDraft, setDescriptionDraft] = React.useState('');
+  const [isSavingDescription, setIsSavingDescription] = React.useState(false);
   const { data: participants = [] } = useQuery({
     queryKey: ['workshop-participants', workshopId],
     queryFn: async () => {
@@ -31,6 +39,10 @@ export const WorkshopHeader: React.FC<WorkshopHeaderProps> = ({
     },
     enabled: !!workshopId,
   });
+
+  React.useEffect(() => {
+    setDescriptionDraft(workshop?.description || '');
+  }, [workshop?.description]);
 
   const participantCount = Array.isArray(participants)
     ? participants.length
@@ -75,6 +87,28 @@ export const WorkshopHeader: React.FC<WorkshopHeaderProps> = ({
     }
   };
 
+  const handleSaveDescription = async () => {
+    if (!workshopId) return;
+    setIsSavingDescription(true);
+    try {
+      const response = await fetch(`/workshops/${workshopId}/description`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: descriptionDraft.trim() || null }),
+      });
+      if (!response.ok) {
+        throw new Error('Failed to update description');
+      }
+      await queryClient.invalidateQueries({ queryKey: ['workshop', workshopId] });
+      setIsEditingDescription(false);
+      toast.success('Use case description updated');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to update description');
+    } finally {
+      setIsSavingDescription(false);
+    }
+  };
+
   return (
     <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-6 py-4">
       <div className="flex items-center justify-between">
@@ -95,6 +129,37 @@ export const WorkshopHeader: React.FC<WorkshopHeaderProps> = ({
               {workshop.description}
             </p>
           )}
+
+          {isEditingDescription && (
+            <div className="mt-3 max-w-2xl space-y-2">
+              <Textarea
+                value={descriptionDraft}
+                onChange={(event) => setDescriptionDraft(event.target.value)}
+                placeholder="Describe your use case"
+                rows={4}
+              />
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  onClick={handleSaveDescription}
+                  disabled={isSavingDescription}
+                >
+                  {isSavingDescription ? 'Saving...' : 'Save'}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setDescriptionDraft(workshop.description || '');
+                    setIsEditingDescription(false);
+                  }}
+                  disabled={isSavingDescription}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
           
           {variant === 'detailed' && (
             <div className="flex items-center gap-4 text-xs text-muted-foreground mt-2">
@@ -107,12 +172,26 @@ export const WorkshopHeader: React.FC<WorkshopHeaderProps> = ({
           )}
         </div>
         
-        {variant === 'default' && showParticipantCount && (
-          <div className="text-right">
-            <div className="text-xs text-muted-foreground">Participants</div>
-            <div className="text-2xl font-bold text-foreground">
-              {participantCount}
-            </div>
+        {variant === 'default' && (
+          <div className="text-right flex items-center gap-3">
+            {user?.role === 'facilitator' && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setIsEditingDescription((prev) => !prev)}
+                disabled={isEditingDescription}
+              >
+                Edit description
+              </Button>
+            )}
+            {showParticipantCount && (
+              <div>
+                <div className="text-xs text-muted-foreground">Participants</div>
+                <div className="text-2xl font-bold text-foreground">
+                  {participantCount}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

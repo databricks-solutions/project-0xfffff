@@ -272,6 +272,18 @@ class DatabaseService:
 
     return self.get_workshop(workshop_id)
 
+  def update_workshop_description(self, workshop_id: str, description: Optional[str]) -> Optional[Workshop]:
+    """Update the use case description for a workshop."""
+    db_workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
+    if not db_workshop:
+      return None
+
+    db_workshop.description = description
+    self.db.commit()
+    self.db.refresh(db_workshop)
+
+    return self.get_workshop(workshop_id)
+
   def get_workshop_mode(self, workshop_id: str) -> Optional[WorkshopMode]:
     """Get the persisted workshop mode."""
     db_workshop = self.db.query(WorkshopDB).filter(WorkshopDB.id == workshop_id).first()
