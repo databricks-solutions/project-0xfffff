@@ -1,5 +1,0 @@
-2026-04-10 15:44:11,407 - mlflow.claude_code.tracing - WARNING - Failed to set experiment: 401: Credential was not sent or was of an unsupported type for this API. [ReqId: 9bef5ca4-09b1-4f27-ae22-b973f63b4286]
-2026-04-10 15:44:11,407 - mlflow.claude_code.tracing - CLAUDE_TRACING - Stop hook: session=1a65110e-8ac7-4689-8716-b7fc8a2889f9, transcript=/Users/forrest.murray/.claude/projects/-Users-forrest-murray-Documents-project-0xfffff/1a65110e-8ac7-4689-8716-b7fc8a2889f9.jsonl
-2026-04-10 15:44:11,413 - mlflow.claude_code.tracing - CLAUDE_TRACING - Creating MLflow trace for session: 1a65110e-8ac7-4689-8716-b7fc8a2889f9
-2026-04-10 15:44:12,495 - mlflow.claude_code.tracing - WARNING - Failed to update trace metadata and previews: 'NoneType' object has no attribute 'info'
-2026-04-10 15:44:12,496 - mlflow.claude_code.tracing - CLAUDE_TRACING - Created MLflow trace: MLFLOW_NO_OP_SPAN_TRACE_ID

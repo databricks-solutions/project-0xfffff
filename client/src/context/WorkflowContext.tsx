@@ -71,7 +71,7 @@ export function WorkflowProvider({ children }: WorkflowProviderProps) {
   };
 
   const isPhaseEnabled = (phase: string) => {
-    const phaseOrder = ['discovery', 'rubric', 'annotation', 'results', 'judge_tuning', 'unity_volume'];
+    const phaseOrder = ['discovery', 'rubric', 'annotation', 'results', 'judge_tuning'];
     const currentIndex = phaseOrder.indexOf(phase);
     
     if (currentIndex === 0) return true; // Discovery is always enabled
@@ -82,7 +82,7 @@ export function WorkflowProvider({ children }: WorkflowProviderProps) {
   };
 
   const getPhaseProgress = () => {
-    const total = 6; // Total number of phases: discovery, rubric, annotation, results, judge_tuning, unity_volume
+    const total = 5; // Total number of phases: discovery, rubric, annotation, results, judge_tuning
     const completed = Math.min(completedPhases.length, total); // Cap completed at total
     const percentage = Math.round((completed / total) * 100);
     

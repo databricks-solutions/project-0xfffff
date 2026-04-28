@@ -8,9 +8,7 @@ import { useUser, useRoleCheck } from '@/context/UserContext';
 import { useWorkflowContext } from '@/context/WorkflowContext';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useWorkshopPhase, useRubric, useCreateWorkshop, useWorkshopDiscoveryConfig } from '@/hooks/useWorkshopApi';
-import { WorkshopsService } from '@/client';
 import { useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
 
 // Component imports
 import { TraceViewerDemo } from './TraceViewerDemo';
@@ -18,15 +16,12 @@ import { RubricCreationDemo } from './RubricCreationDemo';
 import { AnnotationDemo } from './AnnotationDemo';
 import { IRRResultsDemo } from './IRRResultsDemo';
 import { JudgeTuningPage } from './JudgeTuningPage';
-import { DBSQLExportPage } from './DBSQLExportPage';
-import { UnityVolumePage } from './UnityVolumePage';
 
 import { IntakePage } from './IntakePage';
 import { AppSidebar } from '@/components/AppSidebar';
 import { AnnotationAssignmentManager } from '@/components/AnnotationAssignmentManager';
 import { FacilitatorDashboard } from '@/components/FacilitatorDashboard';
 import { FacilitatorUserManager } from '@/components/FacilitatorUserManager';
-import { UserLogin } from '@/components/UserLogin';
 import { ProductionLogin } from '@/components/ProductionLogin';
 import { WorkshopCreationPage } from '@/components/WorkshopCreationPage';
 import { RubricWaitingView } from '@/components/RubricWaitingView';
@@ -105,13 +100,12 @@ export function WorkshopDemoLanding() {
           return 'annotation-monitor';
         case 'results': return 'results-view';
         case 'judge_tuning': return 'judge-tuning';
-        case 'unity_volume': return 'unity-volume';
         default: return 'dashboard-general';
       }
     }
     
     // SME/PARTICIPANT - Handle facilitator-only phases first
-    if (['intake', 'rubric', 'results', 'judge_tuning', 'unity_volume'].includes(requestedPhase)) {
+    if (['intake', 'rubric', 'results', 'judge_tuning'].includes(requestedPhase)) {
       return 'facilitator-screen-share';
     }
     
@@ -128,7 +122,7 @@ export function WorkshopDemoLanding() {
       case 'discovery': 
         if (isPhaseActive('discovery')) return 'discovery-participate';
         if (state.currentPhase === 'discovery') return 'discovery-complete'; // Paused
-        if (['rubric', 'annotation', 'results', 'judge_tuning', 'unity_volume'].includes(state.currentPhase)) return 'discovery-complete';
+        if (['rubric', 'annotation', 'results', 'judge_tuning'].includes(state.currentPhase)) return 'discovery-complete';
         return 'discovery-pending';
       case 'annotation':
         if (isPhaseActive('annotation')) {
@@ -137,7 +131,7 @@ export function WorkshopDemoLanding() {
         if (state.currentPhase === 'annotation') {
           return 'annotation-review'; // Paused
         }
-        if (['results', 'judge_tuning', 'unity_volume'].includes(state.currentPhase)) {
+        if (['results', 'judge_tuning'].includes(state.currentPhase)) {
           return 'annotation-review';
         }
         return 'annotation-pending';
@@ -282,13 +276,6 @@ export function WorkshopDemoLanding() {
         });
       } else if (currentPhase === 'judge_tuning') {
         view = getViewForPhaseWithState(user.role, 'judge_tuning', {
-          currentPhase,
-          completedPhases: workshop.completed_phases || [],
-          discovery_started: workshop.discovery_started || false,
-          annotation_started: workshop.annotation_started || false
-        });
-      } else if (currentPhase === 'unity_volume') {
-        view = getViewForPhaseWithState(user.role, 'unity_volume', {
           currentPhase,
           completedPhases: workshop.completed_phases || [],
           discovery_started: workshop.discovery_started || false,
@@ -553,10 +540,6 @@ export function WorkshopDemoLanding() {
         return <ResultsWaitingView />;
       case 'judge-tuning':
         return <JudgeTuningPage />;
-      case 'dbsql-export':
-        return <DBSQLExportPage />;
-      case 'unity-volume':
-        return <UnityVolumePage />;
       case 'findings-review':
         return <FacilitatorDiscoveryWorkspace onNavigate={handleNavigation} />;
       case 'assign-annotations':

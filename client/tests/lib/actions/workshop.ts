@@ -21,7 +21,6 @@ export async function goToPhase(page: Page, phase: WorkshopPhase): Promise<void>
     [WorkshopPhase.ANNOTATION]: 'Annotation',
     [WorkshopPhase.RESULTS]: 'Results',
     [WorkshopPhase.JUDGE_TUNING]: 'Judge Tuning',
-    [WorkshopPhase.UNITY_VOLUME]: 'Unity Volume',
   };
 
   const label = phaseLabels[phase];
@@ -151,7 +150,6 @@ export async function advanceToPhase(
     [WorkshopPhase.ANNOTATION]: 'advance-to-annotation',
     [WorkshopPhase.RESULTS]: 'advance-to-results',
     [WorkshopPhase.JUDGE_TUNING]: 'advance-to-judge-tuning',
-    [WorkshopPhase.UNITY_VOLUME]: 'advance-to-unity-volume',
   };
 
   const endpoint = phaseEndpoints[phase];

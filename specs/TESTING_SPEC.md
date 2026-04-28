@@ -64,7 +64,6 @@ tests/
 ├── unit/
 │   ├── routers/
 │   │   ├── test_databricks.py
-│   │   ├── test_dbsql_export.py
 │   │   ├── test_users.py
 │   │   └── test_workshops.py
 │   └── services/

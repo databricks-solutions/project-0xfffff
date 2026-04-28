@@ -16,15 +16,10 @@ import type { CreateDraftRubricItemRequest } from '../models/CreateDraftRubricIt
 import type { CreateRubricFromDraftRequest } from '../models/CreateRubricFromDraftRequest';
 import type { CriterionEvaluation } from '../models/CriterionEvaluation';
 import type { CriterionEvaluationCreate } from '../models/CriterionEvaluationCreate';
-import type { CustomLLMProviderConfigCreate } from '../models/CustomLLMProviderConfigCreate';
-import type { CustomLLMProviderStatus } from '../models/CustomLLMProviderStatus';
-import type { CustomLLMProviderTestResult } from '../models/CustomLLMProviderTestResult';
 import type { DatabricksConfig } from '../models/DatabricksConfig';
 import type { DatabricksConnectionTest } from '../models/DatabricksConnectionTest';
 import type { DatabricksEndpointInfo } from '../models/DatabricksEndpointInfo';
 import type { DatabricksResponse } from '../models/DatabricksResponse';
-import type { DBSQLExportRequest } from '../models/DBSQLExportRequest';
-import type { DBSQLExportResponse } from '../models/DBSQLExportResponse';
 import type { DiscoveryAgentRun } from '../models/DiscoveryAgentRun';
 import type { DiscoveryComment } from '../models/DiscoveryComment';
 import type { DiscoveryCommentCreateRequest } from '../models/DiscoveryCommentCreateRequest';
@@ -90,6 +85,7 @@ import type { UserRole } from '../models/UserRole';
 import type { UserStatus } from '../models/UserStatus';
 import type { Workshop } from '../models/Workshop';
 import type { WorkshopCreate } from '../models/WorkshopCreate';
+import type { WorkshopDescriptionUpdate } from '../models/WorkshopDescriptionUpdate';
 import type { WorkshopParticipant } from '../models/WorkshopParticipant';
 import type { WorkshopPhase } from '../models/WorkshopPhase';
 import type { CancelablePromise } from '../core/CancelablePromise';
@@ -190,6 +186,31 @@ export class ApiService {
             query: {
                 'judge_name': judgeName,
             },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Update Workshop Description
+     * Update workshop use case description.
+     * @param workshopId
+     * @param requestBody
+     * @returns Workshop Successful Response
+     * @throws ApiError
+     */
+    public static updateWorkshopDescriptionWorkshopsWorkshopIdDescriptionPut(
+        workshopId: string,
+        requestBody: WorkshopDescriptionUpdate,
+    ): CancelablePromise<Workshop> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/workshops/{workshop_id}/description',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },
@@ -1423,27 +1444,6 @@ export class ApiService {
         });
     }
     /**
-     * Generate Rubric Test Data
-     * Generate realistic rubric for testing.
-     * @param workshopId
-     * @returns any Successful Response
-     * @throws ApiError
-     */
-    public static generateRubricTestDataWorkshopsWorkshopIdGenerateRubricDataPost(
-        workshopId: string,
-    ): CancelablePromise<any> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/workshops/{workshop_id}/generate-rubric-data',
-            path: {
-                'workshop_id': workshopId,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * Generate Rubric Suggestions
      * Generate rubric suggestions using AI analysis of discovery feedback.
      *
@@ -1540,73 +1540,6 @@ export class ApiService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/workshops/{workshop_id}/advance-to-judge-tuning',
-            path: {
-                'workshop_id': workshopId,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Advance To Unity Volume
-     * Advance workshop from JUDGE_TUNING to UNITY_VOLUME phase (facilitator only).
-     * @param workshopId
-     * @returns any Successful Response
-     * @throws ApiError
-     */
-    public static advanceToUnityVolumeWorkshopsWorkshopIdAdvanceToUnityVolumePost(
-        workshopId: string,
-    ): CancelablePromise<any> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/workshops/{workshop_id}/advance-to-unity-volume',
-            path: {
-                'workshop_id': workshopId,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Upload Workshop To Volume
-     * Upload workshop SQLite database to Unity Catalog volume using provided credentials.
-     * @param workshopId
-     * @param requestBody
-     * @returns any Successful Response
-     * @throws ApiError
-     */
-    public static uploadWorkshopToVolumeWorkshopsWorkshopIdUploadToVolumePost(
-        workshopId: string,
-        requestBody: Record<string, any>,
-    ): CancelablePromise<any> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/workshops/{workshop_id}/upload-to-volume',
-            path: {
-                'workshop_id': workshopId,
-            },
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Download Workshop Database
-     * Download the workshop SQLite database file.
-     * @param workshopId
-     * @returns any Successful Response
-     * @throws ApiError
-     */
-    public static downloadWorkshopDatabaseWorkshopsWorkshopIdDownloadDatabaseGet(
-        workshopId: string,
-    ): CancelablePromise<any> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/workshops/{workshop_id}/download-database',
             path: {
                 'workshop_id': workshopId,
             },
@@ -2249,28 +2182,6 @@ export class ApiService {
         });
     }
     /**
-     * Migrate Annotations To Multi Metric
-     * Migrate old annotations (with single 'rating' field) to new format (with 'ratings' dict).
-     * This populates the 'ratings' dictionary by copying the legacy 'rating' value to all rubric questions.
-     * @param workshopId
-     * @returns any Successful Response
-     * @throws ApiError
-     */
-    public static migrateAnnotationsToMultiMetricWorkshopsWorkshopIdMigrateAnnotationsPost(
-        workshopId: string,
-    ): CancelablePromise<Record<string, any>> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/workshops/{workshop_id}/migrate-annotations',
-            path: {
-                'workshop_id': workshopId,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * Update Trace Alignment Inclusion
      * Update whether a trace should be included in judge alignment.
      *
@@ -2730,105 +2641,6 @@ export class ApiService {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/workshops/{workshop_id}/alignment-status',
-            path: {
-                'workshop_id': workshopId,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Get Custom Llm Provider Status
-     * Get the status of custom LLM provider configuration for a workshop.
-     *
-     * Returns configuration status including whether it's configured, enabled,
-     * and whether an API key is available (without exposing the actual key).
-     * @param workshopId
-     * @returns CustomLLMProviderStatus Successful Response
-     * @throws ApiError
-     */
-    public static getCustomLlmProviderStatusWorkshopsWorkshopIdCustomLlmProviderGet(
-        workshopId: string,
-    ): CancelablePromise<CustomLLMProviderStatus> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/workshops/{workshop_id}/custom-llm-provider',
-            path: {
-                'workshop_id': workshopId,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Create Custom Llm Provider
-     * Create or update custom LLM provider configuration for a workshop.
-     *
-     * The API key is stored in-memory only and will expire after 24 hours.
-     * Configuration details (provider name, base URL, model name) are persisted.
-     * @param workshopId
-     * @param requestBody
-     * @returns CustomLLMProviderStatus Successful Response
-     * @throws ApiError
-     */
-    public static createCustomLlmProviderWorkshopsWorkshopIdCustomLlmProviderPost(
-        workshopId: string,
-        requestBody: CustomLLMProviderConfigCreate,
-    ): CancelablePromise<CustomLLMProviderStatus> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/workshops/{workshop_id}/custom-llm-provider',
-            path: {
-                'workshop_id': workshopId,
-            },
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Delete Custom Llm Provider
-     * Delete custom LLM provider configuration for a workshop.
-     *
-     * Removes both the persisted configuration and the in-memory API key.
-     * @param workshopId
-     * @returns void
-     * @throws ApiError
-     */
-    public static deleteCustomLlmProviderWorkshopsWorkshopIdCustomLlmProviderDelete(
-        workshopId: string,
-    ): CancelablePromise<void> {
-        return __request(OpenAPI, {
-            method: 'DELETE',
-            url: '/workshops/{workshop_id}/custom-llm-provider',
-            path: {
-                'workshop_id': workshopId,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Test Custom Llm Provider
-     * Test connection to the configured custom LLM provider.
-     *
-     * Makes a minimal API call to verify the endpoint is reachable and
-     * the API key is valid. Returns response time on success.
-     * @param workshopId
-     * @returns CustomLLMProviderTestResult Successful Response
-     * @throws ApiError
-     */
-    public static testCustomLlmProviderWorkshopsWorkshopIdCustomLlmProviderTestPost(
-        workshopId: string,
-    ): CancelablePromise<CustomLLMProviderTestResult> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/workshops/{workshop_id}/custom-llm-provider/test',
             path: {
                 'workshop_id': workshopId,
             },
@@ -4283,57 +4095,6 @@ export class ApiService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/users/workshops/{workshop_id}/auto-assign-annotations',
-            path: {
-                'workshop_id': workshopId,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Export Workshop To Dbsql
-     * Export all workshop data from SQLite to Databricks DBSQL tables.
-     *
-     * This endpoint exports:
-     * - All tables from the SQLite database
-     * - Creates tables in DBSQL if they don't exist
-     * - Inserts or overwrites data in DBSQL tables
-     * @param workshopId
-     * @param requestBody
-     * @returns DBSQLExportResponse Successful Response
-     * @throws ApiError
-     */
-    public static exportWorkshopToDbsqlDbsqlExportWorkshopIdExportPost(
-        workshopId: string,
-        requestBody: DBSQLExportRequest,
-    ): CancelablePromise<DBSQLExportResponse> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/dbsql-export/{workshop_id}/export',
-            path: {
-                'workshop_id': workshopId,
-            },
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Get Dbsql Export Status
-     * Get the export status and summary for a workshop.
-     * @param workshopId
-     * @returns any Successful Response
-     * @throws ApiError
-     */
-    public static getDbsqlExportStatusDbsqlExportWorkshopIdExportStatusGet(
-        workshopId: string,
-    ): CancelablePromise<any> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/dbsql-export/{workshop_id}/export-status',
             path: {
                 'workshop_id': workshopId,
             },

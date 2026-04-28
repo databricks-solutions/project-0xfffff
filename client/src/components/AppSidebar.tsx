@@ -13,7 +13,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { RoleBasedWorkflow } from '@/components/RoleBasedWorkflow';
 import { ChevronDown, LogOut, Settings, User, PanelLeftClose } from 'lucide-react';
 import appIcon from '../../assets/favicon-48x48.png';
 
@@ -71,11 +70,6 @@ export function AppSidebar({ onNavigate, showUserSwitching = false, collapsed = 
           </button>
         )}
       </div>
-
-      {/* Workflow Steps - Scrollable */}
-      <ScrollArea className="flex-1 px-3 py-4">
-        <RoleBasedWorkflow onNavigate={onNavigate} />
-      </ScrollArea>
 
       <Separator />
 

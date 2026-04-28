@@ -9,5 +9,4 @@ export enum WorkshopPhase {
     ANNOTATION = 'annotation',
     RESULTS = 'results',
     JUDGE_TUNING = 'judge_tuning',
-    UNITY_VOLUME = 'unity_volume',
 }

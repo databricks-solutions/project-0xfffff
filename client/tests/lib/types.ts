@@ -108,8 +108,7 @@ export interface AnnotationConfig {
 export type ServiceName =
   | 'WorkshopsService'
   | 'UsersService'
-  | 'DatabricksService'
-  | 'DbsqlExportService';
+  | 'DatabricksService';
 
 /**
  * Users organized by role for easy access

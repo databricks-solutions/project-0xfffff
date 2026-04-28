@@ -104,7 +104,7 @@ const scenario = await TestScenario.create(page)
 .inPhase('results')
 ```
 
-Available phases: `intake`, `discovery`, `rubric`, `annotation`, `results`, `judge_tuning`, `unity_volume`
+Available phases: `intake`, `discovery`, `rubric`, `annotation`, `results`, `judge_tuning`
 
 ### Mock vs Real API
 

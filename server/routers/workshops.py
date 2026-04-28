@@ -1590,9 +1590,7 @@ async def add_traces(workshop_id: str, request: dict, db: Session = Depends(get_
                                             model_name=evaluation_model_name,
                                             model_parameters={},
                                         )
-                                        new_prompt = thread_db_service.create_judge_prompt(
-                                            workshop_id, new_prompt_data
-                                        )
+                                        new_prompt = thread_db_service.create_judge_prompt(workshop_id, new_prompt_data)
                                         job.add_log(f"Created initial prompt v{new_prompt.version}")
 
                                     if "evaluations" in result:
@@ -1894,9 +1892,7 @@ async def begin_annotation_phase(workshop_id: str, request: dict | None = None, 
                                         return_type="pandas",
                                     )
                                     found_count = len(test_df) if test_df is not None and not test_df.empty else 0
-                                    job.add_log(
-                                        f"Tag poll attempt {wait_attempt + 1}/5: found {found_count} traces"
-                                    )
+                                    job.add_log(f"Tag poll attempt {wait_attempt + 1}/5: found {found_count} traces")
                                     if found_count > 0:
                                         job.add_log(
                                             f"MLflow tags verified after {(wait_attempt + 1) * 2}s ({found_count} traces)"
@@ -1905,9 +1901,7 @@ async def begin_annotation_phase(workshop_id: str, request: dict | None = None, 
                                         break
                                 except Exception as search_err:
                                     job.add_log(f"Tag poll attempt {wait_attempt + 1}/5 error: {search_err}")
-                                    logger.debug(
-                                        "Tag verification attempt %d failed: %s", wait_attempt + 1, search_err
-                                    )
+                                    logger.debug("Tag verification attempt %d failed: %s", wait_attempt + 1, search_err)
                             if not tag_verified:
                                 job.add_log("WARNING: MLflow tags not found after 10s, re-tagging traces...")
                                 try:
@@ -2427,50 +2421,6 @@ async def generate_discovery_test_data(workshop_id: str, db: Session = Depends(g
         raise HTTPException(status_code=500, detail=f"Failed to generate discovery data: {e!s}") from e
 
 
-@router.post("/{workshop_id}/generate-rubric-data")
-async def generate_rubric_test_data(workshop_id: str, db: Session = Depends(get_db)):
-    """Generate realistic rubric for testing."""
-    import os
-    import uuid
-
-    # Only allow in development environment
-    if os.getenv("ENVIRONMENT") != "development":
-        raise HTTPException(status_code=404, detail="Not found")
-
-    db_service = DatabaseService(db)
-    workshop = db_service.get_workshop(workshop_id)
-    if not workshop:
-        raise HTTPException(status_code=404, detail="Workshop not found")
-
-    try:
-        # Clear existing rubric first
-        from server.database import RubricDB
-
-        db.query(RubricDB).filter(RubricDB.workshop_id == workshop_id).delete()
-
-        # Create a realistic rubric question
-        rubric_question = "Response Quality: How well does this response address the customer's concern with appropriate tone and actionable information?"
-        rubric = RubricDB(
-            id=str(uuid.uuid4()),
-            workshop_id=workshop_id,
-            question=rubric_question,
-            created_by="test_facilitator",
-            created_at=workshop.created_at,
-        )
-        db.add(rubric)
-        db.commit()
-
-        return {
-            "message": "Generated realistic rubric for testing",
-            "rubric_question": rubric_question,
-            "created_by": "test_facilitator",
-        }
-
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to generate rubric data: {e!s}") from e
-
-
 @router.post("/{workshop_id}/generate-rubric-suggestions")
 async def generate_rubric_suggestions(
     workshop_id: str, request: RubricGenerationRequest, db: Session = Depends(get_db)
@@ -2731,149 +2681,6 @@ async def advance_to_judge_tuning(workshop_id: str, db: Session = Depends(get_db
         "workshop_id": workshop_id,
         "annotations_available": len(annotations),
     }
-
-
-@router.post("/{workshop_id}/advance-to-unity-volume")
-async def advance_to_unity_volume(workshop_id: str, db: Session = Depends(get_db)):
-    """Advance workshop from JUDGE_TUNING to UNITY_VOLUME phase (facilitator only)."""
-    db_service = DatabaseService(db)
-    workshop = db_service.get_workshop(workshop_id)
-    if not workshop:
-        raise HTTPException(status_code=404, detail="Workshop not found")
-
-    # Validation: Check prerequisites - allow advancement from judge_tuning phase
-    # Also allow if already in unity_volume phase (idempotent operation)
-    if workshop.current_phase not in [WorkshopPhase.JUDGE_TUNING, WorkshopPhase.UNITY_VOLUME]:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot advance to Unity Volume from {workshop.current_phase} phase. Must be in judge tuning phase.",
-        )
-
-    # If already in unity_volume phase, just return success
-    if workshop.current_phase == WorkshopPhase.UNITY_VOLUME:
-        return {
-            "message": "Workshop is already in Unity Volume phase",
-            "phase": "unity_volume",
-            "workshop_id": workshop_id,
-            "already_in_phase": True,
-        }
-
-    # Advance to Unity Volume phase
-    db_service.update_workshop_phase(workshop_id, WorkshopPhase.UNITY_VOLUME)
-
-    return {
-        "message": "Workshop advanced to Unity Volume phase",
-        "phase": "unity_volume",
-        "workshop_id": workshop_id,
-    }
-
-
-@router.post("/{workshop_id}/upload-to-volume")
-async def upload_workshop_to_volume(workshop_id: str, upload_request: dict, db: Session = Depends(get_db)):
-    """Upload workshop SQLite database to Unity Catalog volume using provided credentials."""
-    db_service = DatabaseService(db)
-    workshop = db_service.get_workshop(workshop_id)
-    if not workshop:
-        raise HTTPException(status_code=404, detail="Workshop not found")
-
-    try:
-        # Parse request parameters
-        volume_path = upload_request.get("volume_path", "")
-        file_name = upload_request.get("file_name", f"workshop_{workshop_id}.db")
-
-        if not volume_path:
-            raise HTTPException(status_code=400, detail="Missing required field: volume_path")
-
-        from server.services.databricks_service import get_databricks_host, resolve_databricks_token
-
-        try:
-            databricks_host = get_databricks_host()
-            databricks_token = resolve_databricks_token()
-        except RuntimeError as e:
-            raise HTTPException(status_code=401, detail=str(e)) from e
-
-        # Parse volume path components
-        parts = volume_path.strip().split(".")
-        if len(parts) != 3:
-            raise HTTPException(status_code=400, detail="Volume path must be in format: catalog.schema.volume_name")
-
-        catalog, schema, volume = parts
-
-        # Get the SQLite database file path
-        db_file_path = "workshop.db"  # This should be the current workshop database
-
-        if not os.path.exists(db_file_path):
-            raise HTTPException(status_code=404, detail=f"SQLite database file not found: {db_file_path}")
-
-        # Upload to Unity Catalog volume using REST API
-        import requests
-
-        # Read file into bytes
-        with open(db_file_path, "rb") as f:
-            file_bytes = f.read()
-
-        # Construct volume file path
-        volume_file_path = f"/Volumes/{catalog}/{schema}/{volume}/{file_name}"
-
-        # Upload file using REST API
-        upload_url = f"{databricks_host.rstrip('/')}/api/2.0/fs/files{volume_file_path}"
-
-        headers = {"Authorization": f"Bearer {databricks_token}", "Content-Type": "application/octet-stream"}
-
-        response = requests.put(upload_url, data=file_bytes, headers=headers, params={"overwrite": "true"})
-
-        if response.status_code != 204:
-            raise Exception(f"Upload failed with status {response.status_code}: {response.text}")
-
-        return {
-            "message": "Workshop database uploaded successfully to Unity Catalog volume",
-            "volume_path": volume_path,
-            "file_path": volume_file_path,
-            "file_name": file_name,
-            "file_size": len(file_bytes),
-            "catalog": catalog,
-            "schema": schema,
-            "volume": volume,
-        }
-
-    except Exception as e:
-        print(f"Error uploading to volume: {e!s}")
-        raise HTTPException(status_code=500, detail=f"Failed to upload to volume: {e!s}") from e
-
-
-@router.get("/{workshop_id}/download-database")
-async def download_workshop_database(workshop_id: str, db: Session = Depends(get_db)):
-    """Download the workshop SQLite database file."""
-    db_service = DatabaseService(db)
-    workshop = db_service.get_workshop(workshop_id)
-    if not workshop:
-        raise HTTPException(status_code=404, detail="Workshop not found")
-
-    # Get the SQLite database file path
-    db_file_path = "workshop.db"
-
-    if not os.path.exists(db_file_path):
-        raise HTTPException(status_code=404, detail=f"SQLite database file not found: {db_file_path}")
-
-    try:
-        # Read the database file
-        with open(db_file_path, "rb") as f:
-            file_content = f.read()
-
-        # Return the file as a response
-        from fastapi.responses import Response
-
-        return Response(
-            content=file_content,
-            media_type="application/octet-stream",
-            headers={
-                "Content-Disposition": f'attachment; filename="workshop_{workshop_id}_{workshop.name.replace(" ", "_")}.db"'
-            },
-        )
-
-    except Exception as e:
-        print(f"Error downloading database: {e!s}")
-        raise HTTPException(status_code=500, detail=f"Failed to download database: {e!s}") from e
 
 
 # Phase Completion Management Endpoints
@@ -3670,6 +3477,8 @@ async def is_user_discovery_complete(workshop_id: str, user_id: str, db: Session
 # Discovery Analysis endpoints (Step 2)
 # =========================================================================
 
+## TODO: Move to separate service
+
 
 @router.post("/{workshop_id}/analyze-discovery")
 async def analyze_discovery(
@@ -3771,67 +3580,11 @@ async def get_discovery_analysis(
     }
 
 
-@router.post("/{workshop_id}/migrate-annotations")
-async def migrate_annotations_to_multi_metric(workshop_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
-    """
-    Migrate old annotations (with single 'rating' field) to new format (with 'ratings' dict).
-    This populates the 'ratings' dictionary by copying the legacy 'rating' value to all rubric questions.
-    """
-    db_service = DatabaseService(db)
-    workshop = db_service.get_workshop(workshop_id)
-    if not workshop:
-        raise HTTPException(status_code=404, detail="Workshop not found")
-
-    # Get rubric to know the question IDs
-    rubric = db_service.get_rubric(workshop_id)
-    if not rubric:
-        raise HTTPException(status_code=404, detail="Rubric not found for workshop")
-
-    # Parse rubric questions to get question IDs (using the new delimiter)
-    QUESTION_DELIMITER = "|||QUESTION_SEPARATOR|||"
-    question_parts = rubric.question.split(QUESTION_DELIMITER)
-    question_ids = [f"{rubric.id}_{index}" for index in range(len(question_parts))]
-
-    # Get all annotations for this workshop
-    annotations = db_service.get_annotations(workshop_id)
-
-    migrated_count = 0
-    already_migrated_count = 0
-
-    for annotation in annotations:
-        # Check if already has ratings dict populated
-        if annotation.ratings and len(annotation.ratings) > 0:
-            already_migrated_count += 1
-            continue
-
-        # Migrate: Copy legacy rating to all question IDs
-        if annotation.rating is not None:
-            new_ratings = {}
-            for question_id in question_ids:
-                new_ratings[question_id] = annotation.rating
-
-            # Update the annotation in the database
-            db_service.db.query(db_service.db_models.Annotation).filter(
-                db_service.db_models.Annotation.id == annotation.id
-            ).update({"ratings": new_ratings})
-            migrated_count += 1
-
-    # Commit all changes
-    db_service.db.commit()
-
-    return {
-        "workshop_id": workshop_id,
-        "total_annotations": len(annotations),
-        "migrated": migrated_count,
-        "already_migrated": already_migrated_count,
-        "question_ids": question_ids,
-        "message": f"Successfully migrated {migrated_count} annotations to multi-metric format",
-    }
-
-
 # ============================================================================
 # Trace Alignment Endpoints
 # ============================================================================
+
+# TODO: Move to separate service
 
 
 @router.patch("/{workshop_id}/traces/{trace_id}/alignment")
@@ -5622,215 +5375,3 @@ async def get_alignment_status(workshop_id: str, db: Session = Depends(get_db)) 
         if traces_ready
         else "No traces ready for alignment",
     }
-
-
-# ============================================================================
-# Custom LLM Provider Endpoints
-# ============================================================================
-
-import httpx
-
-from server.models import (
-    CustomLLMProviderConfigCreate,
-    CustomLLMProviderStatus,
-    CustomLLMProviderTestResult,
-)
-
-
-def _get_custom_llm_storage_key(workshop_id: str) -> str:
-    """Get the storage key for custom LLM API keys."""
-    return f"custom_llm_{workshop_id}"
-
-
-def _build_chat_completions_url(base_url: str) -> str:
-    """Ensure URL ends with /chat/completions for OpenAI-compatible endpoints."""
-    base_url = base_url.rstrip("/")
-
-    # If URL already ends with /chat/completions, use as-is
-    if base_url.endswith("/chat/completions"):
-        return base_url
-
-    # If URL ends with /v1, append /chat/completions
-    if base_url.endswith("/v1"):
-        return f"{base_url}/chat/completions"
-
-    # Otherwise, assume it's a base URL and append full path
-    return f"{base_url}/v1/chat/completions"
-
-
-@router.get("/{workshop_id}/custom-llm-provider")
-async def get_custom_llm_provider_status(
-    workshop_id: str,
-    db: Session = Depends(get_db),
-) -> CustomLLMProviderStatus:
-    """Get the status of custom LLM provider configuration for a workshop.
-
-    Returns configuration status including whether it's configured, enabled,
-    and whether an API key is available (without exposing the actual key).
-    """
-    db_service = DatabaseService(db)
-    workshop = db_service.get_workshop(workshop_id)
-    if not workshop:
-        raise HTTPException(status_code=404, detail="Workshop not found")
-
-    config = db_service.get_custom_llm_provider_config(workshop_id)
-
-    if not config:
-        return CustomLLMProviderStatus(
-            workshop_id=workshop_id,
-            is_configured=False,
-            is_enabled=False,
-            has_api_key=False,
-        )
-
-    # Check if API key exists in token storage
-    from server.services.token_storage_service import token_storage
-
-    storage_key = _get_custom_llm_storage_key(workshop_id)
-    has_api_key = token_storage.get_token(storage_key) is not None
-
-    return CustomLLMProviderStatus(
-        workshop_id=workshop_id,
-        is_configured=True,
-        is_enabled=config.is_enabled,
-        provider_name=config.provider_name,
-        base_url=config.base_url,
-        model_name=config.model_name,
-        has_api_key=has_api_key,
-    )
-
-
-@router.post("/{workshop_id}/custom-llm-provider")
-async def create_custom_llm_provider(
-    workshop_id: str,
-    config_data: CustomLLMProviderConfigCreate,
-    db: Session = Depends(get_db),
-) -> CustomLLMProviderStatus:
-    """Create or update custom LLM provider configuration for a workshop.
-
-    The API key is stored in-memory only and will expire after 24 hours.
-    Configuration details (provider name, base URL, model name) are persisted.
-    """
-    db_service = DatabaseService(db)
-    workshop = db_service.get_workshop(workshop_id)
-    if not workshop:
-        raise HTTPException(status_code=404, detail="Workshop not found")
-
-    # Store API key in memory (not in database)
-    from server.services.token_storage_service import token_storage
-
-    storage_key = _get_custom_llm_storage_key(workshop_id)
-    token_storage.store_token(storage_key, config_data.api_key)
-
-    # Create or update the configuration in the database
-    config = db_service.create_custom_llm_provider_config(workshop_id, config_data)
-
-    return CustomLLMProviderStatus(
-        workshop_id=workshop_id,
-        is_configured=True,
-        is_enabled=config.is_enabled,
-        provider_name=config.provider_name,
-        base_url=config.base_url,
-        model_name=config.model_name,
-        has_api_key=True,
-    )
-
-
-@router.delete("/{workshop_id}/custom-llm-provider", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_custom_llm_provider(
-    workshop_id: str,
-    db: Session = Depends(get_db),
-):
-    """Delete custom LLM provider configuration for a workshop.
-
-    Removes both the persisted configuration and the in-memory API key.
-    """
-    db_service = DatabaseService(db)
-    workshop = db_service.get_workshop(workshop_id)
-    if not workshop:
-        raise HTTPException(status_code=404, detail="Workshop not found")
-
-    # Remove API key from memory
-    from server.services.token_storage_service import token_storage
-
-    storage_key = _get_custom_llm_storage_key(workshop_id)
-    token_storage.delete_token(storage_key)
-
-    # Delete configuration from database
-    db_service.delete_custom_llm_provider_config(workshop_id)
-
-
-@router.post("/{workshop_id}/custom-llm-provider/test")
-async def test_custom_llm_provider(
-    workshop_id: str,
-    db: Session = Depends(get_db),
-) -> CustomLLMProviderTestResult:
-    """Test connection to the configured custom LLM provider.
-
-    Makes a minimal API call to verify the endpoint is reachable and
-    the API key is valid. Returns response time on success.
-    """
-    db_service = DatabaseService(db)
-    workshop = db_service.get_workshop(workshop_id)
-    if not workshop:
-        raise HTTPException(status_code=404, detail="Workshop not found")
-
-    config = db_service.get_custom_llm_provider_config(workshop_id)
-    if not config:
-        raise HTTPException(status_code=404, detail="Custom LLM provider not configured for this workshop")
-
-    # Get API key from memory
-    storage_key = _get_custom_llm_storage_key(workshop_id)
-    from server.services.token_storage_service import token_storage
-
-    api_key = token_storage.get_token(storage_key)
-    if not api_key:
-        raise HTTPException(status_code=400, detail="API key not found. Please reconfigure the custom LLM provider.")
-
-    # Build the full URL
-    url = _build_chat_completions_url(config.base_url)
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "model": config.model_name,
-        "messages": [{"role": "user", "content": "Hi"}],
-        "max_tokens": 5,
-    }
-
-    start_time = time.time()
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, headers=headers, json=payload)
-            response_time_ms = int((time.time() - start_time) * 1000)
-
-            if response.status_code == 200:
-                return CustomLLMProviderTestResult(
-                    success=True,
-                    message=f"Successfully connected to {config.provider_name}",
-                    response_time_ms=response_time_ms,
-                )
-            if response.status_code == 401:
-                return CustomLLMProviderTestResult(
-                    success=False,
-                    message="Authentication failed: Invalid API key",
-                    error_code="AUTH_FAILED",
-                )
-            return CustomLLMProviderTestResult(
-                success=False,
-                message=f"Request failed with status {response.status_code}",
-                error_code="REQUEST_FAILED",
-            )
-    except httpx.TimeoutException:
-        return CustomLLMProviderTestResult(
-            success=False,
-            message="Connection timed out",
-            error_code="TIMEOUT",
-        )
-    except Exception as e:
-        return CustomLLMProviderTestResult(
-            success=False,
-            message=f"Connection error: {e!s}",
-            error_code="CONNECTION_ERROR",
-        )

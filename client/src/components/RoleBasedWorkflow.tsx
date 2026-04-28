@@ -143,7 +143,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
     // Check if discovery should be marked as completed (defined at function level)
     const shouldMarkDiscoveryComplete = isDiscoveryComplete || 
                                        discoveryCompletionStatus?.all_completed || 
-                                       ['rubric', 'annotation', 'results', 'judge_tuning', 'dbsql_export'].includes(currentPhase);
+                                       ['rubric', 'annotation', 'results', 'judge_tuning'].includes(currentPhase);
 
     // Always show all phases for context, but with different statuses and accessibility
     
@@ -342,7 +342,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
         title: 'Judge Tuning',
         description: 'Create AI judges from data',
         status: currentPhase === 'judge_tuning' ? 'in_progress' :
-                (currentPhase === 'dbsql_export' || isJudgeTuningComplete) ? 'completed' : 'available',
+                isJudgeTuningComplete ? 'completed' : 'available',
         action: () => onNavigate('judge_tuning'),
         accessible: isFacilitator  // Only facilitator can click
       });
@@ -350,7 +350,7 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
       steps.push({
         title: 'Judge Tuning',
         description: 'Facilitator creating AI judges',
-        status: (currentPhase === 'dbsql_export' || isJudgeTuningComplete) ? 'completed' : 'waiting',
+        status: isJudgeTuningComplete ? 'completed' : 'waiting',
         action: () => onNavigate('judge_tuning'),
         accessible: isFacilitator  // Only facilitator can click
       });
@@ -361,34 +361,6 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
         status: 'upcoming',
         action: () => onNavigate('judge_tuning'),
         accessible: isFacilitator  // Only facilitator can click
-      });
-    }
-
-    // Phase 6: Manage Workshop Data (All Users)
-    if (currentPhase === 'unity_volume') {
-      // If we're in Unity volume phase, show it as in progress
-      steps.push({
-        title: 'Manage Data',
-        description: 'Upload or download data',
-        status: 'in_progress',
-        action: () => onNavigate('unity_volume'),
-        accessible: true
-      });
-    } else if (isJudgeTuningComplete) {
-      steps.push({
-        title: 'Manage Data',
-        description: 'Upload or download data',
-        status: 'available',
-        action: () => onNavigate('unity_volume'),
-        accessible: true  // All users can access data management
-      });
-    } else {
-      steps.push({
-        title: 'Manage Data',
-        description: 'Available after judge tuning',
-        status: 'upcoming',
-        action: () => onNavigate('unity_volume'),
-        accessible: true  // All users can access data management
       });
     }
 
@@ -538,8 +510,6 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
             if (title.includes('annotation')) return currentPhase === 'annotation';
             if (title.includes('results')) return currentPhase === 'results';
             if (title.includes('judge')) return currentPhase === 'judge_tuning';
-            if (title.includes('dbsql')) return currentPhase === 'dbsql_export';
-            if (title.includes('unity')) return currentPhase === 'unity_volume';
             return false;
           })();
 

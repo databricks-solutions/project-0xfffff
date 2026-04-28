@@ -122,7 +122,6 @@ Only facilitators can advance the workshop through phases. Each transition has p
 | RUBRIC -> ANNOTATION | `POST /advance-to-annotation` | Rubric exists for workshop |
 | ANNOTATION -> RESULTS | `POST /advance-to-results` | At least one annotation exists |
 | ANNOTATION/RESULTS -> JUDGE_TUNING | `POST /advance-to-judge-tuning` | Idempotent if already in phase |
-| JUDGE_TUNING -> UNITY_VOLUME | `POST /advance-to-unity-volume` | Idempotent if already in phase |
 
 ### Facilitator-Only Operations
 

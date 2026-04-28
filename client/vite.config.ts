@@ -142,10 +142,6 @@ export default defineConfig({
         target: apiTarget,
         changeOrigin: true,
       },
-      '/dbsql-export': {
-        target: apiTarget,
-        changeOrigin: true,
-      },
       '/health': {
         target: apiTarget,
         changeOrigin: true,

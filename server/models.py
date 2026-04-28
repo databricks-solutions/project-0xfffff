@@ -20,7 +20,6 @@ class WorkshopPhase(StrEnum):
     ANNOTATION = "annotation"
     RESULTS = "results"
     JUDGE_TUNING = "judge_tuning"
-    UNITY_VOLUME = "unity_volume"
 
 
 class WorkshopMode(StrEnum):
@@ -561,25 +560,6 @@ class JudgeExportConfig(BaseModel):
     prompt_id: str
     export_format: str = Field(default="json", description="Export format: json, python, or api")
     include_examples: bool = Field(default=True, description="Include few-shot examples in export")
-
-
-# DBSQL Export Models
-class DBSQLExportRequest(BaseModel):
-    """Request model for DBSQL export operations."""
-
-    http_path: str = Field(..., description="DBSQL warehouse HTTP path (e.g., /sql/1.0/warehouses/xxxxxx)")
-    catalog: str = Field(..., description="Unity Catalog catalog name")
-    schema_name: str = Field(..., description="Unity Catalog schema name")
-
-
-class DBSQLExportResponse(BaseModel):
-    """Response model for DBSQL export operations."""
-
-    success: bool = Field(..., description="Whether the export was successful")
-    message: str = Field(..., description="Human-readable message about the export")
-    tables_exported: list[dict[str, Any]] | None = Field(None, description="List of exported tables")
-    total_rows: int | None = Field(None, description="Total number of rows exported")
-    errors: list[str] | None = Field(None, description="List of errors encountered during export")
 
 
 # Participant Note Models

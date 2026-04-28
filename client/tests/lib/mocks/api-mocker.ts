@@ -170,9 +170,6 @@ export class ApiMocker {
     if (this.realServices.has('DatabricksService') && url.includes('/databricks')) {
       return true;
     }
-    if (this.realServices.has('DbsqlExportService') && url.includes('/dbsql')) {
-      return true;
-    }
 
     return false;
   }

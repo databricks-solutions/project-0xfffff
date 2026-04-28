@@ -24,9 +24,6 @@ export type { CreateRubricFromDraftRequest } from './models/CreateRubricFromDraf
 export type { CriterionEvaluation } from './models/CriterionEvaluation';
 export type { CriterionEvaluationCreate } from './models/CriterionEvaluationCreate';
 export type { CriterionScoreResult } from './models/CriterionScoreResult';
-export type { CustomLLMProviderConfigCreate } from './models/CustomLLMProviderConfigCreate';
-export type { CustomLLMProviderStatus } from './models/CustomLLMProviderStatus';
-export type { CustomLLMProviderTestResult } from './models/CustomLLMProviderTestResult';
 export type { DatabricksChatCompletion } from './models/DatabricksChatCompletion';
 export type { DatabricksChatMessage } from './models/DatabricksChatMessage';
 export type { DatabricksConfig } from './models/DatabricksConfig';
@@ -34,8 +31,6 @@ export type { DatabricksConnectionTest } from './models/DatabricksConnectionTest
 export type { DatabricksEndpointCall } from './models/DatabricksEndpointCall';
 export type { DatabricksEndpointInfo } from './models/DatabricksEndpointInfo';
 export type { DatabricksResponse } from './models/DatabricksResponse';
-export type { DBSQLExportRequest } from './models/DBSQLExportRequest';
-export type { DBSQLExportResponse } from './models/DBSQLExportResponse';
 export type { DiscoveryAgentRun } from './models/DiscoveryAgentRun';
 export type { DiscoveryComment } from './models/DiscoveryComment';
 export type { DiscoveryCommentCreateRequest } from './models/DiscoveryCommentCreateRequest';
@@ -111,6 +106,7 @@ export { UserStatus } from './models/UserStatus';
 export type { ValidationError } from './models/ValidationError';
 export type { Workshop } from './models/Workshop';
 export type { WorkshopCreate } from './models/WorkshopCreate';
+export type { WorkshopDescriptionUpdate } from './models/WorkshopDescriptionUpdate';
 export { WorkshopMode } from './models/WorkshopMode';
 export type { WorkshopParticipant } from './models/WorkshopParticipant';
 export { WorkshopPhase } from './models/WorkshopPhase';
@@ -118,7 +114,6 @@ export { WorkshopStatus } from './models/WorkshopStatus';
 
 export { ApiService } from './services/ApiService';
 export { DatabricksService } from './services/DatabricksService';
-export { DbsqlExportService } from './services/DbsqlExportService';
 export { DefaultService } from './services/DefaultService';
 export { DiscoveryService } from './services/DiscoveryService';
 export { EvalModeService } from './services/EvalModeService';

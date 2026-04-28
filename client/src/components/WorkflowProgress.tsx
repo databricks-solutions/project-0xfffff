@@ -19,8 +19,7 @@ import {
   ChevronRight,
   Brain,
   Table,
-  Settings,
-  Database
+  Settings
 } from 'lucide-react';
 
 export interface WorkflowPhase {
@@ -199,16 +198,6 @@ export const createDefaultWorkflowPhases = (
       current: currentPhaseId === 'judge_tuning',
       enabled: completedPhases.includes('results')
     },
-    {
-      id: 'unity_volume',
-      name: 'Manage Workshop Data',
-      description: 'Upload to Unity Volume or download workshop data',
-      icon: Database,
-      path: '/unity_volume',
-      completed: completedPhases.includes('unity_volume'),
-      current: currentPhaseId === 'unity_volume',
-      enabled: completedPhases.includes('judge_tuning')
-    }
   ];
 
   return phases;

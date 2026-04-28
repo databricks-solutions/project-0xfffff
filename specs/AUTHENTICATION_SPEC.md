@@ -74,13 +74,6 @@ The app's service principal needs access to these Databricks resources. On Datab
 | **MLflow Experiment** | `search_traces`, `get_experiment`, `set_experiment`, `log_feedback`, `set_trace_tag`. Declared as app.yaml resource (`MLFLOW_EXPERIMENT_ID`). | Can edit |
 | **Model Serving Endpoints** | `chat.completions.create` (judge evaluation, rubric generation, discovery). Includes embedding endpoints (e.g. `databricks-gte-large-en`) used by MemAlign. | Can query |
 
-#### Optional Resources
-
-| Resource | Operations | When Needed | Required Permission |
-|----------|-----------|-------------|-------------------|
-| **SQL Warehouse** | DBSQL export via `databricks.sql.connect()` | DBSQL export feature | Can use |
-| **Unity Catalog Volume** | SQLite backup/restore via SDK Files API (`files.upload`, `files.download`, `files.get_status`) | Only if using SQLite with SQLite Rescue (not needed with Lakebase) | Can read and write |
-
 ### Lakebase Connection Pool
 
 The app connects to Lakebase Autoscaling (serverless PostgreSQL) using SQLAlchemy + psycopg with OAuth token rotation. This section defines the required connection pool behavior.
@@ -137,16 +130,6 @@ For Lakebase Autoscaling, use `WorkspaceClient().postgres.generate_database_cred
 
 **Reference:** [Lakebase authentication](https://docs.databricks.com/aws/en/lakebase/admin/authentication.html), [Databricks Apps resources](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources)
 
-### What Was Removed
-
-Prior to this migration, the system had:
-- Token input fields in the UI (IntakePage, DBSQLExportPage)
-- In-memory token storage (`TokenStorageService`) with 24-hour expiration
-- Database-persisted tokens (`databricks_tokens` table)
-- A 4-level token fallback chain (SDK → explicit → stored → env var)
-- `os.environ["DATABRICKS_TOKEN"]` mutations at runtime
-
-All of this was replaced by the single `resolve_databricks_token()` function.
 
 ### Future: Per-User Auth (On-Behalf-Of-User)
 
