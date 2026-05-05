@@ -3,14 +3,11 @@ import { UserRole } from '@/client';
 import { IntakePage } from '@/pages/IntakePage';
 import { FacilitatorDashboard } from '@/components/FacilitatorDashboard';
 import { FacilitatorUserManager } from '@/components/FacilitatorUserManager';
-import { SetupProgressCard } from '@/components/workspace/SetupProgressCard';
 import { useUser } from '@/context/UserContext';
-import { useProjectSetupStatus } from '@/hooks/useProjectSetupApi';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 export function FacilitatorRootWorkspace() {
   const { user } = useUser();
-  const { data: setupProgress } = useProjectSetupStatus();
 
   if (user?.role !== UserRole.FACILITATOR) {
     return (
@@ -33,12 +30,6 @@ export function FacilitatorRootWorkspace() {
 
   return (
     <div className="space-y-8 p-6">
-      {setupProgress && ['pending', 'running', 'failed'].includes(setupProgress.status) && (
-        <section>
-          <SetupProgressCard progress={setupProgress} />
-        </section>
-      )}
-
       <section>
         <Card>
           <CardContent className="pt-6">
