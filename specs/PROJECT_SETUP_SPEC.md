@@ -12,9 +12,13 @@ The setup route creates durable app state and enqueues orchestration work. It do
 
 The project is the V2 longitudinal anchor. In V2, one app corresponds to one project and one MLflow experiment or trace source. Long-lived setup state attaches to the project.
 
+The app must treat project identity as app-level state, not as a user-selected workshop. Deployments should load the single project for the app after resolving the current user through the active identity provider. If no project exists, the app routes to day-one setup. If more than one project exists for the app, that is an invariant violation that should be surfaced as a recoverable administrative error rather than silently choosing a project.
+
 ### Day-One Bootstrap
 
 The first-run creation path at `/project/setup`. It gathers only the minimum information required to start: project name, agent or app description, facilitator identity, and Databricks Unity Catalog trace table path. Additional knobs should default or move to downstream configuration unless explicitly required by a later spec.
+
+The facilitator identity comes from the authenticated facilitator that submits `/project/setup`. On Databricks Apps, facilitator role is derived from `CAN MANAGE`; `CAN USE` users are non-facilitators and cannot submit setup. Project setup must not submit a hardcoded facilitator id or infer ownership from first app load.
 
 ### Setup Job
 
@@ -26,9 +30,23 @@ The queued orchestration entrypoint. The pipeline advances setup steps in order,
 
 ## Behavior
 
+### App Loading
+
+App loading is project-first after identity resolution:
+
+1. Resolve the current app user from the active identity provider.
+2. Load the app's project record.
+3. If no project exists, navigate to `/project/setup`.
+4. If exactly one project exists, load the project workspace without presenting a project/workshop picker.
+5. If multiple projects exist, show an invariant error with a recoverable admin path.
+
+No project/workshop picker or app-owned password form appears before project resolution.
+
 ### Setup Submission
 
 `POST /project/setup` creates or configures the project and creates a pending setup job. After the project and setup job are persisted, the app enqueues a task queue job that runs the setup pipeline.
+
+The setup request uses the current provider-authenticated facilitator as `facilitator_id`. The frontend must not send a hardcoded facilitator id, and the backend must not assign project ownership merely because a user was first to authenticate.
 
 The response returns both `project_id` and `setup_job_id` so the frontend can navigate to `/` and poll progress.
 
@@ -166,13 +184,23 @@ flowchart LR
 - [ ] Submitting `/project/setup` enqueues a setup pipeline worker job
 - [ ] `POST /project/setup` returns `project_id` and `setup_job_id`
 - [ ] Setup persists the project name, agent/app description, facilitator id, and Databricks UC trace table path
+- [ ] Setup requires facilitator role (`CAN MANAGE` on Databricks Apps)
+- [ ] Setup uses the authenticated facilitator as `facilitator_id`; no hardcoded facilitator id is submitted
+- [ ] Project ownership is assigned on setup submission, not on first app authentication
 - [ ] `/project/setup` renders a setup form backed by shared form, input, button, card, alert, and badge atoms
 - [ ] Project name, agent/app description, facilitator identity, and Databricks UC trace table path are required before submission
 - [ ] Required setup fields show client-side validation before submission
-- [ ] Authenticated facilitators and users with `can_manage_workshop` can access `/project/setup` when no project has completed setup
-- [ ] SMEs, participants, and users without `can_manage_workshop` cannot access the setup form
+- [ ] Authenticated facilitators can access `/project/setup` when no project has completed setup
+- [ ] Non-facilitators (`CAN USE` on Databricks Apps) cannot access the setup form
 - [ ] Successful setup submission navigates to the facilitator root workspace with setup job progress available
 - [ ] UI implementation follows the wiring architecture diagram and keeps setup entry, submission, and progress concerns separate
+
+### App Loading
+
+- [ ] Production app load resolves a single app project without a workshop/project picker
+- [ ] If no project exists, app load routes to `/project/setup`
+- [ ] If multiple projects exist for one app, app load surfaces an invariant error instead of choosing silently
+- [ ] No project/workshop picker or app-owned password form is shown before project resolution
 
 ### Progress Visibility
 
@@ -191,6 +219,7 @@ flowchart LR
 | Date | Plan | Status | Summary |
 |------|------|--------|---------|
 | 2026-05-05 | [V2 Setup Slice Start](../.cursor/plans/v2-setup-start_883e6994.plan.md) | in-progress | Day-one project setup bootstrap with Procrastinate-backed setup orchestration and Databricks/Lakeflow delegation boundaries |
+| 2026-05-05 | (spec PR) | proposed | Define one-app/one-project loading and setup-submitted facilitator ownership before implementation |
 
 ## Future Work
 

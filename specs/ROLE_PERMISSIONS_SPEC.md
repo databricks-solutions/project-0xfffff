@@ -96,19 +96,31 @@ POST /users/
   2. Add user as workshop participant with same role
 ```
 
-### Login Flow by Role
+### Identity and Role Resolution
 
-Facilitators and other roles authenticate through different paths:
+Authentication resolves through the active `IdentityProvider`. After provider identity resolution, the stored app role determines permissions. The application must not require users to enter app-owned facilitator credentials before it can load.
+
+Default role behavior:
+
+- Databricks Apps: app permission determines role. `CAN MANAGE` maps to facilitator. `CAN USE` maps to non-facilitator.
+- Databricks Apps request headers provide user identity, not a documented app permission level header. The provider resolves app permission from Databricks Apps permissions data before mapping the app role.
+- Project setup requires facilitator role. `CAN USE` users cannot create/configure the project.
+- Local development: when no hosted identity provider is present, the dev provider may assume facilitator by default.
+- Local role/user switching is allowed only as an explicit development aid for testing SME or participant behavior.
 
 ```
-POST /auth/login
-  1. Attempt facilitator auth via YAML config
-  2. If YAML match:
-     - Get or create facilitator user record
-     - Return AuthResponse with is_preconfigured_facilitator=true
-  3. If no YAML match:
-     - Authenticate via database (email/password)
-     - Return AuthResponse with is_preconfigured_facilitator=false
+GET /auth/session
+  1. Resolve identity from IdentityProvider
+  2. Get or create app user for provider subject
+  3. Resolve provider role from provider permissions data when it is not present in request identity
+  4. Map provider role to app role (Databricks Apps: CAN MANAGE -> facilitator, CAN USE -> non-facilitator)
+  5. Return user, role-derived permissions, and project context
+
+POST /project/setup
+  1. Requires an authenticated provider identity
+  2. Requires facilitator role
+  3. Creates or configures the project
+  4. Writes the submitting facilitator as project `facilitator_id`
 ```
 
 ### Phase Advancement (Facilitator Only)
@@ -200,11 +212,15 @@ Returns the permission set derived from the user's role. Called by the frontend 
 - [ ] Phase advancement validates prerequisites before transitioning
 - [ ] Phase advancement returns 400 if prerequisites not met
 
-### Login by Role
+### Identity by Role
 
-- [ ] Facilitators authenticate via YAML config (preconfigured credentials)
-- [ ] SMEs and participants authenticate via database credentials
-- [ ] Login response includes is_preconfigured_facilitator flag for facilitator logins
+- [ ] Production derives the current app user from `IdentityProvider` before role permissions load
+- [ ] Databricks Apps role mapping resolves app permission from Databricks Apps permissions data using SDK Apps `get_permissions` or an equivalent documented permissions endpoint
+- [ ] Databricks Apps `CAN MANAGE` maps to facilitator role
+- [ ] Databricks Apps `CAN USE` maps to non-facilitator role
+- [ ] Project setup requires facilitator role and writes the submitting facilitator as `facilitator_id`
+- [ ] Local development can assume facilitator by default without hosted identity
+- [ ] Dev-only role switching is explicit and unavailable in production defaults
 
 ## Related Specs
 
