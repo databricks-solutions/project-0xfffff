@@ -257,6 +257,43 @@ class SummarizationJobDB(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
 
+class ProjectDB(Base):
+    """V2 project setup anchor."""
+
+    __tablename__ = "projects"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    agent_description = Column(Text, nullable=False)
+    trace_provider = Column(String, nullable=False, default="databricks_uc")
+    trace_provider_config = Column(JSON, nullable=False, default=dict)
+    facilitator_id = Column(String, nullable=False)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    setup_jobs = relationship("ProjectSetupJobDB", back_populates="project", cascade="all, delete-orphan")
+
+
+class ProjectSetupJobDB(Base):
+    """Database model for V2 setup pipeline progress."""
+
+    __tablename__ = "project_setup_jobs"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id = Column(String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    status = Column(String, nullable=False, default="pending")
+    current_step = Column(String, nullable=False, default="queued")
+    message = Column(Text, nullable=True)
+    queue_job_id = Column(String, nullable=True)
+    delegated_run_ids = Column(JSON, nullable=False, default=list)
+    details = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    project = relationship("ProjectDB", back_populates="setup_jobs")
+
+
 class DiscoveryFindingDB(Base):
     """Database model for discovery findings."""
 

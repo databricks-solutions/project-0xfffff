@@ -572,6 +572,18 @@ db-revision message:
 db-bootstrap:
   uv run python -m server.db_bootstrap bootstrap
 
+[group('db')]
+setup-queue-schema:
+  uv run procrastinate --app=server.workers.procrastinate_app.app schema --apply
+
+[group('dev')]
+setup-queue-healthcheck:
+  uv run procrastinate --app=server.workers.procrastinate_app.app healthchecks
+
+[group('dev')]
+setup-worker:
+  uv run procrastinate --app=server.workers.procrastinate_app.app worker --queues project_setup
+
 [script]
 e2e-wait-ready api_port="8000" ui_port="3000" timeout_s="60":
   import time

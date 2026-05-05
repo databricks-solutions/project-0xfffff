@@ -33,7 +33,6 @@ import { parseRubricQuestions } from '@/utils/rubricUtils';
 import { Pagination } from '@/components/Pagination';
 import { TraceDataViewer } from '@/components/TraceDataViewer';
 import { convertTraceToTraceData } from '@/utils/traceUtils';
-import { CustomLLMProviderConfig } from '@/components/CustomLLMProviderConfig';
 import { toast } from 'sonner';
 
 import { JudgeType } from '@/client';
@@ -2005,16 +2004,6 @@ Think step by step about how well the output addresses the criteria, then provid
               </div>
             </div>
           )}
-
-          {/* Custom LLM Provider Configuration */}
-          <div className="mb-4">
-            <CustomLLMProviderConfig
-              workshopId={workshopId!}
-              onConfigChange={(config) => {
-                // Track when custom provider is configured for model dropdown
-              }}
-            />
-          </div>
 
           {/* Performance Metrics Bar - Only show after evaluation has been run */}
           {metrics && hasEvaluated && (() => {

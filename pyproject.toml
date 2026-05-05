@@ -43,6 +43,7 @@ dependencies = [
     "psycopg>=3.1.0", # PostgreSQL driver for Lakebase support
     "psycopg-binary>=3.1.0", # Pre-built binary for psycopg
     "psycopg-pool>=3.1.0", # Connection pooling for psycopg
+    "procrastinate>=3.0.0",
     "dspy>=3.1.3",
 ]
 

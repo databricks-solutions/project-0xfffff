@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>JBW v2 — Print</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  html, body { background: #fff; margin: 0; padding: 0; }
+  body { font-family: var(--sans); color: var(--ink); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  /* Each printed page = one artboard at 1280x820, scaled to landscape letter. */
+  .page {
+    width: 1280px; height: 820px;
+    position: relative;
+    background: #fff;
+    page-break-after: always;
+    break-after: page;
+    overflow: hidden;
+    box-shadow: 0 1px 2px rgba(0,0,0,.06);
+    margin: 24px auto;
+  }
+  .page:last-child { page-break-after: auto; break-after: auto; }
+  .page-header {
+    position: absolute; top: 0; left: 0; right: 0;
+    padding: 14px 24px 10px;
+    display: flex; align-items: baseline; justify-content: space-between;
+    border-bottom: 1px solid var(--line-2);
+    background: var(--paper);
+    z-index: 5;
+    height: 44px;
+  }
+  .page-eyebrow { font-family: var(--mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+  .page-title { font-family: var(--serif); font-size: 16px; font-weight: 600; color: var(--ink); }
+  .page-label { font-size: 12px; color: var(--ink-3); }
+  .page-body { position: absolute; inset: 44px 0 0; }
+
+  /* Section divider page */
+  .divider {
+    width: 1280px; height: 820px;
+    page-break-after: always; break-after: page;
+    margin: 24px auto;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--paper-2);
+    border: 1px solid var(--line-2);
+    flex-direction: column; gap: 14px; padding: 80px;
+    text-align: center;
+  }
+  .divider .eb { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); }
+  .divider h1 { font-family: var(--serif); font-size: 56px; font-weight: 600; letter-spacing: -0.02em; margin: 0; color: var(--ink); }
+  .divider p { font-size: 18px; color: var(--ink-2); max-width: 760px; line-height: 1.45; margin: 0; }
+
+  @page { size: 13.5in 8.65in; margin: 0; }
+  @media print {
+    html, body { background: #fff; }
+    .page, .divider { margin: 0; box-shadow: none; }
+  }
+
+  #root { display: block; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- Stub out DesignCanvas/DCSection/DCArtboard so the existing design files work, but render plain printable pages. -->
+<script type="text/babel">
+  // Stub the canvas API: render a divider per section and a page per artboard.
+  function DesignCanvas({ children }) {
+    return <>{children}</>;
+  }
+  function DCSection({ id, title, subtitle, children }) {
+    const arts = React.Children.toArray(children).filter(c => c && c.type === DCArtboard);
+    return (
+      <>
+        <div className="divider">
+          <div className="eb">Section</div>
+          <h1>{title}</h1>
+          {subtitle ? <p>{subtitle}</p> : null}
+        </div>
+        {arts.map((ab, i) => (
+          <div className="page" key={ab.props.id ?? i}>
+            <div className="page-header">
+              <div>
+                <div className="page-eyebrow">{title}</div>
+              </div>
+              <div className="page-label">{ab.props.label}</div>
+            </div>
+            <div className="page-body">
+              {ab.props.children}
+            </div>
+          </div>
+        ))}
+      </>
+    );
+  }
+  function DCArtboard() { return null; }
+
+  // Tweaks panel stub — no-op in print
+  function TweaksPanel() { return null; }
+  function TweakSection() { return null; }
+  function TweakRadio() { return null; }
+  function useTweaks(defaults) { return [defaults, () => {}]; }
+
+  Object.assign(window, { DesignCanvas, DCSection, DCArtboard, TweaksPanel, TweakSection, TweakRadio, useTweaks });
+</script>
+
+<!-- Same component scripts as the live design -->
+<script type="text/babel" src="shared.jsx"></script>
+<script type="text/babel" src="dashboard.jsx"></script>
+<script type="text/babel" src="feed.jsx"></script>
+<script type="text/babel" src="rubric.jsx"></script>
+<script type="text/babel" src="workshop-create.jsx"></script>
+<script type="text/babel" src="sprint-create.jsx"></script>
+<script type="text/babel" src="architecture.jsx"></script>
+<script type="text/babel" src="app.jsx"></script>
+
+<!-- Auto-print after fonts + Babel are settled -->
+<script type="text/babel">
+  (async () => {
+    try { if (document.fonts && document.fonts.ready) { await document.fonts.ready; } } catch(e){}
+    // wait for app to mount
+    const waitMount = () => new Promise(res => {
+      const check = () => {
+        if (document.querySelector('.page') || document.querySelector('.divider')) res();
+        else setTimeout(check, 50);
+      };
+      check();
+    });
+    await waitMount();
+    setTimeout(() => { window.print(); }, 800);
+  })();
+</script>
+</body>
+</html>

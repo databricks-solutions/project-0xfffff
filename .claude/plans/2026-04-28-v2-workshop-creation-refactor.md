@@ -43,21 +43,26 @@ Before Phase 3, **stop and confirm with the user**:
 
 ## Governing specs
 
-| Spec | Why it governs creation | V2 change required |
-|---|---|---|
-| `DISCOVERY_SPEC.md` | Owns the workshop lifecycle narrative | Retire phase-machine wording; intro sprint primitive (or stub `SPRINT_SPEC`); add Implementation Log |
-| `ROLE_PERMISSIONS_SPEC.md` | Phase-advance perms + Known Discrepancies | Remove phase-advance perms; close `update_workshop_participant` no-op discrepancy; mark phase-advance role-check discrepancy as resolved-by-removal |
+V2 entities get **new dedicated specs**. Existing specs lose content where the new spec takes over — they don't gain V2 sidecar sections.
 
-`RUBRIC_SPEC`, `JUDGE_EVALUATION_SPEC`, `TRACE_INGESTION_SPEC`, `DISCOVERY_TRACE_ASSIGNMENT_SPEC` are **not** revised in this plan (per scope).
+| Spec | Status | Action |
+|---|---|---|
+| `WORKSHOP_SPEC.md` | **NEW (drafted in Phase 0)** | Defines V2 Workshop entity, creation flow, participant role assignment, MLflow intake config, and explicit references to (but not ownership of) Trace, Judge, Rubric, Sprint |
+| `DISCOVERY_SPEC.md` | Existing — content removed | Strip the phase-machine narrative (intake → discovery → rubric → annotation → results → judge_tuning) and any workshop-creation guidance. Discovery becomes a sprint-time concern, governed by future `SPRINT_SPEC`/`DISCOVERY_SPEC` revision. |
+| `ROLE_PERMISSIONS_SPEC.md` | Existing — content removed | Remove phase-advance permission rules. Workshop participant role assignment moves to `WORKSHOP_SPEC`. Close the `update_workshop_participant` Known Discrepancy. |
+
+`RUBRIC_SPEC`, `JUDGE_EVALUATION_SPEC`, `TRACE_INGESTION_SPEC`, `DISCOVERY_TRACE_ASSIGNMENT_SPEC`, `EVAL_MODE_SPEC` are **not touched** in this plan (per scope).
 
 ## Success Criteria Targeted
 
-Verbatim text fills in during Phase 0. Behavior (placeholder):
+All criteria live in the new `WORKSHOP_SPEC`. Verbatim text fills in during Phase 0 — behavior placeholders below.
 
-- **SC-D1** *(NEW, DISCOVERY_SPEC)*: Workshop creation accepts `{name, description, facilitator_id, mode}` (and existing optional MLflow intake config) and returns a workshop with no phase fields exposed.
-- **SC-D2** *(NEW, DISCOVERY_SPEC)*: Workshop response does not include `current_phase`, `completed_phases`, `discovery_started`, `annotation_started`, `active_*_trace_ids`, `discovery_*` config, or `annotation_randomize_traces`.
-- **SC-RP1** *(NEW, ROLE_PERMISSIONS_SPEC)*: Phase-advance endpoints (`/advance-to-discovery`, `/complete-phase/{phase}`, `/resume-phase/{phase}`) are removed; sprint state transitions replace them downstream.
-- **SC-RP2** *(EXISTING discrepancy fix, ROLE_PERMISSIONS_SPEC)*: `update_workshop_participant` persists changes (currently a no-op at `database_service.py:3162-3177`).
+- **SC-W1**: Workshop entity has fields `{id, name, description, facilitator_id, mode, created_at}` plus optional MLflow intake config; no phase machinery.
+- **SC-W2**: `POST /workshops` accepts `{name, description?, facilitator_id, mode?}` and returns a Workshop with `id` and a clean V2 schema.
+- **SC-W3**: Workshop response excludes `current_phase`, `completed_phases`, `discovery_started`, `annotation_started`, `active_*_trace_ids`, `discovery_*` config, and `annotation_randomize_traces`.
+- **SC-W4**: Workshop participants are assigned roles (facilitator | sme | participant) via `WorkshopParticipant` mapping Databricks user identity (email) × workshop × role. Updates persist (closes `update_workshop_participant` no-op).
+- **SC-W5**: Phase-advance endpoints (`/advance-to-discovery`, `/complete-phase/{phase}`, `/resume-phase/{phase}`) are removed; sprint state transitions replace them in a downstream plan.
+- **SC-W6**: `mode` is immutable after creation (consistent with `EVAL_MODE_SPEC`).
 
 ---
 
@@ -103,34 +108,45 @@ Verbatim text fills in during Phase 0. Behavior (placeholder):
 
 ---
 
-## Phase 0 (BLOCKING, PROTECTED): Spec Revisions
+## Phase 0 (BLOCKING, PROTECTED): Spec authorship
 
-`/specs/` edits are a protected operation. No code work until specs are approved.
+`/specs/` edits are a protected operation. Each task below produces a draft for user approval; no `/specs/` writes happen until the user signs off.
 
-### Task 0.1: Revise DISCOVERY_SPEC
+### Task 0.1: Draft `WORKSHOP_SPEC.md` (new)
 
-- [ ] Read `specs/DISCOVERY_SPEC.md` end-to-end
-- [ ] Replace phase-machine narrative with V2 sprint-primitive overview (workshop as thin container; sprint as the runtime; comment as universal primitive)
-- [ ] Add SC-D1 and SC-D2 with exact verbatim text
-- [ ] Add `## Implementation Log` section (currently missing per Explore findings)
-- [ ] Present diff to user; wait for approval
+- [ ] Author the new spec covering: Overview, Boundary cross-refs, Core Concepts (Workshop as thin container; mode; participant role; MLflow intake config), Data Model (`Workshop`, `WorkshopCreate`, `WorkshopParticipant`), Behavior (creation, role assignment, listing/reading, deletion), Permissions, API surface, Success Criteria (SC-W1..W6), Implementation Log
+- [ ] Reference but do not own: `Trace` (MLflow), `Judge` (MLflow), `Rubric` (local; deferred), `Sprint` (downstream)
+- [ ] Present full draft to user; wait for approval before writing to `/specs/WORKSHOP_SPEC.md`
+- [ ] Update `/specs/README.md` keyword index to include the new spec
 
-### Task 0.2: Revise ROLE_PERMISSIONS_SPEC
+### Task 0.2: Strip superseded content from `DISCOVERY_SPEC.md`
 
-- [ ] Remove phase-advance permission rules (advancement is a sprint concern downstream)
-- [ ] Add SC-RP1 with verbatim text
-- [ ] Document the `update_workshop_participant` no-op fix (SC-RP2) closing the Known Discrepancy at `specs/README.md:379`
-- [ ] Mark phase-advance role-check Known Discrepancy as **resolved by removal**
-- [ ] Add Implementation Log section if missing
+- [ ] Remove the phase-machine narrative (intake → discovery → rubric → annotation → results → judge_tuning) wherever it appears as workshop lifecycle
+- [ ] Remove Discovery's references to workshop creation (creation now governed by `WORKSHOP_SPEC`)
+- [ ] Discovery itself stays — but reframed as a sprint-time activity (a fuller revision lands when the sprint runtime is planned; this pass only removes content `WORKSHOP_SPEC` takes over)
 - [ ] Present diff; wait for approval
 
-### Task 0.3: Update SPEC_COVERAGE_MAP baseline
+### Task 0.3: Strip superseded content from `ROLE_PERMISSIONS_SPEC.md`
+
+- [ ] Remove phase-advance permission rules (advancement is a sprint concern; specifics live in `SPRINT_SPEC` when authored)
+- [ ] Remove workshop participant role-assignment rules — those move to `WORKSHOP_SPEC` (cross-reference instead)
+- [ ] Close the `update_workshop_participant` Known Discrepancy (`specs/README.md:379`) — note the fix lands in this plan's Phase 1.4
+- [ ] Mark the phase-advance role-check Known Discrepancy as **resolved by endpoint removal** (this plan's Phase 2.2)
+- [ ] Present diff; wait for approval
+
+### Task 0.4: Update `specs/README.md`
+
+- [ ] Add `WORKSHOP_SPEC.md` to the spec list and keyword index
+- [ ] Update Known Discrepancies to reflect closures
+- [ ] Present diff; wait for approval
+
+### Task 0.5: Capture coverage baseline
 
 - [ ] After spec edits land, run `just spec-coverage --json` to capture baseline
-- [ ] Note expected dip on DISCOVERY (new SC-D1, SC-D2 are uncovered until Phase 2 ships)
+- [ ] Note: SC-W1..W6 will be 0% covered until Phases 1-3 ship tests
 - [ ] Commit baseline
 
-**Phase 0 deliverable:** approved spec edits with verbatim Success Criteria text the rest of this plan can reference.
+**Phase 0 deliverable:** approved `/specs/WORKSHOP_SPEC.md` + edits to `DISCOVERY_SPEC`, `ROLE_PERMISSIONS_SPEC`, and `specs/README.md`. Verbatim SC text is locked.
 
 ---
 
@@ -280,27 +296,44 @@ queried the DB but never returned or committed."
 
 ### Task 1.5: Remove file-based job tracker
 
-- [ ] **Step 1: Find live callers**
+User-confirmed: aggressive refactor, no backwards compat. The procrastinate substrate is the V2 replacement (out of scope here); during the gap, async job status simply isn't available — and that's acceptable since the deprecated UI surfaces consuming it (judge tuning, alignment) get rewritten in downstream plans anyway.
+
+- [ ] **Step 1: Find callers (informational)**
 
 ```bash
 rg -n "AlignmentJob|get_job\(|create_job\(|JOB_DIR" server/ client/
 ```
 
-- [ ] **Step 2: Decision**
+- [ ] **Step 2: Remove the tracker**
 
-If callers only feed deprecated UI status displays, remove. If a live workflow depends on it, **escalate**: the procrastinate substrate (out of scope here) is the V2 replacement. A short-term in-memory or simple-table replacement may be needed. Pause and check with user.
+Delete `AlignmentJob`, `JOB_DIR`, `get_job`, `create_job` from `server/routers/workshops.py:21-130`. Delete any router endpoints that read/write the JSON job files (status, logs).
 
-- [ ] **Step 3: Remove + adapt callers (if safe)**
+- [ ] **Step 3: Adapt or stub callers**
 
-Delete `AlignmentJob`, `JOB_DIR`, `get_job`, `create_job` from `server/routers/workshops.py:21-130`.
+For each caller surface that consumed the tracker:
+- If the surface gets deleted in Phase 3 (judge tuning UI, etc.), no adaptation needed — caller goes away with it.
+- If the surface stays, replace status reads with a stub returning a fixed "in V2 the worker substrate is forthcoming" response, or simpler: remove the status-fetch hook entirely and delete the polling UI.
 
 - [ ] **Step 4: Tests**
 
 ```bash
 just test-server
+just ui-test-unit
 ```
 
+Expected: tests for the deleted job tracker get removed; remaining tests pass.
+
 - [ ] **Step 5: Commit**
+
+```bash
+git commit -m "chore: remove file-based job tracker
+
+The /tmp/workshop_jobs/ store retires in V2. The procrastinate
+worker substrate is its replacement (downstream plan). No backwards
+compatibility is preserved — async job status is unavailable in
+this transitional state, and consuming UI surfaces are deleted or
+rewritten in downstream phases."
+```
 
 ---
 
@@ -497,24 +530,32 @@ Fix or delete refs.
 - [ ] **Step 4: Tests + smoke E2E**
 - [ ] **Step 5: Commit**
 
-### Task 3.3: Strip phase machinery from `WorkshopDemoLanding`
+### Task 3.3: Full delete of `WorkshopDemoLanding`
 
-**Decision required:** With `feat/social-mode` having added `SprintWorkspacePage`, the cleaner path is to **delete `WorkshopDemoLanding`** entirely and route `/workshop/:id` to `SprintWorkspacePage`. Confirm with user before deletion — if `WorkshopDemoLanding` is still load-bearing for any role/view, fall back to deleting only the view dispatcher (lines 494-587).
+User-confirmed: full delete, no backwards compatibility. `/workshop/:workshopId` routes directly to `SprintWorkspacePage`.
 
-- [ ] **Step 1: Confirm deletion scope with user**
-- [ ] **Step 2: Delete or strip**
+- [ ] **Step 1: Delete files**
 
 ```bash
-# If full delete approved:
 rm client/src/pages/WorkshopDemoLanding.tsx \
    client/src/components/PhaseControlButton.tsx \
-   client/src/components/WorkflowProgress.tsx
-# RoleBasedWorkflow.tsx becomes a thin role-check helper or deletes entirely
+   client/src/components/WorkflowProgress.tsx \
+   client/src/components/RoleBasedWorkflow.tsx
 ```
 
-- [ ] **Step 3: Update `App.tsx`** to point `/workshop/:workshopId` directly at `SprintWorkspacePage`
-- [ ] **Step 4: Update `useWorkshopApi.ts:186-293`** — drop `useWorkshopPhase`, `useWorkshopDiscoveryConfig`; keep `useWorkshop`, `useWorkshopMeta`; replace `useCreateWorkshop` with the new `useWorkshopBootstrap`
-- [ ] **Step 5: Run lint + unit tests**
+`RoleBasedWorkflow` was a phase-router; under V2 the role/permission checks happen inline in `SprintWorkspacePage` and the configurator. If a role-check helper is still needed elsewhere, extract it into `client/src/lib/permissions.ts` as a pure function — but only if there are concrete callers; don't pre-create.
+
+- [ ] **Step 2: Update `App.tsx`** so `/workshop/:workshopId` points at `SprintWorkspacePage` directly (verify the existing route on `feat/social-mode` already does this)
+- [ ] **Step 3: Update `useWorkshopApi.ts:186-293`** — drop `useWorkshopPhase`, `useWorkshopDiscoveryConfig`, `useCreateWorkshop`. Keep `useWorkshop`, `useWorkshopMeta`. The new `useWorkshopBootstrap` (Task 3.1) replaces `useCreateWorkshop`.
+- [ ] **Step 4: Search for stale imports**
+
+```bash
+rg -n "WorkshopDemoLanding|RoleBasedWorkflow|PhaseControlButton|WorkflowProgress|useWorkshopPhase|useWorkshopDiscoveryConfig|useCreateWorkshop" client/
+```
+
+Expected: results only in this commit's deletions and `SprintWorkspacePage` imports. Fix any stragglers.
+
+- [ ] **Step 5: Lint + unit tests**
 
 ```bash
 just ui-lint
@@ -522,6 +563,14 @@ just ui-test-unit
 ```
 
 - [ ] **Step 6: Commit**
+
+```bash
+git commit -m "feat(workshops): delete phase-machinery view layer
+
+Remove WorkshopDemoLanding, RoleBasedWorkflow, PhaseControlButton,
+WorkflowProgress, and the corresponding React Query phase hooks.
+SprintWorkspacePage is the V2 workshop landing surface."
+```
 
 ### Task 3.4: Delete remaining phase pages
 
@@ -663,32 +712,18 @@ For DISCOVERY_SPEC and ROLE_PERMISSIONS_SPEC, set this plan's log entry status `
 
 ## Risks and open questions
 
-1. **`feat/social-mode` overlap.** `SprintWorkspacePage` is already routed at `/workshop/:workshopId`. Phase 3.3 needs user confirmation on whether to fully delete `WorkshopDemoLanding` or keep a stripped-down version.
-2. **File-based job tracker removal.** Safe only if no live workflow depends on it. Procrastinate worker substrate is the V2 replacement (out of scope). If a live caller exists, escalate before removing.
-3. **Eval mode interaction.** Workshop has `mode ∈ {workshop, eval}`. V2 reshape applies cleanly to `workshop` mode. Verify eval mode flows still pass after each phase.
-4. **MemAlign / DSPy deletion timing.** `discovery_dspy.py` deletion depends on grep-confirmation in Task 1.1. MemAlign code paths in `alignment_service.py` stay regardless — they're the engine for the (out-of-scope) refinement worker.
-5. **Backwards compat.** Phase 4 drops columns one-way (no clean downgrade). If a non-dev workshop dataset exists, plan a data backfill first. Today, only checked-in dev DBs exist (deleted in Task 1.3).
-6. **Coverage dip window.** Between Phase 0 spec edits landing and Phase 2-3 tests landing, DISCOVERY coverage will dip. Don't ship intermediate states past CI gates.
-7. **Spec validation order.** Phase 0 must complete before any test in Phase 1.4, 2.1, 2.3 can be tagged with verbatim `@req` text. Until then, tests use placeholder requirement strings that will fail spec-validate.
+1. **Eval mode interaction.** Workshop has `mode ∈ {workshop, eval}`. V2 reshape applies cleanly to `workshop` mode. Verify eval mode flows still pass after each phase.
+2. **MemAlign / DSPy deletion timing.** `discovery_dspy.py` deletion depends on grep-confirmation in Task 1.1. MemAlign code paths in `alignment_service.py` stay regardless — they're the engine for the (out-of-scope) refinement worker.
+3. **Aggressive refactor stance.** Per user direction, no backwards compatibility. Phase 4 drops columns one-way (no downgrade). Existing dev SQLite DBs are deleted in Task 1.3; no production datasets are in scope.
+4. **Spec validation order.** Phase 0 must complete before any test in Phases 1.4, 2.1, 2.3 can be tagged with verbatim `@req` text. Until then, those tests use placeholder requirement strings that will fail `spec-validate`.
+5. **Async job status gap.** Removing the file-based job tracker (Task 1.5) leaves no async job status surface in the transitional state. Acceptable per user direction — the consuming UI surfaces are slated for deletion or rewrite in downstream plans, and the procrastinate substrate replaces this in the runtime plan.
 
 ---
 
-## Implementation Log entry (for governing specs)
+## Implementation Log entry (for `WORKSHOP_SPEC.md`)
 
 ```markdown
 | 2026-04-28 | [V2 Workshop Creation Refactor](../.claude/plans/2026-04-28-v2-workshop-creation-refactor.md) | planned | Drop phase machinery from Workshop; replace IntakePage with thin configurator; sweep creation-adjacent debt (dead services, demo pages, update_workshop_participant no-op, file-based job tracker) |
 ```
 
-This entry is a **protected operation** (modifying `/specs/`). Present to user before writing.
-
----
-
-## Plan saved. Ready for Phase 0 spec revisions?
-
-Confirm before I draft Phase 0 spec edits:
-
-1. Scope is correct — workshop creation reshape only, runtime/recommender/feed/rubric/judge-globalization deferred.
-2. Two governing specs (DISCOVERY_SPEC, ROLE_PERMISSIONS_SPEC) is the right Phase 0 scope.
-3. You want me to draft the Phase 0 spec edits next, or you'll handle the spec edits yourself.
-4. The `WorkshopDemoLanding` deletion question (Phase 3.3): full delete in this plan, or strip view dispatcher only?
-5. The file-based job tracker (Task 1.5): remove now, or hold until the procrastinate plan?
+This entry is a **protected operation** (writing to `/specs/`). Present alongside the WORKSHOP_SPEC draft for approval.

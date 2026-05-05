@@ -69,6 +69,7 @@ Before acting, check if a skill applies. If there's even a 1% chance, invoke it:
 - **Writing tests?** → Use verification-testing skill
 - **Auditing coverage?** → Use spec-audit skill
 - **Working with MLflow eval?** → Use mlflow-evaluation skill
+- **Managing issues or project boards?** → Use project-management skill
 
 Do NOT rationalize skipping skills. "This is simple" is not a valid reason.
 </SPEC-DRIVEN-WORKFLOW>

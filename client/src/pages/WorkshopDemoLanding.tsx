@@ -19,7 +19,6 @@ import { JudgeTuningPage } from './JudgeTuningPage';
 
 import { IntakePage } from './IntakePage';
 import { AppSidebar } from '@/components/AppSidebar';
-import { AnnotationAssignmentManager } from '@/components/AnnotationAssignmentManager';
 import { FacilitatorDashboard } from '@/components/FacilitatorDashboard';
 import { FacilitatorUserManager } from '@/components/FacilitatorUserManager';
 import { ProductionLogin } from '@/components/ProductionLogin';
@@ -542,8 +541,6 @@ export function WorkshopDemoLanding() {
         return <JudgeTuningPage />;
       case 'findings-review':
         return <FacilitatorDiscoveryWorkspace onNavigate={handleNavigation} />;
-      case 'assign-annotations':
-        return <AnnotationAssignmentManager />;
       case 'user-management':
         return <FacilitatorUserManager />;
 
