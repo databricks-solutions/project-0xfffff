@@ -103,6 +103,7 @@ Authentication resolves through the active `IdentityProvider`. After provider id
 Default role behavior:
 
 - Databricks Apps: app permission determines role. `CAN MANAGE` maps to facilitator. `CAN USE` maps to non-facilitator.
+- Databricks Apps request headers provide user identity, not a documented app permission level header. The provider resolves app permission from Databricks Apps permissions data before mapping the app role.
 - Project setup requires facilitator role. `CAN USE` users cannot create/configure the project.
 - Local development: when no hosted identity provider is present, the dev provider may assume facilitator by default.
 - Local role/user switching is allowed only as an explicit development aid for testing SME or participant behavior.
@@ -111,8 +112,9 @@ Default role behavior:
 GET /auth/session
   1. Resolve identity from IdentityProvider
   2. Get or create app user for provider subject
-  3. Map provider role to app role (Databricks Apps: CAN MANAGE -> facilitator, CAN USE -> non-facilitator)
-  4. Return user, role-derived permissions, and project context
+  3. Resolve provider role from provider permissions data when it is not present in request identity
+  4. Map provider role to app role (Databricks Apps: CAN MANAGE -> facilitator, CAN USE -> non-facilitator)
+  5. Return user, role-derived permissions, and project context
 
 POST /project/setup
   1. Requires an authenticated provider identity

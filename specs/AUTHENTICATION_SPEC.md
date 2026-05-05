@@ -155,6 +155,7 @@ Identity {
   email: str
   display_name: str
   provider_role: str | None
+  provider_role_source: str | None
   delegated_databricks_auth_available: bool
 }
 ```
@@ -165,6 +166,7 @@ This identity is separate from Databricks API auth:
 
 - The logged-in external user determines the app user record and display name.
 - On Databricks Apps, app permission determines the app role: users with `CAN MANAGE` are facilitators; users with `CAN USE` are non-facilitators.
+- Databricks Apps identity headers provide user identity (`X-Forwarded-User`, `X-Forwarded-Email`, `X-Forwarded-Preferred-Username`) but do not document a forwarded app permission header. `DatabricksAppsIdentityProvider` must resolve `CAN MANAGE` / `CAN USE` from Databricks Apps permissions, for example through the Databricks SDK Apps permissions API (`get_permissions`) or an equivalent documented permissions endpoint, and may cache the result with a short TTL.
 - Project ownership is application state. Project setup writes the submitting facilitator as the project's `facilitator_id`; identity resolution alone does not create project ownership.
 - Backend calls to MLflow, model serving, Lakebase, and volumes continue to use the app's configured Databricks API auth unless a later on-behalf-of-user feature explicitly changes that contract.
 - Databricks OBO is available when using `DatabricksAppsIdentityProvider`, but individual feature specs must opt into it explicitly.
@@ -172,7 +174,7 @@ This identity is separate from Databricks API auth:
 
 Supported providers:
 
-- `DatabricksAppsIdentityProvider`: resolves the authenticated user from Databricks Apps request identity and maps Databricks App permission to app role (`CAN MANAGE` -> facilitator, `CAN USE` -> non-facilitator).
+- `DatabricksAppsIdentityProvider`: resolves the authenticated user from Databricks Apps request identity headers and maps Databricks App permission to app role (`CAN MANAGE` -> facilitator, `CAN USE` -> non-facilitator) using Databricks Apps permissions data rather than an assumed permission header.
 - `LocalDevIdentityProvider`: resolves a configured local developer identity and defaults to facilitator.
 - Future providers may support other hosted environments without changing application role or project-loading code.
 
