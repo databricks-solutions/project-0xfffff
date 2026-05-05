@@ -96,27 +96,22 @@ POST /users/
   2. Add user as workshop participant with same role
 ```
 
-### Login Flow by Role
+### Identity and Role Resolution
 
-V2 project mode starts from the Databricks Apps authenticated user. After app-user resolution, the stored app role determines permissions. Production V2 must not require the user to enter the legacy facilitator YAML credentials before the app can load.
+Authentication resolves through the active `IdentityProvider`. After provider identity resolution, the stored app role determines permissions. The application must not require users to enter app-owned facilitator credentials before it can load.
 
-Default V2 role behavior:
+Default role behavior:
 
-- Databricks Apps production: the current Databricks user is resolved as an app user; initial project-owner users default to facilitator unless a later role-assignment flow explicitly sets another role.
-- Local development: when no Databricks Apps identity is present, the dev fallback may assume facilitator by default.
+- Hosted production: the current provider user is resolved as an app user; the initial project owner defaults to facilitator unless a later role-assignment flow explicitly sets another role.
+- Local development: when no hosted identity provider is present, the dev provider may assume facilitator by default.
 - Local role/user switching is allowed only as an explicit development aid for testing SME or participant behavior.
 
-Legacy workshop mode still authenticates facilitators and other roles through different paths:
-
 ```
-POST /auth/login
-  1. Attempt facilitator auth via YAML config
-  2. If YAML match:
-     - Get or create facilitator user record
-     - Return AuthResponse with is_preconfigured_facilitator=true
-  3. If no YAML match:
-     - Authenticate via database (email/password)
-     - Return AuthResponse with is_preconfigured_facilitator=false
+GET /auth/session
+  1. Resolve identity from IdentityProvider
+  2. Get or create app user for provider subject
+  3. Assign facilitator role when bootstrapping the first project owner
+  4. Return user and role-derived permissions
 ```
 
 ### Phase Advancement (Facilitator Only)
@@ -208,15 +203,12 @@ Returns the permission set derived from the user's role. Called by the frontend 
 - [ ] Phase advancement validates prerequisites before transitioning
 - [ ] Phase advancement returns 400 if prerequisites not met
 
-### Login by Role
+### Identity by Role
 
-- [ ] V2 production derives the current app user from Databricks Apps identity before role permissions load
-- [ ] V2 project-owner users default to facilitator unless explicitly assigned another role
-- [ ] V2 local development can assume facilitator by default without Databricks Apps identity
+- [ ] Production derives the current app user from `IdentityProvider` before role permissions load
+- [ ] Project-owner users default to facilitator unless explicitly assigned another role
+- [ ] Local development can assume facilitator by default without hosted identity
 - [ ] Dev-only role switching is explicit and unavailable in production defaults
-- [ ] Legacy workshop mode facilitators authenticate via YAML config (preconfigured credentials)
-- [ ] Legacy workshop mode SMEs and participants authenticate via database credentials
-- [ ] Legacy workshop login response includes is_preconfigured_facilitator flag for facilitator logins
 
 ## Related Specs
 
