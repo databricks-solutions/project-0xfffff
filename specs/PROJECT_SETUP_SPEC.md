@@ -18,7 +18,7 @@ The app must treat project identity as app-level state, not as a user-selected w
 
 The first-run creation path at `/project/setup`. It gathers only the minimum information required to start: project name, agent or app description, facilitator identity, and Databricks Unity Catalog trace table path. Additional knobs should default or move to downstream configuration unless explicitly required by a later spec.
 
-The facilitator identity comes from the authenticated app user resolved during app initialization. Project setup must not submit a hardcoded facilitator id.
+The facilitator identity comes from the authenticated facilitator that submits `/project/setup`. On Databricks Apps, facilitator role is derived from `CAN MANAGE`; `CAN USE` users are non-facilitators and cannot submit setup. Project setup must not submit a hardcoded facilitator id or infer ownership from first app load.
 
 ### Setup Job
 
@@ -45,6 +45,8 @@ No project/workshop picker or app-owned password form appears before project res
 ### Setup Submission
 
 `POST /project/setup` creates or configures the project and creates a pending setup job. After the project and setup job are persisted, the app enqueues a task queue job that runs the setup pipeline.
+
+The setup request uses the current provider-authenticated facilitator as `facilitator_id`. The frontend must not send a hardcoded facilitator id, and the backend must not assign project ownership merely because a user was first to authenticate.
 
 The response returns both `project_id` and `setup_job_id` so the frontend can navigate to `/` and poll progress.
 
@@ -122,7 +124,9 @@ The setup feature owns its own router, schemas, service, repository, pipeline, a
 - [ ] Submitting `/project/setup` enqueues a setup pipeline worker job
 - [ ] `POST /project/setup` returns `project_id` and `setup_job_id`
 - [ ] Setup persists the project name, agent/app description, facilitator id, and Databricks UC trace table path
-- [ ] Setup uses the authenticated app user as `facilitator_id`; no hardcoded facilitator id is submitted
+- [ ] Setup requires facilitator role (`CAN MANAGE` on Databricks Apps)
+- [ ] Setup uses the authenticated facilitator as `facilitator_id`; no hardcoded facilitator id is submitted
+- [ ] Project ownership is assigned on setup submission, not on first app authentication
 
 ### App Loading
 
@@ -146,7 +150,7 @@ The setup feature owns its own router, schemas, service, repository, pipeline, a
 | Date | Plan | Status | Summary |
 |------|------|--------|---------|
 | 2026-05-05 | [V2 Setup Slice Start](../.cursor/plans/v2-setup-start_883e6994.plan.md) | in-progress | Day-one project setup bootstrap with Procrastinate-backed setup orchestration and Databricks/Lakeflow delegation boundaries |
-| 2026-05-05 | (spec PR) | proposed | Define one-app/one-project loading and authenticated facilitator ownership before implementation |
+| 2026-05-05 | (spec PR) | proposed | Define one-app/one-project loading and setup-submitted facilitator ownership before implementation |
 
 ## Future Work
 

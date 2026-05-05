@@ -102,7 +102,8 @@ Authentication resolves through the active `IdentityProvider`. After provider id
 
 Default role behavior:
 
-- Hosted production: the current provider user is resolved as an app user; the initial project owner defaults to facilitator unless a later role-assignment flow explicitly sets another role.
+- Databricks Apps: app permission determines role. `CAN MANAGE` maps to facilitator. `CAN USE` maps to non-facilitator.
+- Project setup requires facilitator role. `CAN USE` users cannot create/configure the project.
 - Local development: when no hosted identity provider is present, the dev provider may assume facilitator by default.
 - Local role/user switching is allowed only as an explicit development aid for testing SME or participant behavior.
 
@@ -110,8 +111,14 @@ Default role behavior:
 GET /auth/session
   1. Resolve identity from IdentityProvider
   2. Get or create app user for provider subject
-  3. Assign facilitator role when bootstrapping the first project owner
-  4. Return user and role-derived permissions
+  3. Map provider role to app role (Databricks Apps: CAN MANAGE -> facilitator, CAN USE -> non-facilitator)
+  4. Return user, role-derived permissions, and project context
+
+POST /project/setup
+  1. Requires an authenticated provider identity
+  2. Requires facilitator role
+  3. Creates or configures the project
+  4. Writes the submitting facilitator as project `facilitator_id`
 ```
 
 ### Phase Advancement (Facilitator Only)
@@ -206,7 +213,9 @@ Returns the permission set derived from the user's role. Called by the frontend 
 ### Identity by Role
 
 - [ ] Production derives the current app user from `IdentityProvider` before role permissions load
-- [ ] Project-owner users default to facilitator unless explicitly assigned another role
+- [ ] Databricks Apps `CAN MANAGE` maps to facilitator role
+- [ ] Databricks Apps `CAN USE` maps to non-facilitator role
+- [ ] Project setup requires facilitator role and writes the submitting facilitator as `facilitator_id`
 - [ ] Local development can assume facilitator by default without hosted identity
 - [ ] Dev-only role switching is explicit and unavailable in production defaults
 

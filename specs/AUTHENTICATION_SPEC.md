@@ -133,9 +133,18 @@ For Lakebase Autoscaling, use `WorkspaceClient().postgres.generate_database_cred
 **Reference:** [Lakebase authentication](https://docs.databricks.com/aws/en/lakebase/admin/authentication.html), [Databricks Apps resources](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources)
 
 
-### Future: Per-User Auth (On-Behalf-Of-User)
+### Delegated User Databricks Auth
 
-Databricks Apps can forward the logged-in user's OAuth token via the `x-forwarded-access-token` HTTP header. This would allow per-user Unity Catalog enforcement (row-level filters, column masks). Not yet implemented — the app currently uses the service principal identity for all Databricks API calls.
+Some Databricks operations must be attributable to, or executed on behalf of, the logged-in Databricks user. The identity provider must preserve enough Databricks user context to support these operations without replacing the app service principal as the default resource identity.
+
+On Databricks Apps, delegated user auth is sourced from the platform-provided request identity and, when enabled for the app, the `X-Forwarded-Access-Token` header. The application must treat this token as request-scoped credential material:
+
+- Do not persist the forwarded user token in localStorage, application database tables, logs, or long-lived backend caches.
+- Do not expose the forwarded user token to the browser.
+- Pass delegated credentials only to the backend operation that requires user attribution or on-behalf-of-user execution.
+- Fall back to the app service principal only for operations whose contract is app-owned, not user-attributed.
+
+MLflow assessment logging is a user-attributed operation candidate. The auth boundary must allow those calls to use the resolved Databricks user identity when the implementation reaches that slice.
 
 ### Application User Identity
 
@@ -147,6 +156,8 @@ Identity {
   subject: str
   email: str
   display_name: str
+  provider_role: str | None
+  delegated_databricks_auth_available: bool
 }
 ```
 
@@ -154,25 +165,34 @@ The application must resolve the current app user from this provider identity, c
 
 This identity is separate from Databricks API auth:
 
-- The logged-in external user determines the app user record, display name, role, and project ownership.
+- The logged-in external user determines the app user record and display name.
+- On Databricks Apps, app permission determines the app role: users with `CAN MANAGE` are facilitators; users with `CAN USE` are non-facilitators.
+- Project ownership is application state. Project setup writes the submitting facilitator as the project's `facilitator_id`; identity resolution alone does not create project ownership.
 - Backend calls to MLflow, model serving, Lakebase, and volumes continue to use the app's configured Databricks API auth unless a later on-behalf-of-user feature explicitly changes that contract.
+- User-attributed Databricks operations use delegated user auth when their contract requires the logged-in user's identity, for example future MLflow assessment logging.
 - App-owned YAML facilitator passwords are not part of the standard production authentication path.
 
 Supported providers:
 
-- `DatabricksAppsIdentityProvider`: resolves the authenticated user from Databricks Apps request identity.
+- `DatabricksAppsIdentityProvider`: resolves the authenticated user from Databricks Apps request identity and maps Databricks App permission to app role (`CAN MANAGE` -> facilitator, `CAN USE` -> non-facilitator).
 - `LocalDevIdentityProvider`: resolves a configured local developer identity and defaults to facilitator.
 - Future providers may support other hosted environments without changing application role or project-loading code.
 
 First-time production facilitator access:
 
-1. A workspace/admin deploys the Databricks App and grants the intended facilitator access to open the app.
-2. Required app resources are configured, including Lakebase and the MLflow experiment or trace source.
-3. The facilitator opens the app through Databricks and completes Databricks login if prompted by the platform.
-4. The identity provider resolves the facilitator's external identity.
-5. The app creates or updates the user record for that identity.
-6. If no project exists, the first authenticated user is treated as the project owner/facilitator and is routed to `/project/setup`.
-7. Once setup completes, subsequent app loads resolve the same user through the provider and load the project workspace.
+1. A workspace/admin deploys the Databricks App.
+2. A user with `CAN MANAGE` on the app shares the app with the intended facilitator user or group and grants `CAN MANAGE`.
+3. Non-facilitator users or groups receive `CAN USE`, or the app is configured so anyone in the organization can use it.
+4. Required app resources are configured:
+   - Lakebase/Postgres is added as an app resource, which provisions the app service principal's database role and connection environment variables.
+   - The MLflow experiment is added as an app resource with the permission level required by setup, exposing `MLFLOW_EXPERIMENT_ID` to the app.
+   - Required model serving endpoints are added as app resources with query permission for the app service principal.
+5. The facilitator opens the app through Databricks and completes Databricks login if prompted by the platform.
+6. The identity provider resolves the facilitator's external identity and `CAN MANAGE` app permission.
+7. The app creates or updates the user record for that identity with facilitator role.
+8. If no project exists, the app routes the facilitator to `/project/setup`; `CAN USE` users see a not-ready/non-facilitator state instead.
+9. When the facilitator submits `/project/setup`, that authenticated app user is written as the project's `facilitator_id`.
+10. Once setup completes, subsequent app loads resolve users through the provider and load the project workspace.
 
 ## Core Concepts
 
@@ -226,9 +246,10 @@ App Initialization:
 3. Create, update, or fetch the app user record for that identity
 4. Load permissions (with fallback)
 5. Resolve the current project context
-6. If no project exists, route to the project setup flow
-7. If a project exists, load the project workspace
-8. Set isLoading = false (ONLY after all above complete)
+6. If no project exists and the user is a facilitator, route to the project setup flow
+7. If no project exists and the user is non-facilitator, show a not-ready state
+8. If a project exists, load the project workspace
+9. Set isLoading = false (ONLY after all above complete)
 ```
 
 **Critical Requirement**: `isLoading` must remain `true` until ALL initialization steps complete, including permission loading.
@@ -370,9 +391,12 @@ Key implementation points:
 ### Workshop Application Auth
 - [ ] Production app load resolves the authenticated user through `IdentityProvider` without showing an app-owned password form
 - [ ] Local development defaults to a facilitator identity when no hosted identity provider is present
+- [ ] Databricks Apps `CAN MANAGE` users map to facilitator role
+- [ ] Databricks Apps `CAN USE` users map to non-facilitator role
 - [ ] Local development can explicitly switch role/user for dev testing without enabling that switch in production
 - [ ] Provider identity creates or updates the app user record before project setup/workspace loading
-- [ ] First authenticated production user can access `/project/setup` as facilitator after app/resource access is granted
+- [ ] Configured facilitator user can access `/project/setup` after receiving `CAN MANAGE` on the app and after required app resources are configured
+- [ ] `CAN USE` users cannot access `/project/setup`
 - [ ] No client-cached user state can override the active provider identity
 - [ ] No "permission denied" errors on normal session load
 - [ ] No page refresh required after provider-authenticated app load
@@ -385,6 +409,9 @@ Key implementation points:
 ### Databricks API Auth
 - [ ] All Databricks API calls use SDK-resolved tokens (no user-provided PATs)
 - [ ] MLflow operations use SDK auth without `os.environ["DATABRICKS_TOKEN"]` mutation
+- [ ] User-attributed Databricks operations can receive request-scoped delegated user credentials when the operation contract requires it
+- [ ] MLflow assessment logging can use the logged-in Databricks user identity when that feature is implemented
+- [ ] Forwarded user tokens are never persisted, logged, stored in localStorage, or exposed to the browser
 - [ ] No token input fields exist in the frontend UI
 - [ ] No token persistence in memory (`TokenStorageService` for Databricks) or database (`databricks_tokens` table)
 - [ ] Local development works via `databricks auth login` CLI profile
