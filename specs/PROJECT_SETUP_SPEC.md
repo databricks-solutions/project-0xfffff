@@ -12,9 +12,13 @@ The setup route creates durable app state and enqueues orchestration work. It do
 
 The project is the V2 longitudinal anchor. In V2, one app corresponds to one project and one MLflow experiment or trace source. Long-lived setup state attaches to the project.
 
+The app must treat project identity as app-level state, not as a user-selected workshop. Production deployments should load the single project for the app after resolving the current Databricks user. If no project exists, the app routes to day-one setup. If more than one project exists for the app, that is an invariant violation that should be surfaced as a recoverable administrative error rather than silently choosing a project.
+
 ### Day-One Bootstrap
 
 The first-run creation path at `/project/setup`. It gathers only the minimum information required to start: project name, agent or app description, facilitator identity, and Databricks Unity Catalog trace table path. Additional knobs should default or move to downstream configuration unless explicitly required by a later spec.
+
+The facilitator identity comes from the authenticated app user resolved during app initialization. V2 project setup must not submit a hardcoded facilitator id.
 
 ### Setup Job
 
@@ -25,6 +29,18 @@ The app-owned progress record for setup. It stores the queue job id, current ste
 The queued orchestration entrypoint. The pipeline advances setup steps in order, updates the setup job progress read model, and delegates expensive parallelizable work to provider-specific execution only when a concrete step needs it.
 
 ## Behavior
+
+### App Loading
+
+V2 app loading is project-first after identity resolution:
+
+1. Resolve the current app user from Databricks Apps identity, or from the local dev identity fallback.
+2. Load the app's project record.
+3. If no project exists, navigate to `/project/setup`.
+4. If exactly one project exists, load the project workspace without presenting a project/workshop picker.
+5. If multiple projects exist, show an invariant error with a recoverable admin path.
+
+The legacy workshop selection/login screen is not part of the V2 production loading path.
 
 ### Setup Submission
 
@@ -106,6 +122,14 @@ The setup feature owns its own router, schemas, service, repository, pipeline, a
 - [ ] Submitting `/project/setup` enqueues a setup pipeline worker job
 - [ ] `POST /project/setup` returns `project_id` and `setup_job_id`
 - [ ] Setup persists the project name, agent/app description, facilitator id, and Databricks UC trace table path
+- [ ] Setup uses the authenticated app user as `facilitator_id`; no hardcoded facilitator id is submitted
+
+### App Loading
+
+- [ ] Production V2 app load resolves a single app project without a workshop/project picker
+- [ ] If no project exists, app load routes to `/project/setup`
+- [ ] If multiple projects exist for one app, app load surfaces an invariant error instead of choosing silently
+- [ ] Legacy workshop selection/login is not shown in the V2 production loading path
 
 ### Progress Visibility
 
@@ -122,6 +146,7 @@ The setup feature owns its own router, schemas, service, repository, pipeline, a
 | Date | Plan | Status | Summary |
 |------|------|--------|---------|
 | 2026-05-05 | [V2 Setup Slice Start](../.cursor/plans/v2-setup-start_883e6994.plan.md) | in-progress | Day-one project setup bootstrap with Procrastinate-backed setup orchestration and Databricks/Lakeflow delegation boundaries |
+| 2026-05-05 | (spec PR) | proposed | Define one-app/one-project loading and authenticated facilitator ownership before implementation |
 
 ## Future Work
 

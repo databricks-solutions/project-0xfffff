@@ -98,7 +98,15 @@ POST /users/
 
 ### Login Flow by Role
 
-Facilitators and other roles authenticate through different paths:
+V2 project mode starts from the Databricks Apps authenticated user. After app-user resolution, the stored app role determines permissions. Production V2 must not require the user to enter the legacy facilitator YAML credentials before the app can load.
+
+Default V2 role behavior:
+
+- Databricks Apps production: the current Databricks user is resolved as an app user; initial project-owner users default to facilitator unless a later role-assignment flow explicitly sets another role.
+- Local development: when no Databricks Apps identity is present, the dev fallback may assume facilitator by default.
+- Local role/user switching is allowed only as an explicit development aid for testing SME or participant behavior.
+
+Legacy workshop mode still authenticates facilitators and other roles through different paths:
 
 ```
 POST /auth/login
@@ -202,9 +210,13 @@ Returns the permission set derived from the user's role. Called by the frontend 
 
 ### Login by Role
 
-- [ ] Facilitators authenticate via YAML config (preconfigured credentials)
-- [ ] SMEs and participants authenticate via database credentials
-- [ ] Login response includes is_preconfigured_facilitator flag for facilitator logins
+- [ ] V2 production derives the current app user from Databricks Apps identity before role permissions load
+- [ ] V2 project-owner users default to facilitator unless explicitly assigned another role
+- [ ] V2 local development can assume facilitator by default without Databricks Apps identity
+- [ ] Dev-only role switching is explicit and unavailable in production defaults
+- [ ] Legacy workshop mode facilitators authenticate via YAML config (preconfigured credentials)
+- [ ] Legacy workshop mode SMEs and participants authenticate via database credentials
+- [ ] Legacy workshop login response includes is_preconfigured_facilitator flag for facilitator logins
 
 ## Related Specs
 

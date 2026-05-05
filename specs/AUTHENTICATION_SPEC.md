@@ -11,6 +11,8 @@ The system has two distinct authentication concerns:
 1. **Workshop application auth** (this spec) — login, roles, permissions, sessions
 2. **Databricks API auth** — how the backend authenticates to Databricks services (MLflow, serving endpoints, volumes)
 
+For V2 project-mode deployments, application auth starts from the Databricks Apps user session. A production Databricks App is already behind Databricks login, so the app must not present the legacy email/password workshop login as the default first screen. Local development may keep a development-only facilitator identity so engineers can run the app without the Databricks Apps identity proxy.
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Databricks Workspace                      │
@@ -135,6 +137,22 @@ For Lakebase Autoscaling, use `WorkspaceClient().postgres.generate_database_cred
 
 Databricks Apps can forward the logged-in user's OAuth token via the `x-forwarded-access-token` HTTP header. This would allow per-user Unity Catalog enforcement (row-level filters, column masks). Not yet implemented — the app currently uses the service principal identity for all Databricks API calls.
 
+### Databricks App User Identity
+
+Databricks Apps production traffic is already authenticated by the platform. The application must resolve the current app user from platform-provided identity, create or update the corresponding app user record as needed, then derive role permissions from that app user record.
+
+This identity is separate from Databricks API auth:
+
+- The logged-in Databricks user determines the app user record, display name, role, and project ownership.
+- Backend calls to MLflow, model serving, Lakebase, and volumes continue to use the app's configured Databricks API auth unless a later on-behalf-of-user feature explicitly changes that contract.
+- The legacy YAML facilitator credentials are not the production default in V2 project mode.
+
+Local development behavior:
+
+- If no Databricks Apps identity is available locally, the app may assume a facilitator identity by default.
+- Local development may provide an explicit dev-only switch for testing SME or participant behavior.
+- Dev identity switches must not be enabled implicitly in production deployments.
+
 ## Core Concepts
 
 ### User
@@ -181,18 +199,26 @@ Permission Loading Flow:
 ```
 App Initialization:
 1. Set isLoading = true
-2. Check localStorage for saved user
-3. If user found:
-   a. Validate user exists via API
-   b. If valid: Load user data
-   c. Load permissions (with fallback)
-   d. Set workshop context if available
-4. Set isLoading = false (ONLY after all above complete)
+2. Resolve the current app user:
+   a. In Databricks Apps production, use the platform-authenticated user identity
+   b. In local development, use the configured local dev identity, defaulting to facilitator
+3. Create, update, or fetch the app user record for that identity
+4. Load permissions (with fallback)
+5. Resolve the current V2 project context
+6. If no project exists, route to the project setup flow
+7. If a project exists, load the project workspace
+8. Set isLoading = false (ONLY after all above complete)
 ```
 
 **Critical Requirement**: `isLoading` must remain `true` until ALL initialization steps complete, including permission loading.
 
+The legacy localStorage session validation path is a compatibility fallback for non-V2 workshop flows. It must not override a Databricks Apps production identity.
+
 ### Login Flow
+
+In V2 project mode, manual login is not the primary production path. Users arrive with a Databricks session, and app initialization resolves the app user automatically.
+
+Legacy workshop login may remain for compatibility until the workshop-mode surface is retired:
 
 ```
 Login Flow:
@@ -317,13 +343,19 @@ Key implementation points:
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
+| `/users/auth/current` | GET | Resolve current Databricks Apps or local dev app user |
 | `/users/{id}` | GET | Validate user exists |
 | `/users/{id}/permissions` | GET | Load user permissions |
-| `/login` | POST | Authenticate user |
+| `/users/auth/login` | POST | Legacy workshop login |
 
 ## Success Criteria
 
 ### Workshop Application Auth
+- [ ] V2 production app load resolves the already-authenticated Databricks user without showing the legacy login form
+- [ ] V2 local development defaults to a facilitator identity when no Databricks Apps identity proxy is present
+- [ ] Local development can explicitly switch role/user for dev testing without enabling that switch in production
+- [ ] Databricks Apps user identity creates or updates the app user record before project setup/workspace loading
+- [ ] Legacy cached sessions never override the Databricks Apps production identity
 - [ ] No "permission denied" errors on normal login
 - [ ] No page refresh required after login
 - [ ] Slow network: Loading indicator shown until ready
@@ -403,3 +435,4 @@ Key implementation points:
 | 2026-04-10 | [SDK Auth Migration](../.claude/plans/2026-04-10-sdk-auth-migration.md) | complete | Replace PAT token auth with Databricks SDK unified auth |
 | 2026-04-11 | (inline) | complete | Fix Lakebase connection pool: switch to `do_connect` + `generate_database_credential()`, fix pool settings to match Databricks docs |
 | 2026-04-15 | [Remove databricks_host](../.claude/plans/2026-04-15-remove-databricks-host-app-yaml-resources.md) | in-progress | Remove user-configurable host, use app.yaml resources for MLflow experiment, fix MemAlign embedding model |
+| 2026-05-05 | (spec PR) | proposed | Define V2 Databricks Apps user bootstrap and local facilitator fallback before implementation |
