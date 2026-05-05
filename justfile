@@ -366,8 +366,19 @@ openapi:
   @echo "📜 Generating OpenAPI spec from FastAPI..."
   @uv run python -m server.make_openapi --output /tmp/openapi.json
   @echo "🔧 Generating TypeScript client..."
-  @npx openapi-typescript-codegen --input /tmp/openapi.json --output {{client-dir}}/src/client --client fetch
+  @npx --yes openapi-typescript-codegen@0.30.0 --input /tmp/openapi.json --output {{client-dir}}/src/client --client fetch
   @echo "✅ TypeScript client generated at {{client-dir}}/src/client"
+
+# Generate OpenAPI for local dev without syncing or rewriting uv.lock.
+[group('dev')]
+openapi-dev:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  echo "📜 Generating OpenAPI spec from FastAPI..."
+  uv run --no-sync python -m server.make_openapi --output /tmp/openapi.json
+  echo "🔧 Generating TypeScript client..."
+  npx --yes openapi-typescript-codegen@0.30.0 --input /tmp/openapi.json --output {{client-dir}}/src/client --client fetch
+  echo "✅ TypeScript client generated at {{client-dir}}/src/client"
 
 # Run pytest (writes JSON report to .test-results/ for token-efficient summaries)
 [group('dev')]
@@ -573,6 +584,10 @@ db-bootstrap:
   uv run python -m server.db_bootstrap bootstrap
 
 [group('db')]
+db-bootstrap-dev:
+  uv run --no-sync python -m server.db_bootstrap bootstrap
+
+[group('db')]
 setup-queue-schema:
   uv run procrastinate --app=server.workers.procrastinate_app.app schema --apply
 
@@ -694,7 +709,7 @@ deploy:
   echo "   Run 'just app-info' to check deployment status"
 
 [group('dev')]
-dev api_port_or_db_mode="8000" ui_port="5173" db_mode="sqlite": openapi
+dev api_port_or_db_mode="8000" ui_port="5173" db_mode="sqlite": openapi-dev
   #!/usr/bin/env bash
   set -euo pipefail
 
@@ -719,7 +734,7 @@ dev api_port_or_db_mode="8000" ui_port="5173" db_mode="sqlite": openapi
         source "{{lakebase-local-env}}"
         set +a
       fi
-      if [ -n "${DATABASE_URL:-}" ] && [ -z "${PGHOST:-}" ]; then
+      if [ -n "${DATABASE_URL:-}" ]; then
         eval "$(DATABASE_URL="$DATABASE_URL" just _lakebase-url-env)"
       fi
 
@@ -731,7 +746,7 @@ dev api_port_or_db_mode="8000" ui_port="5173" db_mode="sqlite": openapi
           echo "   Or set PGUSER in {{lakebase-local-env}}." >&2
           exit 1
         }
-        PGUSER="$(printf '%s' "$current_user_json" | uv run python -c 'import json,sys; print(json.load(sys.stdin).get("userName",""))')"
+        PGUSER="$(printf '%s' "$current_user_json" | uv run --no-sync python -c 'import json,sys; print(json.load(sys.stdin).get("userName",""))')"
         export PGUSER
       fi
 
@@ -774,10 +789,10 @@ dev api_port_or_db_mode="8000" ui_port="5173" db_mode="sqlite": openapi
   echo "  UI : http://localhost:${UI_PORT}"
   echo ""
 
-  just db-bootstrap
+  just db-bootstrap-dev
 
   # Start API
-  (uv run uvicorn {{server-dir}}.app:app --reload --port "$API_PORT" --log-level "${UVICORN_LOG_LEVEL:-info}") &
+  (uv run --no-sync uvicorn {{server-dir}}.app:app --reload --port "$API_PORT" --log-level "${UVICORN_LOG_LEVEL:-info}") &
   api_pid=$!
 
   # Start UI and proxy to the selected API port.

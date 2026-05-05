@@ -4,6 +4,7 @@ import { WorkshopProvider } from './context/WorkshopContext';
 import { UserProvider } from './context/UserContext';
 import { WorkflowProvider } from './context/WorkflowContext';
 import { TraceDataViewerDemo } from './pages/TraceDataViewerDemo';
+import { ProjectSetupPage } from './pages/ProjectSetupPage';
 import { UserShell } from './pages/shell/UserShell';
 import { WorkshopShell } from './pages/shell/WorkshopShell';
 import { WorkflowShell } from './pages/shell/WorkflowShell';
@@ -72,6 +73,7 @@ function AppRoutes() {
             </Route>
           </Route>
         </Route>
+        <Route path="/project/setup" element={<ProjectSetupPage />} />
         <Route path="/trace-viewer-demo" element={<TraceDataViewerDemo />} />
       </Routes>
     </>
