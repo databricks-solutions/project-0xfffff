@@ -133,18 +133,16 @@ For Lakebase Autoscaling, use `WorkspaceClient().postgres.generate_database_cred
 **Reference:** [Lakebase authentication](https://docs.databricks.com/aws/en/lakebase/admin/authentication.html), [Databricks Apps resources](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources)
 
 
-### Delegated User Databricks Auth
+### Optional Databricks OBO Auth
 
-Some Databricks operations must be attributable to, or executed on behalf of, the logged-in Databricks user. The identity provider must preserve enough Databricks user context to support these operations without replacing the app service principal as the default resource identity.
+When the active provider is `DatabricksAppsIdentityProvider`, Databricks on-behalf-of-user (OBO) auth is available for future operations that explicitly need to execute with the logged-in Databricks user's permissions. OBO availability does not replace the app service principal as the default resource identity.
 
 On Databricks Apps, delegated user auth is sourced from the platform-provided request identity and, when enabled for the app, the `X-Forwarded-Access-Token` header. The application must treat this token as request-scoped credential material:
 
 - Do not persist the forwarded user token in localStorage, application database tables, logs, or long-lived backend caches.
 - Do not expose the forwarded user token to the browser.
-- Pass delegated credentials only to the backend operation that requires user attribution or on-behalf-of-user execution.
-- Fall back to the app service principal only for operations whose contract is app-owned, not user-attributed.
-
-MLflow assessment logging is a user-attributed operation candidate. The auth boundary must allow those calls to use the resolved Databricks user identity when the implementation reaches that slice.
+- Pass delegated credentials only to backend operations whose contract explicitly requires on-behalf-of-user execution.
+- Use the app service principal for app-owned Databricks operations.
 
 ### Application User Identity
 
@@ -169,7 +167,7 @@ This identity is separate from Databricks API auth:
 - On Databricks Apps, app permission determines the app role: users with `CAN MANAGE` are facilitators; users with `CAN USE` are non-facilitators.
 - Project ownership is application state. Project setup writes the submitting facilitator as the project's `facilitator_id`; identity resolution alone does not create project ownership.
 - Backend calls to MLflow, model serving, Lakebase, and volumes continue to use the app's configured Databricks API auth unless a later on-behalf-of-user feature explicitly changes that contract.
-- User-attributed Databricks operations use delegated user auth when their contract requires the logged-in user's identity, for example future MLflow assessment logging.
+- Databricks OBO is available when using `DatabricksAppsIdentityProvider`, but individual feature specs must opt into it explicitly.
 - App-owned YAML facilitator passwords are not part of the standard production authentication path.
 
 Supported providers:
@@ -409,8 +407,7 @@ Key implementation points:
 ### Databricks API Auth
 - [ ] All Databricks API calls use SDK-resolved tokens (no user-provided PATs)
 - [ ] MLflow operations use SDK auth without `os.environ["DATABRICKS_TOKEN"]` mutation
-- [ ] User-attributed Databricks operations can receive request-scoped delegated user credentials when the operation contract requires it
-- [ ] MLflow assessment logging can use the logged-in Databricks user identity when that feature is implemented
+- [ ] Databricks OBO is available through `DatabricksAppsIdentityProvider` for features that explicitly require it
 - [ ] Forwarded user tokens are never persisted, logged, stored in localStorage, or exposed to the browser
 - [ ] No token input fields exist in the frontend UI
 - [ ] No token persistence in memory (`TokenStorageService` for Databricks) or database (`databricks_tokens` table)
