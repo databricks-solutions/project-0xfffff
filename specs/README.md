@@ -25,6 +25,7 @@ This directory contains declarative specifications for the Human Evaluation Work
 | [TRACE_DISPLAY_SPEC](./TRACE_DISPLAY_SPEC.md)                           | Trace Display            | JSONPath, input extraction, output extraction, preview, facilitator settings                                                           |
 | [TRACE_INGESTION_SPEC](./TRACE_INGESTION_SPEC.md)                       | Trace Ingestion          | ingest, intake, CSV upload, content extraction, deduplication, mlflow_trace_id, upsert                                                 |
 | [TRACE_SUMMARIZATION_SPEC](./TRACE_SUMMARIZATION_SPEC.md)               | Trace Summarization      | milestone view, executive summary, LLM summarization, batch summarization, job tracking, progress UI, re-summarize, summary indicators |
+| [PROJECT_SETUP_SPEC](./PROJECT_SETUP_SPEC.md)                           | Project Setup            | project setup, day-one bootstrap, setup pipeline, Procrastinate, setup progress, Lakeflow delegation                                   |
 
 
 ---
@@ -32,6 +33,20 @@ This directory contains declarative specifications for the Human Evaluation Work
 ## Keyword Search Index
 
 Use this index to find relevant specs by keyword.
+
+### Project Setup
+
+- **project setup** → [PROJECT_SETUP_SPEC](./PROJECT_SETUP_SPEC.md)
+- **day-one bootstrap** → [PROJECT_SETUP_SPEC](./PROJECT_SETUP_SPEC.md)
+- **/project/setup** → [PROJECT_SETUP_SPEC](./PROJECT_SETUP_SPEC.md)
+- **setup pipeline** → [PROJECT_SETUP_SPEC](./PROJECT_SETUP_SPEC.md)
+- **setup progress** → [PROJECT_SETUP_SPEC](./PROJECT_SETUP_SPEC.md)
+- **setup job** → [PROJECT_SETUP_SPEC](./PROJECT_SETUP_SPEC.md)
+- **Procrastinate** → [PROJECT_SETUP_SPEC](./PROJECT_SETUP_SPEC.md)
+- **task queue** → [PROJECT_SETUP_SPEC](./PROJECT_SETUP_SPEC.md)
+- **Databricks Jobs** → [PROJECT_SETUP_SPEC](./PROJECT_SETUP_SPEC.md)
+- **Lakeflow Jobs** → [PROJECT_SETUP_SPEC](./PROJECT_SETUP_SPEC.md)
+- **JBW Project** → [PROJECT_SETUP_SPEC](./PROJECT_SETUP_SPEC.md)
 
 ### Discovery & Assisted Facilitation
 
