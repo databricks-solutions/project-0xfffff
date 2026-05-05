@@ -215,6 +215,7 @@ Returns the permission set derived from the user's role. Called by the frontend 
 ### Identity by Role
 
 - [ ] Production derives the current app user from `IdentityProvider` before role permissions load
+- [ ] Databricks Apps role mapping resolves app permission from Databricks Apps permissions data using SDK Apps `get_permissions` or an equivalent documented permissions endpoint
 - [ ] Databricks Apps `CAN MANAGE` maps to facilitator role
 - [ ] Databricks Apps `CAN USE` maps to non-facilitator role
 - [ ] Project setup requires facilitator role and writes the submitting facilitator as `facilitator_id`

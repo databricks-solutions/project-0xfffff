@@ -391,6 +391,7 @@ Key implementation points:
 ### Workshop Application Auth
 - [ ] Production app load resolves the authenticated user through `IdentityProvider` without showing an app-owned password form
 - [ ] Local development defaults to a facilitator identity when no hosted identity provider is present
+- [ ] `DatabricksAppsIdentityProvider` resolves app permission from Databricks Apps permissions data, using SDK Apps `get_permissions` or an equivalent documented permissions endpoint
 - [ ] Databricks Apps `CAN MANAGE` users map to facilitator role
 - [ ] Databricks Apps `CAN USE` users map to non-facilitator role
 - [ ] Local development can explicitly switch role/user for dev testing without enabling that switch in production
