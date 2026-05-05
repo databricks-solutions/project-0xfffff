@@ -102,9 +102,10 @@ The setup feature owns its own router, schemas, service, repository, pipeline, a
 #### Entry and Routing
 
 - The application bootstrap gate checks setup state before rendering the facilitator root workspace.
-- If there is no configured project or setup has not been submitted, the gate routes the user to `/project/setup`.
+- If there is no configured project or setup has not been submitted, authenticated facilitators and users with `can_manage_workshop` are routed to `/project/setup`.
+- SMEs, participants, and users without `can_manage_workshop` must not see the setup form; they should see a waiting or unavailable state until a facilitator completes setup.
 - If the latest setup job is pending, running, failed, or enqueue_failed, the gate renders the facilitator root workspace with setup progress state instead of treating the project as ready.
-- Direct navigation to `/project/setup` remains valid for retrying setup after recoverable failures.
+- Direct navigation to `/project/setup` remains valid for facilitators retrying setup after recoverable failures.
 
 #### Submission and Navigation
 
@@ -168,6 +169,8 @@ flowchart LR
 - [ ] `/project/setup` renders a setup form backed by shared form, input, button, card, alert, and badge atoms
 - [ ] Project name, agent/app description, facilitator identity, and Databricks UC trace table path are required before submission
 - [ ] Required setup fields show client-side validation before submission
+- [ ] Authenticated facilitators and users with `can_manage_workshop` can access `/project/setup` when no project has completed setup
+- [ ] SMEs, participants, and users without `can_manage_workshop` cannot access the setup form
 - [ ] Successful setup submission navigates to the facilitator root workspace with setup job progress available
 - [ ] UI implementation follows the wiring architecture diagram and keeps setup entry, submission, and progress concerns separate
 
