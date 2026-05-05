@@ -1,5 +1,5 @@
 {
-  "generated": "2026-05-05T12:22:13.303746",
+  "generated": "2026-05-05T12:23:12.792019",
   "specs": {
     "ANNOTATION_SPEC": {
       "total_requirements": 21,
@@ -3609,9 +3609,9 @@
       ]
     },
     "PROJECT_SETUP_SPEC": {
-      "total_requirements": 14,
+      "total_requirements": 16,
       "covered_requirements": 3,
-      "coverage_percent": 21,
+      "coverage_percent": 18,
       "by_type": {
         "unit": 4,
         "integration": 0,
@@ -3663,6 +3663,18 @@
         },
         {
           "text": "Required setup fields show client-side validation before submission",
+          "covered": false,
+          "backend_only": false,
+          "tests": []
+        },
+        {
+          "text": "Authenticated facilitators and users with `can_manage_workshop` can access `/project/setup` when no project has completed setup",
+          "covered": false,
+          "backend_only": false,
+          "tests": []
+        },
+        {
+          "text": "SMEs, participants, and users without `can_manage_workshop` cannot access the setup form",
           "covered": false,
           "backend_only": false,
           "tests": []
@@ -3732,6 +3744,8 @@
         "`/project/setup` renders a setup form backed by shared form, input, button, card, alert, and badge atoms",
         "Project name, agent/app description, facilitator identity, and Databricks UC trace table path are required before submission",
         "Required setup fields show client-side validation before submission",
+        "Authenticated facilitators and users with `can_manage_workshop` can access `/project/setup` when no project has completed setup",
+        "SMEs, participants, and users without `can_manage_workshop` cannot access the setup form",
         "Successful setup submission navigates to the facilitator root workspace with setup job progress available",
         "UI implementation follows the wiring architecture diagram and keeps setup entry, submission, and progress concerns separate",
         "Setup enqueue failures are visible as recoverable failed state rather than a ready project",
@@ -5540,7 +5554,7 @@
     }
   },
   "summary": {
-    "total_requirements": 367,
+    "total_requirements": 369,
     "covered_requirements": 176,
     "coverage_percent": 47
   },
