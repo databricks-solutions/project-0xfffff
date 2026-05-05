@@ -162,6 +162,35 @@ Identity {
 
 The application must resolve the current app user from this provider identity, create or update the corresponding app user record as needed, then derive role permissions from that app user record.
 
+#### IdentityProvider Contract
+
+Every identity provider must implement the same backend contract so application auth does not branch on the hosting environment:
+
+```python
+class IdentityProvider(Protocol):
+    provider_name: str
+
+    def resolve_identity(request: Request) -> Identity:
+        """Resolve the authenticated external principal for the current request."""
+
+    def resolve_provider_role(identity: Identity) -> str:
+        """Return provider role such as CAN_MANAGE or CAN_USE."""
+
+    def map_provider_role(provider_role: str) -> UserRole:
+        """Map provider role to application role."""
+
+    def delegated_databricks_auth(request: Request) -> DelegatedDatabricksAuth | None:
+        """Return request-scoped OBO credentials when supported and enabled."""
+```
+
+Provider requirements:
+
+- `resolve_identity` must reject missing or unauthenticated identity with 401.
+- `resolve_provider_role` must be implemented by every provider. It must not be optional even when a provider has a default role.
+- `map_provider_role` is the only place provider-specific roles become application roles.
+- `delegated_databricks_auth` returns `None` for providers that do not support Databricks OBO.
+- The current-session endpoint must use this contract and return a normalized user/session shape independent of provider implementation.
+
 This identity is separate from Databricks API auth:
 
 - The logged-in external user determines the app user record and display name.
@@ -175,7 +204,7 @@ This identity is separate from Databricks API auth:
 Supported providers:
 
 - `DatabricksAppsIdentityProvider`: resolves the authenticated user from Databricks Apps request identity headers and maps Databricks App permission to app role (`CAN MANAGE` -> facilitator, `CAN USE` -> non-facilitator) using Databricks Apps permissions data rather than an assumed permission header.
-- `LocalDevIdentityProvider`: resolves a configured local developer identity and defaults to facilitator.
+- `LocalDevIdentityProvider`: resolves a configured local developer identity and implements `resolve_provider_role` from local configuration. Default local provider role is `CAN_MANAGE`; developers may set the local provider role to `CAN_USE` to test non-facilitator behavior.
 - Future providers may support other hosted environments without changing application role or project-loading code.
 
 First-time production facilitator access:
@@ -391,7 +420,9 @@ Key implementation points:
 ### Workshop Application Auth
 - [ ] Production app load resolves the authenticated user through `IdentityProvider` without showing an app-owned password form
 - [ ] Local development defaults to a facilitator identity when no hosted identity provider is present
+- [ ] Every `IdentityProvider` implements `resolve_identity`, `resolve_provider_role`, `map_provider_role`, and `delegated_databricks_auth`
 - [ ] `DatabricksAppsIdentityProvider` resolves app permission from Databricks Apps permissions data, using SDK Apps `get_permissions` or an equivalent documented permissions endpoint
+- [ ] `LocalDevIdentityProvider` implements `resolve_provider_role` from local configuration, defaulting to `CAN_MANAGE` and allowing `CAN_USE` for non-facilitator testing
 - [ ] Databricks Apps `CAN MANAGE` users map to facilitator role
 - [ ] Databricks Apps `CAN USE` users map to non-facilitator role
 - [ ] Local development can explicitly switch role/user for dev testing without enabling that switch in production
