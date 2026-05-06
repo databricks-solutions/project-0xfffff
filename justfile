@@ -364,7 +364,7 @@ ui-build:
 [group('dev')]
 openapi:
   @echo "📜 Generating OpenAPI spec from FastAPI..."
-  @uv run python -m server.make_openapi --output /tmp/openapi.json
+  @uv run --frozen python -m server.make_openapi --output /tmp/openapi.json
   @echo "🔧 Generating TypeScript client..."
   @npx openapi-typescript-codegen --input /tmp/openapi.json --output {{client-dir}}/src/client --client fetch
   @echo "✅ TypeScript client generated at {{client-dir}}/src/client"

@@ -55,6 +55,10 @@ import type { MLflowIntakeStatus } from '../models/MLflowIntakeStatus';
 import type { MLflowTraceInfo } from '../models/MLflowTraceInfo';
 import type { ParticipantNote } from '../models/ParticipantNote';
 import type { ParticipantNoteCreate } from '../models/ParticipantNoteCreate';
+import type { ProjectSetupProgress } from '../models/ProjectSetupProgress';
+import type { ProjectSetupRequest } from '../models/ProjectSetupRequest';
+import type { ProjectSetupResponse } from '../models/ProjectSetupResponse';
+import type { ProjectSetupState } from '../models/ProjectSetupState';
 import type { PromoteFindingRequest } from '../models/PromoteFindingRequest';
 import type { ResummarizeRequest } from '../models/ResummarizeRequest';
 import type { Rubric } from '../models/Rubric';
@@ -92,6 +96,86 @@ import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class ApiService {
+    /**
+     * Get Project Setup
+     * @returns ProjectSetupState Successful Response
+     * @throws ApiError
+     */
+    public static getProjectSetupApiProjectSetupGet(): CancelablePromise<ProjectSetupState> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/project/setup',
+        });
+    }
+    /**
+     * Start Project Setup
+     * @param requestBody
+     * @returns ProjectSetupResponse Successful Response
+     * @throws ApiError
+     */
+    public static startProjectSetupApiProjectSetupPost(
+        requestBody: ProjectSetupRequest,
+    ): CancelablePromise<ProjectSetupResponse> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/project/setup',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Update Project Setup
+     * @param requestBody
+     * @returns ProjectSetupState Successful Response
+     * @throws ApiError
+     */
+    public static updateProjectSetupApiProjectSetupPatch(
+        requestBody: ProjectSetupRequest,
+    ): CancelablePromise<ProjectSetupState> {
+        return __request(OpenAPI, {
+            method: 'PATCH',
+            url: '/api/project/setup',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Project Setup Status
+     * @returns ProjectSetupProgress Successful Response
+     * @throws ApiError
+     */
+    public static getProjectSetupStatusApiProjectSetupStatusGet(): CancelablePromise<ProjectSetupProgress> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/project/setup-status',
+        });
+    }
+    /**
+     * Get Project Setup Job
+     * @param setupJobId
+     * @returns ProjectSetupProgress Successful Response
+     * @throws ApiError
+     */
+    public static getProjectSetupJobApiProjectSetupJobsSetupJobIdGet(
+        setupJobId: string,
+    ): CancelablePromise<ProjectSetupProgress> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/project/setup-jobs/{setup_job_id}',
+            path: {
+                'setup_job_id': setupJobId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
     /**
      * List Workshops
      * List all workshops, optionally filtered by facilitator or user.

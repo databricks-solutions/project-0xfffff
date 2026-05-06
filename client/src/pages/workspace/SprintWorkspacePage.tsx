@@ -5,9 +5,10 @@ import { FacilitatorRootWorkspace } from '@/components/workspace/FacilitatorRoot
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 export function SprintWorkspacePage() {
-  const { user } = useUser();
+  const { user, permissions } = useUser();
+  const canManageWorkspace = user?.role === UserRole.FACILITATOR || permissions?.can_manage_workshop === true;
 
-  if (user?.role === UserRole.FACILITATOR) {
+  if (canManageWorkspace) {
     return <FacilitatorRootWorkspace />;
   }
 
