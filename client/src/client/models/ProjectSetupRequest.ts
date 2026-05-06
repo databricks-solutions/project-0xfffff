@@ -2,13 +2,10 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-/**
- * Request model for creating facilitator configuration.
- */
-export type FacilitatorConfigCreate = {
-    email: string;
-    password: string;
+export type ProjectSetupRequest = {
     name: string;
+    agent_description: string;
+    trace_uc_table_path: string;
     description?: (string | null);
 };
 

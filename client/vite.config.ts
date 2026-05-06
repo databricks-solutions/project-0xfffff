@@ -154,6 +154,10 @@ export default defineConfig({
         target: apiTarget,
         changeOrigin: true,
       },
+      '/api': {
+        target: apiTarget,
+        changeOrigin: true,
+      },
     },
   },
   build: {

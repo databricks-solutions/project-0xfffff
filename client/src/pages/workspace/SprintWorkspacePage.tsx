@@ -1,13 +1,13 @@
 import React from 'react';
-import { UserRole } from '@/client';
 import { useUser } from '@/context/UserContext';
 import { FacilitatorRootWorkspace } from '@/components/workspace/FacilitatorRootWorkspace';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 export function SprintWorkspacePage() {
-  const { user } = useUser();
+  const { permissions } = useUser();
+  const canManageWorkspace = permissions?.can_manage_project === true;
 
-  if (user?.role === UserRole.FACILITATOR) {
+  if (canManageWorkspace) {
     return <FacilitatorRootWorkspace />;
   }
 
@@ -15,9 +15,9 @@ export function SprintWorkspacePage() {
     <div className="p-6">
       <Card>
         <CardHeader>
-          <CardTitle>Workspace access</CardTitle>
+          <CardTitle>User workspace coming soon</CardTitle>
           <CardDescription>
-            This workspace root is currently focused on facilitator tools.
+            Your onboarding, home, and feed workspace will appear here.
           </CardDescription>
         </CardHeader>
       </Card>

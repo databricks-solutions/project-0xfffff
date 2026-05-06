@@ -34,7 +34,7 @@ export const GeneralDashboard: React.FC<GeneralDashboardProps> = ({ onNavigate }
   // Fetch workshop users
   const { data: workshopUsers } = useQuery({
     queryKey: ['workshop-users', workshopId],
-    queryFn: () => UsersService.listWorkshopUsersUsersWorkshopsWorkshopIdUsersGet(workshopId!),
+    queryFn: () => UsersService.listWorkshopUsersApiUsersWorkshopsWorkshopIdUsersGet(workshopId!),
     enabled: !!workshopId,
   });
 

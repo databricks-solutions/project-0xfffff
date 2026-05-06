@@ -4,15 +4,41 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from server.database import get_db
-from server.features.project_setup.schemas import ProjectSetupProgress, ProjectSetupRequest, ProjectSetupResponse
+from server.features.auth.schemas import AuthSession
+from server.features.auth.service import require_project_manager
+from server.features.project_setup.schemas import ProjectSetupProgress, ProjectSetupRequest, ProjectSetupResponse, ProjectSetupState
 from server.features.project_setup.service import ProjectSetupService
 
 router = APIRouter()
 
 
 @router.post("/setup", response_model=ProjectSetupResponse, status_code=status.HTTP_201_CREATED)
-async def start_project_setup(request: ProjectSetupRequest, db: Session = Depends(get_db)) -> ProjectSetupResponse:
-    return ProjectSetupService(db).start_setup(request)
+async def start_project_setup(
+    request: ProjectSetupRequest,
+    db: Session = Depends(get_db),
+    session: AuthSession = Depends(require_project_manager),
+) -> ProjectSetupResponse:
+    return ProjectSetupService(db).start_setup(request, facilitator_id=session.user.id)
+
+
+@router.get("/setup", response_model=ProjectSetupState)
+async def get_project_setup(db: Session = Depends(get_db)) -> ProjectSetupState:
+    state = ProjectSetupService(db).get_state()
+    if state is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return state
+
+
+@router.patch("/setup", response_model=ProjectSetupState)
+async def update_project_setup(
+    request: ProjectSetupRequest,
+    db: Session = Depends(get_db),
+    session: AuthSession = Depends(require_project_manager),
+) -> ProjectSetupState:
+    try:
+        return ProjectSetupService(db).update_state(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/setup-status", response_model=ProjectSetupProgress)

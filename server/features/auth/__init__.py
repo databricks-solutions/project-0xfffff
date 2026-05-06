@@ -1,0 +1,2 @@
+"""Provider-resolved application auth."""
+

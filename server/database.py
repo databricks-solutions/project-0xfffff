@@ -96,26 +96,12 @@ class UserDB(Base):
     role = Column(String, nullable=False)
     workshop_id = Column(String, ForeignKey("workshops.id"), nullable=True)  # Nullable for facilitators
     status = Column(String, default="active")
-    password_hash = Column(String, nullable=True)  # For authentication
     created_at = Column(DateTime, default=func.now())
     last_active = Column(DateTime, nullable=True)
 
     # Relationships
     workshop = relationship("WorkshopDB", back_populates="users")
     participants = relationship("WorkshopParticipantDB", back_populates="user")
-
-
-class FacilitatorConfigDB(Base):
-    """Database model for facilitator configurations."""
-
-    __tablename__ = "facilitator_configs"
-
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    email = Column(String, unique=True, nullable=False)
-    password_hash = Column(String, nullable=False)
-    name = Column(String, nullable=False)
-    description = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=func.now())
 
 
 class WorkshopParticipantDB(Base):

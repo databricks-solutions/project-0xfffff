@@ -7,7 +7,6 @@ export type UserCreate = {
     email: string;
     name: string;
     role: UserRole;
-    workshop_id: string;
-    password?: (string | null);
+    workshop_id?: (string | null);
 };
 

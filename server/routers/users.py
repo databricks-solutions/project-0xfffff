@@ -1,4 +1,4 @@
-"""User management API endpoints."""
+"""User roster and profile API endpoints."""
 
 from datetime import datetime
 
@@ -6,13 +6,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from server.database import get_db
+from server.features.auth.schemas import AuthSession
+from server.features.auth.service import get_current_session, require_project_manager
 from server.models import (
-    AuthResponse,
-    FacilitatorConfigCreate,
     User,
     UserCreate,
-    UserInvite,
-    UserLogin,
     UserPermissions,
     UserRole,
     UserStatus,
@@ -29,124 +27,25 @@ def get_database_service(db: Session = Depends(get_db)) -> DatabaseService:
 router = APIRouter()
 
 
-@router.post("/auth/login", response_model=AuthResponse)
-async def login(login_data: UserLogin, db_service=Depends(get_database_service)):
-    """Authenticate a user with email and password."""
-    # First, try to authenticate as a facilitator from YAML config
-    facilitator_data = db_service.authenticate_facilitator_from_yaml(login_data.email, login_data.password)
-
-    if facilitator_data:
-        # Facilitator authenticated from YAML - get or create user
-        user = db_service.get_or_create_facilitator_user(facilitator_data)
-
-        return AuthResponse(user=user, is_preconfigured_facilitator=True, message="Facilitator login successful")
-
-    # If not a facilitator, try regular user authentication
-    user = db_service.authenticate_user(login_data.email, login_data.password)
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid email or password")
-
-    # For participants/SMEs (no password), validate workshop access
-    # They can only access workshops they've been invited to
-    if user.role in ["sme", "participant"] and login_data.workshop_id:
-        # Check if user is invited to the selected workshop
-        if user.workshop_id != login_data.workshop_id:
-            # Also check workshop_participants table for multi-workshop support
-            participant = db_service.get_workshop_participant(login_data.workshop_id, user.id)
-            if not participant:
-                raise HTTPException(
-                    status_code=403,
-                    detail="You are not invited to this workshop. Please contact the facilitator to be added.",
-                )
-
-    # For participants/SMEs, update their current workshop_id to the selected workshop
-    # This ensures the user object reflects the workshop they're logging into
-    if login_data.workshop_id and user.workshop_id != login_data.workshop_id:
-        db_service.update_user_workshop_id(user.id, login_data.workshop_id)
-
-    # Activate user if they were pending
-    db_service.activate_user_on_login(user.id)
-
-    # Get updated user data with new status and workshop_id
-    updated_user = db_service.get_user(user.id)
-
-    return AuthResponse(user=updated_user, is_preconfigured_facilitator=False, message="Login successful")
-
-
 @router.post("/")
-async def create_user(user_data: UserCreate, db_service=Depends(get_database_service)):
-    """Create a new user (no authentication required)."""
+async def create_user(
+    user_data: UserCreate,
+    db_service=Depends(get_database_service),
+    session: AuthSession = Depends(require_project_manager),
+):
+    """Create a pending provider-authenticated user."""
     # Check if user already exists
     existing_user = db_service.get_user_by_email(user_data.email)
     if existing_user:
         raise HTTPException(status_code=400, detail="User with this email already exists")
 
-    # Create user with password
-    user = db_service.create_user_with_password(user_data)
+    user = db_service.create_user_from_invite(user_data)
 
-    # Add user as workshop participant
-    participant = WorkshopParticipant(user_id=user.id, workshop_id=user_data.workshop_id, role=user_data.role)
-    db_service.add_workshop_participant(participant)
+    if user_data.workshop_id:
+        participant = WorkshopParticipant(user_id=user.id, workshop_id=user_data.workshop_id, role=user_data.role)
+        db_service.add_workshop_participant(participant)
 
     return user
-
-
-@router.post("/admin/facilitators/")
-async def create_facilitator_config(config_data: FacilitatorConfigCreate, db_service=Depends(get_database_service)):
-    """Create a pre-configured facilitator (admin only)."""
-    # In a real system, you'd check admin permissions here
-    # For now, we'll allow this endpoint to be called
-
-    # Check if facilitator already exists
-    existing_config = db_service.get_facilitator_config(config_data.email)
-    if existing_config:
-        raise HTTPException(status_code=400, detail="Facilitator with this email already exists")
-
-    # Create facilitator configuration
-    config = db_service.create_facilitator_config(config_data)
-
-    return {"config": config, "message": "Facilitator configuration created successfully"}
-
-
-@router.get("/admin/facilitators/")
-async def list_facilitator_configs(db_service=Depends(get_database_service)):
-    """List all pre-configured facilitators (admin only)."""
-    configs = db_service.list_facilitator_configs()
-    return configs
-
-
-@router.post("/invitations/")
-async def create_invitation(invitation_data: UserInvite, db_service=Depends(get_database_service)):
-    """Create a new user invitation (facilitators only)."""
-    # Verify the inviter is a facilitator
-    inviter = db_service.get_user(invitation_data.invited_by)
-    if not inviter or inviter.role != UserRole.FACILITATOR:
-        raise HTTPException(status_code=403, detail="Only facilitators can create invitations")
-
-    # Check if user already exists
-    existing_user = db_service.get_user_by_email(invitation_data.email)
-    if existing_user:
-        raise HTTPException(status_code=400, detail="User with this email already exists")
-
-    # Create invitation
-    invitation = db_service.create_invitation(invitation_data)
-
-    return {
-        "invitation": invitation,
-        "invitation_url": f"/invite/{invitation.invitation_token}",
-        "message": "Invitation created successfully",
-    }
-
-
-@router.get("/invitations/")
-async def list_invitations(
-    workshop_id: str | None = None,
-    status: str | None = None,
-    db_service=Depends(get_database_service),
-):
-    """List invitations (facilitators only)."""
-    invitations = db_service.list_invitations(workshop_id=workshop_id, status=status)
-    return invitations
 
 
 @router.post("/workshops/{workshop_id}/users/")
@@ -178,7 +77,7 @@ async def add_user_to_workshop(workshop_id: str, user_data: UserCreate, db_servi
         }
     # User doesn't exist globally - create them
     user_data.workshop_id = workshop_id
-    user = db_service.create_user_with_password(user_data)
+    user = db_service.create_user_from_invite(user_data)
 
     # Add user as workshop participant
     participant = WorkshopParticipant(user_id=user.id, workshop_id=workshop_id, role=user_data.role)
@@ -204,13 +103,9 @@ async def list_workshop_users(workshop_id: str, db_service=Depends(get_database_
     return {"workshop_id": workshop_id, "users": users, "total_users": len(users)}
 
 
-@router.get("/{user_id}", response_model=User)
-async def get_user(user_id: str, db_service=Depends(get_database_service)):
-    """Get user by ID."""
-    user = db_service.get_user(user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user
+@router.get("/me", response_model=User)
+async def get_current_user_profile(session: AuthSession = Depends(get_current_session)) -> User:
+    return session.user
 
 
 @router.get("/", response_model=list[User])
@@ -218,9 +113,19 @@ async def list_users(
     workshop_id: str | None = None,
     role: UserRole | None = None,
     db_service=Depends(get_database_service),
+    session: AuthSession = Depends(require_project_manager),
 ):
-    """List users, optionally filtered by workshop or role."""
+    """List materialized app users, optionally filtered by workshop or role."""
     return db_service.list_users(workshop_id=workshop_id, role=role)
+
+
+@router.get("/{user_id}", response_model=User)
+async def get_user(user_id: str, db_service=Depends(get_database_service)):
+    """Get user by ID."""
+    user = db_service.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
 
 
 @router.get("/{user_id}/permissions", response_model=UserPermissions)

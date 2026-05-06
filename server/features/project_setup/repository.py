@@ -13,7 +13,7 @@ class ProjectSetupRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def create_project(self, request: ProjectSetupRequest) -> ProjectDB:
+    def create_project(self, request: ProjectSetupRequest, *, facilitator_id: str) -> ProjectDB:
         project = ProjectDB(
             id=str(uuid.uuid4()),
             name=request.name,
@@ -21,12 +21,31 @@ class ProjectSetupRepository:
             agent_description=request.agent_description,
             trace_provider=request.trace_provider,
             trace_provider_config=request.trace_provider_config,
-            facilitator_id=request.facilitator_id,
+            facilitator_id=facilitator_id,
         )
         self.db.add(project)
         self.db.commit()
         self.db.refresh(project)
         return project
+
+    def update_project(self, project_id: str, request: ProjectSetupRequest) -> ProjectDB:
+        project = self.get_project(project_id)
+        if project is None:
+            raise ValueError(f"Project not found: {project_id}")
+        project.name = request.name
+        project.description = request.description
+        project.agent_description = request.agent_description
+        project.trace_provider = request.trace_provider
+        project.trace_provider_config = request.trace_provider_config
+        self.db.commit()
+        self.db.refresh(project)
+        return project
+
+    def get_project(self, project_id: str) -> ProjectDB | None:
+        return self.db.query(ProjectDB).filter(ProjectDB.id == project_id).first()
+
+    def get_latest_project(self) -> ProjectDB | None:
+        return self.db.query(ProjectDB).order_by(ProjectDB.created_at.desc()).first()
 
     def create_setup_job(self, project_id: str) -> ProjectSetupJobDB:
         job = ProjectSetupJobDB(
@@ -81,3 +100,11 @@ class ProjectSetupRepository:
 
     def get_latest_setup_job(self) -> ProjectSetupJobDB | None:
         return self.db.query(ProjectSetupJobDB).order_by(ProjectSetupJobDB.created_at.desc()).first()
+
+    def get_latest_setup_job_for_project(self, project_id: str) -> ProjectSetupJobDB | None:
+        return (
+            self.db.query(ProjectSetupJobDB)
+            .filter(ProjectSetupJobDB.project_id == project_id)
+            .order_by(ProjectSetupJobDB.created_at.desc())
+            .first()
+        )

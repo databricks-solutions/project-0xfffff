@@ -13,6 +13,5 @@ export type User = {
     status?: UserStatus;
     created_at?: string;
     last_active?: (string | null);
-    password_hash?: (string | null);
 };
 

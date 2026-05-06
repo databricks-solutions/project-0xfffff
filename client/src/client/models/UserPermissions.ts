@@ -12,6 +12,7 @@ export type UserPermissions = {
     can_view_all_annotations?: boolean;
     can_view_results?: boolean;
     can_manage_workshop?: boolean;
+    can_manage_project?: boolean;
     can_assign_annotations?: boolean;
 };
 

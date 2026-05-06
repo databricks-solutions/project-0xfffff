@@ -96,19 +96,18 @@ POST /users/
   2. Add user as workshop participant with same role
 ```
 
-### Login Flow by Role
+### Identity and Role Resolution
 
-Facilitators and other roles authenticate through different paths:
+V2 roles are resolved through `GET /api/auth/session`:
 
 ```
-POST /auth/login
-  1. Attempt facilitator auth via YAML config
-  2. If YAML match:
-     - Get or create facilitator user record
-     - Return AuthResponse with is_preconfigured_facilitator=true
-  3. If no YAML match:
-     - Authenticate via database (email/password)
-     - Return AuthResponse with is_preconfigured_facilitator=false
+GET /api/auth/session
+  1. Resolve identity from the active IdentityProvider
+  2. Resolve provider role from provider permissions data
+  3. Materialize or update the app user
+  4. Map Databricks Apps CAN_MANAGE -> can_manage_project
+  5. Map Databricks Apps CAN_USE -> non-power-user access
+  6. Return user, provider role, project permissions, and current project summary
 ```
 
 ### Phase Advancement (Facilitator Only)
@@ -181,6 +180,8 @@ Returns the permission set derived from the user's role. Called by the frontend 
 ### Role-to-Permission Mapping
 
 - [ ] Facilitator role grants: can_create_rubric, can_manage_workshop, can_assign_annotations, can_view_all_findings, can_view_all_annotations, can_view_results
+- [ ] Provider `CAN_MANAGE` grants `can_manage_project`
+- [ ] Provider `CAN_USE` denies `can_manage_project`
 - [ ] Facilitator role denies: can_annotate, can_create_findings
 - [ ] SME role grants: can_annotate, can_create_findings, can_view_discovery
 - [ ] SME role denies: can_create_rubric, can_manage_workshop, can_view_results, can_view_all_annotations
@@ -200,15 +201,17 @@ Returns the permission set derived from the user's role. Called by the frontend 
 - [ ] Phase advancement validates prerequisites before transitioning
 - [ ] Phase advancement returns 400 if prerequisites not met
 
-### Login by Role
+### Identity by Role
 
-- [ ] Facilitators authenticate via YAML config (preconfigured credentials)
-- [ ] SMEs and participants authenticate via database credentials
-- [ ] Login response includes is_preconfigured_facilitator flag for facilitator logins
+- [ ] Production derives the current app user from `IdentityProvider` before role permissions load
+- [ ] Databricks Apps role mapping resolves app permission from Databricks Apps permissions data using SDK Apps `get_permissions` or an equivalent documented endpoint
+- [ ] Databricks Apps `CAN_MANAGE` maps to project-management authority
+- [ ] Databricks Apps `CAN_USE` maps to non-power-user access
+- [ ] Local development defaults to `CAN_MANAGE` and tests can configure `CAN_USE`
 
 ## Related Specs
 
-- [AUTHENTICATION_SPEC](./AUTHENTICATION_SPEC.md) — Login flow, session management, permission loading/fallback, error recovery
+- [AUTHENTICATION_SPEC](./AUTHENTICATION_SPEC.md) — Provider identity, current-session loading, and auth error recovery
 - [DISCOVERY_TRACE_ASSIGNMENT_SPEC](./DISCOVERY_TRACE_ASSIGNMENT_SPEC.md) — Trace assignment behavior (uses `can_assign_annotations` permission)
 - [ANNOTATION_SPEC](./ANNOTATION_SPEC.md) — Annotation submission (uses `can_annotate` permission)
 - [RUBRIC_SPEC](./RUBRIC_SPEC.md) — Rubric creation (uses `can_create_rubric` permission)

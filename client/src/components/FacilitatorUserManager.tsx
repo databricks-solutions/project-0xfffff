@@ -15,7 +15,7 @@ import { AlertCircle, RefreshCw, UserPlus, Users, Info } from 'lucide-react';
 import { toast } from 'sonner';
 
 export const FacilitatorUserManager: React.FC = () => {
-  const { user } = useUser();
+  const { user, permissions } = useUser();
   const { workshopId } = useWorkshopContext();
   const { data: workshop } = useWorkshop(workshopId!);
   const [users, setUsers] = useState<User[]>([]);
@@ -37,7 +37,7 @@ export const FacilitatorUserManager: React.FC = () => {
     setIsLoadingUsers(true);
     setError(null);
     try {
-      const response = await UsersService.listWorkshopUsersUsersWorkshopsWorkshopIdUsersGet(workshopId);
+      const response = await UsersService.listWorkshopUsersApiUsersWorkshopsWorkshopIdUsersGet(workshopId);
       // The API returns { workshop_id, users: [], total_users }
       setUsers(response.users || []);
     } catch (error: unknown) {
@@ -63,17 +63,24 @@ export const FacilitatorUserManager: React.FC = () => {
     setSuccess(null);
 
     try {
-      const response = await UsersService.addUserToWorkshopUsersWorkshopsWorkshopIdUsersPost(
-        workshopId,
-        {
-          email: newUser.email,
-          name: newUser.name,
-          role: newUser.role,
-          workshop_id: workshopId
-        }
-      );
+      const emails = newUser.email
+        .split(',')
+        .map((email) => email.trim().toLowerCase())
+        .filter(Boolean);
 
-      setSuccess(`User ${newUser.email} added successfully.`);
+      for (const email of emails) {
+        await UsersService.addUserToWorkshopApiUsersWorkshopsWorkshopIdUsersPost(
+          workshopId,
+          {
+            email,
+            name: emails.length === 1 && newUser.name.trim() ? newUser.name.trim() : email,
+            role: newUser.role,
+            workshop_id: workshopId
+          }
+        );
+      }
+
+      setSuccess(`${emails.length} user${emails.length === 1 ? '' : 's'} invited successfully.`);
       setNewUser({ email: '', name: '', role: UserRole.PARTICIPANT });
       loadUsers(); // Refresh the user list
     } catch (error: unknown) {
@@ -104,7 +111,7 @@ export const FacilitatorUserManager: React.FC = () => {
     
     setUpdatingRoleUserId(userId);
     try {
-      const response = await fetch(`/users/workshops/${workshopId}/users/${userId}/role`, {
+      const response = await fetch(`/api/users/workshops/${workshopId}/users/${userId}/role`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role: newRole }),
@@ -124,7 +131,7 @@ export const FacilitatorUserManager: React.FC = () => {
     }
   };
 
-  if (!user || user.role !== UserRole.FACILITATOR) {
+  if (!user || permissions?.can_manage_project !== true) {
     return (
       <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
         <div className="text-center max-w-md">

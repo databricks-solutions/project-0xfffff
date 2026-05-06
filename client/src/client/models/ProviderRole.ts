@@ -2,9 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type UserLogin = {
-    email: string;
-    password: string;
-    workshop_id?: (string | null);
-};
-
+export enum ProviderRole {
+    CAN_MANAGE = 'CAN_MANAGE',
+    CAN_USE = 'CAN_USE',
+}

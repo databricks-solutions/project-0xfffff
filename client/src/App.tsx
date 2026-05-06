@@ -4,6 +4,8 @@ import { WorkshopProvider } from './context/WorkshopContext';
 import { UserProvider } from './context/UserContext';
 import { WorkflowProvider } from './context/WorkflowContext';
 import { TraceDataViewerDemo } from './pages/TraceDataViewerDemo';
+import { ProjectSetupGate } from './pages/ProjectSetupGate';
+import { ProjectSetupPage } from './pages/ProjectSetupPage';
 import { UserShell } from './pages/shell/UserShell';
 import { WorkshopShell } from './pages/shell/WorkshopShell';
 import { WorkflowShell } from './pages/shell/WorkflowShell';
@@ -15,8 +17,8 @@ import { useWorkshopMeta } from './hooks/useWorkshopApi';
 import { ChevronRight } from 'lucide-react';
 import { Toaster } from 'sonner';
 
-function AppShellPathBar() {
-  const { user } = useUser();
+export function AppShellPathBar() {
+  const { user, permissions } = useUser();
   const { workshopId, setWorkshopId } = useWorkshopContext();
   const { data: workshopMeta } = useWorkshopMeta(workshopId || '');
   const location = useLocation();
@@ -26,8 +28,15 @@ function AppShellPathBar() {
     return null;
   }
 
+  const canManageSetup = permissions?.can_manage_project === true;
+  const isProjectSetup = location.pathname === '/project/setup';
   const hasWorkshop = !!workshopId && !workshopId.startsWith('temp-');
   const workshopLabel = hasWorkshop ? (workshopMeta?.name || 'Workshop') : 'Workshop selection';
+
+  const handleProjectSetupClick = () => {
+    if (isProjectSetup) return;
+    navigate('/project/setup');
+  };
 
   const handleWorkshopClick = () => {
     if (!hasWorkshop) return;
@@ -41,7 +50,23 @@ function AppShellPathBar() {
         <span className="font-semibold text-foreground">
           Me ({user.name || user.email || 'User'})
         </span>
-        <ChevronRight className="h-3 w-3" />
+        {canManageSetup && (
+          <>
+            <ChevronRight className="h-3 w-3" />
+            {isProjectSetup ? (
+              <span className="font-semibold text-foreground">Project setup</span>
+            ) : (
+              <button
+                type="button"
+                className="font-semibold text-foreground hover:underline"
+                onClick={handleProjectSetupClick}
+              >
+                Project setup
+              </button>
+            )}
+          </>
+        )}
+        {!isProjectSetup && <ChevronRight className="h-3 w-3" />}
         {hasWorkshop ? (
           <button
             type="button"
@@ -64,9 +89,12 @@ function AppRoutes() {
       <AppShellPathBar />
       <Routes>
         <Route element={<UserShell />}>
+          <Route path="/project/setup" element={<ProjectSetupPage />} />
+          <Route element={<ProjectSetupGate />}>
+            <Route index element={<SprintWorkspacePage />} />
+          </Route>
           <Route element={<WorkshopShell />}>
             <Route element={<WorkflowShell />}>
-              <Route index element={<SprintWorkspacePage />} />
               <Route path="/workshop/:workshopId" element={<SprintWorkspacePage />} />
               <Route path="/workshop/:workshopId/:phase" element={<SprintWorkspacePage />} />
             </Route>

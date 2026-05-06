@@ -22,7 +22,6 @@ from server.database import (
   DiscoveryQuestionDB,
   DiscoverySummaryDB,
   DraftRubricItemDB,
-  FacilitatorConfigDB,
   JudgeEvaluationDB,
   JudgePromptDB,
   MLflowIntakeConfigDB,
@@ -53,8 +52,6 @@ from server.models import (
   DraftRubricItem,
   DraftRubricItemCreate,
   DraftRubricItemUpdate,
-  FacilitatorConfig,
-  FacilitatorConfigCreate,
   JudgeEvaluation,
   JudgePrompt,
   JudgePromptCreate,
@@ -78,10 +75,6 @@ from server.models import (
   WorkshopParticipant,
   WorkshopPhase,
 )
-from server.utils.config import get_facilitator_config
-from server.utils.password import generate_default_password, hash_password, verify_password
-
-
 logger = logging.getLogger(__name__)
 
 
@@ -2819,7 +2812,6 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       role=user.role,
       workshop_id=user.workshop_id,
       status=user.status,
-      password_hash=user.password_hash,
       created_at=user.created_at,
       last_active=user.last_active,
     )
@@ -2828,17 +2820,10 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
     self.db.refresh(db_user)
     return user
 
-  def create_user_with_password(self, user_data: UserCreate) -> User:
-    """Create a new user with password."""
+  def create_user_from_invite(self, user_data: UserCreate) -> User:
+    """Create a pending provider-authenticated user."""
     # Normalize email to lowercase for consistency
     normalized_email = user_data.email.lower()
-    
-    # Generate default password if not provided
-    if not user_data.password:
-      user_data.password = generate_default_password(normalized_email)
-
-    # Hash the password
-    password_hash = hash_password(user_data.password)
 
     # Create user with PENDING status
     user = User(
@@ -2848,73 +2833,6 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       role=user_data.role,
       workshop_id=user_data.workshop_id,
       status=UserStatus.PENDING,
-      password_hash=password_hash,
-    )
-
-    return self.create_user(user)
-
-  def authenticate_user(self, email: str, password: str) -> Optional[User]:
-    """Authenticate a user with email and password. SMEs and participants only need email."""
-    # Case-insensitive email comparison
-    db_user = self.db.query(UserDB).filter(UserDB.email.ilike(email)).first()
-    if not db_user:
-      return None
-
-    # For SMEs and participants, skip password verification (email-only login)
-    if db_user.role in ['sme', 'participant']:
-      pass  # No password verification needed
-    # For facilitators, require password verification
-    elif db_user.role == 'facilitator':
-      if not verify_password(password, db_user.password_hash or ''):
-        return None
-    else:
-      # Unknown role, require password for security
-      if not verify_password(password, db_user.password_hash or ''):
-        return None
-
-    return User(
-      id=db_user.id,
-      email=db_user.email,
-      name=db_user.name,
-      role=db_user.role,
-      workshop_id=db_user.workshop_id,
-      status=db_user.status,
-      password_hash=db_user.password_hash,
-      created_at=db_user.created_at,
-      last_active=db_user.last_active,
-    )
-
-  def authenticate_facilitator_from_yaml(self, email: str, password: str) -> Optional[Dict[str, Any]]:
-    """Authenticate a facilitator using YAML configuration."""
-    facilitator_config = get_facilitator_config(email)
-    if not facilitator_config:
-      return None
-
-    if facilitator_config.get('password') != password:
-      return None
-
-    return facilitator_config
-
-  def get_or_create_facilitator_user(self, facilitator_data: Dict[str, Any]) -> User:
-    """Get or create a facilitator user from YAML config."""
-    # Normalize email to lowercase for consistency
-    email = facilitator_data['email'].lower()
-
-    # Check if user already exists
-    existing_user = self.get_user_by_email(email)
-    if existing_user:
-      return existing_user
-
-    # Create new facilitator user
-    password_hash = hash_password(facilitator_data['password'])
-
-    user = User(
-      id=str(uuid.uuid4()),
-      email=email,
-      name=facilitator_data['name'],
-      role=UserRole.FACILITATOR,
-      workshop_id=None,  # Facilitators aren't tied to a single workshop
-      password_hash=password_hash,
     )
 
     return self.create_user(user)
@@ -2933,65 +2851,9 @@ Provide your rating as a single number (1-5) followed by a brief explanation."""
       role=db_user.role,
       workshop_id=db_user.workshop_id,
       status=db_user.status,
-      password_hash=db_user.password_hash,
       created_at=db_user.created_at,
       last_active=db_user.last_active,
     )
-
-  def create_facilitator_config(self, config_data: FacilitatorConfigCreate) -> FacilitatorConfig:
-    """Create a facilitator configuration."""
-    password_hash = hash_password(config_data.password)
-
-    db_config = FacilitatorConfigDB(
-      id=str(uuid.uuid4()),
-      email=config_data.email,
-      password_hash=password_hash,
-      name=config_data.name,
-      description=config_data.description,
-    )
-
-    self.db.add(db_config)
-    self.db.commit()
-    self.db.refresh(db_config)
-
-    return FacilitatorConfig(
-      email=db_config.email,
-      password_hash=db_config.password_hash,
-      name=db_config.name,
-      description=db_config.description,
-      created_at=db_config.created_at,
-    )
-
-  def get_facilitator_config(self, email: str) -> Optional[FacilitatorConfig]:
-    """Get facilitator configuration by email."""
-    # Case-insensitive email comparison
-    db_config = self.db.query(FacilitatorConfigDB).filter(FacilitatorConfigDB.email.ilike(email)).first()
-
-    if not db_config:
-      return None
-
-    return FacilitatorConfig(
-      email=db_config.email,
-      password_hash=db_config.password_hash,
-      name=db_config.name,
-      description=db_config.description,
-      created_at=db_config.created_at,
-    )
-
-  def list_facilitator_configs(self) -> List[FacilitatorConfig]:
-    """List all facilitator configurations."""
-    db_configs = self.db.query(FacilitatorConfigDB).all()
-
-    return [
-      FacilitatorConfig(
-        email=config.email,
-        password_hash=config.password_hash,
-        name=config.name,
-        description=config.description,
-        created_at=config.created_at,
-      )
-      for config in db_configs
-    ]
 
   def get_user(self, user_id: str) -> Optional[User]:
     """Get a user by ID."""

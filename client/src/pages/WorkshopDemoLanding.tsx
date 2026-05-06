@@ -21,7 +21,6 @@ import { IntakePage } from './IntakePage';
 import { AppSidebar } from '@/components/AppSidebar';
 import { FacilitatorDashboard } from '@/components/FacilitatorDashboard';
 import { FacilitatorUserManager } from '@/components/FacilitatorUserManager';
-import { ProductionLogin } from '@/components/ProductionLogin';
 import { WorkshopCreationPage } from '@/components/WorkshopCreationPage';
 import { RubricWaitingView } from '@/components/RubricWaitingView';
 import { RubricViewPage } from '@/components/RubricViewPage';
@@ -50,7 +49,7 @@ export function WorkshopDemoLanding() {
   // ========================================
   const { workshopId, setWorkshopId } = useWorkshopContext();
   const { currentPhase, completedPhases, setCurrentPhase, supportsPerTraceCriteria } = useWorkflowContext();
-  const { user, setUser } = useUser();
+  const { user } = useUser();
   const { isFacilitator, isSME, canCreateRubric, canAnnotate, canViewResults, canViewRubric, canViewAllAnnotations } = useRoleCheck();
   const queryClient = useQueryClient();
   
@@ -161,7 +160,6 @@ export function WorkshopDemoLanding() {
         
         // Clear the invalid workshop ID and all related data
         localStorage.removeItem('workshop_id');
-        localStorage.removeItem('workshop_user');
         // Clear any other workshop-related data
         Object.keys(localStorage).forEach(key => {
           if (key.startsWith('workshop_') || key.includes('trace') || key.includes('annotation')) {
@@ -310,7 +308,14 @@ export function WorkshopDemoLanding() {
   
   // Early return for no user
   if (!user) {
-    return <ProductionLogin />;
+    return (
+      <Card className="m-6">
+        <CardHeader>
+          <CardTitle>Authentication required</CardTitle>
+          <CardDescription>Open this app through Databricks to continue.</CardDescription>
+        </CardHeader>
+      </Card>
+    );
   }
 
   // Check if this is a temporary workshop ID for creation mode
@@ -321,7 +326,14 @@ export function WorkshopDemoLanding() {
     if (isFacilitator) {
       return <WorkshopCreationPage />;
     } else {
-      return <ProductionLogin />;
+      return (
+        <Card className="m-6">
+          <CardHeader>
+            <CardTitle>User workspace coming soon</CardTitle>
+            <CardDescription>Your onboarding, home, and feed workspace will appear here.</CardDescription>
+          </CardHeader>
+        </Card>
+      );
     }
   }
   
@@ -408,7 +420,6 @@ export function WorkshopDemoLanding() {
         const handleGoToLogin = () => {
           // Clear invalid workshop data and redirect to login
           localStorage.removeItem('workshop_id');
-          localStorage.removeItem('workshop_user');
           setWorkshopId(null);
           window.history.replaceState({}, '', '/');
           window.location.reload();

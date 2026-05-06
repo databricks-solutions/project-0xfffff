@@ -22,10 +22,6 @@ vi.mock('@/hooks/useWorkshopApi', () => ({
   useWorkshopPhase: vi.fn(),
 }));
 
-vi.mock('@/components/ProductionLogin', () => ({
-  ProductionLogin: () => <div>production-login</div>,
-}));
-
 vi.mock('@/components/WorkshopCreationPage', () => ({
   WorkshopCreationPage: () => <div>workshop-creation</div>,
 }));
@@ -39,13 +35,11 @@ const workshopContextMock = vi.mocked(useWorkshopContext);
 const workshopPhaseMock = vi.mocked(useWorkshopPhase);
 
 describe('Shell flow', () => {
-  it('shows login at user shell when no user', () => {
+  it('shows an authentication required state when no session exists', () => {
     userContextMock.mockReturnValue({
       user: null,
       permissions: null,
-      setUser: vi.fn(),
-      login: vi.fn(),
-      logout: vi.fn(),
+      refreshSession: vi.fn(),
       updateLastActive: vi.fn(),
       isLoading: false,
       error: null,
@@ -61,16 +55,14 @@ describe('Shell flow', () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText('production-login')).toBeInTheDocument();
+    expect(screen.getByText(/authentication required/i)).toBeInTheDocument();
   });
 
   it('shows workshop creation for facilitators without workshop id', () => {
     userContextMock.mockReturnValue({
       user: { id: 'u1', role: UserRole.FACILITATOR },
-      permissions: null,
-      setUser: vi.fn(),
-      login: vi.fn(),
-      logout: vi.fn(),
+      permissions: { can_manage_project: true },
+      refreshSession: vi.fn(),
       updateLastActive: vi.fn(),
       isLoading: false,
       error: null,
@@ -103,10 +95,8 @@ describe('Shell flow', () => {
     const setWorkshopId = vi.fn();
     userContextMock.mockReturnValue({
       user: { id: 'u1', name: 'Alex', role: UserRole.FACILITATOR },
-      permissions: null,
-      setUser: vi.fn(),
-      login: vi.fn(),
-      logout: vi.fn(),
+      permissions: { can_manage_project: true },
+      refreshSession: vi.fn(),
       updateLastActive: vi.fn(),
       isLoading: false,
       error: null,

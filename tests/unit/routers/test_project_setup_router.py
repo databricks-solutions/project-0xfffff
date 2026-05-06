@@ -2,21 +2,24 @@ import pytest
 
 
 @pytest.mark.spec("PROJECT_SETUP_SPEC")
-@pytest.mark.req("`POST /project/setup` returns `project_id` and `setup_job_id`")
+@pytest.mark.req("`POST /api/project/setup` returns `project_id` and `setup_job_id`")
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_project_setup_route_returns_project_and_setup_job(async_client, override_get_db, monkeypatch):
+async def test_project_setup_route_returns_project_and_setup_job(async_client, app, override_get_db, monkeypatch):
+    from server.features.auth.schemas import AuthSession, ProviderRole
+    from server.features.auth.service import require_project_manager
     from server.features.project_setup import router as project_setup_router
     from server.features.project_setup.schemas import ProjectSetupResponse
+    from server.models import User, UserPermissions, UserRole
 
     class FakeProjectSetupService:
         def __init__(self, db=None):
             self.db = db
 
-        def start_setup(self, request):
+        def start_setup(self, request, *, facilitator_id):
             assert request.name == "support-agent-eval"
             assert request.agent_description == "Calibrate the support agent."
-            assert request.facilitator_id == "facilitator-1"
+            assert facilitator_id == "facilitator-1"
             assert request.trace_uc_table_path == "main.support.traces"
             return ProjectSetupResponse(
                 project_id="project-1",
@@ -27,16 +30,27 @@ async def test_project_setup_route_returns_project_and_setup_job(async_client, o
             )
 
     monkeypatch.setattr(project_setup_router, "ProjectSetupService", FakeProjectSetupService)
-
-    response = await async_client.post(
-        "/project/setup",
-        json={
-            "name": "support-agent-eval",
-            "agent_description": "Calibrate the support agent.",
-            "facilitator_id": "facilitator-1",
-            "trace_uc_table_path": "main.support.traces",
-        },
+    user = User(id="facilitator-1", email="fac@example.com", name="Fac", role=UserRole.FACILITATOR)
+    session = AuthSession(
+        user=user,
+        permissions=UserPermissions.for_role(UserRole.FACILITATOR),
+        provider="local_dev",
+        provider_role=ProviderRole.CAN_MANAGE,
+        project=None,
     )
+    app.dependency_overrides[require_project_manager] = lambda: session
+
+    try:
+        response = await async_client.post(
+            "/api/project/setup",
+            json={
+                "name": "support-agent-eval",
+                "agent_description": "Calibrate the support agent.",
+                "trace_uc_table_path": "main.support.traces",
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(require_project_manager, None)
 
     assert response.status_code == 201
     assert response.json() == {
@@ -74,7 +88,7 @@ async def test_setup_status_route_returns_latest_progress(async_client, override
 
     monkeypatch.setattr(project_setup_router, "ProjectSetupService", FakeProjectSetupService)
 
-    response = await async_client.get("/project/setup-status")
+    response = await async_client.get("/api/project/setup-status")
 
     assert response.status_code == 200
     body = response.json()
