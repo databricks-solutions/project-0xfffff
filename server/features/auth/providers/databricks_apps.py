@@ -3,10 +3,13 @@ from __future__ import annotations
 import os
 import time
 from dataclasses import dataclass
+import logging
 
 from fastapi import HTTPException, Request
 
 from server.features.auth.schemas import ProviderIdentity, ProviderRole
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -56,7 +59,15 @@ class DatabricksAppsIdentityProvider:
         except Exception as exc:  # pragma: no cover - only hit in misconfigured deployments
             raise RuntimeError("databricks-sdk is required for Databricks Apps role resolution") from exc
 
-        permissions = WorkspaceClient().apps.get_permissions(self.app_name)
+        try:
+            permissions = WorkspaceClient().apps.get_permissions(self.app_name)
+        except Exception as exc:
+            logger.warning(
+                "Could not resolve Databricks Apps permissions for app %s; defaulting authenticated user to CAN_USE: %s",
+                self.app_name,
+                exc,
+            )
+            return ProviderRole.CAN_USE
         access_control_list = getattr(permissions, "access_control_list", None) or []
         best_role = ProviderRole.CAN_USE
 
