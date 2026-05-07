@@ -12,7 +12,7 @@ class FakeProvider:
 
         return ProviderIdentity(provider="fake", email="user@example.com", display_name="User Example")
 
-    def resolve_provider_role(self, identity):
+    def resolve_provider_role(self, request, identity):
         return self.role
 
 

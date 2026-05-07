@@ -26,7 +26,7 @@ class AuthSessionService:
     def resolve_session(self, request: Request) -> AuthSession:
         provider = self.provider or self._select_provider(request)
         identity = provider.resolve_identity(request)
-        provider_role = provider.resolve_provider_role(identity)
+        provider_role = provider.resolve_provider_role(request, identity)
         user = self._materialize_user(identity, provider_role)
         permissions = self._permissions_for(user, provider_role)
         project = self._current_project_summary()

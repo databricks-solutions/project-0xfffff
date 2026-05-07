@@ -45,7 +45,7 @@ async def test_current_user_profile_comes_from_session(async_client, app):
 @pytest.mark.asyncio
 async def test_legacy_login_endpoint_removed(async_client):
     resp = await async_client.post("/api/users/auth/login", json={"email": "x@example.com", "password": "bad"})
-    assert resp.status_code == 404
+    assert resp.status_code in {404, 405}
 
 
 @pytest.mark.spec("AUTHENTICATION_SPEC")

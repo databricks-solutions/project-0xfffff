@@ -15,7 +15,7 @@ class LocalDevIdentityProvider:
         display_name = os.getenv("LOCAL_DEV_USER_NAME", "Local Facilitator")
         return ProviderIdentity(provider=self.provider_name, email=email, display_name=display_name)
 
-    def resolve_provider_role(self, identity: ProviderIdentity) -> ProviderRole:
+    def resolve_provider_role(self, request: Request, identity: ProviderIdentity) -> ProviderRole:
         configured = os.getenv("LOCAL_DEV_PROVIDER_ROLE", "CAN_MANAGE").strip().upper()
         if configured in {"CAN_USE", "USE", "USER"}:
             return ProviderRole.CAN_USE
