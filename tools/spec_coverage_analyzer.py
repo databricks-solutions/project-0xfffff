@@ -639,7 +639,8 @@ class SpecCoverageScanner:
 
         Used when `npx vitest list` is not available.
         """
-        for test_file in self.VITEST_DIR.rglob("*.test.ts"):
+        test_files = list(self.VITEST_DIR.rglob("*.test.ts")) + list(self.VITEST_DIR.rglob("*.test.tsx"))
+        for test_file in test_files:
             content = test_file.read_text()
             file_path = str(test_file)
 

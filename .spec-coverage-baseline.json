@@ -1,5 +1,5 @@
 {
-  "generated": "2026-05-05T12:23:12.792019",
+  "generated": "2026-05-05T16:11:12.641289",
   "specs": {
     "ANNOTATION_SPEC": {
       "total_requirements": 21,
@@ -9,7 +9,7 @@
         "unit": 47,
         "integration": 0,
         "e2e-mocked": 0,
-        "e2e-real": 6
+        "e2e-real": 0
       },
       "requirements": [
         {
@@ -27,22 +27,12 @@
         {
           "text": "Changes automatically save on navigation (Next/Previous)",
           "covered": true,
-          "backend_only": false,
+          "backend_only": true,
           "tests": [
             {
               "name": "test_10th_annotation_specifically",
               "type": "unit",
               "file": "tests/unit/routers/test_annotation_last_trace.py"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/annotation-last-trace.spec.ts"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/annotation-last-trace.spec.ts"
             }
           ]
         },
@@ -85,7 +75,7 @@
         {
           "text": "Annotation count reflects unique submissions (not re-submissions)",
           "covered": true,
-          "backend_only": false,
+          "backend_only": true,
           "tests": [
             {
               "name": "test_all_10_annotations_can_be_saved",
@@ -101,16 +91,6 @@
               "name": "test_facilitator_sees_10_completed",
               "type": "unit",
               "file": "tests/unit/routers/test_annotation_last_trace.py"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/annotation-last-trace.spec.ts"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/annotation-last-trace.spec.ts"
             }
           ]
         },
@@ -239,6 +219,8 @@
       ],
       "backend_only": [
         "Users can edit previously submitted annotations",
+        "Changes automatically save on navigation (Next/Previous)",
+        "Annotation count reflects unique submissions (not re-submissions)",
         "Annotations sync to MLflow as feedback on save (one entry per rubric question)",
         "MLflow trace tagged with `label: \"align\"` and `workshop_id` on annotation",
         "Feedback source is HUMAN with annotator's user_id",
@@ -246,7 +228,7 @@
         "Duplicate feedback entries are detected and skipped",
         "Legacy single-rating format loads correctly alongside multi-rating format"
       ],
-      "backend_only_count": 7,
+      "backend_only_count": 9,
       "unlinked_tests": [
         {
           "name": "test_upsert_creates_new_annotation",
@@ -427,16 +409,6 @@
           "name": "test_delete_participant_note_not_found",
           "type": "unit",
           "file": "tests/unit/services/test_database_service_participant_notes.py"
-        },
-        {
-          "name": "file-level",
-          "type": "e2e-real",
-          "file": "client/tests/e2e/annotation-flow.spec.ts"
-        },
-        {
-          "name": "file-level",
-          "type": "e2e-real",
-          "file": "client/tests/e2e/annotation-last-trace.spec.ts"
         }
       ]
     },
@@ -445,100 +417,95 @@
       "covered_requirements": 7,
       "coverage_percent": 100,
       "by_type": {
-        "unit": 18,
-        "integration": 2,
+        "unit": 31,
+        "integration": 0,
         "e2e-mocked": 0,
-        "e2e-real": 42
+        "e2e-real": 0
       },
       "requirements": [
         {
           "text": "Findings are classified in real-time as participants submit them",
           "covered": true,
-          "backend_only": false,
+          "backend_only": true,
           "tests": [
             {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation.spec.ts"
+              "name": "test_classify_finding_locally_missing_info",
+              "type": "unit",
+              "file": "tests/unit/services/test_classification_service.py"
             },
             {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation-classification.spec.ts"
+              "name": "test_classify_finding_locally_failure_modes",
+              "type": "unit",
+              "file": "tests/unit/services/test_classification_service.py"
             },
             {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation-classification.spec.ts"
+              "name": "test_classify_finding_locally_boundary_conditions",
+              "type": "unit",
+              "file": "tests/unit/services/test_classification_service.py"
             },
             {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation-discovery.spec.ts"
+              "name": "test_classify_finding_locally_edge_cases",
+              "type": "unit",
+              "file": "tests/unit/services/test_classification_service.py"
             },
             {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation-discovery.spec.ts"
+              "name": "test_classify_finding_returns_valid_category",
+              "type": "unit",
+              "file": "tests/unit/services/test_classification_service.py"
             },
             {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation-discovery.spec.ts"
+              "name": "test_all_categories_are_valid",
+              "type": "unit",
+              "file": "tests/unit/services/test_classification_service.py"
+            },
+            {
+              "name": "test_submit_finding_v2_persists_with_category",
+              "type": "unit",
+              "file": "tests/unit/services/test_classification_service.py"
+            },
+            {
+              "name": "test_classified_findings_queryable_by_category",
+              "type": "unit",
+              "file": "tests/unit/services/test_classification_service.py"
+            },
+            {
+              "name": "test_submit_finding_v2_returns_classification",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_service_v2.py"
+            },
+            {
+              "name": "test_submit_finding_v2_accurate_classification",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_service_v2.py"
+            },
+            {
+              "name": "test_submit_finding_v2_persists_finding",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_service_v2.py"
             }
           ]
         },
         {
           "text": "Facilitators see per-trace structured view with category breakdown",
           "covered": true,
-          "backend_only": false,
+          "backend_only": true,
           "tests": [
             {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation.spec.ts"
+              "name": "test_get_trace_discovery_state_structure",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_service_v2.py"
             },
             {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation.spec.ts"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation.spec.ts"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation-classification.spec.ts"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation-classification.spec.ts"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation-dashboard.spec.ts"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation-dashboard.spec.ts"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation-dashboard.spec.ts"
+              "name": "test_discovery_state_includes_stored_findings",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_service_v2.py"
             }
           ]
         },
         {
           "text": "Facilitators can generate targeted questions that broadcast to all participants",
           "covered": true,
-          "backend_only": false,
+          "backend_only": true,
           "tests": [
             {
               "name": "test_get_discovery_questions_empty",
@@ -546,185 +513,123 @@
               "file": "tests/unit/services/test_database_discovery_questions.py"
             },
             {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation-classification.spec.ts"
+              "name": "test_add_discovery_question_creates_question",
+              "type": "unit",
+              "file": "tests/unit/services/test_database_discovery_questions.py"
             },
             {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation-discovery.spec.ts"
+              "name": "test_add_discovery_question_increments_question_id",
+              "type": "unit",
+              "file": "tests/unit/services/test_database_discovery_questions.py"
             },
             {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation-dashboard.spec.ts"
+              "name": "test_get_discovery_questions_returns_all_for_user",
+              "type": "unit",
+              "file": "tests/unit/services/test_database_discovery_questions.py"
+            },
+            {
+              "name": "test_get_discovery_questions_isolates_by_user",
+              "type": "unit",
+              "file": "tests/unit/services/test_database_discovery_questions.py"
+            },
+            {
+              "name": "test_get_discovery_questions_isolates_by_trace",
+              "type": "unit",
+              "file": "tests/unit/services/test_database_discovery_questions.py"
+            },
+            {
+              "name": "test_add_discovery_question_with_optional_fields",
+              "type": "unit",
+              "file": "tests/unit/services/test_database_discovery_questions.py"
             }
           ]
         },
         {
           "text": "Disagreements are auto-detected and surfaced",
           "covered": true,
-          "backend_only": false,
+          "backend_only": true,
           "tests": [
             {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation-classification.spec.ts"
+              "name": "test_disagreement_detection_called_on_submit",
+              "type": "unit",
+              "file": "tests/unit/services/test_classification_service.py"
+            },
+            {
+              "name": "test_disagreements_surfaced_in_discovery_state",
+              "type": "unit",
+              "file": "tests/unit/services/test_classification_service.py"
             }
           ]
         },
         {
           "text": "Participants see only fuzzy progress (no category bias)",
           "covered": true,
-          "backend_only": false,
+          "backend_only": true,
           "tests": [
             {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation.spec.ts"
+              "name": "test_get_fuzzy_progress_empty",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_service_v2.py"
             },
             {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation-discovery.spec.ts"
+              "name": "test_get_fuzzy_progress_exploring",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_service_v2.py"
             },
             {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation-discovery.spec.ts"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation-dashboard.spec.ts"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation-dashboard.spec.ts"
+              "name": "test_fuzzy_progress_does_not_expose_categories",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_service_v2.py"
             }
           ]
         },
         {
           "text": "Findings can be promoted to draft rubric staging area",
           "covered": true,
-          "backend_only": false,
+          "backend_only": true,
           "tests": [
             {
-              "name": "test_promote_finding_returns_500_on_db_error",
-              "type": "integration",
-              "file": "tests/integration/test_judge_evaluation_storage.py"
+              "name": "test_promote_finding_returns_structure",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_service_v2.py"
             },
             {
-              "name": "test_promote_real_finding_succeeds",
-              "type": "integration",
-              "file": "tests/integration/test_judge_evaluation_storage.py"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation-rubric-promotion.spec.ts"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation-rubric-promotion.spec.ts"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation-rubric-promotion.spec.ts"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation-rubric-promotion.spec.ts"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation-rubric-promotion.spec.ts"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation-rubric-promotion.spec.ts"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation-rubric-promotion.spec.ts"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation-dashboard.spec.ts"
+              "name": "test_promote_finding_propagates_db_error",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_service_v2.py"
             }
           ]
         },
         {
           "text": "Thresholds are configurable per category per trace",
           "covered": true,
-          "backend_only": false,
+          "backend_only": true,
           "tests": [
             {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation.spec.ts"
+              "name": "test_update_trace_thresholds_returns_structure",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_service_v2.py"
             },
             {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation-classification.spec.ts"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/assisted-facilitation-dashboard.spec.ts"
+              "name": "test_thresholds_are_persisted",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_service_v2.py"
             }
           ]
         }
       ],
       "uncovered": [],
-      "backend_only": [],
-      "backend_only_count": 0,
+      "backend_only": [
+        "Findings are classified in real-time as participants submit them",
+        "Facilitators see per-trace structured view with category breakdown",
+        "Facilitators can generate targeted questions that broadcast to all participants",
+        "Disagreements are auto-detected and surfaced",
+        "Participants see only fuzzy progress (no category bias)",
+        "Findings can be promoted to draft rubric staging area",
+        "Thresholds are configurable per category per trace"
+      ],
+      "backend_only_count": 7,
       "unlinked_tests": [
-        {
-          "name": "test_get_discovery_questions_empty",
-          "type": "unit",
-          "file": "tests/unit/services/test_database_discovery_questions.py"
-        },
-        {
-          "name": "test_add_discovery_question_creates_question",
-          "type": "unit",
-          "file": "tests/unit/services/test_database_discovery_questions.py"
-        },
-        {
-          "name": "test_add_discovery_question_increments_question_id",
-          "type": "unit",
-          "file": "tests/unit/services/test_database_discovery_questions.py"
-        },
-        {
-          "name": "test_get_discovery_questions_returns_all_for_user",
-          "type": "unit",
-          "file": "tests/unit/services/test_database_discovery_questions.py"
-        },
-        {
-          "name": "test_get_discovery_questions_isolates_by_user",
-          "type": "unit",
-          "file": "tests/unit/services/test_database_discovery_questions.py"
-        },
-        {
-          "name": "test_get_discovery_questions_isolates_by_trace",
-          "type": "unit",
-          "file": "tests/unit/services/test_database_discovery_questions.py"
-        },
-        {
-          "name": "test_add_discovery_question_with_optional_fields",
-          "type": "unit",
-          "file": "tests/unit/services/test_database_discovery_questions.py"
-        },
         {
           "name": "test_dspy_mlflow_autolog_is_noop_when_env_var_unset",
           "type": "unit",
@@ -734,97 +639,17 @@
           "name": "test_dspy_mlflow_autolog_uses_experiment_id_from_env",
           "type": "unit",
           "file": "tests/unit/services/test_discovery_dspy_mlflow_autolog.py"
-        },
-        {
-          "name": "test_get_fuzzy_progress_empty",
-          "type": "unit",
-          "file": "tests/unit/services/test_discovery_service_v2.py"
-        },
-        {
-          "name": "test_get_trace_discovery_state_structure",
-          "type": "unit",
-          "file": "tests/unit/services/test_discovery_service_v2.py"
-        },
-        {
-          "name": "test_update_trace_thresholds_returns_structure",
-          "type": "unit",
-          "file": "tests/unit/services/test_discovery_service_v2.py"
-        },
-        {
-          "name": "test_promote_finding_returns_structure",
-          "type": "unit",
-          "file": "tests/unit/services/test_discovery_service_v2.py"
-        },
-        {
-          "name": "test_submit_finding_v2_returns_classification",
-          "type": "unit",
-          "file": "tests/unit/services/test_discovery_service_v2.py"
-        },
-        {
-          "name": "test_classify_finding_locally_missing_info",
-          "type": "unit",
-          "file": "tests/unit/services/test_classification_service.py"
-        },
-        {
-          "name": "test_submit_finding_v2_persists_with_category",
-          "type": "unit",
-          "file": "tests/unit/services/test_classification_service.py"
-        },
-        {
-          "name": "test_disagreement_detection_called_on_submit",
-          "type": "unit",
-          "file": "tests/unit/services/test_classification_service.py"
-        },
-        {
-          "name": "file-level",
-          "type": "e2e-real",
-          "file": "client/tests/e2e/assisted-facilitation.spec.ts"
-        },
-        {
-          "name": "file-level",
-          "type": "e2e-real",
-          "file": "client/tests/e2e/assisted-facilitation-rubric-promotion.spec.ts"
-        },
-        {
-          "name": "file-level",
-          "type": "e2e-real",
-          "file": "client/tests/e2e/assisted-facilitation-classification.spec.ts"
-        },
-        {
-          "name": "file-level",
-          "type": "e2e-real",
-          "file": "client/tests/e2e/assisted-facilitation-discovery.spec.ts"
-        },
-        {
-          "name": "file-level",
-          "type": "e2e-real",
-          "file": "client/tests/e2e/assisted-facilitation-dashboard.spec.ts"
-        },
-        {
-          "name": "file-level",
-          "type": "e2e-real",
-          "file": "client/tests/e2e/example-new-infrastructure.spec.ts"
-        },
-        {
-          "name": "file-level",
-          "type": "e2e-real",
-          "file": "client/tests/e2e/example-new-infrastructure.spec.ts"
-        },
-        {
-          "name": "file-level",
-          "type": "e2e-real",
-          "file": "client/tests/e2e/example-new-infrastructure.spec.ts"
         }
       ]
     },
     "AUTHENTICATION_SPEC": {
       "total_requirements": 28,
-      "covered_requirements": 4,
-      "coverage_percent": 14,
+      "covered_requirements": 5,
+      "coverage_percent": 17,
       "by_type": {
-        "unit": 6,
+        "unit": 8,
         "integration": 0,
-        "e2e-mocked": 2,
+        "e2e-mocked": 0,
         "e2e-real": 0
       },
       "requirements": [
@@ -878,9 +703,15 @@
         },
         {
           "text": "Rapid navigation: Components wait for `isLoading = false`",
-          "covered": false,
+          "covered": true,
           "backend_only": false,
-          "tests": []
+          "tests": [
+            {
+              "name": "file-level",
+              "type": "unit",
+              "file": "client/src/context/UserContext.test.tsx"
+            }
+          ]
         },
         {
           "text": "Error recovery: Errors cleared on new login attempt",
@@ -1024,7 +855,6 @@
       "uncovered": [
         "Slow network: Loading indicator shown until ready",
         "404 on validation: Session cleared, fresh login allowed",
-        "Rapid navigation: Components wait for `isLoading = false`",
         "All Databricks API calls use SDK-resolved tokens (no user-provided PATs)",
         "MLflow operations use SDK auth without `os.environ[\"DATABRICKS_TOKEN\"]` mutation",
         "No token input fields exist in the frontend UI",
@@ -1067,13 +897,8 @@
         },
         {
           "name": "file-level",
-          "type": "e2e-mocked",
-          "file": "client/tests/e2e/facilitator-create-workshop.spec.ts"
-        },
-        {
-          "name": "file-level",
-          "type": "e2e-mocked",
-          "file": "client/tests/e2e/authentication.spec.ts"
+          "type": "unit",
+          "file": "client/src/context/UserContext.test.tsx"
         }
       ]
     },
@@ -1082,7 +907,7 @@
       "covered_requirements": 13,
       "coverage_percent": 81,
       "by_type": {
-        "unit": 16,
+        "unit": 59,
         "integration": 0,
         "e2e-mocked": 0,
         "e2e-real": 0
@@ -1109,6 +934,21 @@
               "name": "test_vite_config_specifies_terser",
               "type": "unit",
               "file": "tests/unit/test_build_deploy.py"
+            },
+            {
+              "name": "test_vite_config_has_drop_debugger",
+              "type": "unit",
+              "file": "tests/unit/test_build_deploy.py"
+            },
+            {
+              "name": "test_vite_config_drop_console_current_behavior",
+              "type": "unit",
+              "file": "tests/unit/test_build_deploy.py"
+            },
+            {
+              "name": "test_vite_config_output_dir_is_build",
+              "type": "unit",
+              "file": "tests/unit/test_build_deploy.py"
             }
           ]
         },
@@ -1119,6 +959,16 @@
           "tests": [
             {
               "name": "test_vite_config_has_build_output",
+              "type": "unit",
+              "file": "tests/unit/test_build_deploy.py"
+            },
+            {
+              "name": "test_index_html_template_exists",
+              "type": "unit",
+              "file": "tests/unit/test_build_deploy.py"
+            },
+            {
+              "name": "test_package_json_has_build_script",
               "type": "unit",
               "file": "tests/unit/test_build_deploy.py"
             }
@@ -1133,6 +983,16 @@
               "name": "test_bootstrap_creates_db_file",
               "type": "unit",
               "file": "tests/unit/test_build_deploy.py"
+            },
+            {
+              "name": "test_bootstrap_full_creates_db_when_missing",
+              "type": "unit",
+              "file": "tests/unit/test_build_deploy.py"
+            },
+            {
+              "name": "test_bootstrap_skips_existing_db",
+              "type": "unit",
+              "file": "tests/unit/test_build_deploy.py"
             }
           ]
         },
@@ -1143,6 +1003,21 @@
           "tests": [
             {
               "name": "test_migrations_directory_exists",
+              "type": "unit",
+              "file": "tests/unit/test_build_deploy.py"
+            },
+            {
+              "name": "test_baseline_migration_exists",
+              "type": "unit",
+              "file": "tests/unit/test_build_deploy.py"
+            },
+            {
+              "name": "test_alembic_ini_exists",
+              "type": "unit",
+              "file": "tests/unit/test_build_deploy.py"
+            },
+            {
+              "name": "test_migration_env_exists",
               "type": "unit",
               "file": "tests/unit/test_build_deploy.py"
             }
@@ -1157,6 +1032,11 @@
               "name": "test_alembic_env_uses_render_as_batch",
               "type": "unit",
               "file": "tests/unit/test_build_deploy.py"
+            },
+            {
+              "name": "test_migration_uses_batch_alter_table",
+              "type": "unit",
+              "file": "tests/unit/test_build_deploy.py"
             }
           ]
         },
@@ -1169,6 +1049,11 @@
               "name": "test_lock_is_exclusive",
               "type": "unit",
               "file": "tests/unit/test_build_deploy.py"
+            },
+            {
+              "name": "test_lock_timeout_raises",
+              "type": "unit",
+              "file": "tests/unit/test_build_deploy.py"
             }
           ]
         },
@@ -1179,6 +1064,11 @@
           "tests": [
             {
               "name": "test_on_starting_calls_bootstrap_database",
+              "type": "unit",
+              "file": "tests/unit/test_gunicorn_conf.py"
+            },
+            {
+              "name": "test_on_starting_propagates_errors",
               "type": "unit",
               "file": "tests/unit/test_gunicorn_conf.py"
             }
@@ -1211,6 +1101,16 @@
               "name": "test_app_yaml_specifies_gunicorn",
               "type": "unit",
               "file": "tests/unit/test_build_deploy.py"
+            },
+            {
+              "name": "test_app_yaml_specifies_uvicorn_worker",
+              "type": "unit",
+              "file": "tests/unit/test_build_deploy.py"
+            },
+            {
+              "name": "test_app_yaml_references_gunicorn_conf",
+              "type": "unit",
+              "file": "tests/unit/test_build_deploy.py"
             }
           ]
         },
@@ -1221,6 +1121,11 @@
           "tests": [
             {
               "name": "test_database_url_has_default",
+              "type": "unit",
+              "file": "tests/unit/test_build_deploy.py"
+            },
+            {
+              "name": "test_detect_backend_defaults_to_sqlite",
               "type": "unit",
               "file": "tests/unit/test_build_deploy.py"
             }
@@ -1235,6 +1140,11 @@
               "name": "test_workflow_creates_zip",
               "type": "unit",
               "file": "tests/unit/test_build_deploy.py"
+            },
+            {
+              "name": "test_workflow_uploads_release_asset",
+              "type": "unit",
+              "file": "tests/unit/test_build_deploy.py"
             }
           ]
         },
@@ -1247,6 +1157,11 @@
               "name": "test_workflow_builds_frontend_before_zip",
               "type": "unit",
               "file": "tests/unit/test_build_deploy.py"
+            },
+            {
+              "name": "test_build_output_dir_matches_vite_config",
+              "type": "unit",
+              "file": "tests/unit/test_build_deploy.py"
             }
           ]
         },
@@ -1257,6 +1172,31 @@
           "tests": [
             {
               "name": "test_release_workflow_exists",
+              "type": "unit",
+              "file": "tests/unit/test_build_deploy.py"
+            },
+            {
+              "name": "test_excludes_git_directory",
+              "type": "unit",
+              "file": "tests/unit/test_build_deploy.py"
+            },
+            {
+              "name": "test_excludes_node_modules",
+              "type": "unit",
+              "file": "tests/unit/test_build_deploy.py"
+            },
+            {
+              "name": "test_excludes_database_files",
+              "type": "unit",
+              "file": "tests/unit/test_build_deploy.py"
+            },
+            {
+              "name": "test_excludes_pycache",
+              "type": "unit",
+              "file": "tests/unit/test_build_deploy.py"
+            },
+            {
+              "name": "test_excludes_env_files",
               "type": "unit",
               "file": "tests/unit/test_build_deploy.py"
             }
@@ -1291,12 +1231,112 @@
           "file": "tests/unit/test_sqlite_rescue.py"
         },
         {
+          "name": "test_sqlite_triple_slash_url",
+          "type": "unit",
+          "file": "tests/unit/test_sqlite_rescue.py"
+        },
+        {
+          "name": "test_sqlite_double_slash_url",
+          "type": "unit",
+          "file": "tests/unit/test_sqlite_rescue.py"
+        },
+        {
+          "name": "test_non_sqlite_url_returns_none",
+          "type": "unit",
+          "file": "tests/unit/test_sqlite_rescue.py"
+        },
+        {
+          "name": "test_volume_backup_path_direct",
+          "type": "unit",
+          "file": "tests/unit/test_sqlite_rescue.py"
+        },
+        {
+          "name": "test_volume_path_appends_workshop_db",
+          "type": "unit",
+          "file": "tests/unit/test_sqlite_rescue.py"
+        },
+        {
+          "name": "test_volume_path_with_trailing_slash",
+          "type": "unit",
+          "file": "tests/unit/test_sqlite_rescue.py"
+        },
+        {
+          "name": "test_backup_path_takes_precedence",
+          "type": "unit",
+          "file": "tests/unit/test_sqlite_rescue.py"
+        },
+        {
+          "name": "test_custom_backup_interval",
+          "type": "unit",
+          "file": "tests/unit/test_sqlite_rescue.py"
+        },
+        {
+          "name": "test_backup_interval_zero_disables",
+          "type": "unit",
+          "file": "tests/unit/test_sqlite_rescue.py"
+        },
+        {
           "name": "test_valid_volume_path",
           "type": "unit",
           "file": "tests/unit/test_sqlite_rescue.py"
         },
         {
+          "name": "test_valid_nested_path",
+          "type": "unit",
+          "file": "tests/unit/test_sqlite_rescue.py"
+        },
+        {
+          "name": "test_empty_path_is_invalid",
+          "type": "unit",
+          "file": "tests/unit/test_sqlite_rescue.py"
+        },
+        {
+          "name": "test_none_path_is_invalid",
+          "type": "unit",
+          "file": "tests/unit/test_sqlite_rescue.py"
+        },
+        {
+          "name": "test_non_volumes_prefix_is_invalid",
+          "type": "unit",
+          "file": "tests/unit/test_sqlite_rescue.py"
+        },
+        {
+          "name": "test_incomplete_volume_path_is_invalid",
+          "type": "unit",
+          "file": "tests/unit/test_sqlite_rescue.py"
+        },
+        {
+          "name": "test_just_volumes_root_is_invalid",
+          "type": "unit",
+          "file": "tests/unit/test_sqlite_rescue.py"
+        },
+        {
+          "name": "test_case_sensitive_volumes_prefix",
+          "type": "unit",
+          "file": "tests/unit/test_sqlite_rescue.py"
+        },
+        {
           "name": "test_extracts_volume_root",
+          "type": "unit",
+          "file": "tests/unit/test_sqlite_rescue.py"
+        },
+        {
+          "name": "test_extracts_root_from_nested_path",
+          "type": "unit",
+          "file": "tests/unit/test_sqlite_rescue.py"
+        },
+        {
+          "name": "test_returns_none_for_short_path",
+          "type": "unit",
+          "file": "tests/unit/test_sqlite_rescue.py"
+        },
+        {
+          "name": "test_returns_none_for_empty_path",
+          "type": "unit",
+          "file": "tests/unit/test_sqlite_rescue.py"
+        },
+        {
+          "name": "test_exact_volume_path_returns_self",
           "type": "unit",
           "file": "tests/unit/test_sqlite_rescue.py"
         }
@@ -1496,10 +1536,10 @@
       "covered_requirements": 7,
       "coverage_percent": 77,
       "by_type": {
-        "unit": 9,
+        "unit": 25,
         "integration": 0,
         "e2e-mocked": 0,
-        "e2e-real": 1
+        "e2e-real": 0
       },
       "requirements": [
         {
@@ -1517,6 +1557,11 @@
               "name": "test_union_two_disjoint_datasets",
               "type": "unit",
               "file": "tests/unit/services/test_dataset_operations.py"
+            },
+            {
+              "name": "test_union_overlapping_datasets_deduplicates",
+              "type": "unit",
+              "file": "tests/unit/services/test_dataset_operations.py"
             }
           ]
         },
@@ -1527,6 +1572,11 @@
           "tests": [
             {
               "name": "test_subtract_removes_specified_traces",
+              "type": "unit",
+              "file": "tests/unit/services/test_dataset_operations.py"
+            },
+            {
+              "name": "test_subtract_preserves_order_of_remaining",
               "type": "unit",
               "file": "tests/unit/services/test_dataset_operations.py"
             }
@@ -1541,6 +1591,11 @@
               "name": "test_same_user_same_traces_same_order",
               "type": "unit",
               "file": "tests/unit/services/test_dataset_operations.py"
+            },
+            {
+              "name": "test_order_stable_across_many_calls",
+              "type": "unit",
+              "file": "tests/unit/services/test_dataset_operations.py"
             }
           ]
         },
@@ -1551,6 +1606,11 @@
           "tests": [
             {
               "name": "test_two_users_different_orders",
+              "type": "unit",
+              "file": "tests/unit/services/test_dataset_operations.py"
+            },
+            {
+              "name": "test_many_users_all_distinct",
               "type": "unit",
               "file": "tests/unit/services/test_dataset_operations.py"
             }
@@ -1565,6 +1625,11 @@
               "name": "test_incremental_addition_preserves_existing_order",
               "type": "unit",
               "file": "tests/unit/services/test_dataset_operations.py"
+            },
+            {
+              "name": "test_incremental_addition_no_duplicates",
+              "type": "unit",
+              "file": "tests/unit/services/test_dataset_operations.py"
             }
           ]
         },
@@ -1575,6 +1640,11 @@
           "tests": [
             {
               "name": "test_new_round_produces_different_order",
+              "type": "unit",
+              "file": "tests/unit/services/test_dataset_operations.py"
+            },
+            {
+              "name": "test_same_traces_new_round_still_same_order",
               "type": "unit",
               "file": "tests/unit/services/test_dataset_operations.py"
             }
@@ -1615,9 +1685,54 @@
       "backend_only_count": 7,
       "unlinked_tests": [
         {
-          "name": "file-level",
-          "type": "e2e-real",
-          "file": "client/tests/e2e/dataset-operations.spec.ts"
+          "name": "test_union_preserves_first_occurrence_order",
+          "type": "unit",
+          "file": "tests/unit/services/test_dataset_operations.py"
+        },
+        {
+          "name": "test_union_three_datasets",
+          "type": "unit",
+          "file": "tests/unit/services/test_dataset_operations.py"
+        },
+        {
+          "name": "test_union_with_empty_dataset",
+          "type": "unit",
+          "file": "tests/unit/services/test_dataset_operations.py"
+        },
+        {
+          "name": "test_union_identical_datasets",
+          "type": "unit",
+          "file": "tests/unit/services/test_dataset_operations.py"
+        },
+        {
+          "name": "test_union_result_has_no_duplicates",
+          "type": "unit",
+          "file": "tests/unit/services/test_dataset_operations.py"
+        },
+        {
+          "name": "test_subtract_empty_removal_set",
+          "type": "unit",
+          "file": "tests/unit/services/test_dataset_operations.py"
+        },
+        {
+          "name": "test_subtract_all_traces",
+          "type": "unit",
+          "file": "tests/unit/services/test_dataset_operations.py"
+        },
+        {
+          "name": "test_subtract_nonexistent_traces_ignored",
+          "type": "unit",
+          "file": "tests/unit/services/test_dataset_operations.py"
+        },
+        {
+          "name": "test_subtract_single_trace",
+          "type": "unit",
+          "file": "tests/unit/services/test_dataset_operations.py"
+        },
+        {
+          "name": "test_subtract_result_has_correct_length",
+          "type": "unit",
+          "file": "tests/unit/services/test_dataset_operations.py"
         },
         {
           "name": "file-level",
@@ -1638,7 +1753,7 @@
       "by_type": {
         "unit": 4,
         "integration": 0,
-        "e2e-mocked": 1,
+        "e2e-mocked": 0,
         "e2e-real": 0
       },
       "requirements": [
@@ -1699,11 +1814,6 @@
       "unlinked_tests": [
         {
           "name": "file-level",
-          "type": "e2e-mocked",
-          "file": "client/tests/e2e/design-system.spec.ts"
-        },
-        {
-          "name": "file-level",
           "type": "unit",
           "file": "client/src/test/design-system.test.ts"
         },
@@ -1726,13 +1836,13 @@
     },
     "DISCOVERY_SPEC": {
       "total_requirements": 72,
-      "covered_requirements": 44,
-      "coverage_percent": 61,
+      "covered_requirements": 61,
+      "coverage_percent": 84,
       "by_type": {
-        "unit": 85,
-        "integration": 1,
-        "e2e-mocked": 14,
-        "e2e-real": 17
+        "unit": 179,
+        "integration": 4,
+        "e2e-mocked": 0,
+        "e2e-real": 0
       },
       "requirements": [
         {
@@ -1792,18 +1902,8 @@
         {
           "text": "Facilitator can select LLM model for follow-up question generation in Discovery dashboard",
           "covered": true,
-          "backend_only": true,
+          "backend_only": false,
           "tests": [
-            {
-              "name": "test_update_persists_model_name",
-              "type": "unit",
-              "file": "tests/unit/services/test_update_discovery_model.py"
-            },
-            {
-              "name": "test_set_model_delegates_to_db_service",
-              "type": "unit",
-              "file": "tests/unit/services/test_update_discovery_model.py"
-            },
             {
               "name": "test_build_custom_llm_creates_lm_with_openai_prefix",
               "type": "unit",
@@ -1823,6 +1923,51 @@
               "name": "test_build_custom_llm_typeerror_fallback",
               "type": "unit",
               "file": "tests/unit/services/test_discovery_dspy_custom_llm.py"
+            },
+            {
+              "name": "test_update_persists_model_name",
+              "type": "unit",
+              "file": "tests/unit/services/test_update_discovery_model.py"
+            },
+            {
+              "name": "test_update_returns_none_for_missing_workshop",
+              "type": "unit",
+              "file": "tests/unit/services/test_update_discovery_model.py"
+            },
+            {
+              "name": "test_update_overwrites_previous_model",
+              "type": "unit",
+              "file": "tests/unit/services/test_update_discovery_model.py"
+            },
+            {
+              "name": "test_update_can_set_to_custom",
+              "type": "unit",
+              "file": "tests/unit/services/test_update_discovery_model.py"
+            },
+            {
+              "name": "test_update_can_reset_to_demo",
+              "type": "unit",
+              "file": "tests/unit/services/test_update_discovery_model.py"
+            },
+            {
+              "name": "test_default_model_is_demo",
+              "type": "unit",
+              "file": "tests/unit/services/test_update_discovery_model.py"
+            },
+            {
+              "name": "test_set_model_delegates_to_db_service",
+              "type": "unit",
+              "file": "tests/unit/services/test_update_discovery_model.py"
+            },
+            {
+              "name": "test_set_model_raises_for_missing_workshop",
+              "type": "unit",
+              "file": "tests/unit/services/test_update_discovery_model.py"
+            },
+            {
+              "name": "file-level",
+              "type": "unit",
+              "file": "client/src/components/DiscoveryStartPage.modelSelector.test.tsx"
             }
           ]
         },
@@ -1904,15 +2049,27 @@
         },
         {
           "text": "Previous Q&A visible while answering new questions",
-          "covered": false,
+          "covered": true,
           "backend_only": false,
-          "tests": []
+          "tests": [
+            {
+              "name": "file-level",
+              "type": "unit",
+              "file": "client/src/components/DiscoveryFeedbackView.previousQA.test.tsx"
+            }
+          ]
         },
         {
           "text": "Loading spinner during LLM generation (1-3s)",
-          "covered": false,
+          "covered": true,
           "backend_only": false,
-          "tests": []
+          "tests": [
+            {
+              "name": "file-level",
+              "type": "unit",
+              "file": "client/src/components/DiscoveryFeedbackView.loadingSpinner.test.tsx"
+            }
+          ]
         },
         {
           "text": "Error handling with retry for LLM failures",
@@ -1934,7 +2091,7 @@
         {
           "text": "Feedback saved incrementally (no data loss on failure)",
           "covered": true,
-          "backend_only": false,
+          "backend_only": true,
           "tests": [
             {
               "name": "test_append_followup_qna_raises_if_no_feedback",
@@ -1945,11 +2102,6 @@
               "name": "test_feedback_saved_incrementally",
               "type": "unit",
               "file": "tests/unit/services/test_database_service_feedback.py"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/discovery-feedback-persistence.spec.ts"
             }
           ]
         },
@@ -1958,6 +2110,11 @@
           "covered": true,
           "backend_only": true,
           "tests": [
+            {
+              "name": "test_multi_user_completion_status",
+              "type": "integration",
+              "file": "tests/integration/test_discovery_feedback_integration.py"
+            },
             {
               "name": "test_completion_status_percentage",
               "type": "unit",
@@ -1981,19 +2138,54 @@
           "backend_only": false,
           "tests": [
             {
+              "name": "test_get_feedback_with_user_details",
+              "type": "integration",
+              "file": "tests/integration/test_discovery_feedback_integration.py"
+            },
+            {
               "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/discovery-feedback-full-flow.spec.ts"
+              "type": "unit",
+              "file": "client/src/components/FacilitatorDashboard.feedbackDetail.test.tsx"
             }
           ]
         },
         {
           "text": "Facilitator can trigger analysis at any time (even partial feedback)",
           "covered": true,
-          "backend_only": false,
+          "backend_only": true,
           "tests": [
             {
               "name": "test_trigger_analysis_success",
+              "type": "unit",
+              "file": "tests/unit/routers/test_discovery_analysis.py"
+            },
+            {
+              "name": "test_trigger_analysis_with_themes_template",
+              "type": "unit",
+              "file": "tests/unit/routers/test_discovery_analysis.py"
+            },
+            {
+              "name": "test_trigger_analysis_404_missing_workshop",
+              "type": "unit",
+              "file": "tests/unit/routers/test_discovery_analysis.py"
+            },
+            {
+              "name": "test_trigger_analysis_400_missing_databricks_config",
+              "type": "unit",
+              "file": "tests/unit/routers/test_discovery_analysis.py"
+            },
+            {
+              "name": "test_trigger_analysis_400_no_feedback",
+              "type": "unit",
+              "file": "tests/unit/routers/test_discovery_analysis.py"
+            },
+            {
+              "name": "test_trigger_analysis_500_llm_failure",
+              "type": "unit",
+              "file": "tests/unit/routers/test_discovery_analysis.py"
+            },
+            {
+              "name": "test_trigger_analysis_uses_default_template",
               "type": "unit",
               "file": "tests/unit/routers/test_discovery_analysis.py"
             },
@@ -2003,21 +2195,26 @@
               "file": "tests/unit/services/test_discovery_analysis_service.py"
             },
             {
-              "name": "file-level",
-              "type": "e2e-mocked",
-              "file": "client/tests/e2e/discovery-analysis.spec.ts"
+              "name": "test_analysis_with_no_feedback_returns_empty",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_analysis_service.py"
             }
           ]
         },
         {
           "text": "Facilitator selects analysis template (Evaluation Criteria or Themes & Patterns) before running",
           "covered": true,
-          "backend_only": true,
+          "backend_only": false,
           "tests": [
             {
               "name": "test_db_stores_different_templates_distinctly",
               "type": "unit",
               "file": "tests/unit/services/test_discovery_analysis_service.py"
+            },
+            {
+              "name": "file-level",
+              "type": "unit",
+              "file": "client/src/components/DiscoveryAnalysisTab.test.tsx"
             }
           ]
         },
@@ -2028,6 +2225,11 @@
           "tests": [
             {
               "name": "test_aggregate_feedback_groups_by_trace",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_analysis_service.py"
+            },
+            {
+              "name": "test_aggregate_includes_all_feedback_fields",
               "type": "unit",
               "file": "tests/unit/services/test_discovery_analysis_service.py"
             }
@@ -2042,6 +2244,26 @@
               "name": "test_high_priority_good_vs_bad",
               "type": "unit",
               "file": "tests/unit/services/test_discovery_analysis_service.py"
+            },
+            {
+              "name": "test_medium_priority_both_bad",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_analysis_service.py"
+            },
+            {
+              "name": "test_lower_priority_both_good",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_analysis_service.py"
+            },
+            {
+              "name": "test_all_three_priority_levels",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_analysis_service.py"
+            },
+            {
+              "name": "test_single_reviewer_no_disagreement",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_analysis_service.py"
             }
           ]
         },
@@ -2052,6 +2274,11 @@
           "tests": [
             {
               "name": "test_summaries_payload_model_supports_criteria",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_analysis_service.py"
+            },
+            {
+              "name": "test_distillation_persisted_with_trace_references",
               "type": "unit",
               "file": "tests/unit/services/test_discovery_analysis_service.py"
             }
@@ -2066,22 +2293,53 @@
               "name": "test_key_disagreement_model_structure",
               "type": "unit",
               "file": "tests/unit/services/test_discovery_analysis_service.py"
+            },
+            {
+              "name": "test_discussion_prompt_model_for_facilitator_suggestions",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_analysis_service.py"
+            },
+            {
+              "name": "test_disagreement_analysis_persisted_in_summary",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_analysis_service.py"
             }
           ]
         },
         {
           "text": "Analysis record stores which template was used",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
+          "covered": true,
+          "backend_only": true,
+          "tests": [
+            {
+              "name": "test_list_analyses_filter_by_template",
+              "type": "unit",
+              "file": "tests/unit/routers/test_discovery_analysis.py"
+            },
+            {
+              "name": "test_summary_record_stores_payload_with_template",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_analysis_service.py"
+            }
+          ]
         },
         {
           "text": "Each analysis run creates a new record (history preserved)",
           "covered": true,
-          "backend_only": false,
+          "backend_only": true,
           "tests": [
             {
               "name": "test_list_analyses_returns_newest_first",
+              "type": "unit",
+              "file": "tests/unit/routers/test_discovery_analysis.py"
+            },
+            {
+              "name": "test_list_analyses_empty",
+              "type": "unit",
+              "file": "tests/unit/routers/test_discovery_analysis.py"
+            },
+            {
+              "name": "test_list_analyses_404_missing_workshop",
               "type": "unit",
               "file": "tests/unit/routers/test_discovery_analysis.py"
             },
@@ -2091,22 +2349,33 @@
               "file": "tests/unit/routers/test_discovery_analysis.py"
             },
             {
+              "name": "test_get_analysis_404_missing",
+              "type": "unit",
+              "file": "tests/unit/routers/test_discovery_analysis.py"
+            },
+            {
+              "name": "test_get_analysis_404_wrong_workshop",
+              "type": "unit",
+              "file": "tests/unit/routers/test_discovery_analysis.py"
+            },
+            {
               "name": "test_multiple_analysis_records_created_in_db",
               "type": "unit",
               "file": "tests/unit/services/test_discovery_analysis_service.py"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-mocked",
-              "file": "client/tests/e2e/discovery-analysis.spec.ts"
             }
           ]
         },
         {
           "text": "Re-runnable \u2014 new analysis as more feedback comes in, prior analyses retained",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
+          "covered": true,
+          "backend_only": true,
+          "tests": [
+            {
+              "name": "test_rerun_preserves_prior_analyses_in_db",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_analysis_service.py"
+            }
+          ]
         },
         {
           "text": "Warning if < 2 participants (not an error)",
@@ -2120,56 +2389,76 @@
             },
             {
               "name": "file-level",
-              "type": "e2e-mocked",
-              "file": "client/tests/e2e/discovery-analysis.spec.ts"
+              "type": "unit",
+              "file": "client/src/components/DiscoveryAnalysisTab.warning.test.tsx"
             }
           ]
         },
         {
           "text": "Data freshness banner (participant count, last run timestamp)",
           "covered": true,
-          "backend_only": true,
+          "backend_only": false,
           "tests": [
             {
               "name": "test_participant_count_computed_from_feedback",
               "type": "unit",
               "file": "tests/unit/services/test_discovery_analysis_service.py"
+            },
+            {
+              "name": "test_last_feedback_timestamp_available",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_analysis_service.py"
+            },
+            {
+              "name": "file-level",
+              "type": "unit",
+              "file": "client/src/components/DiscoveryAnalysisTab.freshness.test.tsx"
             }
           ]
         },
         {
           "text": "Results organized by priority (HIGH \u2192 MEDIUM \u2192 LOWER)",
           "covered": true,
-          "backend_only": true,
+          "backend_only": false,
           "tests": [
             {
               "name": "test_disagreements_structured_by_priority",
               "type": "unit",
               "file": "tests/unit/services/test_discovery_analysis_service.py"
+            },
+            {
+              "name": "file-level",
+              "type": "unit",
+              "file": "client/src/components/DiscoveryAnalysisTab.priorityOrder.test.tsx"
             }
           ]
         },
         {
           "text": "Facilitator can promote distilled criteria to draft rubric",
           "covered": true,
-          "backend_only": false,
+          "backend_only": true,
           "tests": [
+            {
+              "name": "test_source_analysis_id",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_items.py"
+            },
             {
               "name": "test_promote_finding_source_type",
               "type": "unit",
               "file": "tests/unit/services/test_draft_rubric_promotion.py"
             },
             {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/discovery-draft-rubric-crud.spec.ts"
+              "name": "test_promote_finding_persists_and_retrieves",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_promotion.py"
             }
           ]
         },
         {
           "text": "Facilitator can promote disagreement insights to draft rubric",
           "covered": true,
-          "backend_only": false,
+          "backend_only": true,
           "tests": [
             {
               "name": "test_promote_disagreement_source_type",
@@ -2177,9 +2466,9 @@
               "file": "tests/unit/services/test_draft_rubric_promotion.py"
             },
             {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/discovery-draft-rubric-crud.spec.ts"
+              "name": "test_disagreement_item_editable_after_promotion",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_promotion.py"
             }
           ]
         },
@@ -2192,40 +2481,50 @@
               "name": "test_promote_feedback_source_type",
               "type": "unit",
               "file": "tests/unit/services/test_draft_rubric_promotion.py"
+            },
+            {
+              "name": "test_all_source_types_coexist",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_promotion.py"
             }
           ]
         },
         {
           "text": "Facilitator can manually add draft rubric items",
           "covered": true,
-          "backend_only": false,
+          "backend_only": true,
           "tests": [
             {
               "name": "test_create_draft_rubric_item",
               "type": "unit",
               "file": "tests/unit/services/test_draft_rubric_items.py"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/discovery-draft-rubric-crud.spec.ts"
             }
           ]
         },
         {
           "text": "Draft rubric items editable and removable",
           "covered": true,
-          "backend_only": false,
+          "backend_only": true,
           "tests": [
             {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/discovery-draft-rubric-crud.spec.ts"
+              "name": "test_update_text",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_items.py"
             },
             {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/discovery-draft-rubric-crud.spec.ts"
+              "name": "test_update_nonexistent_item",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_items.py"
+            },
+            {
+              "name": "test_delete_draft_rubric_item",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_items.py"
+            },
+            {
+              "name": "test_delete_nonexistent_item",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_items.py"
             }
           ]
         },
@@ -2238,16 +2537,31 @@
               "name": "test_fallback_grouping_returns_proposal",
               "type": "unit",
               "file": "tests/unit/services/test_draft_rubric_promotion.py"
+            },
+            {
+              "name": "test_suggest_groups_does_not_persist",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_promotion.py"
+            },
+            {
+              "name": "test_suggest_groups_empty_items",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_promotion.py"
             }
           ]
         },
         {
           "text": "Facilitator can review, adjust, and apply group proposal",
           "covered": true,
-          "backend_only": false,
+          "backend_only": true,
           "tests": [
             {
               "name": "test_apply_groups",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_items.py"
+            },
+            {
+              "name": "test_apply_groups_clears_previous",
               "type": "unit",
               "file": "tests/unit/services/test_draft_rubric_items.py"
             },
@@ -2257,50 +2571,80 @@
               "file": "tests/unit/services/test_draft_rubric_promotion.py"
             },
             {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/discovery-draft-rubric-grouping.spec.ts"
+              "name": "test_apply_adjusted_groups",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_promotion.py"
             }
           ]
         },
         {
           "text": "Manual grouping: create groups, name them, move items between groups",
           "covered": true,
-          "backend_only": false,
+          "backend_only": true,
           "tests": [
+            {
+              "name": "test_apply_empty_groups_clears_all",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_items.py"
+            },
             {
               "name": "test_create_group_by_updating_items",
               "type": "unit",
               "file": "tests/unit/services/test_draft_rubric_promotion.py"
             },
             {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/discovery-draft-rubric-grouping.spec.ts"
+              "name": "test_move_item_between_groups",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_promotion.py"
+            },
+            {
+              "name": "test_rename_group_via_item_update",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_promotion.py"
             }
           ]
         },
         {
           "text": "Each group maps to one rubric question (group name = question title)",
           "covered": true,
-          "backend_only": false,
+          "backend_only": true,
           "tests": [
             {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/discovery-draft-rubric-grouping.spec.ts"
+              "name": "test_update_group_fields",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_items.py"
+            },
+            {
+              "name": "test_group_name_serves_as_question_title",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_promotion.py"
+            },
+            {
+              "name": "test_multiple_groups_map_to_separate_questions",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_promotion.py"
             }
           ]
         },
         {
           "text": "Draft rubric items available during Rubric Creation phase",
           "covered": true,
-          "backend_only": false,
+          "backend_only": true,
           "tests": [
             {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/discovery-draft-rubric-grouping.spec.ts"
+              "name": "test_list_draft_rubric_items",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_items.py"
+            },
+            {
+              "name": "test_list_items_empty_workshop",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_items.py"
+            },
+            {
+              "name": "test_items_persist_across_queries",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_promotion.py"
             }
           ]
         },
@@ -2310,7 +2654,17 @@
           "backend_only": true,
           "tests": [
             {
+              "name": "test_create_item_with_source_metadata",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_items.py"
+            },
+            {
               "name": "test_source_trace_ids_stored",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_promotion.py"
+            },
+            {
+              "name": "test_empty_trace_ids_default",
               "type": "unit",
               "file": "tests/unit/services/test_draft_rubric_promotion.py"
             }
@@ -2406,6 +2760,11 @@
           "backend_only": true,
           "tests": [
             {
+              "name": "test_upsert_then_qna_preserves_all_data",
+              "type": "integration",
+              "file": "tests/integration/test_discovery_feedback_integration.py"
+            },
+            {
               "name": "test_add_discovery_feedback_creates_new",
               "type": "unit",
               "file": "tests/unit/services/test_database_service_feedback.py"
@@ -2428,6 +2787,11 @@
           "backend_only": true,
           "tests": [
             {
+              "name": "test_full_feedback_and_qna_flow",
+              "type": "integration",
+              "file": "tests/integration/test_discovery_feedback_integration.py"
+            },
+            {
               "name": "test_append_followup_qna_preserves_order",
               "type": "unit",
               "file": "tests/unit/services/test_database_service_feedback.py"
@@ -2436,9 +2800,15 @@
         },
         {
           "text": "Multiple analysis records per workshop allowed (history preserved)",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
+          "covered": true,
+          "backend_only": true,
+          "tests": [
+            {
+              "name": "test_multiple_templates_stored_in_db",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_analysis_service.py"
+            }
+          ]
         },
         {
           "text": "Draft rubric items track promotion source and promoter",
@@ -2446,7 +2816,22 @@
           "backend_only": true,
           "tests": [
             {
-              "name": "test_valid_source_types",
+              "name": "test_valid_source_types[finding]",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_items.py"
+            },
+            {
+              "name": "test_valid_source_types[disagreement]",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_items.py"
+            },
+            {
+              "name": "test_valid_source_types[feedback]",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_items.py"
+            },
+            {
+              "name": "test_valid_source_types[manual]",
               "type": "unit",
               "file": "tests/unit/services/test_draft_rubric_items.py"
             },
@@ -2454,14 +2839,30 @@
               "name": "test_promoted_by_field_stored",
               "type": "unit",
               "file": "tests/unit/services/test_draft_rubric_promotion.py"
+            },
+            {
+              "name": "test_source_type_and_analysis_id_tracked",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_promotion.py"
+            },
+            {
+              "name": "test_promoted_at_timestamp_set",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_promotion.py"
             }
           ]
         },
         {
           "text": "LLM failures show error toast with retry",
-          "covered": false,
+          "covered": true,
           "backend_only": false,
-          "tests": []
+          "tests": [
+            {
+              "name": "file-level",
+              "type": "unit",
+              "file": "client/src/components/DiscoveryFeedbackView.errorRetry.test.tsx"
+            }
+          ]
         },
         {
           "text": "Fallback question if LLM unavailable after retries",
@@ -2492,15 +2893,32 @@
         },
         {
           "text": "Fallback warning banner shown only to facilitators, never to participants/SMEs",
-          "covered": false,
+          "covered": true,
           "backend_only": false,
-          "tests": []
+          "tests": [
+            {
+              "name": "file-level",
+              "type": "unit",
+              "file": "client/src/components/__tests__/DiscoveryFeedbackView.fallback.test.tsx"
+            }
+          ]
         },
         {
           "text": "Analysis shows warning (not error) if < 2 participants",
-          "covered": false,
+          "covered": true,
           "backend_only": false,
-          "tests": []
+          "tests": [
+            {
+              "name": "test_zero_participants_no_crash",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_analysis_service.py"
+            },
+            {
+              "name": "file-level",
+              "type": "unit",
+              "file": "client/src/components/DiscoveryAnalysisTab.warningNotError.test.tsx"
+            }
+          ]
         },
         {
           "text": "Form validation prevents empty submissions",
@@ -2536,49 +2954,40 @@
             },
             {
               "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/discovery-feedback-full-flow.spec.ts"
+              "type": "unit",
+              "file": "client/src/components/DiscoveryFeedbackView.progressiveDisclosure.test.tsx"
             }
           ]
         },
         {
           "text": "Submit buttons disabled until required fields filled",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
-        },
-        {
-          "text": "Clear progress indication (X of Y traces completed)",
           "covered": true,
           "backend_only": false,
           "tests": [
             {
               "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/discovery-progress-indication.spec.ts"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/discovery-progress-indication.spec.ts"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/discovery-progress-indication.spec.ts"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/discovery-progress-indication.spec.ts"
+              "type": "unit",
+              "file": "client/src/components/DiscoveryFeedbackView.submitDisabled.test.tsx"
             }
           ]
         },
         {
-          "text": "Smooth transitions between feedback states",
+          "text": "Clear progress indication (X of Y traces completed)",
           "covered": false,
           "backend_only": false,
           "tests": []
+        },
+        {
+          "text": "Smooth transitions between feedback states",
+          "covered": true,
+          "backend_only": false,
+          "tests": [
+            {
+              "name": "file-level",
+              "type": "unit",
+              "file": "client/src/components/DiscoveryFeedbackView.stateTransitions.test.tsx"
+            }
+          ]
         },
         {
           "text": "When follow-up questions are disabled, participant flow is GOOD/BAD + comment only",
@@ -2594,81 +3003,149 @@
         },
         {
           "text": "Single two-panel workspace replaces multi-page flow (no FacilitatorDashboard discovery tabs, no FindingsReviewPage)",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
-        },
-        {
-          "text": "Trace feed shows actual trace content (input/output), not trace ID badges",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
-        },
-        {
-          "text": "Trace-specific analysis findings appear on the trace card, pinned above feedback (collapsible)",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
-        },
-        {
-          "text": "Cross-trace analysis findings appear in collapsible summary section above the feed",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
-        },
-        {
-          "text": "Overview bar shows stats inline + compact controls (Run Analysis, Add Traces, Pause, Model selector)",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
-        },
-        {
-          "text": "Draft rubric sidebar is always visible while browsing traces",
           "covered": true,
           "backend_only": false,
           "tests": [
             {
               "name": "file-level",
-              "type": "e2e-mocked",
-              "file": "client/tests/e2e/discovery-sidebar-visibility.spec.ts"
+              "type": "unit",
+              "file": "client/src/components/discovery/FacilitatorDiscoveryWorkspace.test.tsx"
             }
           ]
         },
         {
-          "text": "Promote action visibly moves items from trace feed/summary into the sidebar",
+          "text": "Trace feed shows actual trace content (input/output), not trace ID badges",
+          "covered": true,
+          "backend_only": false,
+          "tests": [
+            {
+              "name": "file-level",
+              "type": "unit",
+              "file": "client/src/components/discovery/DiscoveryTraceCard.test.tsx"
+            }
+          ]
+        },
+        {
+          "text": "Trace-specific analysis findings appear on the trace card, pinned above feedback (collapsible)",
+          "covered": true,
+          "backend_only": true,
+          "tests": [
+            {
+              "name": "test_findings_have_evidence_trace_ids_for_card_pinning",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_workspace_ui_contracts.py"
+            },
+            {
+              "name": "test_finding_model_validates_evidence_trace_ids",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_workspace_ui_contracts.py"
+            }
+          ]
+        },
+        {
+          "text": "Cross-trace analysis findings appear in collapsible summary section above the feed",
+          "covered": true,
+          "backend_only": false,
+          "tests": [
+            {
+              "name": "file-level",
+              "type": "unit",
+              "file": "client/src/components/discovery/CrossTraceAnalysisSummary.test.tsx"
+            }
+          ]
+        },
+        {
+          "text": "Overview bar shows stats inline + compact controls (Run Analysis, Add Traces, Pause, Model selector)",
+          "covered": true,
+          "backend_only": false,
+          "tests": [
+            {
+              "name": "file-level",
+              "type": "unit",
+              "file": "client/src/components/discovery/DiscoveryOverviewBar.test.tsx"
+            }
+          ]
+        },
+        {
+          "text": "Draft rubric sidebar is always visible while browsing traces",
           "covered": false,
           "backend_only": false,
           "tests": []
+        },
+        {
+          "text": "Promote action visibly moves items from trace feed/summary into the sidebar",
+          "covered": true,
+          "backend_only": true,
+          "tests": [
+            {
+              "name": "test_promote_creates_draft_item_with_source_tracing",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_workspace_ui_contracts.py"
+            },
+            {
+              "name": "test_promote_disagreement_creates_draft_item",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_workspace_ui_contracts.py"
+            }
+          ]
         },
         {
           "text": "Draft rubric items show trace reference badges (interactive: hover for preview, click to scroll)",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
+          "covered": true,
+          "backend_only": true,
+          "tests": [
+            {
+              "name": "test_draft_items_carry_source_trace_ids_for_badges",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_workspace_ui_contracts.py"
+            },
+            {
+              "name": "test_source_trace_ids_preserved_through_group_assignment",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_workspace_ui_contracts.py"
+            }
+          ]
         },
         {
           "text": "Draft rubric items do NOT show source-type badges (Finding, Disagreement, etc.)",
-          "covered": false,
+          "covered": true,
           "backend_only": false,
-          "tests": []
+          "tests": [
+            {
+              "name": "file-level",
+              "type": "unit",
+              "file": "client/src/components/discovery/DraftRubricSidebar.test.tsx"
+            }
+          ]
         },
         {
           "text": "Disagreements color-coded by priority (red/yellow/blue) on trace cards",
           "covered": true,
-          "backend_only": true,
+          "backend_only": false,
           "tests": [
             {
               "name": "test_three_priority_levels_available_for_color_mapping",
               "type": "unit",
               "file": "tests/unit/services/test_discovery_analysis_service.py"
+            },
+            {
+              "name": "file-level",
+              "type": "unit",
+              "file": "client/src/components/DiscoveryAnalysisTab.colorCoding.test.tsx"
             }
           ]
         },
         {
           "text": "\"Create Rubric \u2192\" in sidebar transitions to rubric creation with groups pre-populated as criteria",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
+          "covered": true,
+          "backend_only": true,
+          "tests": [
+            {
+              "name": "test_grouped_items_become_questions",
+              "type": "unit",
+              "file": "tests/unit/services/test_draft_rubric_items.py"
+            }
+          ]
         },
         {
           "text": "Social mode provides a modern live collaboration experience with streamed in-thread updates for assistant/agent responses",
@@ -2678,10 +3155,6 @@
         }
       ],
       "uncovered": [
-        "Previous Q&A visible while answering new questions",
-        "Loading spinner during LLM generation (1-3s)",
-        "Analysis record stores which template was used",
-        "Re-runnable \u2014 new analysis as more feedback comes in, prior analyses retained",
         "Facilitator can switch Discovery workspace between `analysis` mode and `social` mode",
         "In social mode, users can create trace-level comments",
         "In social mode, users can create milestone-level comments",
@@ -2690,60 +3163,55 @@
         "Facilitator `@assistant` tool-availability questions for a milestone return grounded context as a thread reply",
         "`@agent` run lifecycle is visible (`running`, `completed`, `failed`, `timeout`) with final persisted reply",
         "Non-facilitator mentions do not trigger assistant/agent execution (treated as plain text mentions)",
-        "Multiple analysis records per workshop allowed (history preserved)",
-        "LLM failures show error toast with retry",
-        "Fallback warning banner shown only to facilitators, never to participants/SMEs",
-        "Analysis shows warning (not error) if < 2 participants",
-        "Submit buttons disabled until required fields filled",
-        "Smooth transitions between feedback states",
-        "Single two-panel workspace replaces multi-page flow (no FacilitatorDashboard discovery tabs, no FindingsReviewPage)",
-        "Trace feed shows actual trace content (input/output), not trace ID badges",
-        "Trace-specific analysis findings appear on the trace card, pinned above feedback (collapsible)",
-        "Cross-trace analysis findings appear in collapsible summary section above the feed",
-        "Overview bar shows stats inline + compact controls (Run Analysis, Add Traces, Pause, Model selector)",
-        "Promote action visibly moves items from trace feed/summary into the sidebar",
-        "Draft rubric items show trace reference badges (interactive: hover for preview, click to scroll)",
-        "Draft rubric items do NOT show source-type badges (Finding, Disagreement, etc.)",
-        "\"Create Rubric \u2192\" in sidebar transitions to rubric creation with groups pre-populated as criteria",
+        "Clear progress indication (X of Y traces completed)",
+        "Draft rubric sidebar is always visible while browsing traces",
         "Social mode provides a modern live collaboration experience with streamed in-thread updates for assistant/agent responses"
       ],
       "backend_only": [
         "Facilitator can start Discovery phase with configurable trace limit",
         "Participants view traces and provide GOOD/BAD + comment",
-        "Facilitator can select LLM model for follow-up question generation in Discovery dashboard",
         "AI generates 3 follow-up questions per trace based on feedback",
         "Questions build progressively on prior answers",
         "All 3 questions required before moving to next trace",
         "Error handling with retry for LLM failures",
+        "Feedback saved incrementally (no data loss on failure)",
         "Completion status shows % of participants finished",
-        "Facilitator selects analysis template (Evaluation Criteria or Themes & Patterns) before running",
+        "Facilitator can trigger analysis at any time (even partial feedback)",
         "System aggregates feedback by trace",
         "Disagreements detected at 3 priority levels (deterministic, no LLM)",
         "LLM distills evaluation criteria with evidence from trace IDs",
         "LLM analyzes disagreements with follow-up questions and suggestions",
-        "Data freshness banner (participant count, last run timestamp)",
-        "Results organized by priority (HIGH \u2192 MEDIUM \u2192 LOWER)",
+        "Analysis record stores which template was used",
+        "Each analysis run creates a new record (history preserved)",
+        "Re-runnable \u2014 new analysis as more feedback comes in, prior analyses retained",
+        "Facilitator can promote distilled criteria to draft rubric",
+        "Facilitator can promote disagreement insights to draft rubric",
         "Facilitator can promote raw participant feedback to draft rubric",
+        "Facilitator can manually add draft rubric items",
+        "Draft rubric items editable and removable",
         "\"Suggest Groups\" returns LLM proposal without persisting",
+        "Facilitator can review, adjust, and apply group proposal",
+        "Manual grouping: create groups, name them, move items between groups",
+        "Each group maps to one rubric question (group name = question title)",
+        "Draft rubric items available during Rubric Creation phase",
         "Source traceability maintained (which traces support each item)",
         "Users can upvote/downvote comments (single vote per user per comment with toggle behavior)",
         "Facilitator `@assistant summarize this thread` returns a grounded summary as a thread reply",
         "Facilitator `@agent` starts a bounded tool-calling run and posts streamed partial output in the thread",
         "One feedback record per (workshop, trace, user) \u2014 upsert behavior",
         "Q&A pairs appended in order to JSON array",
+        "Multiple analysis records per workshop allowed (history preserved)",
         "Draft rubric items track promotion source and promoter",
         "Fallback question if LLM unavailable after retries",
         "Form validation prevents empty submissions",
         "When follow-up questions are disabled, participant flow is GOOD/BAD + comment only",
-        "Disagreements color-coded by priority (red/yellow/blue) on trace cards"
+        "Trace-specific analysis findings appear on the trace card, pinned above feedback (collapsible)",
+        "Promote action visibly moves items from trace feed/summary into the sidebar",
+        "Draft rubric items show trace reference badges (interactive: hover for preview, click to scroll)",
+        "\"Create Rubric \u2192\" in sidebar transitions to rubric creation with groups pre-populated as criteria"
       ],
-      "backend_only_count": 28,
+      "backend_only_count": 41,
       "unlinked_tests": [
-        {
-          "name": "test_full_feedback_and_qna_flow",
-          "type": "integration",
-          "file": "tests/integration/test_discovery_feedback_integration.py"
-        },
         {
           "name": "test_assistant_mention_creates_agent_run",
           "type": "unit",
@@ -2770,113 +3238,109 @@
           "file": "tests/unit/routers/test_discovery_feedback.py"
         },
         {
-          "name": "test_findings_have_evidence_trace_ids_for_card_pinning",
-          "type": "unit",
-          "file": "tests/unit/services/test_discovery_workspace_ui_contracts.py"
-        },
-        {
-          "name": "test_promote_creates_draft_item_with_source_tracing",
-          "type": "unit",
-          "file": "tests/unit/services/test_discovery_workspace_ui_contracts.py"
-        },
-        {
-          "name": "test_draft_items_carry_source_trace_ids_for_badges",
-          "type": "unit",
-          "file": "tests/unit/services/test_discovery_workspace_ui_contracts.py"
-        },
-        {
           "name": "test_draft_items_expose_source_trace_ids_for_display",
           "type": "unit",
           "file": "tests/unit/services/test_discovery_analysis_service.py"
         },
         {
-          "name": "test_grouped_items_become_questions",
+          "name": "test_ungrouped_items_each_become_question",
           "type": "unit",
           "file": "tests/unit/services/test_draft_rubric_items.py"
         },
         {
-          "name": "test_group_name_serves_as_question_title",
+          "name": "test_no_items_raises_400",
           "type": "unit",
-          "file": "tests/unit/services/test_draft_rubric_promotion.py"
+          "file": "tests/unit/services/test_draft_rubric_items.py"
         },
         {
-          "name": "test_items_persist_across_queries",
+          "name": "test_mixed_grouped_and_ungrouped",
           "type": "unit",
-          "file": "tests/unit/services/test_draft_rubric_promotion.py"
+          "file": "tests/unit/services/test_draft_rubric_items.py"
         },
         {
           "name": "file-level",
-          "type": "e2e-real",
-          "file": "client/tests/e2e/discovery-draft-rubric-grouping.spec.ts"
+          "type": "unit",
+          "file": "client/src/components/DiscoveryFeedbackView.submitDisabled.test.tsx"
         },
         {
           "name": "file-level",
-          "type": "e2e-mocked",
-          "file": "client/tests/e2e/discovery-social-scroll-sync.spec.ts"
+          "type": "unit",
+          "file": "client/src/components/DiscoveryFeedbackView.stateTransitions.test.tsx"
         },
         {
           "name": "file-level",
-          "type": "e2e-mocked",
-          "file": "client/tests/e2e/discovery-social-scroll-sync.spec.ts"
+          "type": "unit",
+          "file": "client/src/components/DiscoveryStartPage.modelSelector.test.tsx"
         },
         {
           "name": "file-level",
-          "type": "e2e-mocked",
-          "file": "client/tests/e2e/discovery-social-scroll-sync.spec.ts"
+          "type": "unit",
+          "file": "client/src/components/DiscoveryFeedbackView.previousQA.test.tsx"
         },
         {
           "name": "file-level",
-          "type": "e2e-mocked",
-          "file": "client/tests/e2e/discovery-model-selection.spec.ts"
+          "type": "unit",
+          "file": "client/src/components/DiscoveryFeedbackView.errorRetry.test.tsx"
         },
         {
           "name": "file-level",
-          "type": "e2e-mocked",
-          "file": "client/tests/e2e/discovery-model-selection.spec.ts"
+          "type": "unit",
+          "file": "client/src/components/DiscoveryAnalysisTab.evidence.test.tsx"
         },
         {
           "name": "file-level",
-          "type": "e2e-mocked",
-          "file": "client/tests/e2e/discovery-model-selection.spec.ts"
+          "type": "unit",
+          "file": "client/src/components/FacilitatorDashboard.feedbackDetail.test.tsx"
         },
         {
           "name": "file-level",
-          "type": "e2e-mocked",
-          "file": "client/tests/e2e/discovery-model-selection.spec.ts"
+          "type": "unit",
+          "file": "client/src/components/DiscoveryFeedbackView.progressiveDisclosure.test.tsx"
         },
         {
           "name": "file-level",
-          "type": "e2e-mocked",
-          "file": "client/tests/e2e/discovery-analysis.spec.ts"
+          "type": "unit",
+          "file": "client/src/components/DraftRubricPanel.test.tsx"
         },
         {
           "name": "file-level",
-          "type": "e2e-mocked",
-          "file": "client/tests/e2e/discovery-analysis.spec.ts"
+          "type": "unit",
+          "file": "client/src/components/DiscoveryFeedbackView.loadingSpinner.test.tsx"
         },
         {
           "name": "file-level",
-          "type": "e2e-mocked",
-          "file": "client/tests/e2e/discovery-sidebar-visibility.spec.ts"
+          "type": "unit",
+          "file": "client/src/components/__tests__/DiscoveryFeedbackView.fallback.test.tsx"
         }
       ]
     },
     "DISCOVERY_TRACE_ASSIGNMENT_SPEC": {
       "total_requirements": 13,
-      "covered_requirements": 4,
-      "coverage_percent": 30,
+      "covered_requirements": 12,
+      "coverage_percent": 92,
       "by_type": {
-        "unit": 11,
+        "unit": 20,
         "integration": 0,
-        "e2e-mocked": 1,
-        "e2e-real": 1
+        "e2e-mocked": 0,
+        "e2e-real": 0
       },
       "requirements": [
         {
           "text": "Participants only see traces in current active discovery dataset",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
+          "covered": true,
+          "backend_only": true,
+          "tests": [
+            {
+              "name": "test_active_traces_only_current_round",
+              "type": "unit",
+              "file": "tests/unit/services/test_trace_assignment.py"
+            },
+            {
+              "name": "test_empty_active_traces_returns_nothing",
+              "type": "unit",
+              "file": "tests/unit/services/test_trace_assignment.py"
+            }
+          ]
         },
         {
           "text": "When new discovery round starts, old traces hidden (not deleted)",
@@ -2922,45 +3386,116 @@
         },
         {
           "text": "Randomization persistent across page reloads for same trace set",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
+          "covered": true,
+          "backend_only": true,
+          "tests": [
+            {
+              "name": "test_order_deterministic_for_same_user",
+              "type": "unit",
+              "file": "tests/unit/services/test_trace_assignment.py"
+            }
+          ]
         },
         {
           "text": "When annotation dataset changes mid-round, new traces appended",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
+          "covered": true,
+          "backend_only": true,
+          "tests": [
+            {
+              "name": "test_append_preserves_existing_positions",
+              "type": "unit",
+              "file": "tests/unit/services/test_trace_assignment.py"
+            },
+            {
+              "name": "test_no_reshuffle_on_addition",
+              "type": "unit",
+              "file": "tests/unit/services/test_trace_assignment.py"
+            }
+          ]
         },
         {
           "text": "When annotation round changes, full re-randomization applied",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
+          "covered": true,
+          "backend_only": true,
+          "tests": [
+            {
+              "name": "test_new_dataset_triggers_fresh_randomization",
+              "type": "unit",
+              "file": "tests/unit/services/test_trace_assignment.py"
+            },
+            {
+              "name": "test_round_change_not_incremental",
+              "type": "unit",
+              "file": "tests/unit/services/test_trace_assignment.py"
+            }
+          ]
         },
         {
           "text": "Randomization context includes phase and round info",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
+          "covered": true,
+          "backend_only": true,
+          "tests": [
+            {
+              "name": "test_randomization_seed_includes_phase",
+              "type": "unit",
+              "file": "tests/unit/services/test_trace_assignment.py"
+            },
+            {
+              "name": "test_randomization_seed_includes_round",
+              "type": "unit",
+              "file": "tests/unit/services/test_trace_assignment.py"
+            }
+          ]
         },
         {
           "text": "Dataset operations (union, subtract) work correctly and maintain audit trail",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
+          "covered": true,
+          "backend_only": true,
+          "tests": [
+            {
+              "name": "test_dataset_union",
+              "type": "unit",
+              "file": "tests/unit/services/test_trace_assignment.py"
+            },
+            {
+              "name": "test_dataset_subtract",
+              "type": "unit",
+              "file": "tests/unit/services/test_trace_assignment.py"
+            },
+            {
+              "name": "test_dataset_operations_maintain_audit_trail",
+              "type": "unit",
+              "file": "tests/unit/services/test_trace_assignment.py"
+            }
+          ]
         },
         {
           "text": "Multiple participants can see same trace with different orders",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
+          "covered": true,
+          "backend_only": true,
+          "tests": [
+            {
+              "name": "test_different_users_different_order",
+              "type": "unit",
+              "file": "tests/unit/services/test_trace_assignment.py"
+            }
+          ]
         },
         {
           "text": "Assignment metadata properly tracks all context",
           "covered": true,
           "backend_only": false,
           "tests": [
+            {
+              "name": "test_assignment_tracks_phase_and_round",
+              "type": "unit",
+              "file": "tests/unit/services/test_trace_assignment.py"
+            },
+            {
+              "name": "test_assignment_tracks_dataset_id",
+              "type": "unit",
+              "file": "tests/unit/services/test_trace_assignment.py"
+            },
             {
               "name": "file-level",
               "type": "unit",
@@ -2970,14 +3505,25 @@
         },
         {
           "text": "Inter-rater reliability (IRR) can be measured (same traces, different orders)",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
+          "covered": true,
+          "backend_only": true,
+          "tests": [
+            {
+              "name": "test_irr_measurement_possible",
+              "type": "unit",
+              "file": "tests/unit/services/test_trace_assignment.py"
+            }
+          ]
         }
       ],
       "uncovered": [
+        "When new discovery round starts, old traces hidden (not deleted)"
+      ],
+      "backend_only": [
         "Participants only see traces in current active discovery dataset",
-        "When new discovery round starts, old traces hidden (not deleted)",
+        "Switching between discovery rounds hides/shows appropriate traces",
+        "Phase/round context properly scoped in database",
+        "Annotation traces randomized per (user_id, trace_set) pair",
         "Randomization persistent across page reloads for same trace set",
         "When annotation dataset changes mid-round, new traces appended",
         "When annotation round changes, full re-randomization applied",
@@ -2986,69 +3532,18 @@
         "Multiple participants can see same trace with different orders",
         "Inter-rater reliability (IRR) can be measured (same traces, different orders)"
       ],
-      "backend_only": [
-        "Switching between discovery rounds hides/shows appropriate traces",
-        "Phase/round context properly scoped in database",
-        "Annotation traces randomized per (user_id, trace_set) pair"
-      ],
-      "backend_only_count": 3,
-      "unlinked_tests": [
-        {
-          "name": "test_active_traces_only_current_round",
-          "type": "unit",
-          "file": "tests/unit/services/test_trace_assignment.py"
-        },
-        {
-          "name": "test_different_users_different_order",
-          "type": "unit",
-          "file": "tests/unit/services/test_trace_assignment.py"
-        },
-        {
-          "name": "test_append_preserves_existing_positions",
-          "type": "unit",
-          "file": "tests/unit/services/test_trace_assignment.py"
-        },
-        {
-          "name": "test_new_dataset_triggers_fresh_randomization",
-          "type": "unit",
-          "file": "tests/unit/services/test_trace_assignment.py"
-        },
-        {
-          "name": "test_randomization_seed_includes_phase",
-          "type": "unit",
-          "file": "tests/unit/services/test_trace_assignment.py"
-        },
-        {
-          "name": "test_dataset_union",
-          "type": "unit",
-          "file": "tests/unit/services/test_trace_assignment.py"
-        },
-        {
-          "name": "test_assignment_tracks_phase_and_round",
-          "type": "unit",
-          "file": "tests/unit/services/test_trace_assignment.py"
-        },
-        {
-          "name": "file-level",
-          "type": "e2e-real",
-          "file": "client/tests/e2e/trace-visibility.spec.ts"
-        },
-        {
-          "name": "file-level",
-          "type": "e2e-mocked",
-          "file": "client/tests/e2e/discovery-invite-traces.spec.ts"
-        }
-      ]
+      "backend_only_count": 11,
+      "unlinked_tests": []
     },
     "JUDGE_EVALUATION_SPEC": {
       "total_requirements": 25,
-      "covered_requirements": 24,
-      "coverage_percent": 96,
+      "covered_requirements": 22,
+      "coverage_percent": 88,
       "by_type": {
-        "unit": 60,
-        "integration": 0,
+        "unit": 68,
+        "integration": 7,
         "e2e-mocked": 0,
-        "e2e-real": 11
+        "e2e-real": 0
       },
       "requirements": [
         {
@@ -3071,7 +3566,7 @@
         {
           "text": "Binary judges return values 0 or 1",
           "covered": true,
-          "backend_only": true,
+          "backend_only": false,
           "tests": [
             {
               "name": "test_calculate_eval_metrics_binary_all_pass",
@@ -3092,6 +3587,11 @@
               "name": "test_calculate_eval_metrics_binary_empty",
               "type": "unit",
               "file": "tests/unit/services/test_alignment_service.py"
+            },
+            {
+              "name": "file-level",
+              "type": "unit",
+              "file": "client/src/components/JudgeTypeSelector.test.tsx"
             }
           ]
         },
@@ -3110,8 +3610,18 @@
         {
           "text": "Evaluation results persisted to database",
           "covered": true,
-          "backend_only": false,
+          "backend_only": true,
           "tests": [
+            {
+              "name": "test_none_ratings_skipped_not_stored_as_defaults",
+              "type": "integration",
+              "file": "tests/integration/test_judge_evaluation_storage.py"
+            },
+            {
+              "name": "test_binary_normalization_through_store",
+              "type": "integration",
+              "file": "tests/integration/test_judge_evaluation_storage.py"
+            },
             {
               "name": "test_databricks_call_endpoint_success",
               "type": "unit",
@@ -3131,16 +3641,6 @@
               "name": "test_store_evaluation_results_skips_none_ratings",
               "type": "unit",
               "file": "tests/unit/services/test_alignment_service.py"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/judge-evaluation.spec.ts"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/judge-evaluation.spec.ts"
             }
           ]
         },
@@ -3159,7 +3659,7 @@
         {
           "text": "Auto-evaluation runs in background when annotation phase starts",
           "covered": true,
-          "backend_only": false,
+          "backend_only": true,
           "tests": [
             {
               "name": "test_begin_annotation_with_auto_eval_enabled",
@@ -3175,16 +3675,6 @@
               "name": "test_search_tagged_traces_uses_dedicated_eval_key",
               "type": "unit",
               "file": "tests/unit/services/test_evaluation_tag_overwrite.py"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/auto-evaluation.spec.ts"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/auto-evaluation.spec.ts"
             }
           ]
         },
@@ -3241,27 +3731,15 @@
         },
         {
           "text": "Auto-evaluation model stored for re-evaluation consistency",
-          "covered": true,
+          "covered": false,
           "backend_only": false,
-          "tests": [
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/auto-evaluation.spec.ts"
-            }
-          ]
+          "tests": []
         },
         {
           "text": "Results appear in Judge Tuning page",
-          "covered": true,
+          "covered": false,
           "backend_only": false,
-          "tests": [
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/auto-evaluation.spec.ts"
-            }
-          ]
+          "tests": []
         },
         {
           "text": "Re-evaluate loads registered judge with aligned instructions",
@@ -3269,14 +3747,19 @@
           "backend_only": true,
           "tests": [
             {
-              "name": "test_eval_tag_survives_align_tag",
-              "type": "unit",
-              "file": "tests/unit/services/test_evaluation_tag_overwrite.py"
+              "name": "test_re_evaluate_api_returns_200_and_starts_job",
+              "type": "integration",
+              "file": "tests/integration/test_judge_evaluation_storage.py"
             },
             {
               "name": "test_re_evaluate_endpoint_passes_use_registered_judge_true",
               "type": "unit",
               "file": "tests/unit/services/test_alignment_service.py"
+            },
+            {
+              "name": "test_eval_tag_survives_align_tag",
+              "type": "unit",
+              "file": "tests/unit/services/test_evaluation_tag_overwrite.py"
             }
           ]
         },
@@ -3304,6 +3787,11 @@
           "backend_only": true,
           "tests": [
             {
+              "name": "test_initial_eval_clears_old_results_for_same_prompt",
+              "type": "integration",
+              "file": "tests/integration/test_judge_evaluation_storage.py"
+            },
+            {
               "name": "test_save_judge_evaluations_stores_with_correct_prompt_id",
               "type": "unit",
               "file": "tests/unit/routers/test_workshops_router.py"
@@ -3318,17 +3806,17 @@
         {
           "text": "Pre-align and post-align scores directly comparable",
           "covered": true,
-          "backend_only": false,
+          "backend_only": true,
           "tests": [
+            {
+              "name": "test_reeval_creates_new_prompt_preserving_baseline",
+              "type": "integration",
+              "file": "tests/integration/test_judge_evaluation_storage.py"
+            },
             {
               "name": "test_store_evaluation_results_initial_reuses_existing_prompt",
               "type": "unit",
               "file": "tests/unit/services/test_alignment_service.py"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/judge-evaluation.spec.ts"
             }
           ]
         },
@@ -3413,14 +3901,14 @@
           "backend_only": true,
           "tests": [
             {
-              "name": "test_analyze_annotation_structure_recommends_krippendorff_alpha_when_missing_data",
-              "type": "unit",
-              "file": "tests/unit/services/test_irr_utils.py"
-            },
-            {
               "name": "test_calculate_irr_for_workshop_uses_krippendorff_when_missing_data",
               "type": "unit",
               "file": "tests/unit/services/test_irr_service.py"
+            },
+            {
+              "name": "test_analyze_annotation_structure_recommends_krippendorff_alpha_when_missing_data",
+              "type": "unit",
+              "file": "tests/unit/services/test_irr_utils.py"
             },
             {
               "name": "test_calculate_krippendorff_alpha_trivial_agreement_is_one",
@@ -3445,16 +3933,6 @@
           "backend_only": true,
           "tests": [
             {
-              "name": "test_analyze_annotation_structure_recommends_cohens_kappa_when_two_raters_complete",
-              "type": "unit",
-              "file": "tests/unit/services/test_irr_utils.py"
-            },
-            {
-              "name": "test_calculate_irr_for_workshop_uses_cohens_kappa_when_two_raters_complete",
-              "type": "unit",
-              "file": "tests/unit/services/test_irr_service.py"
-            },
-            {
               "name": "test_calculate_cohens_kappa_raises_if_not_exactly_two_raters",
               "type": "unit",
               "file": "tests/unit/services/test_cohens_kappa.py"
@@ -3468,6 +3946,16 @@
               "name": "test_calculate_cohens_kappa_perfect_agreement_is_one",
               "type": "unit",
               "file": "tests/unit/services/test_cohens_kappa.py"
+            },
+            {
+              "name": "test_calculate_irr_for_workshop_uses_cohens_kappa_when_two_raters_complete",
+              "type": "unit",
+              "file": "tests/unit/services/test_irr_service.py"
+            },
+            {
+              "name": "test_analyze_annotation_structure_recommends_cohens_kappa_when_two_raters_complete",
+              "type": "unit",
+              "file": "tests/unit/services/test_irr_utils.py"
             }
           ]
         },
@@ -3477,7 +3965,37 @@
           "backend_only": true,
           "tests": [
             {
-              "name": "test_validate_annotations_for_irr_invalid_cases",
+              "name": "test_calculate_cohens_kappa_raises_on_empty",
+              "type": "unit",
+              "file": "tests/unit/services/test_cohens_kappa.py"
+            },
+            {
+              "name": "test_calculate_irr_for_workshop_returns_error_details_when_invalid",
+              "type": "unit",
+              "file": "tests/unit/services/test_irr_service.py"
+            },
+            {
+              "name": "test_validate_annotations_for_irr_invalid_cases[<lambda>-Need at least 2 annotations0]",
+              "type": "unit",
+              "file": "tests/unit/services/test_irr_utils.py"
+            },
+            {
+              "name": "test_validate_annotations_for_irr_invalid_cases[<lambda>-Need at least 2 annotations1]",
+              "type": "unit",
+              "file": "tests/unit/services/test_irr_utils.py"
+            },
+            {
+              "name": "test_validate_annotations_for_irr_invalid_cases[<lambda>-Invalid rating 6]",
+              "type": "unit",
+              "file": "tests/unit/services/test_irr_utils.py"
+            },
+            {
+              "name": "test_validate_annotations_for_irr_invalid_cases[<lambda>-Need at least 2 raters]",
+              "type": "unit",
+              "file": "tests/unit/services/test_irr_utils.py"
+            },
+            {
+              "name": "test_validate_annotations_for_irr_invalid_cases[<lambda>-Need at least 2 traces rated by multiple raters]",
               "type": "unit",
               "file": "tests/unit/services/test_irr_utils.py"
             },
@@ -3487,19 +4005,9 @@
               "file": "tests/unit/services/test_irr_utils.py"
             },
             {
-              "name": "test_calculate_irr_for_workshop_returns_error_details_when_invalid",
-              "type": "unit",
-              "file": "tests/unit/services/test_irr_service.py"
-            },
-            {
               "name": "test_calculate_krippendorff_alpha_returns_zero_when_insufficient",
               "type": "unit",
               "file": "tests/unit/services/test_krippendorff_alpha.py"
-            },
-            {
-              "name": "test_calculate_cohens_kappa_raises_on_empty",
-              "type": "unit",
-              "file": "tests/unit/services/test_cohens_kappa.py"
             }
           ]
         },
@@ -3517,18 +4025,22 @@
         }
       ],
       "uncovered": [
+        "Auto-evaluation model stored for re-evaluation consistency",
+        "Results appear in Judge Tuning page",
         "Spinner stops when re-evaluation completes"
       ],
       "backend_only": [
-        "Binary judges return values 0 or 1",
         "Fallback conversion handles Likert-style returns for binary",
+        "Evaluation results persisted to database",
         "Results reload correctly in UI",
+        "Auto-evaluation runs in background when annotation phase starts",
         "Judge prompt auto-derived from rubric questions",
         "Per-question judge_type parsed from rubric (`[JUDGE_TYPE:xxx]`)",
         "Binary rubrics evaluated with 0/1 scale (not 1-5)",
         "Re-evaluate loads registered judge with aligned instructions",
         "Uses same model as initial auto-evaluation",
         "Results stored against correct prompt version",
+        "Pre-align and post-align scores directly comparable",
         "Alignment jobs run asynchronously",
         "MemAlign distills semantic memory (guidelines)",
         "Aligned judge registered to MLflow",
@@ -3539,8 +4051,18 @@
         "Handles edge cases (no variation, single rater)",
         "Updates when new annotations added"
       ],
-      "backend_only_count": 18,
+      "backend_only_count": 20,
       "unlinked_tests": [
+        {
+          "name": "test_promote_finding_returns_500_on_db_error",
+          "type": "integration",
+          "file": "tests/integration/test_judge_evaluation_storage.py"
+        },
+        {
+          "name": "test_promote_real_finding_succeeds",
+          "type": "integration",
+          "file": "tests/integration/test_judge_evaluation_storage.py"
+        },
         {
           "name": "test_begin_annotation_requires_rubric",
           "type": "unit",
@@ -3555,21 +4077,6 @@
           "name": "test_re_evaluate_tags_traces_fallback_when_no_active_annotation_ids",
           "type": "unit",
           "file": "tests/unit/routers/test_workshops_re_evaluate.py"
-        },
-        {
-          "name": "test_format_irr_result_rounding_and_ready_flag",
-          "type": "unit",
-          "file": "tests/unit/services/test_irr_utils.py"
-        },
-        {
-          "name": "test_search_tagged_traces_uses_dedicated_align_key",
-          "type": "unit",
-          "file": "tests/unit/services/test_evaluation_tag_overwrite.py"
-        },
-        {
-          "name": "test_run_evaluation_yields_error_when_no_eval_tagged_traces",
-          "type": "unit",
-          "file": "tests/unit/services/test_evaluation_tag_overwrite.py"
         },
         {
           "name": "test_likert_agreement_metric_from_store_is_one_when_equal",
@@ -3587,35 +4094,45 @@
           "file": "tests/unit/services/test_cohens_kappa.py"
         },
         {
-          "name": "file-level",
-          "type": "e2e-real",
-          "file": "client/tests/e2e/judge-evaluation.spec.ts"
+          "name": "test_search_tagged_traces_uses_dedicated_align_key",
+          "type": "unit",
+          "file": "tests/unit/services/test_evaluation_tag_overwrite.py"
+        },
+        {
+          "name": "test_run_evaluation_yields_error_when_no_eval_tagged_traces",
+          "type": "unit",
+          "file": "tests/unit/services/test_evaluation_tag_overwrite.py"
+        },
+        {
+          "name": "test_format_irr_result_rounding_and_ready_flag",
+          "type": "unit",
+          "file": "tests/unit/services/test_irr_utils.py"
         },
         {
           "name": "file-level",
-          "type": "e2e-real",
-          "file": "client/tests/e2e/evaluation-tagging.spec.ts"
+          "type": "unit",
+          "file": "client/src/components/JudgeTypeSelector.test.tsx"
         },
         {
           "name": "file-level",
-          "type": "e2e-real",
-          "file": "client/tests/e2e/evaluation-tagging.spec.ts"
+          "type": "unit",
+          "file": "client/src/components/JudgeTypeSelector.test.tsx"
         },
         {
           "name": "file-level",
-          "type": "e2e-real",
-          "file": "client/tests/e2e/evaluation-tagging.spec.ts"
+          "type": "unit",
+          "file": "client/src/components/JudgeTypeSelector.test.tsx"
         }
       ]
     },
     "PROJECT_SETUP_SPEC": {
-      "total_requirements": 16,
-      "covered_requirements": 3,
-      "coverage_percent": 18,
+      "total_requirements": 26,
+      "covered_requirements": 6,
+      "coverage_percent": 23,
       "by_type": {
-        "unit": 4,
+        "unit": 9,
         "integration": 0,
-        "e2e-mocked": 0,
+        "e2e-mocked": 1,
         "e2e-real": 0
       },
       "requirements": [
@@ -3634,12 +4151,17 @@
         {
           "text": "`POST /project/setup` returns `project_id` and `setup_job_id`",
           "covered": true,
-          "backend_only": true,
+          "backend_only": false,
           "tests": [
             {
               "name": "test_project_setup_route_returns_project_and_setup_job",
               "type": "unit",
               "file": "tests/unit/routers/test_project_setup_router.py"
+            },
+            {
+              "name": "file-level",
+              "type": "unit",
+              "file": "client/src/pages/ProjectSetupPage.test.tsx"
             }
           ]
         },
@@ -3669,9 +4191,15 @@
         },
         {
           "text": "Authenticated facilitators and users with `can_manage_workshop` can access `/project/setup` when no project has completed setup",
-          "covered": false,
+          "covered": true,
           "backend_only": false,
-          "tests": []
+          "tests": [
+            {
+              "name": "file-level",
+              "type": "unit",
+              "file": "client/src/pages/ProjectSetupGate.test.tsx"
+            }
+          ]
         },
         {
           "text": "SMEs, participants, and users without `can_manage_workshop` cannot access the setup form",
@@ -3692,19 +4220,85 @@
           "tests": []
         },
         {
+          "text": "After setup completes, facilitators and users with `can_manage_workshop` can reach `/project/setup` from the facilitator root workspace",
+          "covered": false,
+          "backend_only": false,
+          "tests": []
+        },
+        {
+          "text": "After setup completes, `/project/setup` loads server project state instead of creating a new project by default",
+          "covered": false,
+          "backend_only": false,
+          "tests": []
+        },
+        {
+          "text": "The app shell navigation bar exposes a project setup link for facilitators and users with `can_manage_workshop`",
+          "covered": true,
+          "backend_only": false,
+          "tests": [
+            {
+              "name": "file-level",
+              "type": "unit",
+              "file": "client/src/AppShellPathBar.test.tsx"
+            }
+          ]
+        },
+        {
+          "text": "The setup form is synced with server project state before and after setup completes",
+          "covered": false,
+          "backend_only": false,
+          "tests": []
+        },
+        {
+          "text": "The app shell project setup link navigates to the same server-synced setup form",
+          "covered": false,
+          "backend_only": false,
+          "tests": []
+        },
+        {
+          "text": "Facilitators and users with `can_manage_workshop` can update project name and agent/app description after setup completes",
+          "covered": false,
+          "backend_only": false,
+          "tests": []
+        },
+        {
+          "text": "Facilitators and users with `can_manage_workshop` can update Databricks UC trace table path after setup completes",
+          "covered": false,
+          "backend_only": false,
+          "tests": []
+        },
+        {
+          "text": "Changing the Databricks UC trace table path persists the new trace provider config and exposes setup refresh or validation status",
+          "covered": false,
+          "backend_only": false,
+          "tests": []
+        },
+        {
+          "text": "The setup form exposes participant/SME invitation controls from the same visual surface",
+          "covered": false,
+          "backend_only": false,
+          "tests": []
+        },
+        {
+          "text": "SMEs, participants, and users without `can_manage_workshop` cannot update project settings or invite SMEs",
+          "covered": false,
+          "backend_only": false,
+          "tests": []
+        },
+        {
           "text": "The facilitator root workspace can query setup progress and display pending or running setup state",
           "covered": true,
           "backend_only": true,
           "tests": [
             {
-              "name": "test_setup_status_route_returns_latest_progress",
-              "type": "unit",
-              "file": "tests/unit/routers/test_project_setup_router.py"
-            },
-            {
               "name": "test_project_setup_service_returns_latest_progress",
               "type": "unit",
               "file": "tests/unit/features/project_setup/test_project_setup_service.py"
+            },
+            {
+              "name": "test_setup_status_route_returns_latest_progress",
+              "type": "unit",
+              "file": "tests/unit/routers/test_project_setup_router.py"
             }
           ]
         },
@@ -3716,9 +4310,15 @@
         },
         {
           "text": "Pending/running setup states render a facilitator root workspace progress card with current step and message",
-          "covered": false,
+          "covered": true,
           "backend_only": false,
-          "tests": []
+          "tests": [
+            {
+              "name": "file-level",
+              "type": "unit",
+              "file": "client/src/components/workspace/SetupProgressCard.test.tsx"
+            }
+          ]
         },
         {
           "text": "Failed or enqueue_failed setup states keep the user out of the ready workspace path and present recoverable copy",
@@ -3744,28 +4344,45 @@
         "`/project/setup` renders a setup form backed by shared form, input, button, card, alert, and badge atoms",
         "Project name, agent/app description, facilitator identity, and Databricks UC trace table path are required before submission",
         "Required setup fields show client-side validation before submission",
-        "Authenticated facilitators and users with `can_manage_workshop` can access `/project/setup` when no project has completed setup",
         "SMEs, participants, and users without `can_manage_workshop` cannot access the setup form",
         "Successful setup submission navigates to the facilitator root workspace with setup job progress available",
         "UI implementation follows the wiring architecture diagram and keeps setup entry, submission, and progress concerns separate",
+        "After setup completes, facilitators and users with `can_manage_workshop` can reach `/project/setup` from the facilitator root workspace",
+        "After setup completes, `/project/setup` loads server project state instead of creating a new project by default",
+        "The setup form is synced with server project state before and after setup completes",
+        "The app shell project setup link navigates to the same server-synced setup form",
+        "Facilitators and users with `can_manage_workshop` can update project name and agent/app description after setup completes",
+        "Facilitators and users with `can_manage_workshop` can update Databricks UC trace table path after setup completes",
+        "Changing the Databricks UC trace table path persists the new trace provider config and exposes setup refresh or validation status",
+        "The setup form exposes participant/SME invitation controls from the same visual surface",
+        "SMEs, participants, and users without `can_manage_workshop` cannot update project settings or invite SMEs",
         "Setup enqueue failures are visible as recoverable failed state rather than a ready project",
-        "Pending/running setup states render a facilitator root workspace progress card with current step and message",
         "Failed or enqueue_failed setup states keep the user out of the ready workspace path and present recoverable copy",
         "Setup orchestration uses the app task queue, not Databricks Jobs, for ordered setup pipeline execution",
         "Expensive parallelizable setup steps may record delegated Databricks/Lakeflow run ids without becoming the top-level setup queue"
       ],
       "backend_only": [
         "Submitting `/project/setup` enqueues a setup pipeline worker job",
-        "`POST /project/setup` returns `project_id` and `setup_job_id`",
         "The facilitator root workspace can query setup progress and display pending or running setup state"
       ],
-      "backend_only_count": 3,
-      "unlinked_tests": []
+      "backend_only_count": 2,
+      "unlinked_tests": [
+        {
+          "name": "test_project_setup_service_completes_dev_queue_fallback",
+          "type": "unit",
+          "file": "tests/unit/features/project_setup/test_project_setup_service.py"
+        },
+        {
+          "name": "file-level",
+          "type": "e2e-mocked",
+          "file": "client/tests/e2e/project-setup-settings.spec.ts"
+        }
+      ]
     },
     "ROLE_PERMISSIONS_SPEC": {
       "total_requirements": 16,
-      "covered_requirements": 13,
-      "coverage_percent": 81,
+      "covered_requirements": 16,
+      "coverage_percent": 100,
       "by_type": {
         "unit": 24,
         "integration": 0,
@@ -3775,9 +4392,15 @@
       "requirements": [
         {
           "text": "Facilitator role grants: can_create_rubric, can_manage_workshop, can_assign_annotations, can_view_all_findings, can_view_all_annotations, can_view_results",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
+          "covered": true,
+          "backend_only": true,
+          "tests": [
+            {
+              "name": "test_facilitator_role_grants",
+              "type": "unit",
+              "file": "tests/unit/routers/test_role_permissions.py"
+            }
+          ]
         },
         {
           "text": "Facilitator role denies: can_annotate, can_create_findings",
@@ -3805,9 +4428,15 @@
         },
         {
           "text": "SME role denies: can_create_rubric, can_manage_workshop, can_view_results, can_view_all_annotations",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
+          "covered": true,
+          "backend_only": true,
+          "tests": [
+            {
+              "name": "test_sme_role_denies",
+              "type": "unit",
+              "file": "tests/unit/routers/test_role_permissions.py"
+            }
+          ]
         },
         {
           "text": "Participant role grants: can_annotate, can_create_findings, can_view_discovery",
@@ -3823,9 +4452,15 @@
         },
         {
           "text": "Participant role denies: can_create_rubric, can_manage_workshop, can_view_results, can_view_all_annotations",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
+          "covered": true,
+          "backend_only": true,
+          "tests": [
+            {
+              "name": "test_participant_role_denies",
+              "type": "unit",
+              "file": "tests/unit/routers/test_role_permissions.py"
+            }
+          ]
         },
         {
           "text": "Permissions derived from role via UserPermissions.for_role() classmethod",
@@ -3988,15 +4623,14 @@
           ]
         }
       ],
-      "uncovered": [
-        "Facilitator role grants: can_create_rubric, can_manage_workshop, can_assign_annotations, can_view_all_findings, can_view_all_annotations, can_view_results",
-        "SME role denies: can_create_rubric, can_manage_workshop, can_view_results, can_view_all_annotations",
-        "Participant role denies: can_create_rubric, can_manage_workshop, can_view_results, can_view_all_annotations"
-      ],
+      "uncovered": [],
       "backend_only": [
+        "Facilitator role grants: can_create_rubric, can_manage_workshop, can_assign_annotations, can_view_all_findings, can_view_all_annotations, can_view_results",
         "Facilitator role denies: can_annotate, can_create_findings",
         "SME role grants: can_annotate, can_create_findings, can_view_discovery",
+        "SME role denies: can_create_rubric, can_manage_workshop, can_view_results, can_view_all_annotations",
         "Participant role grants: can_annotate, can_create_findings, can_view_discovery",
+        "Participant role denies: can_create_rubric, can_manage_workshop, can_view_results, can_view_all_annotations",
         "Permissions derived from role via UserPermissions.for_role() classmethod",
         "Facilitator role cannot be changed via update endpoint",
         "Facilitator accounts cannot be deleted via delete endpoint",
@@ -4008,34 +4642,18 @@
         "SMEs and participants authenticate via database credentials",
         "Login response includes is_preconfigured_facilitator flag for facilitator logins"
       ],
-      "backend_only_count": 13,
-      "unlinked_tests": [
-        {
-          "name": "test_facilitator_role_grants",
-          "type": "unit",
-          "file": "tests/unit/routers/test_role_permissions.py"
-        },
-        {
-          "name": "test_sme_role_denies",
-          "type": "unit",
-          "file": "tests/unit/routers/test_role_permissions.py"
-        },
-        {
-          "name": "test_participant_role_denies",
-          "type": "unit",
-          "file": "tests/unit/routers/test_role_permissions.py"
-        }
-      ]
+      "backend_only_count": 16,
+      "unlinked_tests": []
     },
     "RUBRIC_SPEC": {
       "total_requirements": 25,
       "covered_requirements": 21,
       "coverage_percent": 84,
       "by_type": {
-        "unit": 30,
+        "unit": 63,
         "integration": 0,
-        "e2e-mocked": 1,
-        "e2e-real": 6
+        "e2e-mocked": 0,
+        "e2e-real": 0
       },
       "requirements": [
         {
@@ -4044,7 +4662,32 @@
           "backend_only": true,
           "tests": [
             {
+              "name": "test_parse_rubric_questions_multiline_description",
+              "type": "unit",
+              "file": "tests/unit/services/test_database_service_rubric.py"
+            },
+            {
+              "name": "test_parse_reconstruct_roundtrip",
+              "type": "unit",
+              "file": "tests/unit/services/test_database_service_rubric.py"
+            },
+            {
               "name": "test_simple_questions",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_parsing.py"
+            },
+            {
+              "name": "test_multi_line_description",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_parsing.py"
+            },
+            {
+              "name": "test_single_question",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_parsing.py"
+            },
+            {
+              "name": "test_legacy_delimiter_supported",
               "type": "unit",
               "file": "tests/unit/services/test_rubric_parsing.py"
             },
@@ -4057,24 +4700,20 @@
               "name": "test_parse_reconstruct_roundtrip",
               "type": "unit",
               "file": "tests/unit/services/test_rubric_parsing.py"
-            },
-            {
-              "name": "test_parse_rubric_questions_multiline_description",
-              "type": "unit",
-              "file": "tests/unit/services/test_database_service_rubric.py"
-            },
-            {
-              "name": "test_parse_reconstruct_roundtrip",
-              "type": "unit",
-              "file": "tests/unit/services/test_database_service_rubric.py"
             }
           ]
         },
         {
           "text": "Delimiter never appears in user input (by design)",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
+          "covered": true,
+          "backend_only": true,
+          "tests": [
+            {
+              "name": "test_delimiter_not_in_natural_text",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_parsing.py"
+            }
+          ]
         },
         {
           "text": "Frontend and backend use same delimiter constant",
@@ -4083,6 +4722,11 @@
           "tests": [
             {
               "name": "test_backend_delimiter_matches_expected_value",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_lifecycle.py"
+            },
+            {
+              "name": "test_backend_reconstruct_uses_same_delimiter",
               "type": "unit",
               "file": "tests/unit/services/test_rubric_lifecycle.py"
             },
@@ -4096,13 +4740,8 @@
         {
           "text": "Per-question judge_type parsed from `[JUDGE_TYPE:xxx]` format",
           "covered": true,
-          "backend_only": false,
+          "backend_only": true,
           "tests": [
-            {
-              "name": "test_binary_judge_type_parsed_correctly",
-              "type": "unit",
-              "file": "tests/unit/services/test_rubric_parsing.py"
-            },
             {
               "name": "test_parse_rubric_questions_with_judge_type_binary",
               "type": "unit",
@@ -4129,17 +4768,43 @@
               "file": "tests/unit/services/test_database_service_rubric.py"
             },
             {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/rubric-judge-type.spec.ts"
+              "name": "test_questions_with_judge_type",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_parsing.py"
+            },
+            {
+              "name": "test_default_judge_type_is_likert",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_parsing.py"
+            },
+            {
+              "name": "test_reconstruct_preserves_judge_type",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_parsing.py"
+            },
+            {
+              "name": "test_binary_judge_type_parsed_correctly",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_parsing.py"
+            },
+            {
+              "name": "test_likert_judge_type_parsed_correctly",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_parsing.py"
             }
           ]
         },
         {
           "text": "Parsed questions have stable UUIDs within session",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
+          "covered": true,
+          "backend_only": true,
+          "tests": [
+            {
+              "name": "test_questions_have_ids",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_parsing.py"
+            }
+          ]
         },
         {
           "text": "Empty/whitespace-only parts filtered out",
@@ -4155,49 +4820,56 @@
               "name": "test_reconstruct_rubric_questions_empty",
               "type": "unit",
               "file": "tests/unit/services/test_database_service_rubric.py"
+            },
+            {
+              "name": "test_empty_input_returns_empty_list",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_parsing.py"
+            },
+            {
+              "name": "test_whitespace_only_input_returns_empty_list",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_parsing.py"
+            },
+            {
+              "name": "test_whitespace_trimmed",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_parsing.py"
+            },
+            {
+              "name": "test_empty_parts_filtered_out",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_parsing.py"
+            },
+            {
+              "name": "test_reconstruct_empty_list_returns_empty_string",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_parsing.py"
             }
           ]
         },
         {
           "text": "Likert scale shows 1-5 rating options",
-          "covered": true,
+          "covered": false,
           "backend_only": false,
-          "tests": [
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/rubric-judge-type.spec.ts"
-            }
-          ]
+          "tests": []
         },
         {
           "text": "Binary scale shows Pass/Fail buttons (not star ratings)",
-          "covered": true,
+          "covered": false,
           "backend_only": false,
-          "tests": [
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/rubric-judge-type.spec.ts"
-            }
-          ]
+          "tests": []
         },
         {
           "text": "Binary feedback logged as 0/1 to MLflow (not 3)",
-          "covered": true,
+          "covered": false,
           "backend_only": false,
-          "tests": [
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/rubric-judge-type.spec.ts"
-            }
-          ]
+          "tests": []
         },
         {
           "text": "Mixed rubrics support different scales per question",
           "covered": true,
-          "backend_only": false,
+          "backend_only": true,
           "tests": [
             {
               "name": "test_parse_rubric_questions_mixed_types",
@@ -4205,16 +4877,16 @@
               "file": "tests/unit/services/test_database_service_rubric.py"
             },
             {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/rubric-judge-type.spec.ts"
+              "name": "test_mixed_judge_types_in_rubric",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_parsing.py"
             }
           ]
         },
         {
           "text": "Facilitator can create a rubric question with title and description",
           "covered": true,
-          "backend_only": false,
+          "backend_only": true,
           "tests": [
             {
               "name": "test_create_rubric_stores_question",
@@ -4222,9 +4894,9 @@
               "file": "tests/unit/services/test_rubric_lifecycle.py"
             },
             {
-              "name": "file-level",
-              "type": "e2e-mocked",
-              "file": "client/tests/e2e/rubric-creation.spec.ts"
+              "name": "test_create_rubric_with_multiple_questions",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_lifecycle.py"
             }
           ]
         },
@@ -4235,6 +4907,11 @@
           "tests": [
             {
               "name": "test_update_rubric_question_changes_title_and_description",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_lifecycle.py"
+            },
+            {
+              "name": "test_update_nonexistent_question_returns_none",
               "type": "unit",
               "file": "tests/unit/services/test_rubric_lifecycle.py"
             }
@@ -4249,6 +4926,11 @@
               "name": "test_delete_question_removes_it",
               "type": "unit",
               "file": "tests/unit/services/test_rubric_lifecycle.py"
+            },
+            {
+              "name": "test_delete_last_question_deletes_rubric",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_lifecycle.py"
             }
           ]
         },
@@ -4261,20 +4943,19 @@
               "name": "test_create_rubric_when_none_exists",
               "type": "unit",
               "file": "tests/unit/services/test_rubric_lifecycle.py"
+            },
+            {
+              "name": "test_update_rubric_when_one_exists",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_lifecycle.py"
             }
           ]
         },
         {
           "text": "Rubric persists and is retrievable via GET after creation",
-          "covered": true,
+          "covered": false,
           "backend_only": false,
-          "tests": [
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/rubric-persistence.spec.ts"
-            }
-          ]
+          "tests": []
         },
         {
           "text": "Rubric required before advancing to annotation phase",
@@ -4283,6 +4964,11 @@
           "tests": [
             {
               "name": "test_advance_to_annotation_rejects_without_rubric",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_lifecycle.py"
+            },
+            {
+              "name": "test_advance_to_annotation_succeeds_with_rubric",
               "type": "unit",
               "file": "tests/unit/services/test_rubric_lifecycle.py"
             }
@@ -4297,6 +4983,16 @@
               "name": "test_create_rubric_no_phase_check",
               "type": "unit",
               "file": "tests/unit/services/test_rubric_lifecycle.py"
+            },
+            {
+              "name": "test_update_rubric_question_no_phase_check",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_lifecycle.py"
+            },
+            {
+              "name": "test_delete_rubric_question_no_phase_check",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_lifecycle.py"
             }
           ]
         },
@@ -4309,6 +5005,16 @@
               "name": "test_reconstruct_reindexes_ids",
               "type": "unit",
               "file": "tests/unit/services/test_rubric_lifecycle.py"
+            },
+            {
+              "name": "test_reconstruct_single_question_gets_q1",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_lifecycle.py"
+            },
+            {
+              "name": "test_reconstruct_updates_ids_sequentially",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_parsing.py"
             }
           ]
         },
@@ -4333,6 +5039,16 @@
               "name": "test_derive_judge_name_from_title",
               "type": "unit",
               "file": "tests/unit/services/test_rubric_lifecycle.py"
+            },
+            {
+              "name": "test_derive_judge_name_strips_special_chars",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_lifecycle.py"
+            },
+            {
+              "name": "test_derive_judge_name_handles_empty_title",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_lifecycle.py"
             }
           ]
         },
@@ -4343,6 +5059,11 @@
           "tests": [
             {
               "name": "test_resync_annotations_method_exists",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_lifecycle.py"
+            },
+            {
+              "name": "test_create_rubric_endpoint_triggers_background_resync",
               "type": "unit",
               "file": "tests/unit/services/test_rubric_lifecycle.py"
             }
@@ -4357,20 +5078,47 @@
               "name": "test_generate_fetches_findings_and_notes",
               "type": "unit",
               "file": "tests/unit/services/test_rubric_lifecycle.py"
+            },
+            {
+              "name": "test_generate_raises_when_no_findings_or_notes",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_lifecycle.py"
+            },
+            {
+              "name": "test_prompt_includes_findings_and_notes",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_lifecycle.py"
             }
           ]
         },
         {
           "text": "Suggestions validated: title >= 3 chars, description >= 10 chars",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
+          "covered": true,
+          "backend_only": true,
+          "tests": [
+            {
+              "name": "test_short_title_rejected",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_lifecycle.py"
+            },
+            {
+              "name": "test_short_description_rejected",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_lifecycle.py"
+            }
+          ]
         },
         {
           "text": "Invalid judge type in suggestions defaults to likert",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
+          "covered": true,
+          "backend_only": true,
+          "tests": [
+            {
+              "name": "test_invalid_judge_type_defaults_to_likert",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_lifecycle.py"
+            }
+          ]
         },
         {
           "text": "Facilitator can accept, reject, or edit suggestions before adding to rubric",
@@ -4381,19 +5129,29 @@
               "name": "test_suggestion_model_has_editable_fields",
               "type": "unit",
               "file": "tests/unit/services/test_rubric_lifecycle.py"
+            },
+            {
+              "name": "test_selective_acceptance_of_suggestions",
+              "type": "unit",
+              "file": "tests/unit/services/test_rubric_lifecycle.py"
             }
           ]
         }
       ],
       "uncovered": [
-        "Delimiter never appears in user input (by design)",
-        "Parsed questions have stable UUIDs within session",
-        "Suggestions validated: title >= 3 chars, description >= 10 chars",
-        "Invalid judge type in suggestions defaults to likert"
+        "Likert scale shows 1-5 rating options",
+        "Binary scale shows Pass/Fail buttons (not star ratings)",
+        "Binary feedback logged as 0/1 to MLflow (not 3)",
+        "Rubric persists and is retrievable via GET after creation"
       ],
       "backend_only": [
         "Questions with multi-line descriptions parse correctly",
+        "Delimiter never appears in user input (by design)",
+        "Per-question judge_type parsed from `[JUDGE_TYPE:xxx]` format",
+        "Parsed questions have stable UUIDs within session",
         "Empty/whitespace-only parts filtered out",
+        "Mixed rubrics support different scales per question",
+        "Facilitator can create a rubric question with title and description",
         "Facilitator can edit an existing rubric question",
         "Facilitator can delete a rubric question",
         "Only one rubric exists per workshop (upsert semantics)",
@@ -4404,15 +5162,12 @@
         "Judge name auto-derived from first rubric question title",
         "MLflow re-sync triggered on rubric create/update (best-effort)",
         "AI suggestions generated from discovery findings and participant notes",
+        "Suggestions validated: title >= 3 chars, description >= 10 chars",
+        "Invalid judge type in suggestions defaults to likert",
         "Facilitator can accept, reject, or edit suggestions before adding to rubric"
       ],
-      "backend_only_count": 13,
+      "backend_only_count": 20,
       "unlinked_tests": [
-        {
-          "name": "test_short_title_rejected",
-          "type": "unit",
-          "file": "tests/unit/services/test_rubric_lifecycle.py"
-        },
         {
           "name": "file-level",
           "type": "unit",
@@ -4425,8 +5180,8 @@
       "covered_requirements": 0,
       "coverage_percent": 0,
       "by_type": {
-        "unit": 3,
-        "integration": 0,
+        "unit": 35,
+        "integration": 46,
         "e2e-mocked": 0,
         "e2e-real": 0
       },
@@ -4648,7 +5403,367 @@
       "backend_only_count": 0,
       "unlinked_tests": [
         {
+          "name": "test_trace_info_has_required_fields",
+          "type": "unit",
+          "file": "tests/contract/test_mlflow_contracts.py"
+        },
+        {
+          "name": "test_trace_data_has_required_fields",
+          "type": "unit",
+          "file": "tests/contract/test_mlflow_contracts.py"
+        },
+        {
+          "name": "test_span_has_required_fields",
+          "type": "unit",
+          "file": "tests/contract/test_mlflow_contracts.py"
+        },
+        {
+          "name": "test_assessment_has_required_fields",
+          "type": "unit",
+          "file": "tests/contract/test_mlflow_contracts.py"
+        },
+        {
+          "name": "test_assessment_source_has_required_fields",
+          "type": "unit",
+          "file": "tests/contract/test_mlflow_contracts.py"
+        },
+        {
+          "name": "test_experiment_has_required_fields",
+          "type": "unit",
+          "file": "tests/contract/test_mlflow_contracts.py"
+        },
+        {
+          "name": "test_assessment_limit_not_retried",
+          "type": "unit",
+          "file": "tests/contract/test_mlflow_contracts.py"
+        },
+        {
+          "name": "test_not_found_not_retried",
+          "type": "unit",
+          "file": "tests/contract/test_mlflow_contracts.py"
+        },
+        {
+          "name": "test_404_error_not_retried",
+          "type": "unit",
+          "file": "tests/contract/test_mlflow_contracts.py"
+        },
+        {
+          "name": "test_unauthorized_not_retried",
+          "type": "unit",
+          "file": "tests/contract/test_mlflow_contracts.py"
+        },
+        {
+          "name": "test_transient_error_retried",
+          "type": "unit",
+          "file": "tests/contract/test_mlflow_contracts.py"
+        },
+        {
+          "name": "test_retry_succeeds_on_second_attempt",
+          "type": "unit",
+          "file": "tests/contract/test_mlflow_contracts.py"
+        },
+        {
+          "name": "test_exponential_backoff_delays",
+          "type": "unit",
+          "file": "tests/contract/test_mlflow_contracts.py"
+        },
+        {
+          "name": "test_binary_values_are_float",
+          "type": "unit",
+          "file": "tests/contract/test_mlflow_contracts.py"
+        },
+        {
+          "name": "test_likert_values_in_range",
+          "type": "unit",
+          "file": "tests/contract/test_mlflow_contracts.py"
+        },
+        {
+          "name": "test_rating_normalization",
+          "type": "unit",
+          "file": "tests/contract/test_mlflow_contracts.py"
+        },
+        {
+          "name": "test_log_feedback_parameter_types",
+          "type": "unit",
+          "file": "tests/contract/test_mlflow_contracts.py"
+        },
+        {
+          "name": "test_log_feedback_ai_source_format",
+          "type": "unit",
+          "file": "tests/contract/test_mlflow_contracts.py"
+        },
+        {
+          "name": "test_retry_wrapper_passes_through_return_value",
+          "type": "unit",
+          "file": "tests/contract/test_mlflow_contracts.py"
+        },
+        {
+          "name": "test_set_trace_tag_receives_strings",
+          "type": "unit",
+          "file": "tests/contract/test_mlflow_contracts.py"
+        },
+        {
+          "name": "test_search_traces_parameter_types",
+          "type": "unit",
+          "file": "tests/contract/test_mlflow_contracts.py"
+        },
+        {
+          "name": "test_assessment_limit_error_returns_none",
+          "type": "unit",
+          "file": "tests/contract/test_mlflow_contracts.py"
+        },
+        {
+          "name": "test_dedup_check_counts_existing_assessments",
+          "type": "unit",
+          "file": "tests/contract/test_mlflow_contracts.py"
+        },
+        {
+          "name": "test_submit_annotation",
+          "type": "integration",
+          "file": "tests/integration/test_annotation_submission.py"
+        },
+        {
+          "name": "test_annotation_upsert_same_user_same_trace",
+          "type": "integration",
+          "file": "tests/integration/test_annotation_submission.py"
+        },
+        {
+          "name": "test_annotation_different_users_create_separate_records",
+          "type": "integration",
+          "file": "tests/integration/test_annotation_submission.py"
+        },
+        {
+          "name": "test_annotation_with_multi_ratings",
+          "type": "integration",
+          "file": "tests/integration/test_annotation_submission.py"
+        },
+        {
+          "name": "test_get_annotations_filtered_by_user",
+          "type": "integration",
+          "file": "tests/integration/test_annotation_submission.py"
+        },
+        {
+          "name": "test_disconnection_error_is_connection_error",
+          "type": "integration",
+          "file": "tests/integration/test_connection_resilience.py"
+        },
+        {
+          "name": "test_operational_error_is_connection_error",
+          "type": "integration",
+          "file": "tests/integration/test_connection_resilience.py"
+        },
+        {
+          "name": "test_generic_exception_with_connection_message",
+          "type": "integration",
+          "file": "tests/integration/test_connection_resilience.py"
+        },
+        {
+          "name": "test_generic_exception_without_connection_message",
+          "type": "integration",
+          "file": "tests/integration/test_connection_resilience.py"
+        },
+        {
+          "name": "test_known_pg_error_messages[server closed the connection unexpectedly]",
+          "type": "integration",
+          "file": "tests/integration/test_connection_resilience.py"
+        },
+        {
+          "name": "test_known_pg_error_messages[terminating connection]",
+          "type": "integration",
+          "file": "tests/integration/test_connection_resilience.py"
+        },
+        {
+          "name": "test_known_pg_error_messages[connection reset]",
+          "type": "integration",
+          "file": "tests/integration/test_connection_resilience.py"
+        },
+        {
+          "name": "test_known_pg_error_messages[ssl connection has been closed unexpectedly]",
+          "type": "integration",
+          "file": "tests/integration/test_connection_resilience.py"
+        },
+        {
+          "name": "test_known_pg_error_messages[could not connect to server]",
+          "type": "integration",
+          "file": "tests/integration/test_connection_resilience.py"
+        },
+        {
+          "name": "test_known_pg_error_messages[connection refused]",
+          "type": "integration",
+          "file": "tests/integration/test_connection_resilience.py"
+        },
+        {
+          "name": "test_known_pg_error_messages[connection timed out]",
+          "type": "integration",
+          "file": "tests/integration/test_connection_resilience.py"
+        },
+        {
+          "name": "test_known_pg_error_messages[invalid authorization]",
+          "type": "integration",
+          "file": "tests/integration/test_connection_resilience.py"
+        },
+        {
+          "name": "test_known_pg_error_messages[database is locked]",
+          "type": "integration",
+          "file": "tests/integration/test_connection_resilience.py"
+        },
+        {
+          "name": "test_reset_disposes_engine",
+          "type": "integration",
+          "file": "tests/integration/test_connection_resilience.py"
+        },
+        {
+          "name": "test_reset_disposes_engine_for_postgres",
+          "type": "integration",
+          "file": "tests/integration/test_connection_resilience.py"
+        },
+        {
+          "name": "test_retries_on_connection_error_then_succeeds",
+          "type": "integration",
+          "file": "tests/integration/test_connection_resilience.py"
+        },
+        {
+          "name": "test_gives_up_after_max_attempts",
+          "type": "integration",
+          "file": "tests/integration/test_connection_resilience.py"
+        },
+        {
+          "name": "test_non_connection_error_raises_immediately",
+          "type": "integration",
+          "file": "tests/integration/test_connection_resilience.py"
+        },
+        {
+          "name": "test_submit_finding",
+          "type": "integration",
+          "file": "tests/integration/test_discovery_findings.py"
+        },
+        {
+          "name": "test_finding_upsert_same_user_same_trace",
+          "type": "integration",
+          "file": "tests/integration/test_discovery_findings.py"
+        },
+        {
+          "name": "test_finding_different_users_create_separate_records",
+          "type": "integration",
+          "file": "tests/integration/test_discovery_findings.py"
+        },
+        {
+          "name": "test_get_findings_filtered_by_user",
+          "type": "integration",
+          "file": "tests/integration/test_discovery_findings.py"
+        },
+        {
+          "name": "test_findings_scoped_to_workshop",
+          "type": "integration",
+          "file": "tests/integration/test_discovery_findings.py"
+        },
+        {
+          "name": "test_advance_to_discovery_requires_traces",
+          "type": "integration",
+          "file": "tests/integration/test_phase_transitions.py"
+        },
+        {
+          "name": "test_advance_to_discovery_succeeds_with_traces",
+          "type": "integration",
+          "file": "tests/integration/test_phase_transitions.py"
+        },
+        {
+          "name": "test_advance_to_discovery_wrong_phase",
+          "type": "integration",
+          "file": "tests/integration/test_phase_transitions.py"
+        },
+        {
+          "name": "test_advance_to_rubric_requires_findings",
+          "type": "integration",
+          "file": "tests/integration/test_phase_transitions.py"
+        },
+        {
+          "name": "test_advance_to_rubric_succeeds_with_findings",
+          "type": "integration",
+          "file": "tests/integration/test_phase_transitions.py"
+        },
+        {
+          "name": "test_advance_to_annotation_requires_rubric",
+          "type": "integration",
+          "file": "tests/integration/test_phase_transitions.py"
+        },
+        {
+          "name": "test_advance_to_annotation_succeeds_with_rubric",
+          "type": "integration",
+          "file": "tests/integration/test_phase_transitions.py"
+        },
+        {
+          "name": "test_advance_to_discovery_workshop_not_found",
+          "type": "integration",
+          "file": "tests/integration/test_phase_transitions.py"
+        },
+        {
+          "name": "test_upload_traces",
+          "type": "integration",
+          "file": "tests/integration/test_trace_ingestion.py"
+        },
+        {
+          "name": "test_upload_traces_with_metadata",
+          "type": "integration",
+          "file": "tests/integration/test_trace_ingestion.py"
+        },
+        {
+          "name": "test_upload_traces_with_mlflow_fields",
+          "type": "integration",
+          "file": "tests/integration/test_trace_ingestion.py"
+        },
+        {
+          "name": "test_get_all_traces",
+          "type": "integration",
+          "file": "tests/integration/test_trace_ingestion.py"
+        },
+        {
+          "name": "test_traces_scoped_to_workshop",
+          "type": "integration",
+          "file": "tests/integration/test_trace_ingestion.py"
+        },
+        {
+          "name": "test_create_workshop",
+          "type": "integration",
+          "file": "tests/integration/test_workshop_crud.py"
+        },
+        {
+          "name": "test_get_workshop",
+          "type": "integration",
+          "file": "tests/integration/test_workshop_crud.py"
+        },
+        {
+          "name": "test_get_workshop_not_found",
+          "type": "integration",
+          "file": "tests/integration/test_workshop_crud.py"
+        },
+        {
+          "name": "test_list_workshops",
+          "type": "integration",
+          "file": "tests/integration/test_workshop_crud.py"
+        },
+        {
+          "name": "test_list_workshops_filtered_by_facilitator",
+          "type": "integration",
+          "file": "tests/integration/test_workshop_crud.py"
+        },
+        {
           "name": "test_mock_db_session_fixture_exists",
+          "type": "unit",
+          "file": "tests/unit/test_testing_infrastructure.py"
+        },
+        {
+          "name": "test_mock_db_session_has_rollback",
+          "type": "unit",
+          "file": "tests/unit/test_testing_infrastructure.py"
+        },
+        {
+          "name": "test_async_client_fixture_works",
+          "type": "unit",
+          "file": "tests/unit/test_testing_infrastructure.py"
+        },
+        {
+          "name": "test_override_get_db_provides_session",
           "type": "unit",
           "file": "tests/unit/test_testing_infrastructure.py"
         },
@@ -4658,7 +5773,37 @@
           "file": "tests/unit/test_testing_infrastructure.py"
         },
         {
+          "name": "test_conftest_has_collection_modifier",
+          "type": "unit",
+          "file": "tests/unit/test_testing_infrastructure.py"
+        },
+        {
+          "name": "test_spec_marker_filters_this_test",
+          "type": "unit",
+          "file": "tests/unit/test_testing_infrastructure.py"
+        },
+        {
           "name": "test_e2e_workflow_exists",
+          "type": "unit",
+          "file": "tests/unit/test_testing_infrastructure.py"
+        },
+        {
+          "name": "test_workflow_runs_pytest",
+          "type": "unit",
+          "file": "tests/unit/test_testing_infrastructure.py"
+        },
+        {
+          "name": "test_workflow_runs_playwright",
+          "type": "unit",
+          "file": "tests/unit/test_testing_infrastructure.py"
+        },
+        {
+          "name": "test_workflow_installs_playwright_browsers",
+          "type": "unit",
+          "file": "tests/unit/test_testing_infrastructure.py"
+        },
+        {
+          "name": "test_workflow_triggers_on_pull_request",
           "type": "unit",
           "file": "tests/unit/test_testing_infrastructure.py"
         }
@@ -4666,26 +5811,20 @@
     },
     "TRACE_DISPLAY_SPEC": {
       "total_requirements": 18,
-      "covered_requirements": 13,
-      "coverage_percent": 72,
+      "covered_requirements": 14,
+      "coverage_percent": 77,
       "by_type": {
-        "unit": 32,
+        "unit": 68,
         "integration": 0,
         "e2e-mocked": 0,
-        "e2e-real": 7
+        "e2e-real": 0
       },
       "requirements": [
         {
           "text": "Facilitator can configure input/output JSONPath in settings panel",
-          "covered": true,
+          "covered": false,
           "backend_only": false,
-          "tests": [
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/jsonpath-trace-display.spec.ts"
-            }
-          ]
+          "tests": []
         },
         {
           "text": "JSONPath fields are optional and clearly labeled as such",
@@ -4721,26 +5860,15 @@
         },
         {
           "text": "Preview shows extraction results against first workshop trace",
-          "covered": true,
+          "covered": false,
           "backend_only": false,
-          "tests": [
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/jsonpath-trace-display.spec.ts"
-            }
-          ]
+          "tests": []
         },
         {
           "text": "TraceViewer applies JSONPath when configured",
           "covered": true,
           "backend_only": false,
           "tests": [
-            {
-              "name": "test_simple_extraction",
-              "type": "unit",
-              "file": "tests/unit/utils/test_jsonpath_utils.py"
-            },
             {
               "name": "test_simple_extraction",
               "type": "unit",
@@ -4839,15 +5967,9 @@
         },
         {
           "text": "Settings are persisted per workshop",
-          "covered": true,
+          "covered": false,
           "backend_only": false,
-          "tests": [
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/jsonpath-trace-display.spec.ts"
-            }
-          ]
+          "tests": []
         },
         {
           "text": "Facilitator can configure span attribute filter with span name, span type, attribute key, and attribute value",
@@ -4858,32 +5980,103 @@
               "name": "test_match_by_span_name",
               "type": "unit",
               "file": "tests/unit/utils/test_span_filter_utils.py"
+            },
+            {
+              "name": "test_match_by_span_type",
+              "type": "unit",
+              "file": "tests/unit/utils/test_span_filter_utils.py"
+            },
+            {
+              "name": "test_match_by_attribute_key_value",
+              "type": "unit",
+              "file": "tests/unit/utils/test_span_filter_utils.py"
+            },
+            {
+              "name": "test_match_by_attribute_key_only",
+              "type": "unit",
+              "file": "tests/unit/utils/test_span_filter_utils.py"
+            },
+            {
+              "name": "test_match_span_type_from_json_encoded_attributes",
+              "type": "unit",
+              "file": "tests/unit/utils/test_span_filter_utils.py"
+            },
+            {
+              "name": "test_match_span_type_from_plain_attributes",
+              "type": "unit",
+              "file": "tests/unit/utils/test_span_filter_utils.py"
+            },
+            {
+              "name": "test_match_combined_name_and_attribute_type",
+              "type": "unit",
+              "file": "tests/unit/utils/test_span_filter_utils.py"
             }
           ]
         },
         {
           "text": "Filter criteria are AND-combined and first matching span wins",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
+          "covered": true,
+          "backend_only": true,
+          "tests": [
+            {
+              "name": "test_match_combined_filters",
+              "type": "unit",
+              "file": "tests/unit/utils/test_span_filter_utils.py"
+            },
+            {
+              "name": "test_no_match_wrong_name",
+              "type": "unit",
+              "file": "tests/unit/utils/test_span_filter_utils.py"
+            },
+            {
+              "name": "test_no_match_wrong_type",
+              "type": "unit",
+              "file": "tests/unit/utils/test_span_filter_utils.py"
+            },
+            {
+              "name": "test_no_match_wrong_attribute_value",
+              "type": "unit",
+              "file": "tests/unit/utils/test_span_filter_utils.py"
+            },
+            {
+              "name": "test_no_match_combined_mismatch",
+              "type": "unit",
+              "file": "tests/unit/utils/test_span_filter_utils.py"
+            },
+            {
+              "name": "test_first_match_wins",
+              "type": "unit",
+              "file": "tests/unit/utils/test_span_filter_utils.py"
+            },
+            {
+              "name": "test_span_without_attributes_key",
+              "type": "unit",
+              "file": "tests/unit/utils/test_span_filter_utils.py"
+            },
+            {
+              "name": "test_returns_none_when_no_match",
+              "type": "unit",
+              "file": "tests/unit/utils/test_span_filter_utils.py"
+            }
+          ]
         },
         {
           "text": "Attribute value input is disabled until attribute key has a value",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
-        },
-        {
-          "text": "Span filter preview shows match status and filtered inputs/outputs against first trace",
           "covered": true,
           "backend_only": false,
           "tests": [
             {
               "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/jsonpath-trace-display.spec.ts"
+              "type": "unit",
+              "file": "client/src/components/JsonPathSettings.attrValueDisabled.test.tsx"
             }
           ]
+        },
+        {
+          "text": "Span filter preview shows match status and filtered inputs/outputs against first trace",
+          "covered": false,
+          "backend_only": false,
+          "tests": []
         },
         {
           "text": "Span filter is applied before JSONPath extraction in TraceViewer",
@@ -4894,26 +6087,149 @@
               "name": "test_returns_span_inputs_outputs_on_match",
               "type": "unit",
               "file": "tests/unit/utils/test_span_filter_utils.py"
+            },
+            {
+              "name": "test_apply_filter_extracts_inputs_from_json_encoded_attributes",
+              "type": "unit",
+              "file": "tests/unit/utils/test_span_filter_utils.py"
+            },
+            {
+              "name": "test_apply_filter_extracts_inputs_from_plain_attributes",
+              "type": "unit",
+              "file": "tests/unit/utils/test_span_filter_utils.py"
+            },
+            {
+              "name": "test_apply_filter_prefers_top_level_over_attributes",
+              "type": "unit",
+              "file": "tests/unit/utils/test_span_filter_utils.py"
+            },
+            {
+              "name": "test_spans_as_python_repr_string",
+              "type": "unit",
+              "file": "tests/unit/utils/test_span_filter_utils.py"
+            },
+            {
+              "name": "test_spans_as_json_string",
+              "type": "unit",
+              "file": "tests/unit/utils/test_span_filter_utils.py"
             }
           ]
         },
         {
           "text": "Empty filter config results in no filtering and root trace data is used",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
+          "covered": true,
+          "backend_only": true,
+          "tests": [
+            {
+              "name": "test_empty_spans",
+              "type": "unit",
+              "file": "tests/unit/utils/test_span_filter_utils.py"
+            },
+            {
+              "name": "test_empty_filter",
+              "type": "unit",
+              "file": "tests/unit/utils/test_span_filter_utils.py"
+            },
+            {
+              "name": "test_none_inputs",
+              "type": "unit",
+              "file": "tests/unit/utils/test_span_filter_utils.py"
+            },
+            {
+              "name": "test_returns_none_when_no_filter",
+              "type": "unit",
+              "file": "tests/unit/utils/test_span_filter_utils.py"
+            },
+            {
+              "name": "test_returns_none_when_no_context",
+              "type": "unit",
+              "file": "tests/unit/utils/test_span_filter_utils.py"
+            },
+            {
+              "name": "test_returns_none_when_no_spans_key",
+              "type": "unit",
+              "file": "tests/unit/utils/test_span_filter_utils.py"
+            },
+            {
+              "name": "test_none_inputs_outputs",
+              "type": "unit",
+              "file": "tests/unit/utils/test_span_filter_utils.py"
+            },
+            {
+              "name": "test_unparseable_string_returns_none",
+              "type": "unit",
+              "file": "tests/unit/utils/test_span_filter_utils.py"
+            }
+          ]
         },
         {
           "text": "String span inputs and outputs are returned as-is without double-serialization",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
+          "covered": true,
+          "backend_only": true,
+          "tests": [
+            {
+              "name": "test_string_inputs_returned_as_is",
+              "type": "unit",
+              "file": "tests/unit/utils/test_span_filter_utils.py"
+            }
+          ]
         },
         {
           "text": "All backend services that consume trace input/output apply the same span filter and JSONPath pipeline as the TraceViewer",
-          "covered": false,
-          "backend_only": false,
-          "tests": []
+          "covered": true,
+          "backend_only": true,
+          "tests": [
+            {
+              "name": "test_pipeline_produces_expected_values",
+              "type": "unit",
+              "file": "tests/unit/services/test_trace_display_pipeline_consistency.py"
+            },
+            {
+              "name": "test_discovery_analysis_applies_pipeline",
+              "type": "unit",
+              "file": "tests/unit/services/test_trace_display_pipeline_consistency.py"
+            },
+            {
+              "name": "test_discovery_analysis_uses_root_without_filter",
+              "type": "unit",
+              "file": "tests/unit/services/test_trace_display_pipeline_consistency.py"
+            },
+            {
+              "name": "test_preview_jsonpath_and_discovery_produce_same_result",
+              "type": "unit",
+              "file": "tests/unit/services/test_trace_display_pipeline_consistency.py"
+            },
+            {
+              "name": "test_preview_span_filter_and_discovery_produce_same_result",
+              "type": "unit",
+              "file": "tests/unit/services/test_trace_display_pipeline_consistency.py"
+            },
+            {
+              "name": "test_pipeline_order_is_span_filter_then_jsonpath",
+              "type": "unit",
+              "file": "tests/unit/services/test_trace_display_pipeline_consistency.py"
+            },
+            {
+              "name": "test_get_display_text_applies_full_pipeline",
+              "type": "unit",
+              "file": "tests/unit/services/test_trace_display_pipeline_consistency.py"
+            },
+            {
+              "name": "test_get_display_text_no_config",
+              "type": "unit",
+              "file": "tests/unit/services/test_trace_display_pipeline_consistency.py"
+            },
+            {
+              "name": "test_judge_service_applies_pipeline",
+              "type": "unit",
+              "file": "tests/unit/services/test_trace_display_pipeline_consistency.py"
+            },
+            {
+              "name": "test_all_consumers_use_display_pipeline",
+              "type": "unit",
+              "file": "tests/unit/services/test_trace_display_pipeline_consistency.py"
+            }
+          ]
         },
         {
           "text": "JSONPath evaluation does not noticeably slow down trace display",
@@ -4922,6 +6238,11 @@
           "tests": [
             {
               "name": "test_large_payload_extraction_completes_within_budget",
+              "type": "unit",
+              "file": "tests/unit/utils/test_jsonpath_utils.py"
+            },
+            {
+              "name": "test_wildcard_extraction_on_large_array_completes_within_budget",
               "type": "unit",
               "file": "tests/unit/utils/test_jsonpath_utils.py"
             }
@@ -4942,73 +6263,47 @@
         {
           "text": "Invalid JSONPath syntax shows helpful error message in preview",
           "covered": true,
-          "backend_only": false,
+          "backend_only": true,
           "tests": [
             {
               "name": "test_invalid_jsonpath_syntax",
               "type": "unit",
               "file": "tests/unit/utils/test_jsonpath_utils.py"
-            },
-            {
-              "name": "file-level",
-              "type": "e2e-real",
-              "file": "client/tests/e2e/jsonpath-trace-display.spec.ts"
             }
           ]
         }
       ],
       "uncovered": [
-        "Filter criteria are AND-combined and first matching span wins",
-        "Attribute value input is disabled until attribute key has a value",
-        "Empty filter config results in no filtering and root trace data is used",
-        "String span inputs and outputs are returned as-is without double-serialization",
-        "All backend services that consume trace input/output apply the same span filter and JSONPath pipeline as the TraceViewer"
+        "Facilitator can configure input/output JSONPath in settings panel",
+        "Preview shows extraction results against first workshop trace",
+        "Settings are persisted per workshop",
+        "Span filter preview shows match status and filtered inputs/outputs against first trace"
       ],
       "backend_only": [
         "JSONPath fields are optional and clearly labeled as such",
         "Multiple JSONPath matches are concatenated with newlines",
         "System falls back to raw display when JSONPath is not configured, JSON parsing fails, JSONPath query fails, or JSONPath returns null/empty",
         "Facilitator can configure span attribute filter with span name, span type, attribute key, and attribute value",
+        "Filter criteria are AND-combined and first matching span wins",
         "Span filter is applied before JSONPath extraction in TraceViewer",
+        "Empty filter config results in no filtering and root trace data is used",
+        "String span inputs and outputs are returned as-is without double-serialization",
+        "All backend services that consume trace input/output apply the same span filter and JSONPath pipeline as the TraceViewer",
         "JSONPath evaluation does not noticeably slow down trace display",
-        "Preview responds within 500ms"
+        "Preview responds within 500ms",
+        "Invalid JSONPath syntax shows helpful error message in preview"
       ],
-      "backend_only_count": 7,
+      "backend_only_count": 12,
       "unlinked_tests": [
-        {
-          "name": "test_valid_jsonpath",
-          "type": "unit",
-          "file": "tests/unit/utils/test_jsonpath_utils.py"
-        },
-        {
-          "name": "test_match_span_type_from_json_encoded_attributes",
-          "type": "unit",
-          "file": "tests/unit/utils/test_span_filter_utils.py"
-        },
-        {
-          "name": "test_spans_as_python_repr_string",
-          "type": "unit",
-          "file": "tests/unit/utils/test_span_filter_utils.py"
-        },
-        {
-          "name": "test_pipeline_produces_expected_values",
-          "type": "unit",
-          "file": "tests/unit/services/test_trace_display_pipeline_consistency.py"
-        },
-        {
-          "name": "file-level",
-          "type": "e2e-real",
-          "file": "client/tests/e2e/jsonpath-trace-display.spec.ts"
-        },
-        {
-          "name": "file-level",
-          "type": "e2e-real",
-          "file": "client/tests/e2e/jsonpath-trace-display.spec.ts"
-        },
         {
           "name": "file-level",
           "type": "unit",
           "file": "client/src/hooks/useJsonPathExtraction.test.ts"
+        },
+        {
+          "name": "file-level",
+          "type": "unit",
+          "file": "client/src/components/JsonPathSettings.attrValueDisabled.test.tsx"
         }
       ]
     },
@@ -5017,10 +6312,10 @@
       "covered_requirements": 0,
       "coverage_percent": 0,
       "by_type": {
-        "unit": 0,
+        "unit": 4,
         "integration": 0,
         "e2e-mocked": 0,
-        "e2e-real": 4
+        "e2e-real": 0
       },
       "requirements": [
         {
@@ -5143,23 +6438,23 @@
       "unlinked_tests": [
         {
           "name": "file-level",
-          "type": "e2e-real",
-          "file": "client/tests/e2e/ui-components.spec.ts"
+          "type": "unit",
+          "file": "client/src/components/TraceDataViewer.test.tsx"
         },
         {
           "name": "file-level",
-          "type": "e2e-real",
-          "file": "client/tests/e2e/ui-components.spec.ts"
+          "type": "unit",
+          "file": "client/src/components/TraceDataViewer.test.tsx"
         },
         {
           "name": "file-level",
-          "type": "e2e-real",
-          "file": "client/tests/e2e/ui-components.spec.ts"
+          "type": "unit",
+          "file": "client/src/components/Pagination.test.tsx"
         },
         {
           "name": "file-level",
-          "type": "e2e-real",
-          "file": "client/tests/e2e/ui-components.spec.ts"
+          "type": "unit",
+          "file": "client/src/components/Pagination.test.tsx"
         }
       ]
     },
@@ -5168,9 +6463,9 @@
       "covered_requirements": 14,
       "coverage_percent": 40,
       "by_type": {
-        "unit": 21,
+        "unit": 22,
         "integration": 0,
-        "e2e-mocked": 1,
+        "e2e-mocked": 0,
         "e2e-real": 0
       },
       "requirements": [
@@ -5226,14 +6521,14 @@
           "backend_only": true,
           "tests": [
             {
-              "name": "test_promote_finding_to_draft_rubric_in_workshop_mode",
-              "type": "unit",
-              "file": "tests/unit/services/test_discovery_promotion_eval_mode.py"
-            },
-            {
               "name": "test_create_workshop_defaults_to_workshop_mode",
               "type": "unit",
               "file": "tests/unit/services/test_database_service_eval_mode.py"
+            },
+            {
+              "name": "test_promote_finding_to_draft_rubric_in_workshop_mode",
+              "type": "unit",
+              "file": "tests/unit/services/test_discovery_promotion_eval_mode.py"
             }
           ]
         },
@@ -5248,14 +6543,14 @@
               "file": "tests/unit/routers/test_eval_mode_router.py"
             },
             {
-              "name": "test_create_and_list_criteria_in_eval_mode",
-              "type": "unit",
-              "file": "tests/unit/services/test_eval_criteria_service.py"
-            },
-            {
               "name": "test_eval_mode_tables_are_present_in_metadata",
               "type": "unit",
               "file": "tests/unit/services/test_database_service_eval_mode.py"
+            },
+            {
+              "name": "test_create_and_list_criteria_in_eval_mode",
+              "type": "unit",
+              "file": "tests/unit/services/test_eval_criteria_service.py"
             }
           ]
         },
@@ -5547,21 +6842,21 @@
       "unlinked_tests": [
         {
           "name": "file-level",
-          "type": "e2e-mocked",
-          "file": "client/tests/e2e/eval-mode-workflow.spec.ts"
+          "type": "unit",
+          "file": "client/src/components/eval/CriterionEditor.eval.test.tsx"
         }
       ]
     }
   },
   "summary": {
-    "total_requirements": 369,
-    "covered_requirements": 176,
-    "coverage_percent": 47
+    "total_requirements": 379,
+    "covered_requirements": 207,
+    "coverage_percent": 54
   },
   "pyramid": {
-    "unit": 383,
-    "integration": 3,
-    "e2e-mocked": 20,
-    "e2e-real": 95
+    "unit": 679,
+    "integration": 57,
+    "e2e-mocked": 1,
+    "e2e-real": 0
   }
 }

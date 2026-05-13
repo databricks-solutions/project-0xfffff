@@ -2,7 +2,7 @@ import pytest
 
 
 @pytest.mark.spec("PROJECT_SETUP_SPEC")
-@pytest.mark.req("`POST /project/setup` returns `project_id` and `setup_job_id`")
+@pytest.mark.req("`POST /api/project/setup` returns `project_id` and `setup_job_id`")
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_project_setup_route_returns_project_and_setup_job(async_client, override_get_db, monkeypatch):
@@ -29,7 +29,7 @@ async def test_project_setup_route_returns_project_and_setup_job(async_client, o
     monkeypatch.setattr(project_setup_router, "ProjectSetupService", FakeProjectSetupService)
 
     response = await async_client.post(
-        "/project/setup",
+        "/api/project/setup",
         json={
             "name": "support-agent-eval",
             "agent_description": "Calibrate the support agent.",
@@ -74,7 +74,7 @@ async def test_setup_status_route_returns_latest_progress(async_client, override
 
     monkeypatch.setattr(project_setup_router, "ProjectSetupService", FakeProjectSetupService)
 
-    response = await async_client.get("/project/setup-status")
+    response = await async_client.get("/api/project/setup-status")
 
     assert response.status_code == 200
     body = response.json()

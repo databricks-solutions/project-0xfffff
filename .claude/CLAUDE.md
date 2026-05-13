@@ -33,9 +33,9 @@ When asked to improve coverage for a spec, use the `/spec-audit` skill. Key poin
 ## References
 
 - **Workflow details**: See `CONTRIBUTING.md`
-- **Brainstorming**: `.claude/skills/brainstorming/SKILL.md`
-- **Writing plans**: `.claude/skills/writing-plans/SKILL.md`
-- **Test patterns**: `.claude/skills/verification-testing/SKILL.md`
-- **MLflow patterns**: `.claude/skills/mlflow-evaluation/SKILL.md`
-- **Spec audit**: `.claude/skills/spec-audit/SKILL.md`
+- **Brainstorming**: `.agents/skills/brainstorming/SKILL.md`
+- **Writing plans**: `.agents/skills/writing-plans/SKILL.md`
+- **Test patterns**: `.agents/skills/verification-testing/SKILL.md`
+- **MLflow patterns**: `.agents/skills/mlflow-evaluation/SKILL.md`
+- **Spec audit**: `.agents/skills/spec-audit/SKILL.md`
 - **Spec index**: `/specs/README.md`

@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Claude SessionStart adapter for shared agent workflow context.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKFLOW_RULES="$(cat "${SCRIPT_DIR}/spec-driven-workflow.md")"
+
+escape_for_json() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\t'/\\t}"
+    printf '%s' "$s"
+}
+
+escaped_rules=$(escape_for_json "$WORKFLOW_RULES")
+
+cat <<EOF
+{
+  "hookSpecificOutput": {
+    "hookEventName": "SessionStart",
+    "additionalContext": "${escaped_rules}"
+  }
+}
+EOF
