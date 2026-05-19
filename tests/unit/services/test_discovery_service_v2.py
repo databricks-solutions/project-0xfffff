@@ -292,12 +292,33 @@ class TestFindingPromotion:
         workshop = type("Workshop", (), {"id": "test_workshop"})()
         service.db_service.workshops["test_workshop"] = workshop
 
+        # add_draft_rubric_item must exist for promote to succeed
+        mock_item = type("Item", (), {"id": "item_1"})()
+        service.db_service.add_draft_rubric_item = lambda *a, **kw: mock_item
+
         result = service.promote_finding("test_workshop", "finding_123", "facilitator_1")
 
         assert "id" in result
         assert "finding_id" in result
         assert "promoted_by" in result
         assert result["promoted_by"] == "facilitator_1"
+
+    @pytest.mark.req("Findings can be promoted to draft rubric staging area")
+    def test_promote_finding_propagates_db_error(self, mock_db_session):
+        """promote_finding must NOT return success when the DB write fails."""
+        service = DiscoveryService(mock_db_session)
+        service.db_service = MockDatabaseService()
+
+        workshop = type("Workshop", (), {"id": "test_workshop"})()
+        service.db_service.workshops["test_workshop"] = workshop
+
+        def fail_write(*a, **kw):
+            raise RuntimeError("DB locked")
+
+        service.db_service.add_draft_rubric_item = fail_write
+
+        with pytest.raises(RuntimeError, match="DB locked"):
+            service.promote_finding("test_workshop", "finding_123", "facilitator_1")
 
 
 @pytest.mark.spec("ASSISTED_FACILITATION_SPEC")

@@ -125,12 +125,9 @@ async def test_begin_annotation_with_auto_eval_enabled(async_client, override_ge
     fake_db_service = FakeDatabaseService(None)
     monkeypatch.setattr(workshops_router, "DatabaseService", lambda db: fake_db_service)
 
-    # Mock token storage
-    mock_token_storage = MagicMock()
-    mock_token_storage.get_token.return_value = "test-token"
-
+    # Mock SDK token resolution to return a test token
     with patch("server.routers.workshops.create_job") as mock_create_job, \
-         patch("server.services.token_storage_service.token_storage", mock_token_storage):
+         patch("server.services.databricks_service.resolve_databricks_token", return_value="test-token"):
         mock_job = MagicMock()
         mock_create_job.return_value = mock_job
 

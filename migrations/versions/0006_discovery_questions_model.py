@@ -18,18 +18,25 @@ branch_labels = None
 depends_on = None
 
 
-def _sqlite_table_info(table: str):
+def _has_column(table: str, column: str) -> bool:
+    """Check if a column exists in a table (works for both SQLite and PostgreSQL)."""
     bind = op.get_bind()
-    # PRAGMA table_info returns: cid, name, type, notnull, dflt_value, pk
-    return bind.execute(sa.text(f"PRAGMA table_info({table})")).fetchall()
-
-
-def _sqlite_has_column(table: str, column: str) -> bool:
-    return any(r[1] == column for r in _sqlite_table_info(table))
+    if bind.dialect.name == "postgresql":
+        result = bind.execute(
+            sa.text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = :table AND column_name = :column"
+            ),
+            {"table": table, "column": column},
+        ).fetchone()
+        return result is not None
+    else:
+        rows = bind.execute(sa.text(f"PRAGMA table_info({table})")).fetchall()
+        return any(r[1] == column for r in rows)
 
 
 def upgrade() -> None:
-    if _sqlite_has_column("workshops", "discovery_questions_model_name"):
+    if _has_column("workshops", "discovery_questions_model_name"):
         return
     with op.batch_alter_table("workshops") as batch_op:
         batch_op.add_column(

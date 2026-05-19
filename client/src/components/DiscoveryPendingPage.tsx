@@ -3,11 +3,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Clock, Search, Users, Lightbulb } from 'lucide-react';
 import { useWorkshopContext } from '@/context/WorkshopContext';
-import { useWorkshop } from '@/hooks/useWorkshopApi';
+import { useWorkshopPhase } from '@/hooks/useWorkshopApi';
 
 export const DiscoveryPendingPage: React.FC = () => {
   const { workshopId } = useWorkshopContext();
-  const { refetch } = useWorkshop(workshopId || '');
+  const { refetch } = useWorkshopPhase(workshopId || '');
 
   // Auto-refresh every 5 seconds to detect when discovery starts
   useEffect(() => {

@@ -276,6 +276,22 @@ class TestBatchModeForSqlite:
 
 
 @pytest.mark.spec("BUILD_AND_DEPLOY_SPEC")
+@pytest.mark.req("Lakebase schema privilege grants are best-effort")
+class TestLakebaseMigrationSchemaSetup:
+    """SC: Alembic startup tolerates existing Lakebase schemas not owned by the app."""
+
+    def test_migration_schema_grant_is_best_effort(self):
+        """migrations/env.py catches failed schema GRANTs and rolls back before continuing."""
+        env_py = PROJECT_ROOT / "migrations" / "env.py"
+        content = env_py.read_text()
+
+        assert "GRANT ALL PRIVILEGES ON SCHEMA" in content
+        assert "except ProgrammingError" in content
+        assert "connection.rollback()" in content
+        assert "SET search_path" in content
+
+
+@pytest.mark.spec("BUILD_AND_DEPLOY_SPEC")
 @pytest.mark.req("Release workflow creates zip artifact")
 class TestReleaseWorkflowCreatesArtifact:
     """SC: Release workflow creates zip artifact for deployment."""
@@ -372,6 +388,14 @@ class TestApiEndpointConfiguration:
             "app.yaml must specify uvicorn worker class"
         )
 
+    def test_app_yaml_references_gunicorn_conf(self):
+        """app.yaml uses gunicorn_conf.py for server hooks."""
+        app_yaml = PROJECT_ROOT / "app.yaml"
+        content = app_yaml.read_text()
+        assert "gunicorn_conf.py" in content, (
+            "app.yaml must reference gunicorn_conf.py for pre-fork migration hook"
+        )
+
 
 @pytest.mark.spec("BUILD_AND_DEPLOY_SPEC")
 @pytest.mark.req("Database connection established")
@@ -395,3 +419,24 @@ class TestDatabaseConnectionConfig:
             with patch.dict(os.environ, env, clear=True):
                 backend = _detect_backend()
                 assert backend.value == "sqlite"
+
+    def test_lakebase_schema_name_defaults_to_stable_app_schema(self):
+        """Lakebase schema names stay stable so migrations apply across deployments."""
+        from server.db_config import get_lakebase_schema_name
+
+        with patch.dict(
+            os.environ,
+            {
+                "PGAPPNAME": "human-eval-workshop",
+                "PGUSER": "3903554c-7db9-4dc9-a423-31a8a65bff57",
+            },
+            clear=True,
+        ):
+            assert get_lakebase_schema_name() == "human_eval_workshop"
+
+    def test_lakebase_schema_name_can_be_overridden(self):
+        """Operators can choose a schema explicitly when reusing an existing Lakebase schema."""
+        from server.db_config import get_lakebase_schema_name
+
+        with patch.dict(os.environ, {"LAKEBASE_SCHEMA_NAME": "Release Branch Schema!"}, clear=True):
+            assert get_lakebase_schema_name() == "release_branch_schema"

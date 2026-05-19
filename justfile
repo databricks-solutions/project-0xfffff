@@ -506,12 +506,12 @@ py-install-dev:
 [group('dev')]
 api-dev port="8000":
   just db-bootstrap
-  uv run uvicorn {{server-dir}}.app:app --reload --port {{port}}
+  uv run uvicorn {{server-dir}}.app:app --reload --port {{port}} --log-level "${UVICORN_LOG_LEVEL:-info}"
 
 [group('dev')]
 api port="8000":
   just db-bootstrap
-  uv run uvicorn {{server-dir}}.app:app --port {{port}}
+  uv run uvicorn {{server-dir}}.app:app --port {{port}} --log-level "${UVICORN_LOG_LEVEL:-info}"
 
 [group('app')]
 deploy:
@@ -527,11 +527,13 @@ deploy:
 
   databricks --profile "$PROFILE" sync . "$WORKSPACE_PATH" \
     --exclude ".git" \
+    --exclude ".claude" \
     --exclude "node_modules" \
     --exclude "__pycache__" \
     --exclude "*.db" \
     --exclude ".venv" \
-    --exclude ".e2e-*"
+    --exclude ".e2e-*" \
+    --exclude "htmlcov"
 
   # Create app if it doesn't exist
   if ! databricks --profile "$PROFILE" apps get "$APP" &>/dev/null; then
@@ -563,7 +565,7 @@ dev api_port="8000" ui_port="5173": openapi
   just db-bootstrap
 
   # Start API
-  (uv run uvicorn {{server-dir}}.app:app --reload --port "$API_PORT") &
+  (uv run uvicorn {{server-dir}}.app:app --reload --port "$API_PORT" --log-level "${UVICORN_LOG_LEVEL:-info}") &
   api_pid=$!
 
   # Start UI

@@ -6,16 +6,17 @@ This specification defines the authentication flow, permission management, and s
 
 ## Architecture Context
 
-### Current State: Application-Layer Auth
+The system has two distinct authentication concerns:
 
-The workshop system currently implements a **secondary authentication layer** on top of Databricks workspace authentication:
+1. **Workshop application auth** (this spec) — login, roles, permissions, sessions
+2. **Databricks API auth** — how the backend authenticates to Databricks services (MLflow, serving endpoints, volumes)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Databricks Workspace                      │
 │  ┌─────────────────────────────────────────────────────┐    │
-│  │              Databricks User Auth                    │    │
-│  │         (handles workspace access)                   │    │
+│  │         Databricks API Auth (SDK-based)              │    │
+│  │    Service principal (Apps) / CLI profile (local)    │    │
 │  └─────────────────────────────────────────────────────┘    │
 │                           │                                  │
 │                           ▼                                  │
@@ -27,20 +28,129 @@ The workshop system currently implements a **secondary authentication layer** on
 ```
 
 **Why two layers?**
-- Databricks handles workspace-level access (who can access the app)
+- Databricks API auth handles backend-to-Databricks communication (MLflow traces, serving endpoints, volume access)
 - Workshop auth handles application-level permissions (what users can do within the app)
 - Workshop roles (participant, SME, facilitator) are app-specific concepts not in Databricks IAM
 
-### Future State: Native Databricks Auth
+## Databricks API Authentication
 
-The system is designed to eventually migrate to native Databricks user authentication:
+All Databricks API calls (MLflow, model serving, volume access) use the **Databricks SDK unified auth**. Users never provide Personal Access Tokens (PATs) through the UI.
 
-- Workshop roles will map to Databricks groups or custom attributes
-- Permission checks will use Databricks IAM where possible
-- Session management will leverage Databricks tokens
-- The application auth layer will be removed or simplified
+### Token Resolution
 
-**Migration path**: The permission model is intentionally abstract to allow swapping the auth backend without changing application code.
+The backend resolves auth tokens via `resolve_databricks_token()` in `server/services/databricks_service.py`:
+
+```
+Token Resolution Order:
+1. Databricks SDK (WorkspaceClient().config.authenticate())
+   - On Databricks Apps: uses platform-injected service principal
+     (DATABRICKS_CLIENT_ID / DATABRICKS_CLIENT_SECRET)
+   - Locally: uses CLI profile from `databricks auth login`
+2. DATABRICKS_TOKEN environment variable (fallback for CI/containers)
+3. Raise RuntimeError if nothing available
+```
+
+### Environment-Specific Behavior
+
+| Environment | Auth Method | Setup |
+|-------------|-------------|-------|
+| Databricks Apps | Service principal (automatic) | Platform injects `DATABRICKS_CLIENT_ID`/`SECRET` |
+| Local development | CLI profile | Run `databricks auth login --host <workspace-url>` |
+| CI / containers | Environment variable | Set `DATABRICKS_TOKEN` |
+
+### MLflow Auth
+
+MLflow operations (`search_traces`, `log_feedback`, `set_experiment`) use whatever auth the Databricks SDK provides. `DATABRICKS_HOST` is set by the platform (Databricks Apps) or the developer (`.env.local`). `MLFLOW_EXPERIMENT_ID` is provided via the app.yaml resource declaration. The backend calls `mlflow.set_tracking_uri('databricks')` — the SDK handles auth automatically. No user-configurable host or token is stored.
+
+### Required Service Principal Permissions
+
+The app's service principal needs access to these Databricks resources. On Databricks Apps, grant these through the Apps UI "Add resource" flow.
+
+#### Core Resources (required)
+
+| Resource | Operations | Required Permission |
+|----------|-----------|-------------------|
+| **Lakebase (PostgreSQL)** | Primary production database. OAuth tokens injected per-connection via `do_connect` event. Configured via `DATABASE_ENV=postgres` + `PGHOST`/`PGDATABASE`/`PGUSER`/`ENDPOINT_NAME` env vars. | Postgres role with `databricks_auth` extension ([docs](https://docs.databricks.com/aws/en/lakebase/admin/authentication.html)) |
+| **MLflow Experiment** | `search_traces`, `get_experiment`, `set_experiment`, `log_feedback`, `set_trace_tag`. Declared as app.yaml resource (`MLFLOW_EXPERIMENT_ID`). | Can edit |
+| **Model Serving Endpoints** | `chat.completions.create` (judge evaluation, rubric generation, discovery). Includes embedding endpoints (e.g. `databricks-gte-large-en`) used by MemAlign. | Can query |
+
+#### Optional Resources
+
+| Resource | Operations | When Needed | Required Permission |
+|----------|-----------|-------------|-------------------|
+| **SQL Warehouse** | DBSQL export via `databricks.sql.connect()` | DBSQL export feature | Can use |
+| **Unity Catalog Volume** | SQLite backup/restore via SDK Files API (`files.upload`, `files.download`, `files.get_status`) | Only if using SQLite with SQLite Rescue (not needed with Lakebase) | Can read and write |
+
+### Lakebase Connection Pool
+
+The app connects to Lakebase Autoscaling (serverless PostgreSQL) using SQLAlchemy + psycopg with OAuth token rotation. This section defines the required connection pool behavior.
+
+**Reference:** [Connect a custom Databricks app to Lakebase](https://docs.databricks.com/aws/en/lakebase/connect/custom-app.html), [Token rotation in Lakebase](https://docs.databricks.com/aws/en/lakebase/connect/token-rotation.html)
+
+#### Token Lifecycle
+
+- OAuth tokens expire after **1 hour**, but expiration is enforced **only at connection establishment** (login), not on existing connections
+- Existing pooled connections remain valid after their token expires — no need to recycle them
+- Fresh tokens are needed only when creating **new** physical connections (pool growth or replacing dropped connections)
+
+#### Token Injection Pattern
+
+Use the SQLAlchemy `do_connect` event listener to inject fresh tokens into new physical connections. Do **not** bake the token into the connection URL or use a `creator` callable.
+
+```python
+@event.listens_for(engine, "do_connect")
+def provide_token(dialect, conn_rec, cargs, cparams):
+    # Refresh token if near expiry (2 min buffer before 1-hour lifetime)
+    if token is None or near_expiry:
+        cred = w.postgres.generate_database_credential(endpoint=endpoint_name)
+        token = cred.token
+    cparams["password"] = token
+```
+
+**Reference:** [About authentication in Lakebase](https://docs.databricks.com/aws/en/lakebase/admin/authentication.html)
+
+#### Required Pool Settings
+
+| Setting | Value | Rationale |
+|---------|-------|-----------|
+| `pool_size` | 5 | Matches recommended range (5–10). With 2 gunicorn workers = 10 base connections. |
+| `max_overflow` | 5 | Caps burst at 10 per worker, 20 total. Docs recommend 0–5. |
+| `pool_recycle` | 3600 | Match 1-hour token lifetime. 300s (5 min) causes excessive connection churn. |
+| `pool_pre_ping` | False | Conflicts with `do_connect` token injection. Use retry logic instead. |
+
+#### Credential API
+
+For Lakebase Autoscaling, use `WorkspaceClient().postgres.generate_database_credential(endpoint=endpoint_name)` to generate connection-scoped credentials. This requires the `ENDPOINT_NAME` environment variable (format: `projects/<id>/branches/<id>/endpoints/<id>`).
+
+**Reference:** [Connect external app to Lakebase using SDK](https://docs.databricks.com/aws/en/lakebase/connect/external-app.html)
+
+#### Lakebase Setup Prerequisites
+
+**Databricks Apps (production):** Add the Lakebase database as an App resource in the Apps UI. Databricks automatically creates a Postgres role for the app's service principal (named after its `DATABRICKS_CLIENT_ID`) with `CONNECT` and `CREATE` grants. No manual role creation needed.
+
+**External / additional identities:** If connecting from outside Databricks Apps or adding extra identities beyond the app SP, a workspace admin must manually create roles:
+
+1. Enable the `databricks_auth` extension: `CREATE EXTENSION IF NOT EXISTS databricks_auth`
+2. Create a Postgres role: `SELECT databricks_create_role('<DATABRICKS_CLIENT_ID>', 'service_principal')`
+3. Grant `CONNECT` on the database and `CREATE, USAGE` on schemas
+4. Grant table-level permissions on app tables
+
+**Reference:** [Lakebase authentication](https://docs.databricks.com/aws/en/lakebase/admin/authentication.html), [Databricks Apps resources](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/resources)
+
+### What Was Removed
+
+Prior to this migration, the system had:
+- Token input fields in the UI (IntakePage, DBSQLExportPage)
+- In-memory token storage (`TokenStorageService`) with 24-hour expiration
+- Database-persisted tokens (`databricks_tokens` table)
+- A 4-level token fallback chain (SDK → explicit → stored → env var)
+- `os.environ["DATABRICKS_TOKEN"]` mutations at runtime
+
+All of this was replaced by the single `resolve_databricks_token()` function.
+
+### Future: Per-User Auth (On-Behalf-Of-User)
+
+Databricks Apps can forward the logged-in user's OAuth token via the `x-forwarded-access-token` HTTP header. This would allow per-user Unity Catalog enforcement (row-level filters, column masks). Not yet implemented — the app currently uses the service principal identity for all Databricks API calls.
 
 ## Core Concepts
 
@@ -230,6 +340,7 @@ Key implementation points:
 
 ## Success Criteria
 
+### Workshop Application Auth
 - [ ] No "permission denied" errors on normal login
 - [ ] No page refresh required after login
 - [ ] Slow network: Loading indicator shown until ready
@@ -237,6 +348,31 @@ Key implementation points:
 - [ ] 404 on validation: Session cleared, fresh login allowed
 - [ ] Rapid navigation: Components wait for `isLoading = false`
 - [ ] Error recovery: Errors cleared on new login attempt
+
+### Databricks API Auth
+- [ ] All Databricks API calls use SDK-resolved tokens (no user-provided PATs)
+- [ ] MLflow operations use SDK auth without `os.environ["DATABRICKS_TOKEN"]` mutation
+- [ ] No token input fields exist in the frontend UI
+- [ ] No token persistence in memory (`TokenStorageService` for Databricks) or database (`databricks_tokens` table)
+- [ ] Local development works via `databricks auth login` CLI profile
+- [ ] Databricks Apps deployment works via platform-injected service principal
+- [ ] `DATABRICKS_TOKEN` env var works as fallback for CI/containers
+- [ ] `resolve_databricks_token()` raises `RuntimeError` with actionable message when no auth available
+- [ ] No user-configurable `databricks_host` — app always uses its own workspace
+- [ ] `DATABRICKS_HOST` comes from environment (Databricks Apps platform or developer), not stored config
+- [ ] `MLFLOW_EXPERIMENT_ID` comes from app.yaml resource declaration
+- [ ] `DatabricksService` does not accept `workspace_url` parameter — uses env-based host only
+- [ ] MemAlign embedding model is selectable with default to `databricks-gte-large-en`
+- [ ] No dead `OPENAI_API_KEY` code paths in alignment service
+
+### Lakebase Connection Pool
+- [ ] Token injection uses `do_connect` event listener, not `creator` callable or baked-in URL
+- [ ] Tokens generated via `generate_database_credential(endpoint=...)` for Lakebase Autoscaling
+- [ ] Token refresh only when creating new physical connections (not on every checkout)
+- [ ] `pool_recycle=3600` (not shorter — avoids unnecessary connection churn)
+- [ ] `pool_pre_ping=False` (conflicts with `do_connect` token injection)
+- [ ] `max_overflow` ≤ 5 (caps total connections at 20 across 2 gunicorn workers)
+- [ ] `ENDPOINT_NAME` environment variable required for Lakebase Autoscaling deployments
 
 ## Testing Scenarios
 
@@ -276,3 +412,11 @@ Key implementation points:
 - No database changes required
 - No API changes needed
 - Graceful fallbacks for all error cases
+
+## Implementation Log
+
+| Date | Plan | Status | Summary |
+|------|------|--------|---------|
+| 2026-04-10 | [SDK Auth Migration](../.claude/plans/2026-04-10-sdk-auth-migration.md) | complete | Replace PAT token auth with Databricks SDK unified auth |
+| 2026-04-11 | (inline) | complete | Fix Lakebase connection pool: switch to `do_connect` + `generate_database_credential()`, fix pool settings to match Databricks docs |
+| 2026-04-15 | [Remove databricks_host](../.claude/plans/2026-04-15-remove-databricks-host-app-yaml-resources.md) | in-progress | Remove user-configurable host, use app.yaml resources for MLflow experiment, fix MemAlign embedding model |

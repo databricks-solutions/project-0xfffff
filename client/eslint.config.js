@@ -12,7 +12,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default tseslint.config(
   // Global ignores (type-checked linting applies to src/ only; tests excluded)
-  { ignores: ['dist', 'src/client/**', 'playwright.config.ts', '**/*.test.{ts,tsx}', 'tests/**/*.ts'] },
+  { ignores: ['dist', 'build', 'src/client/**', 'playwright.config.ts', '**/*.test.{ts,tsx}', 'tests/**/*.ts'] },
 
   // TanStack Query recommended config
   ...pluginQuery.configs['flat/recommended'],

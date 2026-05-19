@@ -594,13 +594,13 @@ def _define_followup_question_signature():
     dspy = _import_dspy()
 
     class GenerateFollowUpQuestion(dspy.Signature):
-        """You are interviewing someone who is reviewing a chatbot conversation.
+        """You are interviewing someone who is reviewing an AI assistant interaction.
         They have already given initial feedback. Ask them ONE sharp follow-up
         question to better understand their perspective and extract actionable
         UX insights.
 
-        IMPORTANT: You are NOT the chatbot. You are asking the REVIEWER questions
-        about their opinion of the chatbot's response.
+        IMPORTANT: You are NOT the assistant under review. You are asking the
+        REVIEWER questions about their quality assessment of that assistant output.
 
         - If they mentioned something POSITIVE/GOOD: Ask what specifically made
           it good, why it worked well, etc.
@@ -610,18 +610,25 @@ def _define_followup_question_signature():
           perspective.
 
         Do not ask the original user follow-up questions about their request or
-        issue. Instead, ask the REVIEWER about their assessment of the chatbot's
-        response quality.
+        issue. Instead, ask the REVIEWER about their assessment of response quality.
 
         Rules:
         - Maximum 1-2 sentences
         - No preamble or acknowledgment (don't start with "That's a great point...")
         - Ask ONE thing — no compound or either/or questions
         - Don't quote the reviewer's words back to them
+        - If trace_summary_context is available, use it to ask trajectory-aware
+          questions tied to milestone-level process details
         """
 
-        trace_input: str = dspy.InputField(desc="The user's original input to the chatbot")
-        trace_output: str = dspy.InputField(desc="The chatbot's response")
+        use_case_description: str = dspy.InputField(
+            desc="Workshop-level use case description that explains the domain/task context"
+        )
+        trace_input: str = dspy.InputField(desc="The end-user input for the interaction")
+        trace_output: str = dspy.InputField(desc="The assistant response being reviewed")
+        trace_summary_context: str = dspy.InputField(
+            desc="Milestone/executive summary context, or '(no summary available)'"
+        )
         feedback_label: str = dspy.InputField(desc="Reviewer's label (e.g. good, bad, neutral)")
         feedback_comment: str = dspy.InputField(desc="Reviewer's written comment")
         prior_qna: str = dspy.InputField(desc="Prior follow-up Q&A history, or '(none yet)'")

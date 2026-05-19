@@ -4,19 +4,29 @@ import { Button } from '@/components/ui/button';
 import { ChevronDown, ChevronUp, ArrowUpRight, Clock, FileText, Users, AlertTriangle } from 'lucide-react';
 import type { DiscoveryAnalysis } from '@/hooks/useWorkshopApi';
 import type { PromotePayload } from './DiscoveryTraceCard';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface CrossTraceAnalysisSummaryProps {
   analysis: DiscoveryAnalysis;
   onPromote: (payload: PromotePayload) => void;
+  onNavigateToOrigin?: (originRef: string) => void;
   promotedKeys?: Set<string>;
 }
 
 export const CrossTraceAnalysisSummary: React.FC<CrossTraceAnalysisSummaryProps> = ({
   analysis,
   onPromote,
+  onNavigateToOrigin,
   promotedKeys = new Set(),
 }) => {
   const [collapsed, setCollapsed] = useState(false);
+
+  const linkifyOriginRefs = (text: string): string =>
+    text.replace(
+      /(^|[\s(])(?<!\]\()([A-Za-z0-9_-]+#(?:all|m\d+|q\d+))(?=$|[\s).,;:!?])/gi,
+      (match, prefix, ref) => `${prefix}[${ref}](${ref})`
+    );
 
   // Cross-trace findings = those referencing 2+ traces
   const crossTraceFindings = analysis.findings.filter(
@@ -77,7 +87,30 @@ export const CrossTraceAnalysisSummary: React.FC<CrossTraceAnalysisSummaryProps>
                   return (
                     <div key={key} className={`finding-item flex items-start justify-between rounded-lg bg-slate-50 p-3${promotedKeys.has(key) ? ' promoted-collapsing' : ''}`}>
                       <div>
-                        <p className="text-sm text-slate-800 font-medium">{f.text}</p>
+                        <div className="text-sm text-slate-800 font-medium">
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            components={{
+                              p: ({ children }) => <p className="m-0">{children}</p>,
+                              a: ({ href, children }) => (
+                                <a
+                                  href={href}
+                                  onClick={(e) => {
+                                    if (href && onNavigateToOrigin) {
+                                      e.preventDefault();
+                                      onNavigateToOrigin(href);
+                                    }
+                                  }}
+                                  className="text-indigo-700 underline hover:text-indigo-900"
+                                >
+                                  {children}
+                                </a>
+                              ),
+                            }}
+                          >
+                            {linkifyOriginRefs(f.text)}
+                          </ReactMarkdown>
+                        </div>
                         <span className="text-xs text-slate-500">
                           Linked to {f.evidence_trace_ids.length} traces
                         </span>
@@ -88,7 +121,13 @@ export const CrossTraceAnalysisSummary: React.FC<CrossTraceAnalysisSummaryProps>
                         className="text-xs shrink-0 ml-3"
                         disabled={promotedKeys.has(key)}
                         onClick={() =>
-                          onPromote({ key, text: f.text, source_type: 'finding', source_trace_ids: f.evidence_trace_ids })
+                          onPromote({
+                            key,
+                            text: f.text,
+                            source_type: 'finding',
+                            source_trace_ids: f.evidence_trace_ids,
+                            source_milestone_refs: f.evidence_milestone_refs ?? [],
+                          })
                         }
                       >
                         <ArrowUpRight className="w-3 h-3 mr-1" />

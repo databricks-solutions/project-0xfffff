@@ -58,6 +58,7 @@ KNOWN_SPECS = [
     "TESTING_SPEC",
     "TRACE_DISPLAY_SPEC",
     "UI_COMPONENTS_SPEC",
+    "EVAL_MODE_SPEC",
 ]
 
 TestType = Literal["unit", "integration", "e2e-mocked", "e2e-real"]
@@ -263,17 +264,13 @@ class SpecCoverageScanner:
 
     def _detect_pytest_test_type(self, file_path: str, content: str) -> TestType:
         """Detect test type for pytest based on path and markers."""
-        if "tests/integration" in file_path or self.PYTEST_INTEGRATION_PATTERN.search(
-            content
-        ):
+        if "tests/integration" in file_path or self.PYTEST_INTEGRATION_PATTERN.search(content):
             return "integration"
         return "unit"
 
     def _detect_playwright_test_type(self, content: str) -> TestType:
         """Detect test type for Playwright based on markers."""
-        if self.PLAYWRIGHT_REAL_TAG_PATTERN.search(
-            content
-        ) or self.PLAYWRIGHT_REAL_API_PATTERN.search(content):
+        if self.PLAYWRIGHT_REAL_TAG_PATTERN.search(content) or self.PLAYWRIGHT_REAL_API_PATTERN.search(content):
             return "e2e-real"
         return "e2e-mocked"
 
@@ -326,12 +323,9 @@ class SpecCoverageScanner:
         )
         for line in result.stdout.splitlines():
             if line.startswith("MARKER_JSON:"):
-                return json.loads(line[len("MARKER_JSON:"):])
+                return json.loads(line[len("MARKER_JSON:") :])
 
-        raise RuntimeError(
-            f"pytest marker collection failed (rc={result.returncode}): "
-            f"{result.stderr[:500]}"
-        )
+        raise RuntimeError(f"pytest marker collection failed (rc={result.returncode}): {result.stderr[:500]}")
 
     def _scan_pytest_source_fallback(self):
         """Fallback: scan pytest source files directly for spec/req markers.
@@ -411,9 +405,7 @@ class SpecCoverageScanner:
 
         self._walk_playwright_suites(report.get("suites", []), real_api_files)
 
-    def _walk_playwright_suites(
-        self, suites: list[dict], real_api_files: set[str]
-    ):
+    def _walk_playwright_suites(self, suites: list[dict], real_api_files: set[str]):
         """Recursively walk Playwright JSON reporter suites to extract test coverage."""
         for suite in suites:
             for spec in suite.get("specs", []):
@@ -488,9 +480,7 @@ class SpecCoverageScanner:
                     self.unknown_specs.add(spec_name)
                     continue
                 line_number = content[: spec_match.start()].count("\n") + 1
-                context = content[
-                    max(0, spec_match.start() - 100) : spec_match.end() + 100
-                ]
+                context = content[max(0, spec_match.start() - 100) : spec_match.end() + 100]
                 req_match = self.PLAYWRIGHT_REQ_TAG_PATTERN.search(context)
                 requirement = req_match.group(1) if req_match else None
                 self.tests.append(
@@ -618,10 +608,7 @@ class SpecCoverageScanner:
                 requirement = req_data[1]
 
                 # Count how many tests are in this file from the reporter
-                file_tests = [
-                    t for t in tests
-                    if file_path in t.get("file", "")
-                ]
+                file_tests = [t for t in tests if file_path in t.get("file", "")]
                 for t in file_tests:
                     name = t.get("name", "")
                     test_name = name.rsplit(" > ", 1)[-1] if " > " in name else name
@@ -661,9 +648,7 @@ class SpecCoverageScanner:
                     self.unknown_specs.add(spec_name)
                     continue
                 line_number = content[: spec_match.start()].count("\n") + 1
-                context = content[
-                    max(0, spec_match.start() - 100) : spec_match.end() + 100
-                ]
+                context = content[max(0, spec_match.start() - 100) : spec_match.end() + 100]
                 req_match = self.VITEST_REQ_COMMENT_PATTERN.search(context)
                 requirement = req_match.group(1).strip() if req_match else None
                 self.tests.append(
@@ -756,7 +741,10 @@ class AffectedSpecDetector:
         (r"server/routers/annotations\.py", ["ANNOTATION_SPEC"]),
         (r"server/routers/users\.py", ["AUTHENTICATION_SPEC", "ROLE_PERMISSIONS_SPEC"]),
         (r"server/routers/databricks\.py", ["JUDGE_EVALUATION_SPEC"]),
-        (r"server/routers/workshops\.py", ["DISCOVERY_TRACE_ASSIGNMENT_SPEC", "DATASETS_SPEC", "ROLE_PERMISSIONS_SPEC"]),
+        (
+            r"server/routers/workshops\.py",
+            ["DISCOVERY_TRACE_ASSIGNMENT_SPEC", "DATASETS_SPEC", "ROLE_PERMISSIONS_SPEC"],
+        ),
         (r"server/services/alignment_service\.py", ["JUDGE_EVALUATION_SPEC"]),
         (r"server/services/irr.*\.py", ["JUDGE_EVALUATION_SPEC"]),
         (r"server/services/cohens_kappa\.py", ["JUDGE_EVALUATION_SPEC"]),
@@ -879,9 +867,7 @@ class AffectedSpecDetector:
         return specs
 
 
-def build_coverage(
-    requirements: dict[str, list[Requirement]], tests: list[TestCoverage]
-) -> dict[str, SpecCoverage]:
+def build_coverage(requirements: dict[str, list[Requirement]], tests: list[TestCoverage]) -> dict[str, SpecCoverage]:
     """Build coverage data from requirements and tests."""
     matcher = RequirementMatcher(requirements)
 
@@ -918,9 +904,7 @@ def print_console_summary(coverage: dict[str, SpecCoverage], verbose: bool = Fal
     """Print a pytest-cov style console summary."""
     print("\nSPEC COVERAGE REPORT")
     print("=" * 90)
-    print(
-        f"{'Name':<35} {'Reqs':>5} {'Cover%':>7} {'Unit':>5} {'Int':>4} {'E2E-M':>6} {'E2E-R':>6} {'BE-only':>8}"
-    )
+    print(f"{'Name':<35} {'Reqs':>5} {'Cover%':>7} {'Unit':>5} {'Int':>4} {'E2E-M':>6} {'E2E-R':>6} {'BE-only':>8}")
     print("-" * 90)
 
     total_reqs = 0
@@ -1024,17 +1008,9 @@ def generate_json_report(coverage: dict[str, SpecCoverage]) -> dict:
                 }
             )
 
-        uncovered = [
-            req_cov.requirement.text
-            for req_cov in cov.requirements
-            if not req_cov.is_covered
-        ]
+        uncovered = [req_cov.requirement.text for req_cov in cov.requirements if not req_cov.is_covered]
 
-        backend_only = [
-            req_cov.requirement.text
-            for req_cov in cov.requirements
-            if req_cov.is_backend_only
-        ]
+        backend_only = [req_cov.requirement.text for req_cov in cov.requirements if req_cov.is_backend_only]
 
         unlinked_tests_data = [
             {
@@ -1103,15 +1079,9 @@ def generate_markdown_report(coverage: dict[str, SpecCoverage]) -> str:
             total_by_type[test_type] += cov.count_by_type(test_type)  # type: ignore
 
     lines.append(f"| Unit | {total_by_type['unit']} | pytest unit tests, Vitest tests |")
-    lines.append(
-        f"| Integration | {total_by_type['integration']} | pytest with real DB/API |"
-    )
-    lines.append(
-        f"| E2E (Mocked) | {total_by_type['e2e-mocked']} | Playwright with mocked API |"
-    )
-    lines.append(
-        f"| E2E (Real) | {total_by_type['e2e-real']} | Playwright with real API |"
-    )
+    lines.append(f"| Integration | {total_by_type['integration']} | pytest with real DB/API |")
+    lines.append(f"| E2E (Mocked) | {total_by_type['e2e-mocked']} | Playwright with mocked API |")
+    lines.append(f"| E2E (Real) | {total_by_type['e2e-real']} | Playwright with real API |")
     lines.append("")
 
     # Coverage summary table
@@ -1133,9 +1103,7 @@ def generate_markdown_report(coverage: dict[str, SpecCoverage]) -> str:
         total_covered += cov.covered_requirements
 
         anchor = spec_name.lower().replace("_", "-")
-        status_icon = (
-            "   " if cov.coverage_percent == 100 else " ! " if cov.coverage_percent < 50 else " * "
-        )
+        status_icon = "   " if cov.coverage_percent == 100 else " ! " if cov.coverage_percent < 50 else " * "
 
         backend_only = cov.backend_only_requirements
         be_only_str = f"**{backend_only}**" if backend_only > 0 else "0"
@@ -1189,10 +1157,7 @@ def generate_markdown_report(coverage: dict[str, SpecCoverage]) -> str:
             if backend_only:
                 lines.append("### Backend-Only Requirements (no frontend tests)")
                 lines.append("")
-                lines.append(
-                    "These requirements are covered by backend tests only. "
-                    "UI regressions won't be caught:"
-                )
+                lines.append("These requirements are covered by backend tests only. UI regressions won't be caught:")
                 lines.append("")
                 for req_cov in backend_only:
                     test_types = ", ".join(sorted(req_cov.test_types))
@@ -1214,9 +1179,7 @@ def generate_markdown_report(coverage: dict[str, SpecCoverage]) -> str:
         if cov.unlinked_tests:
             lines.append("### Tests Without Requirement Links")
             lines.append("")
-            lines.append(
-                "These tests are tagged with the spec but don't link to specific requirements:"
-            )
+            lines.append("These tests are tagged with the spec but don't link to specific requirements:")
             lines.append("")
             for test in cov.unlinked_tests:
                 test_desc = test.test_name or "file-level"
@@ -1257,11 +1220,16 @@ def generate_markdown_report(coverage: dict[str, SpecCoverage]) -> str:
 def print_affected_specs(affected_specs: set[str], changed_files: list[str], json_output: bool = False):
     """Print affected specs information."""
     if json_output:
-        print(json.dumps({
-            "affected_specs": sorted(affected_specs),
-            "changed_files": changed_files,
-            "count": len(affected_specs),
-        }, indent=2))
+        print(
+            json.dumps(
+                {
+                    "affected_specs": sorted(affected_specs),
+                    "changed_files": changed_files,
+                    "count": len(affected_specs),
+                },
+                indent=2,
+            )
+        )
     else:
         print(f"\nAffected specs ({len(affected_specs)}):")
         if affected_specs:
@@ -1280,20 +1248,16 @@ def print_affected_specs(affected_specs: set[str], changed_files: list[str], jso
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(description="Analyze spec test coverage")
+    parser.add_argument("--json", action="store_true", help="Output JSON to stdout instead of console summary")
+    parser.add_argument("--no-markdown", action="store_true", help="Skip generating markdown report")
     parser.add_argument(
-        "--json", action="store_true", help="Output JSON to stdout instead of console summary"
+        "--affected",
+        nargs="?",
+        const="HEAD~1",
+        metavar="REF",
+        help="Only show specs affected by changes since REF (default: HEAD~1)",
     )
-    parser.add_argument(
-        "--no-markdown", action="store_true", help="Skip generating markdown report"
-    )
-    parser.add_argument(
-        "--affected", nargs="?", const="HEAD~1", metavar="REF",
-        help="Only show specs affected by changes since REF (default: HEAD~1)"
-    )
-    parser.add_argument(
-        "--specs", nargs="+", metavar="SPEC",
-        help="Only analyze specific specs (space-separated list)"
-    )
+    parser.add_argument("--specs", nargs="+", metavar="SPEC", help="Only analyze specific specs (space-separated list)")
     args = parser.parse_args()
 
     # Determine which specs to analyze
@@ -1308,11 +1272,16 @@ def main():
 
         if not specs_to_analyze:
             if args.json:
-                print(json.dumps({
-                    "affected_specs": [],
-                    "changed_files": changed_files,
-                    "message": "No specs affected by changes"
-                }, indent=2))
+                print(
+                    json.dumps(
+                        {
+                            "affected_specs": [],
+                            "changed_files": changed_files,
+                            "message": "No specs affected by changes",
+                        },
+                        indent=2,
+                    )
+                )
             else:
                 print(f"No specs affected by changes since {args.affected}")
                 print(f"Changed files: {len(changed_files)}")
@@ -1381,12 +1350,8 @@ def main():
 
         # Warn about unknown specs
         if scanner.unknown_specs:
-            print(
-                f"\nUnknown specs referenced: {', '.join(sorted(scanner.unknown_specs))}"
-            )
-            print(
-                "   Add them to KNOWN_SPECS in spec_coverage_analyzer.py if they are valid."
-            )
+            print(f"\nUnknown specs referenced: {', '.join(sorted(scanner.unknown_specs))}")
+            print("   Add them to KNOWN_SPECS in spec_coverage_analyzer.py if they are valid.")
 
 
 if __name__ == "__main__":

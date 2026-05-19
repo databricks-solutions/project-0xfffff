@@ -260,3 +260,9 @@ class DraftRubricItem:
 - [ ] Participants see only fuzzy progress (no category bias)
 - [ ] Findings can be promoted to draft rubric staging area
 - [ ] Thresholds are configurable per category per trace
+
+## Implementation Log
+
+| Date | Plan | Status | Summary |
+|------|------|--------|---------|
+| 2026-04-13 | [Critical Judge Eval Fixes](../.claude/plans/2026-04-13-critical-judge-eval-fixes.md) | complete | Fix promote_finding silent DB error swallowing |

@@ -504,3 +504,11 @@ The following are explicitly **not** included in this implementation:
 - [UI_COMPONENTS_SPEC](./UI_COMPONENTS_SPEC.md) - TraceViewer component
 - [DATASETS_SPEC](./DATASETS_SPEC.md) - Trace data structure
 - [DISCOVERY_TRACE_ASSIGNMENT_SPEC](./DISCOVERY_TRACE_ASSIGNMENT_SPEC.md) - Trace display phases
+
+---
+
+## Implementation Log
+
+| Date | Plan | Status | Summary |
+|------|------|--------|---------|
+| 2026-04-15 | [Pipeline Consistency Fix](../.claude/plans/2026-04-15-trace-display-pipeline-consistency.md) | planned | Extract shared helper; wire into judge_service, discovery_service, alignment_service |

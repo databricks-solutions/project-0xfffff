@@ -5,7 +5,7 @@
  * view findings, disagreements, and previous analysis history.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -25,14 +25,14 @@ import {
   Loader2,
   ArrowUpRight,
 } from 'lucide-react';
-import { getModelOptions, getBackendModelName } from '@/utils/modelMapping';
+import { buildModelOptions } from '@/utils/modelMapping';
 import {
   useDiscoveryAnalyses,
   useRunDiscoveryAnalysis,
   useCreateDraftRubricItem,
+  useAvailableModels,
   type DiscoveryAnalysis,
 } from '@/hooks/useWorkshopApi';
-import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 interface DiscoveryAnalysisTabProps {
@@ -42,22 +42,11 @@ interface DiscoveryAnalysisTabProps {
 
 export const DiscoveryAnalysisTab: React.FC<DiscoveryAnalysisTabProps> = ({ workshopId, userId }) => {
   const [template, setTemplate] = useState<string>('evaluation_criteria');
-  const [modelName, setModelName] = useState<string>('Claude Sonnet 4.5');
+  const [modelName, setModelName] = useState<string>('');
   const [selectedAnalysisId, setSelectedAnalysisId] = useState<string | null>(null);
 
-  // Check if Databricks is configured (mlflow config exists)
-  const { data: mlflowConfig } = useQuery({
-    queryKey: ['mlflowConfig', workshopId],
-    queryFn: async () => {
-      const response = await fetch(`/workshops/${workshopId}/mlflow-config`);
-      if (!response.ok) return null;
-      return response.json();
-    },
-    enabled: !!workshopId,
-  });
-
-  const hasMlflowConfig = !!mlflowConfig;
-  const modelOptions = getModelOptions(hasMlflowConfig);
+  const { data: availableModels } = useAvailableModels(workshopId);
+  const modelOptions = useMemo(() => availableModels ? buildModelOptions(availableModels) : [], [availableModels]);
 
   const { data: analyses, isLoading: analysesLoading } = useDiscoveryAnalyses(workshopId);
   const runAnalysis = useRunDiscoveryAnalysis(workshopId);
@@ -68,9 +57,8 @@ export const DiscoveryAnalysisTab: React.FC<DiscoveryAnalysisTabProps> = ({ work
     : analyses?.[0] ?? null;
 
   const handleRunAnalysis = () => {
-    const backendModel = getBackendModelName(modelName);
     runAnalysis.mutate(
-      { template, model: backendModel },
+      { template, model: modelName || modelOptions[0]?.value || '' },
       {
         onSuccess: (result) => {
           toast.success('Analysis completed successfully');
@@ -129,7 +117,7 @@ export const DiscoveryAnalysisTab: React.FC<DiscoveryAnalysisTabProps> = ({ work
 
             <Button
               onClick={handleRunAnalysis}
-              disabled={runAnalysis.isPending || !hasMlflowConfig}
+              disabled={runAnalysis.isPending || modelOptions.length === 0}
               className="bg-emerald-600 hover:bg-emerald-700"
             >
               {runAnalysis.isPending ? (
@@ -168,7 +156,7 @@ export const DiscoveryAnalysisTab: React.FC<DiscoveryAnalysisTabProps> = ({ work
             )}
           </div>
 
-          {!hasMlflowConfig && (
+          {modelOptions.length === 0 && (
             <Alert className="mt-4" variant="destructive">
               <AlertCircle className="h-4 w-4" />
               <AlertTitle>Databricks Not Configured</AlertTitle>

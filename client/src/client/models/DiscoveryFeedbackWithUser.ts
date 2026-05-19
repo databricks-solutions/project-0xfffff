@@ -16,7 +16,7 @@ export type DiscoveryFeedbackWithUser = {
     user_role: string;
     feedback_label: FeedbackLabel;
     comment: string;
-    followup_qna?: Array<Record<string, string>>;
+    followup_qna?: Array<Record<string, any>>;
     created_at: string;
     updated_at: string;
 };

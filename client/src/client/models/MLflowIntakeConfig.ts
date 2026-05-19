@@ -7,14 +7,6 @@
  */
 export type MLflowIntakeConfig = {
     /**
-     * Databricks workspace host URL
-     */
-    databricks_host: string;
-    /**
-     * Databricks access token
-     */
-    databricks_token: string;
-    /**
      * MLflow experiment ID to pull traces from
      */
     experiment_id: string;

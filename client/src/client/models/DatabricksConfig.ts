@@ -11,8 +11,8 @@ export type DatabricksConfig = {
      */
     workspace_url: string;
     /**
-     * Databricks API token
+     * Deprecated — SDK auth used instead
      */
-    token: string;
+    token?: string;
 };
 

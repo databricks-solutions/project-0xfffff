@@ -23,9 +23,6 @@ import {
 } from "@/components/ui/alert-dialog";
 
 interface MLflowConfig {
-  databricks_host: string;
-  databricks_token: string;
-  experiment_id: string;
   max_traces: number;
   filter_string?: string;
 }
@@ -53,9 +50,6 @@ export function IntakePage() {
       if (saved) {
         const parsed = JSON.parse(saved);
         return {
-          databricks_host: parsed.databricks_host || '',
-          databricks_token: parsed.databricks_token || '',
-          experiment_id: parsed.experiment_id || '',
           max_traces: parsed.max_traces || 100,
           filter_string: parsed.filter_string || ''
         };
@@ -64,9 +58,6 @@ export function IntakePage() {
       // Ignore localStorage errors
     }
     return {
-    databricks_host: '',
-    databricks_token: '',
-    experiment_id: '',
     max_traces: 100,
     filter_string: ''
     };
@@ -84,12 +75,10 @@ export function IntakePage() {
 
   // Save config to localStorage whenever it changes
   useEffect(() => {
-    if (config.databricks_host || config.databricks_token || config.experiment_id) {
-      try {
-        localStorage.setItem('mlflow_config', JSON.stringify(config));
-      } catch (e) {
-        // Ignore localStorage errors
-      }
+    try {
+      localStorage.setItem('mlflow_config', JSON.stringify(config));
+    } catch (e) {
+      // Ignore localStorage errors
     }
   }, [config]);
 
@@ -114,9 +103,6 @@ export function IntakePage() {
         if (statusData.config) {
           setConfig(prev => ({
             ...prev,
-            databricks_host: statusData.config.databricks_host || prev.databricks_host,
-            databricks_token: statusData.config.databricks_token || prev.databricks_token,
-            experiment_id: statusData.config.experiment_id || prev.experiment_id,
             max_traces: statusData.config.max_traces || prev.max_traces,
             filter_string: statusData.config.filter_string || prev.filter_string
           }));
@@ -141,10 +127,6 @@ export function IntakePage() {
       return;
     }
 
-    if (!config.databricks_host || !config.databricks_token || !config.experiment_id) {
-      setError('Please fill in all required fields: Databricks Host, Token, and Experiment ID.');
-      return;
-    }
 
     setIsIngesting(true);
     setError(null);
@@ -266,10 +248,6 @@ export function IntakePage() {
       return;
     }
 
-    if (!config.databricks_host || !config.databricks_token || !config.experiment_id) {
-      setError('Please configure MLflow settings (Databricks Host, Token, and Experiment ID) before uploading.');
-      return;
-    }
 
     setIsUploadingCsv(true);
     setError(null);
@@ -277,9 +255,6 @@ export function IntakePage() {
     try {
       const formData = new FormData();
       formData.append('file', csvFile);
-      formData.append('databricks_host', config.databricks_host);
-      formData.append('databricks_token', config.databricks_token);
-      formData.append('experiment_id', config.experiment_id);
 
       const response = await fetch(`/workshops/${workshopId}/csv-upload-to-mlflow`, {
         method: 'POST',
@@ -421,43 +396,7 @@ export function IntakePage() {
             <Settings className="w-4 h-4 text-amber-600" />
             MLflow Configuration
           </h3>
-          <p className="text-xs text-gray-500">Configure your Databricks workspace and MLflow experiment details.</p>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="databricks_host" className="text-xs font-medium text-gray-600">Databricks Host</Label>
-              <Input
-                id="databricks_host"
-                placeholder="https://je2-demo-field-eng.cloud.databricks.com"
-                value={config.databricks_host}
-                onChange={(e) => handleConfigChange('databricks_host', e.target.value)}
-                className="h-9"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="experiment_id" className="text-xs font-medium text-gray-600">Experiment ID</Label>
-              <Input
-                id="experiment_id"
-                placeholder="2452310130191209"
-                value={config.experiment_id}
-                onChange={(e) => handleConfigChange('experiment_id', e.target.value)}
-                className="h-9"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="databricks_token" className="text-xs font-medium text-gray-600">Databricks Token</Label>
-            <Input
-              id="databricks_token"
-              type="password"
-              placeholder="dapi..."
-              value={config.databricks_token}
-              onChange={(e) => handleConfigChange('databricks_token', e.target.value)}
-              className="h-9"
-            />
-          </div>
+          <p className="text-xs text-gray-500">Configure trace intake settings. Databricks host and experiment ID are provided by the environment.</p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -487,7 +426,7 @@ export function IntakePage() {
 
           <Button
             onClick={ingestTraces}
-            disabled={isIngesting || !config.databricks_host || !config.databricks_token || !config.experiment_id}
+            disabled={isIngesting}
             className="w-full"
             size="sm"
           >
@@ -614,18 +553,9 @@ export function IntakePage() {
             </div>
           </div>
 
-          {csvImportDestination === 'mlflow' && (!config.databricks_host || !config.databricks_token || !config.experiment_id) && (
-            <Alert className="bg-amber-50 border-amber-200">
-              <AlertCircle className="h-4 w-4 text-amber-600" />
-              <AlertDescription className="text-amber-700 text-xs">
-                Please configure MLflow settings above to log traces to MLflow.
-              </AlertDescription>
-            </Alert>
-          )}
-
           <Button
             onClick={csvImportDestination === 'mlflow' ? uploadCsvToMlflow : uploadCsvFile}
-            disabled={isUploadingCsv || !csvFile || !csvImportDestination || (csvImportDestination === 'mlflow' && (!config.databricks_host || !config.databricks_token || !config.experiment_id))}
+            disabled={isUploadingCsv || !csvFile || !csvImportDestination}
             className="w-full"
             size="sm"
           >

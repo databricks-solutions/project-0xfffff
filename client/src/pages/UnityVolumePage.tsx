@@ -11,13 +11,13 @@ import {
   Info
 } from 'lucide-react';
 import { useWorkshopContext } from '@/context/WorkshopContext';
-import { useWorkshop } from '@/hooks/useWorkshopApi';
+import { useWorkshopMeta } from '@/hooks/useWorkshopApi';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 
 export function UnityVolumePage() {
   const { workshopId } = useWorkshopContext();
-  const { data: workshop } = useWorkshop(workshopId!);
+  const { data: workshop } = useWorkshopMeta(workshopId!);
 
   const [isDownloading, setIsDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);

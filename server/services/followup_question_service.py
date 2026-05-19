@@ -28,6 +28,7 @@ class FollowUpQuestionService:
         trace: Any,
         feedback: Any,
         question_number: int,
+        use_case_description: str | None = None,
         *,
         workspace_url: str | None = None,
         databricks_token: str | None = None,
@@ -42,6 +43,7 @@ class FollowUpQuestionService:
             trace: Trace object with input/output fields.
             feedback: DiscoveryFeedback (or dict) with feedback_label, comment, followup_qna.
             question_number: 1-based question number (1, 2, or 3).
+            use_case_description: Workshop-level use case description for additional context.
             workspace_url: Databricks workspace URL for LLM call.
             databricks_token: Auth token.
             model_name: Endpoint name.
@@ -55,7 +57,7 @@ class FollowUpQuestionService:
         if question_number < 1 or question_number > 3:
             raise ValueError(f"question_number must be 1-3, got {question_number}")
 
-        trace_input, trace_output, fb_label, fb_comment, prior_qna = (
+        trace_input, trace_output, trace_summary_context, fb_label, fb_comment, prior_qna = (
             self._extract_fields(trace, feedback)
         )
 
@@ -85,6 +87,8 @@ class FollowUpQuestionService:
                 question = self._call_llm(
                     trace_input=trace_input,
                     trace_output=trace_output,
+                    trace_summary_context=trace_summary_context,
+                    use_case_description=(use_case_description or "").strip() or "(not provided)",
                     feedback_label=fb_label,
                     feedback_comment=fb_comment,
                     prior_qna=prior_qna,
@@ -113,14 +117,15 @@ class FollowUpQuestionService:
 
     def _extract_fields(
         self, trace: Any, feedback: Any
-    ) -> tuple[str, str, str, str, str]:
+    ) -> tuple[str, str, str, str, str, str]:
         """Extract structured fields from trace and feedback for the DSPy signature.
 
         Returns:
-            (trace_input, trace_output, feedback_label, feedback_comment, prior_qna)
+            (trace_input, trace_output, trace_summary_context, feedback_label, feedback_comment, prior_qna)
         """
         trace_input = getattr(trace, "input", "") or ""
         trace_output = getattr(trace, "output", "") or ""
+        trace_summary_context = self._format_summary_context(getattr(trace, "summary", None))
 
         fb_label = getattr(feedback, "feedback_label", "") or ""
         fb_comment = getattr(feedback, "comment", "") or ""
@@ -143,12 +148,41 @@ class FollowUpQuestionService:
         if not qna_history:
             qna_history = "(none yet)"
 
-        return trace_input, trace_output, fb_label, fb_comment, qna_history
+        return trace_input, trace_output, trace_summary_context, fb_label, fb_comment, qna_history
+
+    def _format_summary_context(self, trace_summary: Any) -> str:
+        """Build a compact milestone-summary context string."""
+        if not isinstance(trace_summary, dict):
+            return "(no summary available)"
+
+        parts: list[str] = []
+
+        executive_summary = str(trace_summary.get("executive_summary") or "").strip()
+        if executive_summary:
+            parts.append(f"Executive summary: {executive_summary}")
+
+        milestones = trace_summary.get("milestones")
+        if isinstance(milestones, list) and milestones:
+            parts.append("Milestones:")
+            for milestone in milestones[:10]:
+                if not isinstance(milestone, dict):
+                    continue
+                number = milestone.get("number")
+                title = str(milestone.get("title") or "").strip()
+                description = str(milestone.get("description") or "").strip()
+                milestone_id = f"M{number}" if number is not None else "M?"
+                detail = title or description
+                if detail:
+                    parts.append(f"- {milestone_id}: {detail}")
+
+        return "\n".join(parts) if parts else "(no summary available)"
 
     def _call_llm(
         self,
         trace_input: str,
         trace_output: str,
+        trace_summary_context: str,
+        use_case_description: str,
         feedback_label: str,
         feedback_comment: str,
         prior_qna: str,
@@ -192,6 +226,8 @@ class FollowUpQuestionService:
             lm,
             trace_input=trace_input,
             trace_output=trace_output,
+            trace_summary_context=trace_summary_context,
+            use_case_description=use_case_description,
             feedback_label=feedback_label,
             feedback_comment=feedback_comment,
             prior_qna=prior_qna,

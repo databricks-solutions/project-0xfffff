@@ -28,12 +28,14 @@ import type { MLflowIntakeStatus } from '../models/MLflowIntakeStatus';
 import type { MLflowTraceInfo } from '../models/MLflowTraceInfo';
 import type { ParticipantNote } from '../models/ParticipantNote';
 import type { ParticipantNoteCreate } from '../models/ParticipantNoteCreate';
+import type { ResummarizeRequest } from '../models/ResummarizeRequest';
 import type { Rubric } from '../models/Rubric';
 import type { RubricCreate } from '../models/RubricCreate';
 import type { RubricGenerationRequest } from '../models/RubricGenerationRequest';
 import type { RubricSuggestion } from '../models/RubricSuggestion';
 import type { SimpleEvaluationRequest } from '../models/SimpleEvaluationRequest';
 import type { SpanAttributeFilterUpdate } from '../models/SpanAttributeFilterUpdate';
+import type { SummarizationSettingsUpdate } from '../models/SummarizationSettingsUpdate';
 import type { Trace } from '../models/Trace';
 import type { TraceUpload } from '../models/TraceUpload';
 import type { Workshop } from '../models/Workshop';
@@ -247,6 +249,129 @@ export class WorkshopsService {
             },
             body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Update Summarization Settings
+     * Update trace summarization settings for a workshop.
+     * @param workshopId
+     * @param requestBody
+     * @returns Workshop Successful Response
+     * @throws ApiError
+     */
+    public static updateSummarizationSettingsWorkshopsWorkshopIdSummarizationSettingsPut(
+        workshopId: string,
+        requestBody: SummarizationSettingsUpdate,
+    ): CancelablePromise<Workshop> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/workshops/{workshop_id}/summarization-settings',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Resummarize Traces
+     * Trigger re-summarization of workshop traces.
+     *
+     * Creates a tracked SummarizationJob and returns the job_id for progress polling.
+     * Modes: "all" (re-summarize everything), "unsummarized" (only traces without summaries),
+     * "failed" (only traces from the last job's failed list).
+     * @param workshopId
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static resummarizeTracesWorkshopsWorkshopIdResummarizePost(
+        workshopId: string,
+        requestBody?: (ResummarizeRequest | null),
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/resummarize',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Summarization Job Status
+     * Get the status of a summarization job for progress polling.
+     * @param workshopId
+     * @param jobId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getSummarizationJobStatusWorkshopsWorkshopIdSummarizationJobJobIdGet(
+        workshopId: string,
+        jobId: string,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/summarization-job/{job_id}',
+            path: {
+                'workshop_id': workshopId,
+                'job_id': jobId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Cancel Summarization Job
+     * Cancel a running summarization job.
+     * @param workshopId
+     * @param jobId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static cancelSummarizationJobWorkshopsWorkshopIdCancelSummarizationJobJobIdPost(
+        workshopId: string,
+        jobId: string,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/cancel-summarization-job/{job_id}',
+            path: {
+                'workshop_id': workshopId,
+                'job_id': jobId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Summarization Status
+     * Get summary coverage stats and last job info for a workshop.
+     * @param workshopId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getSummarizationStatusWorkshopsWorkshopIdSummarizationStatusGet(
+        workshopId: string,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/summarization-status',
+            path: {
+                'workshop_id': workshopId,
+            },
             errors: {
                 422: `Validation Error`,
             },
@@ -1535,7 +1660,7 @@ export class WorkshopsService {
     }
     /**
      * Configure Mlflow Intake
-     * Configure MLflow intake for a workshop (token stored in memory, not database).
+     * Configure MLflow intake for a workshop.
      * @param workshopId
      * @param requestBody
      * @returns MLflowIntakeConfig Successful Response
@@ -1571,6 +1696,27 @@ export class WorkshopsService {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/workshops/{workshop_id}/mlflow-config',
+            path: {
+                'workshop_id': workshopId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * List Available Models
+     * List available model serving endpoints for a workshop's Databricks workspace.
+     * @param workshopId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static listAvailableModelsWorkshopsWorkshopIdAvailableModelsGet(
+        workshopId: string,
+    ): CancelablePromise<Array<Record<string, any>>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/available-models',
             path: {
                 'workshop_id': workshopId,
             },
@@ -1728,10 +1874,8 @@ export class WorkshopsService {
      * 2. For each row, create an MLflow trace with the request/response
      * 3. Store the traces locally with their MLflow trace IDs
      *
-     * Environment variables used if parameters not provided:
-     * - DATABRICKS_HOST
-     * - DATABRICKS_TOKEN
-     * - MLFLOW_EXPERIMENT_ID
+     * Authentication is resolved via Databricks SDK (service principal or CLI profile).
+     * DATABRICKS_HOST and MLFLOW_EXPERIMENT_ID come from the environment.
      * @param workshopId
      * @param formData
      * @returns any Successful Response

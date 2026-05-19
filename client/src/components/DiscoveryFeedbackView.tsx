@@ -3,7 +3,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Loader2, ThumbsUp, ThumbsDown, CheckCircle2, AlertCircle, RotateCcw, AlertTriangle } from 'lucide-react';
+import { Loader2, ThumbsUp, ThumbsDown, CheckCircle2, RotateCcw, AlertTriangle, MousePointer2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   useSubmitDiscoveryFeedback,
@@ -26,18 +26,30 @@ interface Props {
   workshopId: string;
   traceId: string;
   userId: string;
+  traceSummary?: Record<string, any> | null;
   existingFeedback?: DiscoveryFeedbackData | null;
   onComplete?: () => void;
   isFacilitator?: boolean;
+  followupsEnabled?: boolean;
 }
+
+interface QnaPair {
+  question: string;
+  answer: string;
+  milestone_references?: string[];
+}
+
+const MILESTONE_REF_PATTERN = /\[\[milestone:([a-zA-Z0-9_-]+)\]\]/g;
 
 export const DiscoveryFeedbackView: React.FC<Props> = ({
   workshopId,
   traceId,
   userId,
+  traceSummary,
   existingFeedback,
   onComplete,
   isFacilitator = false,
+  followupsEnabled = true,
 }) => {
   // State machine
   const [state, setState] = useState<FeedbackState>('feedback');
@@ -45,9 +57,37 @@ export const DiscoveryFeedbackView: React.FC<Props> = ({
   const [comment, setComment] = useState('');
   const [currentQuestion, setCurrentQuestion] = useState('');
   const [currentAnswer, setCurrentAnswer] = useState('');
-  const [qnaPairs, setQnaPairs] = useState<Array<{ question: string; answer: string }>>([]);
+  const [qnaPairs, setQnaPairs] = useState<QnaPair[]>([]);
   const [retryCount, setRetryCount] = useState(0);
   const [usingFallback, setUsingFallback] = useState(false);
+  const [selectedMilestoneRef, setSelectedMilestoneRef] = useState<string>('all');
+
+  const milestoneOptions = React.useMemo(() => {
+    if (!traceSummary || typeof traceSummary !== 'object') return [];
+    const milestones = Array.isArray(traceSummary.milestones) ? traceSummary.milestones : [];
+    const opts = [{ value: 'all', label: 'Whole milestone view' }];
+    milestones.forEach((milestone: any, index: number) => {
+      const number = milestone?.number ?? index + 1;
+      const title = milestone?.title || milestone?.description || `Milestone ${number}`;
+      opts.push({ value: `m${number}`, label: `Milestone ${number}: ${title}` });
+    });
+    return opts;
+  }, [traceSummary]);
+
+  const extractMilestoneReferences = React.useCallback((text: string): string[] => {
+    const refs = new Set<string>();
+    const matches = text.matchAll(MILESTONE_REF_PATTERN);
+    for (const match of matches) {
+      const ref = match[1]?.trim();
+      if (ref) refs.add(ref);
+    }
+    return Array.from(refs);
+  }, []);
+
+  const insertMilestoneReference = React.useCallback(() => {
+    const token = `[[milestone:${selectedMilestoneRef}]]`;
+    setCurrentAnswer((prev) => (prev.trim().length === 0 ? `${token} ` : `${prev.trimEnd()} ${token} `));
+  }, [selectedMilestoneRef]);
 
   // Mutations
   const submitFeedback = useSubmitDiscoveryFeedback(workshopId);
@@ -62,7 +102,9 @@ export const DiscoveryFeedbackView: React.FC<Props> = ({
       setComment(existingFeedback.comment);
       setQnaPairs(qna);
 
-      if (qna.length >= 3) {
+      if (!followupsEnabled) {
+        setState('complete');
+      } else if (qna.length >= 3) {
         setState('complete');
       } else if (qna.length === 2) {
         setState('generating_q3');
@@ -80,16 +122,18 @@ export const DiscoveryFeedbackView: React.FC<Props> = ({
       setQnaPairs([]);
       setRetryCount(0);
       setUsingFallback(false);
+      setSelectedMilestoneRef('all');
     }
-  }, [traceId, existingFeedback]);
+  }, [traceId, existingFeedback, followupsEnabled]);
 
   // Auto-generate question when entering a generating state
   useEffect(() => {
+    if (!followupsEnabled) return;
     if (state === 'generating_q1' || state === 'generating_q2' || state === 'generating_q3') {
       const qNum = state === 'generating_q1' ? 1 : state === 'generating_q2' ? 2 : 3;
       generateQuestionForNumber(qNum);
     }
-  }, [state]);
+  }, [state, followupsEnabled]);
 
   const generateQuestionForNumber = useCallback(
     async (questionNumber: number) => {
@@ -139,13 +183,17 @@ export const DiscoveryFeedbackView: React.FC<Props> = ({
         feedback_label: feedbackLabel,
         comment: comment.trim(),
       });
-      setState('generating_q1');
+      if (!followupsEnabled) {
+        setState('complete');
+      } else {
+        setState('generating_q1');
+      }
     } catch (err) {
       toast.error('Failed to submit feedback', {
         description: 'Please try again.',
       });
     }
-  }, [feedbackLabel, comment, traceId, userId, submitFeedback]);
+  }, [feedbackLabel, comment, traceId, userId, submitFeedback, followupsEnabled]);
 
   const handleSubmitAnswer = useCallback(async () => {
     if (!currentAnswer.trim() || !currentQuestion) return;
@@ -153,14 +201,16 @@ export const DiscoveryFeedbackView: React.FC<Props> = ({
     const qNum = state === 'answering_q1' ? 1 : state === 'answering_q2' ? 2 : 3;
 
     try {
+      const milestoneReferences = extractMilestoneReferences(currentAnswer.trim());
       const result = await submitAnswer.mutateAsync({
         trace_id: traceId,
         user_id: userId,
         question: currentQuestion,
         answer: currentAnswer.trim(),
+        milestone_references: milestoneReferences,
       });
 
-      const newPair = { question: currentQuestion, answer: currentAnswer.trim() };
+      const newPair = { question: currentQuestion, answer: currentAnswer.trim(), milestone_references: milestoneReferences };
       setQnaPairs((prev) => [...prev, newPair]);
       setCurrentAnswer('');
       setCurrentQuestion('');
@@ -175,7 +225,7 @@ export const DiscoveryFeedbackView: React.FC<Props> = ({
         description: 'Please try again.',
       });
     }
-  }, [currentAnswer, currentQuestion, state, traceId, userId, submitAnswer]);
+  }, [currentAnswer, currentQuestion, state, traceId, userId, submitAnswer, extractMilestoneReferences]);
 
   const isGenerating = state.startsWith('generating_');
   const isAnswering = state.startsWith('answering_');
@@ -247,7 +297,7 @@ export const DiscoveryFeedbackView: React.FC<Props> = ({
         )}
 
         {/* Fallback warning — facilitator-only */}
-        {isFacilitator && usingFallback && (state.startsWith('answering_') || state === 'complete') && (
+        {followupsEnabled && isFacilitator && usingFallback && (state.startsWith('answering_') || state === 'complete') && (
           <div className="flex items-start gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-md">
             <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
             <p className="text-xs text-amber-700">
@@ -257,7 +307,7 @@ export const DiscoveryFeedbackView: React.FC<Props> = ({
         )}
 
         {/* Loading Spinner */}
-        {isGenerating && (
+        {followupsEnabled && isGenerating && (
           <div className="flex flex-col items-center py-8 space-y-3">
             <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
             <p className="text-sm text-gray-500">Generating follow-up question...</p>
@@ -278,7 +328,7 @@ export const DiscoveryFeedbackView: React.FC<Props> = ({
         )}
 
         {/* Previous Q&A pairs (read-only) */}
-        {(isAnswering || state === 'complete') && qnaPairs.length > 0 && (
+        {followupsEnabled && (isAnswering || state === 'complete') && qnaPairs.length > 0 && (
           <div className="space-y-3">
             {qnaPairs.map((pair, i) => (
               <div key={i} className="bg-gray-50 rounded-lg p-3 space-y-1">
@@ -286,13 +336,22 @@ export const DiscoveryFeedbackView: React.FC<Props> = ({
                 <p className="text-sm text-gray-700">{pair.question}</p>
                 <p className="text-xs font-medium text-gray-500 mt-2">Your answer</p>
                 <p className="text-sm text-gray-600">{pair.answer}</p>
+                {pair.milestone_references && pair.milestone_references.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {pair.milestone_references.map((ref) => (
+                      <span key={ref} className="rounded border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] text-indigo-700">
+                        milestone:{ref}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
         )}
 
         {/* Current Question + Answer Form */}
-        {isAnswering && (
+        {followupsEnabled && isAnswering && (
           <div className="space-y-3 border-t pt-3">
             <div className="bg-blue-50 rounded-lg p-3">
               <p className="text-xs font-medium text-blue-600 mb-1">
@@ -307,6 +366,37 @@ export const DiscoveryFeedbackView: React.FC<Props> = ({
               onChange={(e) => setCurrentAnswer(e.target.value)}
               className="min-h-[80px]"
             />
+
+            {milestoneOptions.length > 0 && (
+              <div className="rounded-md border border-indigo-200 bg-indigo-50 p-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={selectedMilestoneRef}
+                    onChange={(e) => setSelectedMilestoneRef(e.target.value)}
+                    className="h-8 rounded border border-indigo-300 bg-white px-2 text-xs text-indigo-900"
+                  >
+                    {milestoneOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={insertMilestoneReference}
+                    className="h-8 border-indigo-300 text-indigo-700 hover:bg-indigo-100"
+                  >
+                    <MousePointer2 className="mr-1 h-3.5 w-3.5" />
+                    Insert milestone reference
+                  </Button>
+                </div>
+                <p className="mt-1 text-[11px] text-indigo-700">
+                  References are tracked and used as evidence during discovery analysis.
+                </p>
+              </div>
+            )}
 
             <Button
               onClick={handleSubmitAnswer}
@@ -329,7 +419,9 @@ export const DiscoveryFeedbackView: React.FC<Props> = ({
         {state === 'complete' && (
           <div className="flex flex-col items-center py-4 space-y-3 border-t">
             <CheckCircle2 className="w-8 h-8 text-green-500" />
-            <p className="text-sm font-medium text-green-700">Feedback complete for this trace</p>
+            <p className="text-sm font-medium text-green-700">
+              {followupsEnabled ? 'Feedback complete for this trace' : 'Feedback submitted for this trace'}
+            </p>
             {onComplete && (
               <Button onClick={onComplete} className="mt-2">
                 Next Trace

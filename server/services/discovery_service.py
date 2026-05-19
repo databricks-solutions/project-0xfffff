@@ -8,12 +8,19 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+import time
 from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from server.database import SessionLocal
 from server.models import (
+    DiscoveryAgentRun,
+    DiscoveryComment,
+    DiscoveryCommentCreate,
+    DiscoveryCommentVoteRequest,
     DiscoveryFeedback,
     DiscoveryFeedbackCreate,
     DiscoveryFinding,
@@ -23,10 +30,22 @@ from server.models import (
     DraftRubricItemUpdate,
     Rubric,
     RubricCreate,
+    TraceCriterionCreate,
+    TraceCriterionType,
+    WorkshopMode,
     WorkshopPhase,
 )
+from server.services.databricks_service import get_databricks_host, resolve_databricks_token
 from server.services.database_service import DatabaseService
 from server.services.discovery_dspy import QUESTION_CATEGORIES
+from server.services.eval_criteria_service import EvalCriteriaService
+from server.services.trace_summarization_service import (
+    TraceContext,
+    get_root_span,
+    get_span_detail,
+    get_trace_overview,
+    list_spans,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +129,20 @@ class DiscoveryService:
         if not workshop:
             raise HTTPException(status_code=404, detail="Workshop not found")
         return workshop
+
+    def _resolve_databricks_llm_auth(self) -> tuple[str | None, str | None]:
+        """Resolve Databricks host + token for LLM calls using SDK auth."""
+        try:
+            workspace_url = get_databricks_host()
+        except RuntimeError:
+            workspace_url = None
+
+        try:
+            databricks_token = resolve_databricks_token()
+        except RuntimeError:
+            databricks_token = None
+
+        return workspace_url, databricks_token
 
     # ---------------------------------------------------------------------
     # Discovery questions
@@ -281,9 +314,12 @@ class DiscoveryService:
                 "coverage": coverage,
             }
 
-        from server.services.token_storage_service import token_storage
+        from server.services.databricks_service import resolve_databricks_token
 
-        databricks_token = token_storage.get_token(workshop_id) or self.db_service.get_databricks_token(workshop_id)
+        try:
+            databricks_token = resolve_databricks_token()
+        except RuntimeError:
+            databricks_token = None
         if not databricks_token:
             logger.warning(
                 "Discovery question generation requested but Databricks token missing; falling back to fixed."
@@ -306,7 +342,7 @@ class DiscoveryService:
             GenerateDiscoveryQuestion = get_question_signature()
             lm = build_databricks_lm(
                 endpoint_name=model_name,
-                workspace_url=mlflow_config.databricks_host,
+                workspace_url=get_databricks_host(),
                 token=databricks_token,
                 temperature=0.2,
             )
@@ -318,14 +354,17 @@ class DiscoveryService:
                 self._trim(txt, 600) for txt in other_findings_texts if txt and self._trim(txt, 600)
             ]
 
+            workshop = self.db_service.get_workshop(workshop_id)
+            display_input, display_output = get_display_text(trace, workshop)
+
             result = run_predict(
                 predictor,
                 lm,
                 workshop_id=workshop_id,
                 user_id=user_id,
                 trace_id=trace_id,
-                trace_input=self._trim(trace.input or "", 2000),
-                trace_output=self._trim(trace.output or "", 2000),
+                trace_input=self._trim(display_input, 2000),
+                trace_output=self._trim(display_output, 2000),
                 trace_context_json=self._trim(trace_context_json, 2000),
                 user_prior_finding=self._trim(user_prior_finding_text, 1200),
                 previous_questions=previous_prompts,
@@ -411,11 +450,35 @@ class DiscoveryService:
             }
 
     def set_discovery_questions_model(self, workshop_id: str, model_name: str) -> str:
-        self._get_workshop_or_404(workshop_id)
+        workshop = self._get_workshop_or_404(workshop_id)
         updated = self.db_service.update_discovery_questions_model_name(workshop_id, model_name)
         if not updated:
             raise HTTPException(status_code=500, detail="Failed to update discovery questions model")
         return updated.discovery_questions_model_name
+
+    def update_discovery_settings(
+        self,
+        workshop_id: str,
+        discovery_mode: str | None = None,
+        discovery_followups_enabled: bool | None = None,
+    ) -> dict[str, Any]:
+        self._get_workshop_or_404(workshop_id)
+
+        if discovery_mode is not None and discovery_mode not in {"analysis", "social"}:
+            raise HTTPException(status_code=400, detail="discovery_mode must be 'analysis' or 'social'")
+
+        updated = self.db_service.update_discovery_settings(
+            workshop_id,
+            discovery_mode=discovery_mode,
+            discovery_followups_enabled=discovery_followups_enabled,
+        )
+        if not updated:
+            raise HTTPException(status_code=500, detail="Failed to update discovery settings")
+
+        return {
+            "discovery_mode": updated.discovery_mode,
+            "discovery_followups_enabled": updated.discovery_followups_enabled,
+        }
 
     # ---------------------------------------------------------------------
     # Discovery summaries (iterative pipeline)
@@ -555,9 +618,12 @@ class DiscoveryService:
         if not mlflow_config:
             raise HTTPException(status_code=400, detail="MLflow/Databricks configuration not found for workshop")
 
-        from server.services.token_storage_service import token_storage
+        from server.services.databricks_service import resolve_databricks_token
 
-        databricks_token = token_storage.get_token(workshop_id) or self.db_service.get_databricks_token(workshop_id)
+        try:
+            databricks_token = resolve_databricks_token()
+        except RuntimeError:
+            databricks_token = None
         if not databricks_token:
             raise HTTPException(status_code=400, detail="Databricks token not found for workshop")
 
@@ -574,7 +640,7 @@ class DiscoveryService:
             sigs = get_signatures()
             lm = build_databricks_lm(
                 endpoint_name=model_name,
-                workspace_url=mlflow_config.databricks_host,
+                workspace_url=get_databricks_host(),
                 token=databricks_token,
                 temperature=0.2,
             )
@@ -739,7 +805,7 @@ class DiscoveryService:
             raise HTTPException(status_code=502, detail=f"Failed to generate summaries: {e!s}") from e
 
     def get_discovery_summaries(self, workshop_id: str) -> dict[str, Any]:
-        self._get_workshop_or_404(workshop_id)
+        workshop = self._get_workshop_or_404(workshop_id)
         cached = self.db_service.get_latest_discovery_summary(workshop_id)
         if not cached or not isinstance(cached.get("payload"), dict):
             raise HTTPException(status_code=404, detail="No discovery summaries found for this workshop")
@@ -749,7 +815,7 @@ class DiscoveryService:
     # Findings
     # ---------------------------------------------------------------------
     def submit_finding(self, workshop_id: str, finding: DiscoveryFindingCreate) -> DiscoveryFinding:
-        self._get_workshop_or_404(workshop_id)
+        workshop = self._get_workshop_or_404(workshop_id)
         return self.db_service.add_finding(workshop_id, finding)
 
     def get_findings(self, workshop_id: str, user_id: str | None = None) -> list[DiscoveryFinding]:
@@ -909,9 +975,9 @@ class DiscoveryService:
     # User completion tracking
     # ---------------------------------------------------------------------
     def mark_user_discovery_complete(self, workshop_id: str, user_id: str) -> dict[str, Any]:
-        self._get_workshop_or_404(workshop_id)
+        workshop = self._get_workshop_or_404(workshop_id)
         user = self.db_service.get_user(user_id)
-        if not user or user.workshop_id != workshop_id:
+        if not user or (user.workshop_id != workshop_id and user_id != workshop.facilitator_id):
             raise HTTPException(status_code=404, detail="User not found in workshop")
         self.db_service.mark_user_discovery_complete(workshop_id, user_id)
         return {
@@ -925,9 +991,9 @@ class DiscoveryService:
         return self.db_service.get_discovery_completion_status(workshop_id)
 
     def is_user_discovery_complete(self, workshop_id: str, user_id: str) -> dict[str, Any]:
-        self._get_workshop_or_404(workshop_id)
+        workshop = self._get_workshop_or_404(workshop_id)
         user = self.db_service.get_user(user_id)
-        if not user or user.workshop_id != workshop_id:
+        if not user or (user.workshop_id != workshop_id and user_id != workshop.facilitator_id):
             raise HTTPException(status_code=404, detail="User not found in workshop")
         is_complete = self.db_service.is_user_discovery_complete(workshop_id, user_id)
         return {
@@ -962,6 +1028,8 @@ class DiscoveryService:
     ) -> dict[str, Any]:
         """Generate a follow-up question for the given feedback."""
         workshop = self._get_workshop_or_404(workshop_id)
+        if not getattr(workshop, "discovery_followups_enabled", True):
+            raise HTTPException(status_code=400, detail="Follow-up questions are disabled for this workshop")
 
         if question_number < 1 or question_number > 3:
             raise HTTPException(status_code=400, detail="question_number must be 1, 2, or 3")
@@ -990,14 +1058,9 @@ class DiscoveryService:
         databricks_token = None
         model_name = (getattr(workshop, "discovery_questions_model_name", None) or "demo").strip()
 
-        mlflow_config = self.db_service.get_mlflow_config(workshop_id)
-        if mlflow_config:
-            workspace_url = mlflow_config.databricks_host
-            from server.services.token_storage_service import token_storage
-
-            databricks_token = token_storage.get_token(workshop_id) or self.db_service.get_databricks_token(
-                workshop_id
-            )
+        # Databricks LLM calls should use unified SDK auth (no MLflow config dependency).
+        if model_name not in {"demo", "custom"}:
+            workspace_url, databricks_token = self._resolve_databricks_llm_auth()
 
         # Check for custom LLM provider configuration
         custom_base_url = None
@@ -1029,6 +1092,7 @@ class DiscoveryService:
             trace=trace,
             feedback=feedback,
             question_number=question_number,
+            use_case_description=(getattr(workshop, "description", None) or ""),
             workspace_url=workspace_url,
             databricks_token=databricks_token,
             model_name=model_name,
@@ -1046,16 +1110,30 @@ class DiscoveryService:
         user_id: str,
         question: str,
         answer: str,
+        milestone_references: list[str] | None = None,
     ) -> dict[str, Any]:
         """Append a Q&A pair to the feedback record."""
         self._get_workshop_or_404(workshop_id)
+        workshop = self._get_workshop_or_404(workshop_id)
+        if not getattr(workshop, "discovery_followups_enabled", True):
+            raise HTTPException(status_code=400, detail="Follow-up questions are disabled for this workshop")
 
         if not answer or not answer.strip():
             raise HTTPException(status_code=422, detail="Answer is required")
 
+        cleaned_refs = [
+            str(ref).strip()
+            for ref in (milestone_references or [])
+            if isinstance(ref, str) and str(ref).strip()
+        ]
+
         feedback = self.db_service.append_followup_qna(
             workshop_id, trace_id, user_id,
-            {"question": question, "answer": answer},
+            {
+                "question": question,
+                "answer": answer,
+                "milestone_references": cleaned_refs,
+            },
         )
         return {
             "feedback_id": feedback.id,
@@ -1076,6 +1154,304 @@ class DiscoveryService:
         """Get all discovery feedback with user name/role for facilitator view."""
         self._get_workshop_or_404(workshop_id)
         return self.db_service.get_discovery_feedback_with_user_details(workshop_id, user_id)
+
+    # -----------------------------------------------------------------
+    # Discovery social threads
+    # -----------------------------------------------------------------
+
+    def create_discovery_comment(self, workshop_id: str, data: DiscoveryCommentCreate) -> dict[str, Any]:
+        workshop = self._get_workshop_or_404(workshop_id)
+        trace = self.db_service.get_trace(data.trace_id)
+        if not trace or trace.workshop_id != workshop_id:
+            raise HTTPException(status_code=404, detail="Trace not found")
+        if not data.body or not data.body.strip():
+            raise HTTPException(status_code=422, detail="Comment body is required")
+
+        created = self.db_service.create_discovery_comment(workshop_id, data, author_type="human")
+
+        mention_payload: dict[str, Any] = {}
+        is_facilitator = data.user_id == workshop.facilitator_id
+        content = data.body.strip().lower()
+
+        if is_facilitator and "@assistant" in content:
+            assistant_text = self._handle_assistant_mention(workshop_id, data)
+            assistant_comment = self.db_service.create_discovery_comment(
+                workshop_id,
+                DiscoveryCommentCreate(
+                    trace_id=data.trace_id,
+                    user_id="assistant",
+                    body=assistant_text,
+                    milestone_ref=data.milestone_ref,
+                    parent_comment_id=created.id,
+                ),
+                author_type="assistant",
+            )
+            mention_payload["assistant_comment"] = assistant_comment
+
+        if is_facilitator and "@agent" in content:
+            run = self.db_service.create_discovery_agent_run(
+                workshop_id=workshop_id,
+                trace_id=data.trace_id,
+                trigger_comment_id=created.id,
+                created_by=data.user_id,
+                milestone_ref=data.milestone_ref,
+            )
+            self._start_agent_run_async(run.id)
+            mention_payload["agent_run"] = run
+
+        return {"comment": created, **mention_payload}
+
+    def list_discovery_comments(
+        self,
+        workshop_id: str,
+        trace_id: str,
+        milestone_ref: str | None = None,
+        user_id: str | None = None,
+    ) -> list[DiscoveryComment]:
+        self._get_workshop_or_404(workshop_id)
+        return self.db_service.list_discovery_comments(
+            workshop_id=workshop_id,
+            trace_id=trace_id,
+            milestone_ref=milestone_ref,
+            viewer_user_id=user_id,
+        )
+
+    def vote_discovery_comment(
+        self,
+        workshop_id: str,
+        comment_id: str,
+        vote: DiscoveryCommentVoteRequest,
+    ) -> DiscoveryComment:
+        self._get_workshop_or_404(workshop_id)
+        try:
+            return self.db_service.vote_discovery_comment(workshop_id, comment_id, vote)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
+    def delete_discovery_comment(
+        self,
+        workshop_id: str,
+        comment_id: str,
+        user_id: str,
+    ) -> dict[str, Any]:
+        workshop = self._get_workshop_or_404(workshop_id)
+        if user_id != workshop.facilitator_id:
+            raise HTTPException(status_code=403, detail="Only the facilitator can delete comments")
+
+        comment = self.db_service.get_discovery_comment(comment_id, viewer_user_id=user_id)
+        if not comment or comment.workshop_id != workshop_id:
+            raise HTTPException(status_code=404, detail="Comment not found")
+
+        deleted = self.db_service.delete_discovery_comment(workshop_id, comment_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Comment not found")
+        return {"deleted": True, "comment_id": comment_id}
+
+    def get_discovery_agent_run(self, workshop_id: str, run_id: str) -> DiscoveryAgentRun:
+        self._get_workshop_or_404(workshop_id)
+        run = self.db_service.get_discovery_agent_run(run_id)
+        if not run or run.workshop_id != workshop_id:
+            raise HTTPException(status_code=404, detail="Agent run not found")
+        return run
+
+    def _handle_assistant_mention(self, workshop_id: str, data: DiscoveryCommentCreate) -> str:
+        text = data.body.lower()
+        comments = self.db_service.list_discovery_comments(
+            workshop_id=workshop_id,
+            trace_id=data.trace_id,
+            milestone_ref=data.milestone_ref,
+            viewer_user_id=data.user_id,
+        )
+        if "summarize" in text and "thread" in text:
+            sample = comments[-6:]
+            summary_lines = [f"- {c.user_name}: {self._trim(c.body, 140)}" for c in sample]
+            if not summary_lines:
+                return "Thread summary: there are no comments yet in this thread."
+            return "Thread summary based on recent discussion:\n" + "\n".join(summary_lines)
+
+        if "tool" in text and "milestone" in text:
+            milestone = data.milestone_ref or "all"
+            return (
+                f"Milestone `{milestone}` tool context: this workspace exposes summarization-derived milestone context, "
+                "trace summary inputs/outputs, and discovery thread read/write tools."
+            )
+
+        return (
+            "I can help with `@assistant summarize this thread` and milestone tool-context questions. "
+            "Try: `@assistant what tools did the agent have access to at this milestone?`"
+        )
+
+    def _start_agent_run_async(self, run_id: str) -> None:
+        thread = threading.Thread(
+            target=self._run_agent_job,
+            args=(run_id,),
+            daemon=True,
+        )
+        thread.start()
+
+    @staticmethod
+    def _run_agent_job(run_id: str) -> None:
+        with SessionLocal() as db:
+            svc = DiscoveryService(db)
+            svc._execute_agent_run(run_id)
+
+    def _execute_agent_run(self, run_id: str) -> None:
+        run = self.db_service.get_discovery_agent_run(run_id)
+        if not run:
+            return
+        try:
+            trigger_comment = self.db_service.get_discovery_comment(run.trigger_comment_id, viewer_user_id=run.created_by)
+            user_prompt = (trigger_comment.body if trigger_comment else "").strip()
+
+            trace = self.db_service.get_trace(run.trace_id)
+            trace_context = trace.context if trace and isinstance(trace.context, dict) else {}
+            tool_calls_count = 0
+            trace_findings: list[str] = []
+
+            if trace_context:
+                deps = TraceContext.from_dict(trace_context)
+                overview = get_trace_overview(deps)
+                tool_calls_count += 1
+                root = get_root_span(deps)
+                tool_calls_count += 1
+
+                trace_findings.append(
+                    f"Trace overview: status={overview.get('status')} span_count={overview.get('span_count')} "
+                    f"root_span={overview.get('root_span_name')} elapsed_ms={overview.get('execution_time_ms')}"
+                )
+
+                user_input = self._trim(str(root.get("inputs", {})), 260) if isinstance(root, dict) else ""
+                assistant_output = self._trim(str(root.get("outputs", {})), 340) if isinstance(root, dict) else ""
+                trace_findings.append(f"Root input: {user_input or '(none)'}")
+                trace_findings.append(f"Root output: {assistant_output or '(none)'}")
+
+                tool_spans = list_spans(deps, filter_type="TOOL")
+                tool_calls_count += 1
+                if tool_spans:
+                    trace_findings.append(
+                        "Tool spans observed: "
+                        + ", ".join(str(s.get("name", "unnamed")) for s in tool_spans[:6])
+                    )
+                    first_tool_name = str(tool_spans[0].get("name", "")).strip()
+                    if first_tool_name:
+                        detail = get_span_detail(deps, first_tool_name)
+                        tool_calls_count += 1
+                        detail_summary = self._trim(str(detail.get("outputs", {})), 220)
+                        trace_findings.append(
+                            f"Sample tool output ({first_tool_name}): {detail_summary or '(empty)'}"
+                        )
+
+                if run.milestone_ref and trace.summary and isinstance(trace.summary, dict):
+                    milestone_context = self._extract_milestone_context(trace.summary, run.milestone_ref)
+                    if milestone_context:
+                        trace_findings.append(f"Milestone context ({run.milestone_ref}): {milestone_context}")
+
+            comments = self.db_service.list_discovery_comments(
+                workshop_id=run.workshop_id,
+                trace_id=run.trace_id,
+                milestone_ref=run.milestone_ref,
+                viewer_user_id=run.created_by,
+            )
+            thread_context = "\n".join(f"- {c.user_name}: {self._trim(c.body, 120)}" for c in comments[-8:])
+            if not thread_context:
+                thread_context = "- No prior comments in this thread."
+
+            if not user_prompt:
+                user_prompt = "@agent analyze this interaction"
+
+            analysis_lines = "\n".join(f"- {line}" for line in trace_findings) if trace_findings else "- Trace context unavailable."
+            response = (
+                "Agent run result:\n"
+                f"Prompt: {user_prompt}\n"
+                "I analyzed the underlying trace interaction using summarization-tool context and combined it with thread feedback.\n\n"
+                "Trace analysis:\n"
+                f"{analysis_lines}\n\n"
+                "Thread context:\n"
+                f"{thread_context}\n\n"
+                "What could be better:\n"
+                "- Clarify evaluation expectations in the prompt so completeness vs brevity is less subjective.\n"
+                "- Add explicit acceptance criteria for tool usage quality and output structure.\n"
+                "- Capture one actionable rubric candidate directly from this disagreement.\n"
+                "Recommended next step: convert the top 2 concerns into evaluation criteria candidates."
+            )
+            partial = ""
+            tokens = response.split(" ")
+            for i, token in enumerate(tokens):
+                partial = f"{partial} {token}".strip()
+                self.db_service.update_discovery_agent_run(
+                    run_id,
+                    partial_output=partial,
+                    tool_calls_count=tool_calls_count,
+                    status="running",
+                )
+                time.sleep(0.05)
+
+            self.db_service.update_discovery_agent_run(
+                run_id,
+                status="completed",
+                final_output=response,
+                partial_output=response,
+                tool_calls_count=max(tool_calls_count, 1),
+                completed=True,
+            )
+            self.db_service.create_discovery_comment(
+                run.workshop_id,
+                DiscoveryCommentCreate(
+                    trace_id=run.trace_id,
+                    user_id="agent",
+                    body=response,
+                    milestone_ref=run.milestone_ref,
+                    parent_comment_id=run.trigger_comment_id,
+                ),
+                author_type="agent",
+            )
+        except Exception as e:  # pragma: no cover - defensive background guard
+            self.db_service.update_discovery_agent_run(
+                run_id,
+                status="failed",
+                error=str(e),
+                completed=True,
+            )
+
+    def _extract_milestone_context(self, trace_summary: dict[str, Any], milestone_ref: str) -> str:
+        milestones = trace_summary.get("milestones")
+        if not isinstance(milestones, list):
+            return ""
+        normalized = (milestone_ref or "").strip().lower()
+        milestone_num: int | None = None
+        if normalized.startswith("m") and normalized[1:].isdigit():
+            milestone_num = int(normalized[1:])
+        elif normalized.isdigit():
+            milestone_num = int(normalized)
+        if milestone_num is None:
+            return ""
+
+        for milestone in milestones:
+            if not isinstance(milestone, dict):
+                continue
+            number = milestone.get("number")
+            if number != milestone_num:
+                continue
+            title = str(milestone.get("title") or f"Milestone {milestone_num}")
+            summary = self._trim(str(milestone.get("summary") or ""), 240)
+            inputs = milestone.get("inputs") or []
+            outputs = milestone.get("outputs") or []
+            input_spans = [
+                str(item.get("span_name"))
+                for item in inputs
+                if isinstance(item, dict) and item.get("span_name")
+            ]
+            output_spans = [
+                str(item.get("span_name"))
+                for item in outputs
+                if isinstance(item, dict) and item.get("span_name")
+            ]
+            return (
+                f"title={title}; summary={summary}; "
+                f"input_spans={', '.join(input_spans[:4]) or 'none'}; "
+                f"output_spans={', '.join(output_spans[:4]) or 'none'}"
+            )
+        return ""
 
     # --------- Assisted Facilitation v2 Methods ---------
 
@@ -1134,7 +1510,7 @@ class DiscoveryService:
     ) -> str:
         """Classify finding using LLM if configured, otherwise fall back to keyword-based."""
         from server.services.classification_service import ClassificationService
-        from server.services.token_storage_service import token_storage
+        from server.services.databricks_service import resolve_databricks_token
 
         # Get LLM configuration
         mlflow_config = self.db_service.get_mlflow_config(workshop_id)
@@ -1145,10 +1521,11 @@ class DiscoveryService:
             logger.debug("No LLM config for workshop %s, using local classification", workshop_id)
             return self._classify_finding_locally(finding_text)
 
-        # Get token from memory or database
-        databricks_token = token_storage.get_token(workshop_id)
-        if not databricks_token:
-            databricks_token = self.db_service.get_databricks_token(workshop_id)
+        # Get token via SDK auth
+        try:
+            databricks_token = resolve_databricks_token()
+        except RuntimeError:
+            databricks_token = None
 
         if not databricks_token:
             logger.debug("No Databricks token for workshop %s, using local classification", workshop_id)
@@ -1170,8 +1547,6 @@ class DiscoveryService:
                 trace_output=trace_output,
                 workshop_id=workshop_id,
                 model_name=model_name.strip(),
-                databricks_host=mlflow_config.databricks_host,
-                databricks_token=databricks_token,
             )
             return category
         except Exception as e:
@@ -1184,7 +1559,7 @@ class DiscoveryService:
         """Detect disagreements using LLM if configured."""
         from server.models import ClassifiedFinding
         from server.services.classification_service import ClassificationService
-        from server.services.token_storage_service import token_storage
+        from server.services.databricks_service import resolve_databricks_token
 
         if not findings or len(findings) < 2:
             return
@@ -1199,10 +1574,11 @@ class DiscoveryService:
             self.detect_disagreements(workshop_id, trace_id, findings)
             return
 
-        # Get token from memory or database
-        databricks_token = token_storage.get_token(workshop_id)
-        if not databricks_token:
-            databricks_token = self.db_service.get_databricks_token(workshop_id)
+        # Get token via SDK auth
+        try:
+            databricks_token = resolve_databricks_token()
+        except RuntimeError:
+            databricks_token = None
 
         if not databricks_token:
             self.detect_disagreements(workshop_id, trace_id, findings)
@@ -1229,8 +1605,6 @@ class DiscoveryService:
                 findings=classified_findings,
                 workshop_id=workshop_id,
                 model_name=model_name.strip(),
-                databricks_host=mlflow_config.databricks_host,
-                databricks_token=databricks_token,
             )
 
             # Persist disagreements to database
@@ -1310,9 +1684,12 @@ class DiscoveryService:
             logger.debug("Disagreement detection skipped: no MLflow config")
             return []
 
-        from server.services.token_storage_service import token_storage
+        from server.services.databricks_service import get_databricks_host, resolve_databricks_token
 
-        databricks_token = token_storage.get_token(workshop_id) or self.db_service.get_databricks_token(workshop_id)
+        try:
+            databricks_token = resolve_databricks_token()
+        except RuntimeError:
+            databricks_token = None
         if not databricks_token:
             logger.debug("Disagreement detection skipped: no Databricks token")
             return []
@@ -1333,7 +1710,7 @@ class DiscoveryService:
             DetectFindingDisagreements = get_disagreement_signature()
             lm = build_databricks_lm(
                 endpoint_name=model_name,
-                workspace_url=mlflow_config.databricks_host,
+                workspace_url=get_databricks_host(),
                 token=databricks_token,
                 temperature=0.1,  # Low temperature for consistent detection
             )
@@ -1351,12 +1728,14 @@ class DiscoveryService:
             if len(findings_with_users) < 2:
                 return []
 
+            display_input, display_output = get_display_text(trace, workshop)
+
             result = run_predict(
                 predictor,
                 lm,
                 trace_id=trace_id,
-                trace_input=self._trim(trace.input or "", 1000),
-                trace_output=self._trim(trace.output or "", 1000),
+                trace_input=self._trim(display_input, 1000),
+                trace_output=self._trim(display_output, 1000),
                 findings_with_users=findings_with_users,
             )
 
@@ -1506,48 +1885,67 @@ class DiscoveryService:
 
         Creates a DraftRubricItem from a classified finding.
         """
-        self._get_workshop_or_404(workshop_id)
+        workshop = self._get_workshop_or_404(workshop_id)
 
-        # Try to look up the classified finding for text/trace context
-        # and create a draft rubric item. If any part fails (e.g., DB not
-        # fully available), fall back gracefully.
+        # Look up finding text (graceful degradation if finding row not found)
+        finding_text = ""
+        source_trace_ids: list[str] = []
         try:
-            finding_text = ""
-            source_trace_ids: list[str] = []
-            try:
-                from server.database import ClassifiedFindingDB
+            from server.database import ClassifiedFindingDB
 
-                finding_row = (
-                    self.db.query(ClassifiedFindingDB)
-                    .filter(ClassifiedFindingDB.id == finding_id, ClassifiedFindingDB.workshop_id == workshop_id)
-                    .first()
-                )
-                if finding_row:
-                    finding_text = str(finding_row.text or "")
-                    source_trace_ids = [str(finding_row.trace_id)] if finding_row.trace_id else []
-            except Exception:
-                pass
-
-            data = DraftRubricItemCreate(
-                text=finding_text or f"Promoted from finding {finding_id}",
-                source_type="finding",
-                source_trace_ids=source_trace_ids,
+            finding_row = (
+                self.db.query(ClassifiedFindingDB)
+                .filter(ClassifiedFindingDB.id == finding_id, ClassifiedFindingDB.workshop_id == workshop_id)
+                .first()
             )
-            item = self.db_service.add_draft_rubric_item(workshop_id, data, promoted_by=promoter_id)
-            return {
-                "id": item.id,
-                "finding_id": finding_id,
-                "promoted_by": promoter_id,
-                "status": "promoted",
-            }
+            if finding_row:
+                finding_text = str(finding_row.text or "")
+                source_trace_ids = [str(finding_row.trace_id)] if finding_row.trace_id else []
         except Exception:
-            # Fallback for cases where draft rubric table doesn't exist yet
+            pass  # Finding lookup failure is non-critical
+
+        if getattr(workshop, "mode", WorkshopMode.WORKSHOP.value) == WorkshopMode.EVAL.value:
+            trace_id = source_trace_ids[0] if source_trace_ids else None
+            if not trace_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot promote finding to eval criteria without a trace reference",
+                )
+
+            eval_service = EvalCriteriaService(self.db)
+            criterion = eval_service.create_criterion(
+                workshop_id=workshop_id,
+                trace_id=trace_id,
+                data=TraceCriterionCreate(
+                    text=finding_text or f"Promoted from finding {finding_id}",
+                    criterion_type=TraceCriterionType.STANDARD,
+                    weight=1,
+                    source_finding_id=finding_id,
+                    created_by=promoter_id,
+                ),
+            )
             return {
-                "id": finding_id,
+                "id": criterion.id,
                 "finding_id": finding_id,
                 "promoted_by": promoter_id,
                 "status": "promoted",
+                "target": "trace_criteria",
             }
+
+        data = DraftRubricItemCreate(
+            text=finding_text or f"Promoted from finding {finding_id}",
+            source_type="finding",
+            source_trace_ids=source_trace_ids,
+        )
+        # Let DB errors propagate — caller sees 500
+        item = self.db_service.add_draft_rubric_item(workshop_id, data, promoted_by=promoter_id)
+        return {
+            "id": item.id,
+            "finding_id": finding_id,
+            "promoted_by": promoter_id,
+            "status": "promoted",
+            "target": "draft_rubric_items",
+        }
 
     # -----------------------------------------------------------------
     # Draft Rubric Items (Step 3)

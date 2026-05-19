@@ -33,6 +33,7 @@ vi.mock('@/hooks/useWorkshopApi', () => ({
   useDiscoveryAnalyses: () => mockAnalyses,
   useRunDiscoveryAnalysis: () => mockRunAnalysis,
   useCreateDraftRubricItem: () => ({ mutate: vi.fn(), isPending: false }),
+  useAvailableModels: () => ({ data: [{ name: 'test-model', state: 'READY', task: 'llm/v1/chat' }] }),
 }));
 
 vi.mock('@tanstack/react-query', () => ({

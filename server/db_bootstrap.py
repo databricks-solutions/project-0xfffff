@@ -71,9 +71,10 @@ def _list_sqlite_tables(db_path: str) -> list[str]:
 
 
 def _get_postgres_schema_name() -> str:
-    """Get the PostgreSQL schema name derived from PGAPPNAME."""
-    app_name = os.getenv("PGAPPNAME", "human_eval_workshop")
-    return app_name.replace("-", "_")
+    """Get the app-owned PostgreSQL schema name."""
+    from server.db_config import get_lakebase_schema_name
+
+    return get_lakebase_schema_name()
 
 
 def _list_postgres_tables(database_url: str) -> list[str]:
@@ -110,14 +111,15 @@ def _list_postgres_tables(database_url: str) -> list[str]:
 
 def _get_postgres_url() -> str:
     """Construct PostgreSQL URL from Lakebase environment variables."""
-    from server.db_config import LakebaseConfig, get_token_manager
+    from server.db_config import LakebaseConfig, get_credential_manager
 
     config = LakebaseConfig.from_env()
     if config is None:
         raise RuntimeError("Lakebase environment variables not set")
 
-    token_manager = get_token_manager()
-    password = token_manager.get_token()
+    credential_manager = get_credential_manager()
+    endpoint_name = os.getenv("ENDPOINT_NAME")
+    password = credential_manager.get_password(endpoint_name)
 
     return (
         f"postgresql+psycopg://{config.user}:{password}@"

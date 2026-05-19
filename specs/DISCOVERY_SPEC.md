@@ -779,9 +779,12 @@ Discovery uses the same model selection as judge evaluation: **Databricks founda
 
 ### Defaults
 - **Trace limit**: 10 (configurable by facilitator)
-- **Follow-up questions**: 3 per trace (fixed)
+- **Follow-up questions**: 3 per trace (legacy path; can be disabled)
 - **All questions required** (no skip)
 - **Randomization**: Off by default
+- **Discovery mode**: `analysis` (existing findings/promotion UX) or `social` (threaded collaboration UX)
+- **Assistant mentions**: Facilitator can invoke `@assistant` fixed intents (`summarize thread`, `tools at milestone`)
+- **Agent mentions**: Facilitator can invoke `@agent` bounded tool loop with streamed progress and output
 
 ## Success Criteria
 
@@ -826,6 +829,19 @@ Discovery uses the same model selection as judge evaluation: **Databricks founda
 - [ ] Draft rubric items available during Rubric Creation phase
 - [ ] Source traceability maintained (which traces support each item)
 
+### Step 4: Social Threads & Mentions (#new)
+- [ ] Facilitator can switch Discovery workspace between `analysis` mode and `social` mode
+- [ ] In social mode, users can create trace-level comments
+- [ ] In social mode, users can create milestone-level comments
+- [ ] Users can reply to comments in-thread
+- [ ] Users can upvote/downvote comments (single vote per user per comment with toggle behavior)
+- [ ] Thread updates appear live in the workspace while participants collaborate
+- [ ] Facilitator `@assistant summarize this thread` returns a grounded summary as a thread reply
+- [ ] Facilitator `@assistant` tool-availability questions for a milestone return grounded context as a thread reply
+- [ ] Facilitator `@agent` starts a bounded tool-calling run and posts streamed partial output in the thread
+- [ ] `@agent` run lifecycle is visible (`running`, `completed`, `failed`, `timeout`) with final persisted reply
+- [ ] Non-facilitator mentions do not trigger assistant/agent execution (treated as plain text mentions)
+
 ### Data Integrity
 - [ ] One feedback record per (workshop, trace, user) — upsert behavior
 - [ ] Q&A pairs appended in order to JSON array
@@ -844,6 +860,7 @@ Discovery uses the same model selection as judge evaluation: **Databricks founda
 - [ ] Submit buttons disabled until required fields filled
 - [ ] Clear progress indication (X of Y traces completed)
 - [ ] Smooth transitions between feedback states
+- [ ] When follow-up questions are disabled, participant flow is GOOD/BAD + comment only
 
 ### UX — Facilitator Discovery Workspace
 - [ ] Single two-panel workspace replaces multi-page flow (no FacilitatorDashboard discovery tabs, no FindingsReviewPage)
@@ -857,6 +874,7 @@ Discovery uses the same model selection as judge evaluation: **Databricks founda
 - [ ] Draft rubric items do NOT show source-type badges (Finding, Disagreement, etc.)
 - [ ] Disagreements color-coded by priority (red/yellow/blue) on trace cards
 - [ ] "Create Rubric →" in sidebar transitions to rubric creation with groups pre-populated as criteria
+- [ ] Social mode provides a modern live collaboration experience with streamed in-thread updates for assistant/agent responses
 
 ## Existing Code Reference
 

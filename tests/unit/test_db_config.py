@@ -11,12 +11,12 @@ import pytest
 from server.db_config import (
     DatabaseBackend,
     LakebaseConfig,
-    OAuthTokenManager,
+    LakebaseCredentialManager,
     create_engine_for_backend,
     detect_database_backend,
     get_database_url,
     get_schema_name,
-    get_token_manager,
+    get_credential_manager,
 )
 
 
@@ -78,102 +78,108 @@ class TestLakebaseConfig:
 
 
 # ---------------------------------------------------------------------------
-# OAuthTokenManager
+# LakebaseCredentialManager
 # ---------------------------------------------------------------------------
-class TestOAuthTokenManager:
-    """Tests for OAuth token lifecycle management."""
+class TestLakebaseCredentialManager:
+    """Tests for Lakebase credential lifecycle management."""
 
     def test_initial_state(self):
-        mgr = OAuthTokenManager(refresh_interval_seconds=60)
+        mgr = LakebaseCredentialManager()
         assert mgr._token is None
-        assert mgr.needs_refresh is True
+        assert mgr._token_expiry == 0.0
 
-    def test_get_token_calls_workspace_client(self):
-        mgr = OAuthTokenManager(refresh_interval_seconds=60)
+    def test_get_password_with_endpoint_name(self):
+        mgr = LakebaseCredentialManager()
         mock_client = MagicMock()
-        mock_client.config.oauth_token.return_value = MagicMock(access_token="tok123")
+        mock_cred = MagicMock()
+        mock_cred.token = "db_cred_123"
+        # expire_time is a protobuf Timestamp — .seconds is epoch seconds
+        mock_cred.expire_time.seconds = int(time.time()) + 3600
+        mock_client.postgres.generate_database_credential.return_value = mock_cred
         mgr._workspace_client = mock_client
 
-        token = mgr.get_token()
-        assert token == "tok123"
-        assert mgr.needs_refresh is False
+        password = mgr.get_password("projects/p1/branches/b1/endpoints/e1")
+        assert password == "db_cred_123"
+        mock_client.postgres.generate_database_credential.assert_called_once_with(
+            endpoint="projects/p1/branches/b1/endpoints/e1"
+        )
+
+    def test_get_password_falls_back_to_oauth_when_no_endpoint(self):
+        mgr = LakebaseCredentialManager()
+        mock_client = MagicMock()
+        mock_client.config.oauth_token.return_value = MagicMock(access_token="oauth_tok")
+        mgr._workspace_client = mock_client
+
+        password = mgr.get_password(None)
+        assert password == "oauth_tok"
         mock_client.config.oauth_token.assert_called_once()
 
-    def test_get_token_uses_cache(self):
-        mgr = OAuthTokenManager(refresh_interval_seconds=3600)
+    def test_get_password_uses_cache(self):
+        mgr = LakebaseCredentialManager()
         mock_client = MagicMock()
-        mock_client.config.oauth_token.return_value = MagicMock(access_token="tok123")
+        mock_cred = MagicMock()
+        mock_cred.token = "cached_tok"
+        mock_cred.expire_time.seconds = int(time.time()) + 3600
+        mock_client.postgres.generate_database_credential.return_value = mock_cred
         mgr._workspace_client = mock_client
 
-        # First call: fetches token
-        token1 = mgr.get_token()
-        # Second call: should use cache
-        token2 = mgr.get_token()
+        # First call: fetches credential
+        pw1 = mgr.get_password("ep1")
+        # Second call: should use cache (within expiry window)
+        pw2 = mgr.get_password("ep1")
 
-        assert token1 == token2 == "tok123"
-        # Only called once because second call uses cache
-        assert mock_client.config.oauth_token.call_count == 1
+        assert pw1 == pw2 == "cached_tok"
+        assert mock_client.postgres.generate_database_credential.call_count == 1
 
-    def test_get_token_refreshes_after_interval(self):
-        mgr = OAuthTokenManager(refresh_interval_seconds=1)
+    def test_get_password_refreshes_near_expiry(self):
+        mgr = LakebaseCredentialManager()
         mock_client = MagicMock()
-        mock_client.config.oauth_token.return_value = MagicMock(access_token="tok_v1")
+        mock_cred = MagicMock()
+        mock_cred.token = "tok_v1"
+        mock_cred.expire_time.seconds = int(time.time()) + 3600
+        mock_client.postgres.generate_database_credential.return_value = mock_cred
         mgr._workspace_client = mock_client
 
-        # First call
-        mgr.get_token()
-        assert mock_client.config.oauth_token.call_count == 1
+        mgr.get_password("ep1")
+        assert mock_client.postgres.generate_database_credential.call_count == 1
 
-        # Simulate time passing
-        mgr._last_refresh = time.time() - 2
-        mock_client.config.oauth_token.return_value = MagicMock(access_token="tok_v2")
+        # Simulate near-expiry (set expiry to now)
+        mgr._token_expiry = time.time()
+        mock_cred.token = "tok_v2"
 
-        token = mgr.get_token()
-        assert token == "tok_v2"
-        assert mock_client.config.oauth_token.call_count == 2
+        password = mgr.get_password("ep1")
+        assert password == "tok_v2"
+        assert mock_client.postgres.generate_database_credential.call_count == 2
 
-    def test_get_token_raises_on_first_failure(self):
-        mgr = OAuthTokenManager(refresh_interval_seconds=60)
+    def test_get_password_raises_on_first_failure(self):
+        mgr = LakebaseCredentialManager()
         mock_client = MagicMock()
-        mock_client.config.oauth_token.side_effect = Exception("Auth failed")
+        mock_client.postgres.generate_database_credential.side_effect = Exception("Auth failed")
         mgr._workspace_client = mock_client
 
-        with pytest.raises(RuntimeError, match="Cannot obtain OAuth token"):
-            mgr.get_token()
+        with pytest.raises(RuntimeError, match="Cannot obtain Lakebase credential"):
+            mgr.get_password("ep1")
 
-    def test_get_token_uses_stale_on_refresh_failure(self):
-        mgr = OAuthTokenManager(refresh_interval_seconds=1)
+    def test_get_password_uses_stale_on_refresh_failure(self):
+        mgr = LakebaseCredentialManager()
         mock_client = MagicMock()
-        mock_client.config.oauth_token.return_value = MagicMock(access_token="stale_tok")
+        mock_cred = MagicMock()
+        mock_cred.token = "stale_tok"
+        mock_cred.expire_time.seconds = int(time.time()) + 3600
+        mock_client.postgres.generate_database_credential.return_value = mock_cred
         mgr._workspace_client = mock_client
 
         # First call succeeds
-        token = mgr.get_token()
-        assert token == "stale_tok"
+        password = mgr.get_password("ep1")
+        assert password == "stale_tok"
 
         # Simulate expiry and failure on refresh
-        mgr._last_refresh = time.time() - 2
-        mock_client.config.oauth_token.side_effect = Exception("Network error")
+        mgr._token_expiry = time.time()
+        mock_client.postgres.generate_database_credential.side_effect = Exception("Network error")
 
-        # Should return stale token instead of raising
-        token = mgr.get_token()
-        assert token == "stale_tok"
-
-    def test_needs_refresh_true_when_no_token(self):
-        mgr = OAuthTokenManager(refresh_interval_seconds=60)
-        assert mgr.needs_refresh is True
-
-    def test_needs_refresh_false_within_interval(self):
-        mgr = OAuthTokenManager(refresh_interval_seconds=3600)
-        mgr._token = "some_token"
-        mgr._last_refresh = time.time()
-        assert mgr.needs_refresh is False
-
-    def test_needs_refresh_true_after_interval(self):
-        mgr = OAuthTokenManager(refresh_interval_seconds=60)
-        mgr._token = "some_token"
-        mgr._last_refresh = time.time() - 120
-        assert mgr.needs_refresh is True
+        # Should return stale credential instead of raising
+        password = mgr.get_password("ep1")
+        assert password == "stale_tok"
 
 
 # ---------------------------------------------------------------------------
@@ -221,27 +227,12 @@ class TestGetDatabaseUrl:
         url = get_database_url()
         assert url == "sqlite:///./custom.db"
 
-    def test_postgresql_url_construction(self, monkeypatch):
+    def test_postgresql_url_is_placeholder(self, monkeypatch):
         monkeypatch.setenv("DATABASE_ENV", "postgres")
-        monkeypatch.setenv("PGHOST", "db.example.com")
-        monkeypatch.setenv("PGDATABASE", "mydb")
-        monkeypatch.setenv("PGUSER", "svc-user")
-        monkeypatch.setenv("PGPORT", "5432")
-        monkeypatch.setenv("PGSSLMODE", "require")
-        monkeypatch.setenv("PGAPPNAME", "test-app")
 
-        # Mock the token manager
-        with patch("server.db_config.get_token_manager") as mock_get_tm:
-            mock_tm = MagicMock()
-            mock_tm.get_token.return_value = "test_token_123"
-            mock_get_tm.return_value = mock_tm
-
-            url = get_database_url()
-            assert "postgresql+psycopg://" in url
-            assert "svc-user:test_token_123@" in url
-            assert "db.example.com:5432/mydb" in url
-            assert "sslmode=require" in url
-            assert "application_name=test-app" in url
+        url = get_database_url()
+        # PostgreSQL returns placeholder — do_connect handles auth
+        assert url == "postgresql+psycopg://"
 
 
 # ---------------------------------------------------------------------------
@@ -273,29 +264,29 @@ class TestGetSchemaName:
 
 
 # ---------------------------------------------------------------------------
-# get_token_manager (singleton)
+# get_credential_manager (singleton)
 # ---------------------------------------------------------------------------
-class TestGetTokenManager:
-    """Tests for the global token manager singleton."""
+class TestGetCredentialManager:
+    """Tests for the global credential manager singleton."""
 
     def test_returns_same_instance(self):
         import server.db_config as mod
 
         # Reset global state
-        mod._token_manager = None
-        mgr1 = get_token_manager()
-        mgr2 = get_token_manager()
+        mod._credential_manager = None
+        mgr1 = get_credential_manager()
+        mgr2 = get_credential_manager()
         assert mgr1 is mgr2
         # Clean up
-        mod._token_manager = None
+        mod._credential_manager = None
 
-    def test_returns_oauth_token_manager(self):
+    def test_returns_lakebase_credential_manager(self):
         import server.db_config as mod
 
-        mod._token_manager = None
-        mgr = get_token_manager()
-        assert isinstance(mgr, OAuthTokenManager)
-        mod._token_manager = None
+        mod._credential_manager = None
+        mgr = get_credential_manager()
+        assert isinstance(mgr, LakebaseCredentialManager)
+        mod._credential_manager = None
 
 
 # ---------------------------------------------------------------------------
@@ -327,16 +318,10 @@ class TestCreateEngineForBackend:
         monkeypatch.setenv("PGSSLMODE", "require")
         monkeypatch.setenv("PGAPPNAME", "test-app")
 
-        with patch("server.db_config.get_token_manager") as mock_tm:
-            mock_tm_inst = MagicMock()
-            mock_tm_inst.get_token.return_value = "test_token"
-            mock_tm_inst.needs_refresh = False
-            mock_tm.return_value = mock_tm_inst
-
-            engine = create_engine_for_backend(DatabaseBackend.POSTGRESQL)
-            assert engine is not None
-            assert "postgresql" in str(engine.url)
-            engine.dispose()
+        engine = create_engine_for_backend(DatabaseBackend.POSTGRESQL)
+        assert engine is not None
+        assert "postgresql" in str(engine.url)
+        engine.dispose()
 
 
 # ---------------------------------------------------------------------------

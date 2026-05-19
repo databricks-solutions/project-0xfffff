@@ -98,6 +98,127 @@ class AlignmentService:
     def __init__(self, db_service: DatabaseService):
         self.db_service = db_service
 
+    # ------------------------------------------------------------------
+    # Evaluation result storage
+    # ------------------------------------------------------------------
+
+    def store_evaluation_results(
+        self,
+        workshop_id: str,
+        evaluations: list[dict],
+        judge_name: str,
+        judge_prompt: str,
+        model_name: str,
+        is_re_evaluation: bool = False,
+        judge_type: str | None = None,
+    ) -> "JudgePrompt":
+        """Store evaluation results, creating a new prompt version for re-evaluations.
+
+        For initial evaluations: reuses the latest existing prompt (or creates v1).
+        For re-evaluations: always creates a new prompt version so pre-align
+        and post-align results are both preserved and directly comparable.
+
+        Args:
+            evaluations: List of dicts with keys: trace_id, predicted_rating,
+                         human_rating, reasoning, (optional) workshop_uuid, confidence
+            judge_type: Explicit judge type. If None, detected from rubric.
+            is_re_evaluation: If True, creates a new prompt version instead of reusing.
+        """
+        import uuid as _uuid
+
+        from server.models import JudgeEvaluation, JudgePromptCreate
+
+        if not evaluations:
+            raise ValueError("No evaluations to store")
+
+        # Detect judge type from rubric if not explicitly provided
+        if judge_type is None:
+            judge_type = get_judge_type_from_rubric(self.db_service, workshop_id)
+        is_binary = judge_type == "binary"
+
+        # Get or create prompt
+        existing_prompts = self.db_service.get_judge_prompts(workshop_id)
+
+        if is_re_evaluation:
+            # Always create new version for re-evaluation (preserves baseline)
+            prompt_data = JudgePromptCreate(prompt_text=judge_prompt, model_name=model_name)
+            prompt = self.db_service.create_judge_prompt(workshop_id, prompt_data)
+            logger.info(
+                "Re-evaluation: created prompt v%d (preserving v%d baseline)",
+                prompt.version,
+                existing_prompts[0].version if existing_prompts else 0,
+            )
+        elif existing_prompts:
+            # Reuse latest prompt for initial evaluation
+            prompt = existing_prompts[0]
+            # Clear old evaluations for this prompt (initial eval replaces previous)
+            self.db_service.clear_judge_evaluations(workshop_id, prompt.id)
+        else:
+            # No prompts exist — create v1
+            prompt_data = JudgePromptCreate(prompt_text=judge_prompt, model_name=model_name)
+            prompt = self.db_service.create_judge_prompt(workshop_id, prompt_data)
+
+        # Build JudgeEvaluation objects with normalized ratings
+        evals_to_store = []
+        for eval_data in evaluations:
+            predicted = eval_data.get("predicted_rating")
+            if predicted is not None:
+                try:
+                    predicted = self._normalize_rating(float(predicted), is_binary)
+                except (ValueError, TypeError):
+                    logger.warning("Could not convert predicted_rating %s to float, skipping", predicted)
+                    continue
+            else:
+                # Skip traces with no predicted rating instead of defaulting
+                logger.warning("Skipping evaluation for trace %s — no predicted rating", eval_data.get("trace_id", "?"))
+                continue
+
+            human = eval_data.get("human_rating")
+            if human is not None:
+                try:
+                    human = int(human)
+                except (ValueError, TypeError):
+                    human = None
+
+            trace_id = eval_data.get("workshop_uuid") or eval_data["trace_id"]
+
+            evals_to_store.append(
+                JudgeEvaluation(
+                    id=str(_uuid.uuid4()),
+                    workshop_id=workshop_id,
+                    prompt_id=prompt.id,
+                    trace_id=trace_id,
+                    predicted_rating=predicted,
+                    human_rating=human,
+                    confidence=eval_data.get("confidence"),
+                    reasoning=eval_data.get("reasoning"),
+                    predicted_feedback=judge_name,
+                )
+            )
+
+        if evals_to_store:
+            self.db_service._insert_judge_evaluations(evals_to_store)
+
+        return prompt
+
+    @staticmethod
+    def _normalize_rating(value: float, is_binary: bool) -> int:
+        """Normalize a rating value based on judge type.
+
+        Binary: threshold at 3.0 for Likert-style values, 0.5 for others.
+        Likert: clamp to [1, 5].
+        """
+        if is_binary:
+            if value in (0.0, 1.0):
+                return int(value)
+            if 1.0 <= value <= 5.0:
+                return 1 if value >= 3.0 else 0
+            return 1 if value > 0.5 else 0
+        else:
+            return max(1, min(5, round(value)))
+
+    # ------------------------------------------------------------------
+
     @staticmethod
     def _normalize_judge_prompt(judge_prompt: str) -> str:
         """Ensure judge prompts use MLflow-compatible placeholders."""
@@ -439,16 +560,7 @@ class AlignmentService:
                     mlflow_to_workshop_trace_map[trace.mlflow_trace_id] = trace.id
             yield f"Built MLflow-to-workshop trace mapping ({len(mlflow_to_workshop_trace_map)} traces)"
 
-        # Set up MLflow environment based on available credentials
-        os.environ["DATABRICKS_HOST"] = mlflow_config.databricks_host.rstrip("/")
-        has_oauth = bool(os.environ.get("DATABRICKS_CLIENT_ID") and os.environ.get("DATABRICKS_CLIENT_SECRET"))
-        if has_oauth:
-            os.environ.pop("DATABRICKS_TOKEN", None)
-        else:
-            os.environ["DATABRICKS_TOKEN"] = mlflow_config.databricks_token
-            os.environ.pop("DATABRICKS_CLIENT_ID", None)
-            os.environ.pop("DATABRICKS_CLIENT_SECRET", None)
-        # Set tracking URI
+        # SDK handles auth (service principal on Apps, CLI profile locally)
         mlflow.set_tracking_uri("databricks")
 
         # Prepare the evaluation data
@@ -735,6 +847,7 @@ class AlignmentService:
                     null_prediction_rows = 0
                     rows_without_trace_id = 0
                     skipped_unknown_traces = 0
+                    skipped_unparseable = 0
 
                     # Use the effective judge type determined earlier (explicit > detected)
                     is_binary = effective_judge_type == "binary"
@@ -910,16 +1023,11 @@ class AlignmentService:
                         else:
                             null_prediction_rows += 1
 
-                        # If we still couldn't parse a rating, use a sensible default
+                        # If we still couldn't parse a rating, skip this trace
                         if predicted_rating is None:
-                            if is_binary:
-                                # Default to PASS (1) for binary - matches simple evaluation behavior
-                                predicted_rating = 1.0
-                                yield f"⚠️ Could not parse rating for trace {trace_id[:8]}... - defaulting to 1.0 (PASS)"
-                            else:
-                                # Default to neutral (3) for Likert - matches simple evaluation behavior
-                                predicted_rating = 3.0
-                                yield f"⚠️ Could not parse rating for trace {trace_id[:8]}... - defaulting to 3.0 (neutral)"
+                            skipped_unparseable += 1
+                            yield f"⚠️ Skipping trace {trace_id[:8]}... - could not parse judge output into a rating"
+                            continue
 
                         evaluations.append(
                             {
@@ -935,6 +1043,8 @@ class AlignmentService:
                         yield f"WARNING: {rows_without_trace_id} result rows were missing trace_id values."
                     if skipped_unknown_traces:
                         yield f"WARNING: {skipped_unknown_traces} result rows referenced traces without human labels."
+                    if skipped_unparseable:
+                        yield f"WARNING: {skipped_unparseable} traces skipped — could not parse judge output into a rating"
                     if len(evaluations) < len(trace_ids_for_eval):
                         missing = len(trace_ids_for_eval) - len(evaluations)
                         yield f"WARNING: Missing evaluation scores for {missing} traces."
@@ -942,7 +1052,7 @@ class AlignmentService:
                     valid_count = sum(1 for e in evaluations if e["predicted_rating"] is not None)
                     yield (
                         f"Extracted {valid_count}/{len(evaluations)} evaluations with scores "
-                        f"(null predictions: {null_prediction_rows})"
+                        f"(skipped: {skipped_unparseable}, null predictions: {null_prediction_rows})"
                     )
                 else:
                     yield f"ERROR: Column '{expected_value_col}' not found. Available: {columns_list}"
@@ -957,6 +1067,8 @@ class AlignmentService:
             evaluation_results = {
                 "judge_name": judge_name,
                 "trace_count": len(trace_ids_for_eval),
+                "extracted": len(evaluations),
+                "skipped_count": skipped_unparseable if judge_value_col else 0,
                 "metrics": metrics_payload,
                 "evaluations": evaluations,
                 "success": True,
@@ -989,6 +1101,7 @@ class AlignmentService:
         evaluation_model_name: str,  # Model for judge creation
         alignment_model_name: str,  # Model for MemAlign optimizer (reflection/distillation)
         mlflow_config: Any,
+        embedding_model_name: str = "databricks-gte-large-en",
     ) -> Generator[str, None, dict[str, Any]]:
         """Run judge alignment using MemAlignOptimizer.
 
@@ -1018,15 +1131,7 @@ class AlignmentService:
             return
 
         try:
-            # Set up MLflow environment
-            os.environ["DATABRICKS_HOST"] = mlflow_config.databricks_host.rstrip("/")
-            has_oauth = bool(os.environ.get("DATABRICKS_CLIENT_ID") and os.environ.get("DATABRICKS_CLIENT_SECRET"))
-            if has_oauth:
-                os.environ.pop("DATABRICKS_TOKEN", None)
-            else:
-                os.environ["DATABRICKS_TOKEN"] = mlflow_config.databricks_token
-                os.environ.pop("DATABRICKS_CLIENT_ID", None)
-                os.environ.pop("DATABRICKS_CLIENT_SECRET", None)
+            # SDK handles auth (service principal on Apps, CLI profile locally)
             mlflow.set_tracking_uri("databricks")
 
             # Enable MemAlign debug logging
@@ -1155,43 +1260,22 @@ class AlignmentService:
             logger.info("Detected judge type from rubric: %s", judge_type)
             yield f"Detected judge type: {judge_type}"
 
-            # Create MemAlignOptimizer - works universally for all judge types
-            # MemAlign uses dual memory systems:
-            # - Semantic Memory: Distills general guidelines from feedback
-            # - Episodic Memory: Retrieves similar past examples during evaluation
+            # Create MemAlignOptimizer
             yield "Creating MemAlign optimizer..."
 
             try:
                 from mlflow.genai.judges.optimizers import MemAlignOptimizer
 
-                # IMPORTANT: Databricks models don't support the JSON schema format required
-                # for guideline distillation (additionalProperties: false). OpenAI and Claude models
-                # support this, so we prefer those for the reflection_lm.
-                openai_api_key = os.environ.get("OPENAI_API_KEY")
-                is_openai_model = alignment_model.startswith("openai-") or alignment_model.startswith("gpt-")
-                is_claude_model = alignment_model.startswith("claude-") or "claude" in alignment_model.lower()
+                reflection_model = optimizer_model_uri
+                yield f"Using {alignment_model} for reflection/distillation"
 
-                if is_openai_model or is_claude_model:
-                    # User selected OpenAI/Claude model - use it for reflection (supports JSON schema)
-                    reflection_model = optimizer_model_uri
-                    yield f"Using {alignment_model} for guideline distillation"
-                elif openai_api_key:
-                    # Databricks model selected but OpenAI key available - use OpenAI for reflection
-                    reflection_model = "openai:/gpt-4o-mini"
-                    yield "Using OpenAI (gpt-4o-mini) for guideline distillation (Databricks doesn't support required JSON schema)"
-                else:
-                    # Fall back to Databricks - guideline distillation will fail but episodic memory will work
-                    reflection_model = optimizer_model_uri
-                    yield "WARNING: Using Databricks model for reflection."
-                    yield "Guideline distillation may fail (Databricks doesn't support required JSON schema)."
-                    yield "Alignment will still work using episodic memory (example-based learning)."
-
+                embedding_uri = f"databricks:/{embedding_model_name}"
                 optimizer = MemAlignOptimizer(
-                    reflection_lm=reflection_model,  # Model for distilling guidelines
-                    retrieval_k=5,  # Number of similar examples to retrieve
-                    embedding_model="databricks:/databricks-gte-large-en",  # Databricks embedding model
+                    reflection_lm=reflection_model,
+                    retrieval_k=5,
+                    embedding_model=embedding_uri,
                 )
-                yield f"MemAlign optimizer created with reflection_lm={reflection_model}, retrieval_k=5"
+                yield f"MemAlign optimizer created with reflection_lm={reflection_model}, embedding_model={embedding_uri}"
                 yield "Using MemAlign dual memory system (semantic + episodic memory)"
             except ImportError as e:
                 error_msg = f"MemAlign optimizer not available: {e}. Ensure mlflow>=3.9 is installed."

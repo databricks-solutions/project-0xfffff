@@ -12,5 +12,6 @@ export type AlignmentRequest = {
     alignment_model_name?: (string | null);
     prompt_id?: (string | null);
     judge_type?: (string | null);
+    embedding_model_name?: string;
 };
 

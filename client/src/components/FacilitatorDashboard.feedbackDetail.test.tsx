@@ -45,6 +45,7 @@ vi.mock('@/hooks/useWorkshopApi', () => ({
   useDeleteDraftRubricItem: () => ({ mutate: vi.fn(), isPending: false }),
   useSuggestGroups: () => ({ mutate: vi.fn(), isPending: false }),
   useApplyGroups: () => ({ mutate: vi.fn(), isPending: false }),
+  useAvailableModels: () => ({ data: undefined }),
 }));
 
 vi.mock('@/context/WorkshopContext', () => ({

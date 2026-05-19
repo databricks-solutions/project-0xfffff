@@ -7,7 +7,7 @@ import "./index.css";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 0, // Consider data stale immediately
+      staleTime: 30_000, // 30s — prevents refetch storms on navigation/mount
       gcTime: 5 * 60 * 1000, // 5 minutes cache time
       refetchOnWindowFocus: true,
       refetchOnMount: true,

@@ -23,6 +23,11 @@ import type { DatabricksEndpointInfo } from '../models/DatabricksEndpointInfo';
 import type { DatabricksResponse } from '../models/DatabricksResponse';
 import type { DBSQLExportRequest } from '../models/DBSQLExportRequest';
 import type { DBSQLExportResponse } from '../models/DBSQLExportResponse';
+import type { DiscoveryAgentRun } from '../models/DiscoveryAgentRun';
+import type { DiscoveryComment } from '../models/DiscoveryComment';
+import type { DiscoveryCommentCreateRequest } from '../models/DiscoveryCommentCreateRequest';
+import type { DiscoveryCommentDeleteRequest } from '../models/DiscoveryCommentDeleteRequest';
+import type { DiscoveryCommentVoteRequest } from '../models/DiscoveryCommentVoteRequest';
 import type { DiscoveryFeedback } from '../models/DiscoveryFeedback';
 import type { DiscoveryFeedbackCreate } from '../models/DiscoveryFeedbackCreate';
 import type { DiscoveryFeedbackWithUser } from '../models/DiscoveryFeedbackWithUser';
@@ -31,6 +36,7 @@ import type { DiscoveryFindingCreate } from '../models/DiscoveryFindingCreate';
 import type { DiscoveryFindingWithUser } from '../models/DiscoveryFindingWithUser';
 import type { DiscoveryQuestionsModelConfig } from '../models/DiscoveryQuestionsModelConfig';
 import type { DiscoveryQuestionsResponse } from '../models/DiscoveryQuestionsResponse';
+import type { DiscoverySettingsConfig } from '../models/DiscoverySettingsConfig';
 import type { DiscoverySummariesResponse } from '../models/DiscoverySummariesResponse';
 import type { DraftRubricItem } from '../models/DraftRubricItem';
 import type { FacilitatorConfigCreate } from '../models/FacilitatorConfigCreate';
@@ -53,6 +59,7 @@ import type { MLflowTraceInfo } from '../models/MLflowTraceInfo';
 import type { ParticipantNote } from '../models/ParticipantNote';
 import type { ParticipantNoteCreate } from '../models/ParticipantNoteCreate';
 import type { PromoteFindingRequest } from '../models/PromoteFindingRequest';
+import type { ResummarizeRequest } from '../models/ResummarizeRequest';
 import type { Rubric } from '../models/Rubric';
 import type { RubricCreate } from '../models/RubricCreate';
 import type { RubricGenerationRequest } from '../models/RubricGenerationRequest';
@@ -62,7 +69,13 @@ import type { SpanAttributeFilterUpdate } from '../models/SpanAttributeFilterUpd
 import type { SubmitFindingV2Request } from '../models/SubmitFindingV2Request';
 import type { SubmitFollowUpAnswerRequest } from '../models/SubmitFollowUpAnswerRequest';
 import type { SuggestGroupsResponse } from '../models/SuggestGroupsResponse';
+import type { SummarizationSettingsUpdate } from '../models/SummarizationSettingsUpdate';
 import type { Trace } from '../models/Trace';
+import type { TraceCriterion } from '../models/TraceCriterion';
+import type { TraceCriterionCreate } from '../models/TraceCriterionCreate';
+import type { TraceCriterionUpdate } from '../models/TraceCriterionUpdate';
+import type { TraceEvalScore } from '../models/TraceEvalScore';
+import type { TraceRubric } from '../models/TraceRubric';
 import type { TraceUpload } from '../models/TraceUpload';
 import type { UpdateDraftRubricItemRequest } from '../models/UpdateDraftRubricItemRequest';
 import type { UpdateThresholdsRequest } from '../models/UpdateThresholdsRequest';
@@ -285,6 +298,129 @@ export class ApiService {
             },
             body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Update Summarization Settings
+     * Update trace summarization settings for a workshop.
+     * @param workshopId
+     * @param requestBody
+     * @returns Workshop Successful Response
+     * @throws ApiError
+     */
+    public static updateSummarizationSettingsWorkshopsWorkshopIdSummarizationSettingsPut(
+        workshopId: string,
+        requestBody: SummarizationSettingsUpdate,
+    ): CancelablePromise<Workshop> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/workshops/{workshop_id}/summarization-settings',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Resummarize Traces
+     * Trigger re-summarization of workshop traces.
+     *
+     * Creates a tracked SummarizationJob and returns the job_id for progress polling.
+     * Modes: "all" (re-summarize everything), "unsummarized" (only traces without summaries),
+     * "failed" (only traces from the last job's failed list).
+     * @param workshopId
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static resummarizeTracesWorkshopsWorkshopIdResummarizePost(
+        workshopId: string,
+        requestBody?: (ResummarizeRequest | null),
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/resummarize',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Summarization Job Status
+     * Get the status of a summarization job for progress polling.
+     * @param workshopId
+     * @param jobId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getSummarizationJobStatusWorkshopsWorkshopIdSummarizationJobJobIdGet(
+        workshopId: string,
+        jobId: string,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/summarization-job/{job_id}',
+            path: {
+                'workshop_id': workshopId,
+                'job_id': jobId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Cancel Summarization Job
+     * Cancel a running summarization job.
+     * @param workshopId
+     * @param jobId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static cancelSummarizationJobWorkshopsWorkshopIdCancelSummarizationJobJobIdPost(
+        workshopId: string,
+        jobId: string,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/cancel-summarization-job/{job_id}',
+            path: {
+                'workshop_id': workshopId,
+                'job_id': jobId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Summarization Status
+     * Get summary coverage stats and last job info for a workshop.
+     * @param workshopId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getSummarizationStatusWorkshopsWorkshopIdSummarizationStatusGet(
+        workshopId: string,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/summarization-status',
+            path: {
+                'workshop_id': workshopId,
+            },
             errors: {
                 422: `Validation Error`,
             },
@@ -1728,7 +1864,7 @@ export class ApiService {
     }
     /**
      * Configure Mlflow Intake
-     * Configure MLflow intake for a workshop (token stored in memory, not database).
+     * Configure MLflow intake for a workshop.
      * @param workshopId
      * @param requestBody
      * @returns MLflowIntakeConfig Successful Response
@@ -1764,6 +1900,27 @@ export class ApiService {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/workshops/{workshop_id}/mlflow-config',
+            path: {
+                'workshop_id': workshopId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * List Available Models
+     * List available model serving endpoints for a workshop's Databricks workspace.
+     * @param workshopId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static listAvailableModelsWorkshopsWorkshopIdAvailableModelsGet(
+        workshopId: string,
+    ): CancelablePromise<Array<Record<string, any>>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/available-models',
             path: {
                 'workshop_id': workshopId,
             },
@@ -1921,10 +2078,8 @@ export class ApiService {
      * 2. For each row, create an MLflow trace with the request/response
      * 3. Store the traces locally with their MLflow trace IDs
      *
-     * Environment variables used if parameters not provided:
-     * - DATABRICKS_HOST
-     * - DATABRICKS_TOKEN
-     * - MLFLOW_EXPERIMENT_ID
+     * Authentication is resolved via Databricks SDK (service principal or CLI profile).
+     * DATABRICKS_HOST and MLFLOW_EXPERIMENT_ID come from the environment.
      * @param workshopId
      * @param formData
      * @returns any Successful Response
@@ -2736,6 +2891,30 @@ export class ApiService {
         });
     }
     /**
+     * Update Discovery Settings
+     * @param workshopId
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static updateDiscoverySettingsWorkshopsWorkshopIdDiscoverySettingsPut(
+        workshopId: string,
+        requestBody: DiscoverySettingsConfig,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/workshops/{workshop_id}/discovery-settings',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * Generate Discovery Summaries
      * @param workshopId
      * @param refresh
@@ -2905,6 +3084,192 @@ export class ApiService {
                 'workshop_id': workshopId,
             },
             query: {
+                'user_id': userId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Create Discovery Comment
+     * @param workshopId
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static createDiscoveryCommentWorkshopsWorkshopIdDiscoveryCommentsPost(
+        workshopId: string,
+        requestBody: DiscoveryCommentCreateRequest,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/discovery-comments',
+            path: {
+                'workshop_id': workshopId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * List Discovery Comments
+     * @param workshopId
+     * @param traceId
+     * @param milestoneRef
+     * @param userId
+     * @returns DiscoveryComment Successful Response
+     * @throws ApiError
+     */
+    public static listDiscoveryCommentsWorkshopsWorkshopIdDiscoveryCommentsGet(
+        workshopId: string,
+        traceId: string,
+        milestoneRef?: (string | null),
+        userId?: (string | null),
+    ): CancelablePromise<Array<DiscoveryComment>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/discovery-comments',
+            path: {
+                'workshop_id': workshopId,
+            },
+            query: {
+                'trace_id': traceId,
+                'milestone_ref': milestoneRef,
+                'user_id': userId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Vote Discovery Comment
+     * @param workshopId
+     * @param commentId
+     * @param requestBody
+     * @returns DiscoveryComment Successful Response
+     * @throws ApiError
+     */
+    public static voteDiscoveryCommentWorkshopsWorkshopIdDiscoveryCommentsCommentIdVotePost(
+        workshopId: string,
+        commentId: string,
+        requestBody: DiscoveryCommentVoteRequest,
+    ): CancelablePromise<DiscoveryComment> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/discovery-comments/{comment_id}/vote',
+            path: {
+                'workshop_id': workshopId,
+                'comment_id': commentId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Delete Discovery Comment
+     * @param workshopId
+     * @param commentId
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static deleteDiscoveryCommentWorkshopsWorkshopIdDiscoveryCommentsCommentIdDelete(
+        workshopId: string,
+        commentId: string,
+        requestBody: DiscoveryCommentDeleteRequest,
+    ): CancelablePromise<Record<string, any>> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/workshops/{workshop_id}/discovery-comments/{comment_id}',
+            path: {
+                'workshop_id': workshopId,
+                'comment_id': commentId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Discovery Agent Run
+     * @param workshopId
+     * @param runId
+     * @returns DiscoveryAgentRun Successful Response
+     * @throws ApiError
+     */
+    public static getDiscoveryAgentRunWorkshopsWorkshopIdDiscoveryAgentRunsRunIdGet(
+        workshopId: string,
+        runId: string,
+    ): CancelablePromise<DiscoveryAgentRun> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/discovery-agent-runs/{run_id}',
+            path: {
+                'workshop_id': workshopId,
+                'run_id': runId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Stream Discovery Agent Run
+     * @param workshopId
+     * @param runId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static streamDiscoveryAgentRunWorkshopsWorkshopIdDiscoveryAgentRunsRunIdStreamGet(
+        workshopId: string,
+        runId: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/discovery-agent-runs/{run_id}/stream',
+            path: {
+                'workshop_id': workshopId,
+                'run_id': runId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Stream Discovery Comments
+     * @param workshopId
+     * @param traceId
+     * @param milestoneRef
+     * @param userId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static streamDiscoveryCommentsWorkshopsWorkshopIdDiscoveryCommentsStreamGet(
+        workshopId: string,
+        traceId: string,
+        milestoneRef?: (string | null),
+        userId?: (string | null),
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/discovery-comments/stream',
+            path: {
+                'workshop_id': workshopId,
+            },
+            query: {
+                'trace_id': traceId,
+                'milestone_ref': milestoneRef,
                 'user_id': userId,
             },
             errors: {
@@ -3225,6 +3590,154 @@ export class ApiService {
             path: {
                 'workshop_id': workshopId,
                 'item_id': itemId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Create Trace Criterion
+     * @param workshopId
+     * @param traceId
+     * @param requestBody
+     * @returns TraceCriterion Successful Response
+     * @throws ApiError
+     */
+    public static createTraceCriterionWorkshopsWorkshopIdTracesTraceIdCriteriaPost(
+        workshopId: string,
+        traceId: string,
+        requestBody: TraceCriterionCreate,
+    ): CancelablePromise<TraceCriterion> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/workshops/{workshop_id}/traces/{trace_id}/criteria',
+            path: {
+                'workshop_id': workshopId,
+                'trace_id': traceId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * List Trace Criteria
+     * @param workshopId
+     * @param traceId
+     * @returns TraceCriterion Successful Response
+     * @throws ApiError
+     */
+    public static listTraceCriteriaWorkshopsWorkshopIdTracesTraceIdCriteriaGet(
+        workshopId: string,
+        traceId: string,
+    ): CancelablePromise<Array<TraceCriterion>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/traces/{trace_id}/criteria',
+            path: {
+                'workshop_id': workshopId,
+                'trace_id': traceId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Update Trace Criterion
+     * @param workshopId
+     * @param criterionId
+     * @param requestBody
+     * @returns TraceCriterion Successful Response
+     * @throws ApiError
+     */
+    public static updateTraceCriterionWorkshopsWorkshopIdCriteriaCriterionIdPut(
+        workshopId: string,
+        criterionId: string,
+        requestBody: TraceCriterionUpdate,
+    ): CancelablePromise<TraceCriterion> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/workshops/{workshop_id}/criteria/{criterion_id}',
+            path: {
+                'workshop_id': workshopId,
+                'criterion_id': criterionId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Delete Trace Criterion
+     * @param workshopId
+     * @param criterionId
+     * @returns void
+     * @throws ApiError
+     */
+    public static deleteTraceCriterionWorkshopsWorkshopIdCriteriaCriterionIdDelete(
+        workshopId: string,
+        criterionId: string,
+    ): CancelablePromise<void> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/workshops/{workshop_id}/criteria/{criterion_id}',
+            path: {
+                'workshop_id': workshopId,
+                'criterion_id': criterionId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Trace Rubric
+     * @param workshopId
+     * @param traceId
+     * @returns TraceRubric Successful Response
+     * @throws ApiError
+     */
+    public static getTraceRubricWorkshopsWorkshopIdTracesTraceIdRubricGet(
+        workshopId: string,
+        traceId: string,
+    ): CancelablePromise<TraceRubric> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/traces/{trace_id}/rubric',
+            path: {
+                'workshop_id': workshopId,
+                'trace_id': traceId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Eval Results
+     * @param workshopId
+     * @param traceId
+     * @returns TraceEvalScore Successful Response
+     * @throws ApiError
+     */
+    public static getEvalResultsWorkshopsWorkshopIdEvalResultsGet(
+        workshopId: string,
+        traceId?: (string | null),
+    ): CancelablePromise<Array<TraceEvalScore>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/workshops/{workshop_id}/eval-results',
+            path: {
+                'workshop_id': workshopId,
+            },
+            query: {
+                'trace_id': traceId,
             },
             errors: {
                 422: `Validation Error`,

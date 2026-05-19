@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { WorkshopsService } from '@/client';
 import { useWorkshopContext } from '@/context/WorkshopContext';
 import { useWorkflowContext } from '@/context/WorkflowContext';
-import { useWorkshop } from '@/hooks/useWorkshopApi';
+import { useWorkshopMeta } from '@/hooks/useWorkshopApi';
 
 interface WorkshopHeaderProps {
   showDescription?: boolean;
@@ -22,7 +22,7 @@ export const WorkshopHeader: React.FC<WorkshopHeaderProps> = ({
 }) => {
   const { workshopId } = useWorkshopContext();
   const { currentPhase } = useWorkflowContext();
-  const { data: workshop } = useWorkshop(workshopId!);
+  const { data: workshop } = useWorkshopMeta(workshopId!);
   const { data: participants = [] } = useQuery({
     queryKey: ['workshop-participants', workshopId],
     queryFn: async () => {

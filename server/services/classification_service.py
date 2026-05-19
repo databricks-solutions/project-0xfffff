@@ -39,8 +39,6 @@ class ClassificationService:
         trace_output: str,
         workshop_id: str,
         model_name: str,
-        databricks_host: str,
-        databricks_token: str,
     ) -> str:
         """Classify finding into one of 5 categories.
 
@@ -50,29 +48,26 @@ class ClassificationService:
             trace_output: The trace output for context
             workshop_id: Workshop ID for logging
             model_name: LLM endpoint name
-            databricks_host: Databricks workspace URL
-            databricks_token: Databricks API token
 
         Returns:
             Category string (one of FINDING_CATEGORIES) or empty string on error
         """
-        if not finding_text or not model_name or not databricks_token:
-            # Default to 'themes' if classification is unavailable
+        if not finding_text or not model_name:
             logger.warning(
-                "Classification skipped: missing inputs (finding_text=%s, model_name=%s, token_exists=%s)",
+                "Classification skipped: missing inputs (finding_text=%s, model_name=%s)",
                 bool(finding_text),
                 bool(model_name),
-                bool(databricks_token),
             )
             return "themes"
 
         try:
+            from server.services.databricks_service import get_databricks_host, resolve_databricks_token
             from server.services.discovery_dspy import get_classification_signature
 
             lm = build_databricks_lm(
                 endpoint_name=model_name,
-                workspace_url=databricks_host,
-                token=databricks_token,
+                workspace_url=get_databricks_host(),
+                token=resolve_databricks_token(),
                 temperature=0.1,  # Lower temp for consistent classification
             )
 
@@ -113,8 +108,6 @@ class ClassificationService:
         findings: list[ClassifiedFinding],
         workshop_id: str,
         model_name: str,
-        databricks_host: str,
-        databricks_token: str,
     ) -> list[Disagreement]:
         """Compare findings and detect conflicting viewpoints.
 
@@ -123,8 +116,6 @@ class ClassificationService:
             findings: List of classified findings for the trace
             workshop_id: Workshop ID
             model_name: LLM endpoint name
-            databricks_host: Databricks workspace URL
-            databricks_token: Databricks API token
 
         Returns:
             List of detected disagreements
@@ -132,17 +123,18 @@ class ClassificationService:
         if not findings or len(findings) < 2:
             return []
 
-        if not model_name or not databricks_token:
+        if not model_name:
             logger.warning("Disagreement detection skipped: missing LLM configuration")
             return []
 
         try:
+            from server.services.databricks_service import get_databricks_host, resolve_databricks_token
             from server.services.discovery_dspy import get_disagreement_signature
 
             lm = build_databricks_lm(
                 endpoint_name=model_name,
-                workspace_url=databricks_host,
-                token=databricks_token,
+                workspace_url=get_databricks_host(),
+                token=resolve_databricks_token(),
                 temperature=0.1,
             )
 

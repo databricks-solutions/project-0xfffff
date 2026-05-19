@@ -42,9 +42,12 @@ class DraftRubricGroupingService:
         if not mlflow_config:
             return self._fallback_grouping(items)
 
-        from server.services.token_storage_service import token_storage
+        from server.services.databricks_service import get_databricks_host, resolve_databricks_token
 
-        databricks_token = token_storage.get_token(workshop_id) or self.db_service.get_databricks_token(workshop_id)
+        try:
+            databricks_token = resolve_databricks_token()
+        except RuntimeError:
+            databricks_token = None
         if not databricks_token:
             return self._fallback_grouping(items)
 
@@ -59,7 +62,7 @@ class DraftRubricGroupingService:
             SuggestRubricGroups = get_suggest_groups_signature()
             lm = build_databricks_lm(
                 endpoint_name=model_name,
-                workspace_url=mlflow_config.databricks_host,
+                workspace_url=get_databricks_host(),
                 token=databricks_token,
                 temperature=0.2,
             )

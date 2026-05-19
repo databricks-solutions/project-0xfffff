@@ -40,10 +40,8 @@ async def export_workshop_to_dbsql(
         elif db_path.startswith("sqlite://"):
             db_path = db_path.replace("sqlite://", "")
 
-        # Initialize DBSQL export service
+        # Initialize DBSQL export service — auth resolved from environment
         dbsql_service = DBSQLExportService(
-            databricks_host=request.databricks_host,
-            databricks_token=request.databricks_token,
             http_path=request.http_path,
             catalog=request.catalog,
             schema_name=request.schema_name,

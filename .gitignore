@@ -10,6 +10,7 @@ client/node_modules/
 # Allow client/build for deployment (built files needed for Databricks Apps)
 client/build/*
 .claude/mlflow/claude_tracing.log
+.claude/worktrees/
 .coverage
 coverage.xml
 # !client/build/README.md

@@ -82,10 +82,10 @@ class TestAnnotationMlflowSync:
     """Test that annotations sync to MLflow as feedback entries."""
 
     @patch.dict(os.environ, {}, clear=False)
-    @patch("server.services.database_service.token_storage")
-    def test_sync_logs_one_feedback_per_rubric_question(self, mock_token_storage):
+    @patch("server.services.databricks_service.resolve_databricks_token", return_value="test-token")
+    def test_sync_logs_one_feedback_per_rubric_question(self, mock_resolve_token):
         """Each rubric question rating produces one MLflow log_feedback call."""
-        mock_token_storage.get_token.return_value = "test-token"
+        # resolve_databricks_token is already mocked to return "test-token"
 
         service, annotation_db = _make_db_service_with_mocks(
             rubric_question="Helpfulness: Rate helpfulness|||QUESTION_SEPARATOR|||Accuracy: Is it correct?",
@@ -114,10 +114,10 @@ class TestFeedbackSource:
     """Test that MLflow feedback source is set to HUMAN with correct user_id."""
 
     @patch.dict(os.environ, {}, clear=False)
-    @patch("server.services.database_service.token_storage")
-    def test_feedback_source_is_human_with_user_id(self, mock_token_storage):
+    @patch("server.services.databricks_service.resolve_databricks_token", return_value="test-token")
+    def test_feedback_source_is_human_with_user_id(self, mock_resolve_token):
         """Feedback source type is HUMAN and source_id is the annotator's user_id."""
-        mock_token_storage.get_token.return_value = "test-token"
+        # resolve_databricks_token is already mocked to return "test-token"
 
         service, annotation_db = _make_db_service_with_mocks(
             annotation_user_id="user-alice",
@@ -150,10 +150,10 @@ class TestMlflowTraceTagging:
     """Test that annotation triggers trace tagging with 'align' label."""
 
     @patch.dict(os.environ, {}, clear=False)
-    @patch("server.services.database_service.token_storage")
-    def test_trace_tagged_with_align_and_workshop_id(self, mock_token_storage):
+    @patch("server.services.databricks_service.resolve_databricks_token", return_value="test-token")
+    def test_trace_tagged_with_align_and_workshop_id(self, mock_resolve_token):
         """set_trace_tag called with label=align and workshop_id."""
-        mock_token_storage.get_token.return_value = "test-token"
+        # resolve_databricks_token is already mocked to return "test-token"
 
         service, annotation_db = _make_db_service_with_mocks(
             workshop_id="ws-test-42",
@@ -183,10 +183,10 @@ class TestCommentToRationale:
     """Test that annotation comment is passed as MLflow feedback rationale."""
 
     @patch.dict(os.environ, {}, clear=False)
-    @patch("server.services.database_service.token_storage")
-    def test_comment_maps_to_rationale(self, mock_token_storage):
+    @patch("server.services.databricks_service.resolve_databricks_token", return_value="test-token")
+    def test_comment_maps_to_rationale(self, mock_resolve_token):
         """Annotation comment is passed as the rationale parameter."""
-        mock_token_storage.get_token.return_value = "test-token"
+        # resolve_databricks_token is already mocked to return "test-token"
 
         service, annotation_db = _make_db_service_with_mocks(
             annotation_ratings={"rubric-1_0": 4},
@@ -215,12 +215,12 @@ class TestDuplicateDetection:
     """Test that existing feedback entries are detected and skipped."""
 
     @patch.dict(os.environ, {}, clear=False)
-    @patch("server.services.database_service.token_storage")
-    def test_existing_assessment_skipped(self, mock_token_storage):
+    @patch("server.services.databricks_service.resolve_databricks_token", return_value="test-token")
+    def test_existing_assessment_skipped(self, mock_resolve_token):
         """When an assessment already exists for (judge_name, user_id), skip it."""
         from mlflow.entities import AssessmentSource, AssessmentSourceType
 
-        mock_token_storage.get_token.return_value = "test-token"
+        # resolve_databricks_token is already mocked to return "test-token"
 
         service, annotation_db = _make_db_service_with_mocks(
             annotation_user_id="user-1",
@@ -256,10 +256,10 @@ class TestLegacySingleRating:
     """Test that legacy single-rating annotations sync correctly."""
 
     @patch.dict(os.environ, {}, clear=False)
-    @patch("server.services.database_service.token_storage")
-    def test_legacy_single_rating_syncs(self, mock_token_storage):
+    @patch("server.services.databricks_service.resolve_databricks_token", return_value="test-token")
+    def test_legacy_single_rating_syncs(self, mock_resolve_token):
         """When ratings dict is empty but legacy rating field exists, sync it."""
-        mock_token_storage.get_token.return_value = "test-token"
+        # resolve_databricks_token is already mocked to return "test-token"
 
         service, annotation_db = _make_db_service_with_mocks(
             annotation_ratings=None,

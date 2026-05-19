@@ -24,6 +24,7 @@ vi.mock('@/context/WorkshopContext', () => ({
 
 vi.mock('@/hooks/useWorkshopApi', () => ({
   useWorkshop: () => mockUseWorkshop,
+  useWorkshopDisplayConfig: () => ({ data: mockUseWorkshop.data ? { input_jsonpath: mockUseWorkshop.data.input_jsonpath, output_jsonpath: mockUseWorkshop.data.output_jsonpath, span_attribute_filter: mockUseWorkshop.data.span_attribute_filter } : undefined, isLoading: mockUseWorkshop.isLoading }),
   useUpdateJsonPathSettings: () => mockUpdateJsonPath,
   usePreviewJsonPath: () => mockPreviewJsonPath,
   useUpdateSpanAttributeFilter: () => mockUpdateSpanFilter,

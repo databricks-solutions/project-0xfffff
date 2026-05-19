@@ -1,12 +1,55 @@
 import pytest
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
-from server.services.alignment_service import AlignmentService
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from server.database import Base, WorkshopDB, TraceDB
+from server.services.alignment_service import AlignmentService, get_judge_type_from_rubric
+from server.services.database_service import DatabaseService
 
 try:
     from server.services.alignment_service import likert_agreement_metric
 except ImportError:
     likert_agreement_metric = None
+
+
+# ---------------------------------------------------------------------------
+# Fixtures for integration tests (real DB)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def test_db():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    yield session
+    session.close()
+
+
+@pytest.fixture
+def db_service(test_db):
+    return DatabaseService(test_db)
+
+
+@pytest.fixture
+def workshop(test_db):
+    ws = WorkshopDB(id="ws-1", name="Test Workshop", facilitator_id="f-1")
+    test_db.add(ws)
+    test_db.commit()
+    return ws
+
+
+@pytest.fixture
+def traces(test_db, workshop):
+    t1 = TraceDB(id="t-1", workshop_id="ws-1", input="Hello", output="Hi")
+    t2 = TraceDB(id="t-2", workshop_id="ws-1", input="Bye", output="Goodbye")
+    test_db.add_all([t1, t2])
+    test_db.commit()
+    return [t1, t2]
 
 
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
@@ -230,9 +273,155 @@ def test_alignment_reports_guideline_and_example_counts():
     assert False, "TODO: replace with non-vacuous test (current version mocks all of mlflow)"
 
 
-@pytest.mark.xfail(reason="Vacuous stub — needs real MLflow integration test")
 @pytest.mark.spec("JUDGE_EVALUATION_SPEC")
 @pytest.mark.req("Re-evaluate loads registered judge with aligned instructions")
-def test_reevaluation_loads_registered_judge_via_get_scorer():
-    """Vacuous: needs real MLflow integration test, not mock-everything."""
-    assert False, "TODO: replace with non-vacuous test (current version mocks all of mlflow)"
+def test_re_evaluate_endpoint_passes_use_registered_judge_true():
+    """The re-evaluate code path must pass use_registered_judge=True."""
+    import ast
+    import inspect
+
+    import server.routers.workshops as wmod
+
+    source = inspect.getsource(wmod.re_evaluate)
+    tree = ast.parse(source)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.keyword) and node.arg == "use_registered_judge":
+            assert isinstance(node.value, ast.Constant) and node.value.value is True, (
+                "re_evaluate must pass use_registered_judge=True so aligned instructions are used"
+            )
+            return
+
+    pytest.fail("use_registered_judge keyword not found in re_evaluate function")
+
+
+# === store_evaluation_results tests ===
+
+
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Results stored against correct prompt version")
+def test_store_evaluation_results_creates_new_prompt_for_reeval(db_service, workshop, traces):
+    """Re-evaluation stores results under a NEW prompt version, preserving the baseline."""
+    from server.models import JudgePromptCreate
+
+    alignment_svc = AlignmentService(db_service)
+
+    # Create initial prompt v1
+    prompt_v1 = db_service.create_judge_prompt(
+        workshop.id,
+        JudgePromptCreate(prompt_text="Rate quality", model_name="test"),
+    )
+
+    # Store initial evaluations
+    initial_evals = [
+        {"trace_id": "t-1", "predicted_rating": 4.0, "human_rating": 5.0, "reasoning": "good"},
+    ]
+    result_prompt = alignment_svc.store_evaluation_results(
+        workshop_id=workshop.id,
+        evaluations=initial_evals,
+        judge_name="test_judge",
+        judge_prompt="Rate quality",
+        model_name="test",
+        is_re_evaluation=False,
+    )
+    assert result_prompt.version == prompt_v1.version  # Reuses existing prompt
+
+    # Store re-evaluation results
+    reeval_evals = [
+        {"trace_id": "t-1", "predicted_rating": 5.0, "human_rating": 5.0, "reasoning": "aligned"},
+    ]
+    reeval_prompt = alignment_svc.store_evaluation_results(
+        workshop_id=workshop.id,
+        evaluations=reeval_evals,
+        judge_name="test_judge",
+        judge_prompt="Rate quality (aligned)",
+        model_name="test",
+        is_re_evaluation=True,
+    )
+    assert reeval_prompt.version == prompt_v1.version + 1  # New version
+
+    # Both sets of evaluations exist
+    v1_evals = db_service.get_judge_evaluations(workshop.id, prompt_v1.id)
+    v2_evals = db_service.get_judge_evaluations(workshop.id, reeval_prompt.id)
+    assert len(v1_evals) == 1
+    assert len(v2_evals) == 1
+    assert v1_evals[0].predicted_rating == 4  # Original preserved
+    assert v2_evals[0].predicted_rating == 5  # New stored separately
+
+
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Pre-align and post-align scores directly comparable")
+def test_store_evaluation_results_initial_reuses_existing_prompt(db_service, workshop, traces):
+    """Initial evaluation reuses latest prompt instead of creating a new one."""
+    from server.models import JudgePromptCreate
+
+    alignment_svc = AlignmentService(db_service)
+
+    existing = db_service.create_judge_prompt(
+        workshop.id,
+        JudgePromptCreate(prompt_text="Rate quality", model_name="test"),
+    )
+
+    evals = [
+        {"trace_id": "t-1", "predicted_rating": 4.0, "human_rating": 5.0, "reasoning": "ok"},
+    ]
+    result_prompt = alignment_svc.store_evaluation_results(
+        workshop_id=workshop.id,
+        evaluations=evals,
+        judge_name="test_judge",
+        judge_prompt="Rate quality",
+        model_name="test",
+        is_re_evaluation=False,
+    )
+    assert result_prompt.id == existing.id  # Same prompt, not a new version
+
+
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Evaluation results persisted to database")
+def test_store_evaluation_results_normalizes_binary_ratings(db_service, workshop, traces):
+    """Binary ratings normalized to 0/1 via threshold conversion."""
+    alignment_svc = AlignmentService(db_service)
+
+    evals = [
+        {"trace_id": "t-1", "predicted_rating": 3.0, "human_rating": 1.0, "reasoning": "ok"},
+        {"trace_id": "t-2", "predicted_rating": 2.0, "human_rating": 0.0, "reasoning": "bad"},
+    ]
+    alignment_svc.store_evaluation_results(
+        workshop_id=workshop.id,
+        evaluations=evals,
+        judge_name="test_judge",
+        judge_prompt="Is it correct?",
+        model_name="test",
+        judge_type="binary",
+    )
+
+    prompts = db_service.get_judge_prompts(workshop.id)
+    stored = db_service.get_judge_evaluations(workshop.id, prompts[0].id)
+    ratings = {e.trace_id: e.predicted_rating for e in stored}
+    assert ratings["t-1"] == 1  # 3.0 >= 3 -> PASS
+    assert ratings["t-2"] == 0  # 2.0 < 3 -> FAIL
+
+
+@pytest.mark.spec("JUDGE_EVALUATION_SPEC")
+@pytest.mark.req("Evaluation results persisted to database")
+def test_store_evaluation_results_skips_none_ratings(db_service, workshop, traces):
+    """Traces with None predicted_rating are skipped, not stored with defaults."""
+    alignment_svc = AlignmentService(db_service)
+
+    evals = [
+        {"trace_id": "t-1", "predicted_rating": None, "human_rating": 5.0, "reasoning": None},
+        {"trace_id": "t-2", "predicted_rating": 4.0, "human_rating": 3.0, "reasoning": "ok"},
+    ]
+    alignment_svc.store_evaluation_results(
+        workshop_id=workshop.id,
+        evaluations=evals,
+        judge_name="test_judge",
+        judge_prompt="Rate quality",
+        model_name="test",
+        judge_type="likert",
+    )
+
+    prompts = db_service.get_judge_prompts(workshop.id)
+    stored = db_service.get_judge_evaluations(workshop.id, prompts[0].id)
+    assert len(stored) == 1
+    assert stored[0].trace_id == "t-2"

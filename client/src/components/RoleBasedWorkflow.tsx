@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DiscoveryService } from '@/client';
 import { AlertCircle, CheckCircle, Clock, Users, UserCheck, Settings, Play, Brain, Eye, ChevronRight } from 'lucide-react';
-import { useRubric } from '@/hooks/useWorkshopApi';
+import { useRubric, prefetchAvailableModels } from '@/hooks/useWorkshopApi';
 
 interface RoleBasedWorkflowProps {
   onNavigate: (phase: string) => void;
@@ -546,6 +546,11 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
           // Generate testid from step title (e.g., "Discovery Phase" -> "workflow-step-discovery")
           const stepTestId = `workflow-step-${step.title.toLowerCase().replace(/\s+phase/i, '').replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}`;
 
+          const needsModelPrefetch = /discovery|annotation|rubric|judge/i.test(step.title);
+          const handlePrefetch = needsModelPrefetch
+            ? () => { if (workshopId) prefetchAvailableModels(queryClient, workshopId); }
+            : undefined;
+
           return (
             <button
               key={index}
@@ -555,6 +560,8 @@ export const RoleBasedWorkflow: React.FC<RoleBasedWorkflowProps> = ({ onNavigate
                   step.action();
                 }
               }}
+              onMouseEnter={handlePrefetch}
+              onFocus={handlePrefetch}
               disabled={!step.accessible}
               className={`relative w-full rounded-lg border-l-4 p-2.5 text-left transition-all group ${
                 isCurrentPhase && !isCompleted

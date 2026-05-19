@@ -2,7 +2,7 @@
  * React Query hooks for workshop API operations
  */
 
-import { useQuery, useMutation, useQueryClient, QueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, QueryClient, queryOptions } from '@tanstack/react-query';
 import type { Query } from '@tanstack/react-query';
 import { WorkshopsService, ApiError, DiscoveryService } from '@/client';
 import { useRoleCheck } from '@/context/UserContext';
@@ -26,6 +26,49 @@ import type { DraftRubricItem } from '@/client/models/DraftRubricItem';
 import type { CreateDraftRubricItemRequest } from '@/client/models/CreateDraftRubricItemRequest';
 import type { UpdateDraftRubricItemRequest } from '@/client/models/UpdateDraftRubricItemRequest';
 
+export type TraceCriterionType = 'standard' | 'hurdle';
+
+export interface TraceCriterion {
+  id: string;
+  trace_id: string;
+  workshop_id: string;
+  text: string;
+  criterion_type: TraceCriterionType;
+  weight: number;
+  source_finding_id?: string | null;
+  created_by: string;
+  order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TraceRubric {
+  trace_id: string;
+  workshop_id: string;
+  criteria: TraceCriterion[];
+  markdown: string;
+}
+
+export interface CriterionScoreResult {
+  criterion_id: string;
+  criterion_text: string;
+  criterion_type: TraceCriterionType;
+  weight: number;
+  met: boolean;
+  rationale?: string | null;
+  score: number;
+}
+
+export interface TraceEvalScore {
+  trace_id: string;
+  hurdle_passed: boolean;
+  hurdle_results: CriterionScoreResult[];
+  criteria_results: CriterionScoreResult[];
+  raw_score: number;
+  max_possible: number;
+  normalized_score: number;
+}
+
 // Query keys
 const QUERY_KEYS = {
   workshops: () => ['workshops'],
@@ -39,6 +82,15 @@ const QUERY_KEYS = {
   mlflowConfig: (workshopId: string) => ['mlflowConfig', workshopId],
   draftRubricItems: (workshopId: string) => ['draftRubricItems', workshopId],
   discoveryAnalyses: (workshopId: string) => ['discovery-analyses', workshopId],
+  discoveryComments: (workshopId: string, traceId: string, milestoneRef?: string | null, userId?: string) =>
+    ['discovery-comments', workshopId, traceId, milestoneRef || 'trace', userId || 'anonymous'],
+  discoveryAgentRun: (workshopId: string, runId: string) => ['discovery-agent-run', workshopId, runId],
+  availableModels: (workshopId: string) => ['availableModels', workshopId],
+  summarizationJob: (workshopId: string, jobId: string) => ['summarization-job', workshopId, jobId],
+  summarizationStatus: (workshopId: string) => ['summarization-status', workshopId],
+  traceCriteria: (workshopId: string, traceId: string) => ['trace-criteria', workshopId, traceId],
+  traceRubric: (workshopId: string, traceId: string) => ['trace-rubric', workshopId, traceId],
+  evalResults: (workshopId: string, traceId?: string) => ['eval-results', workshopId, traceId],
 };
 
 // Helper function to invalidate all workshop-related queries
@@ -100,18 +152,17 @@ export function useListWorkshops(options?: { userId?: string; facilitatorId?: st
     queryKey: ['workshops', userId, facilitatorId],
     queryFn: () => listWorkshopsApi(userId, facilitatorId),
     enabled,
-    staleTime: 30000, // Consider data stale after 30 seconds
-    refetchOnMount: true,
-    refetchOnWindowFocus: true,
   });
 }
 
-export function useWorkshop(workshopId: string) {
-  return useQuery({
+// Shared workshop query options — all selector hooks share the same key+fetch+retry
+// so TanStack Query deduplicates them into a single cache entry.
+// Using queryOptions() preserves TQueryFnData / TError inference when spread.
+function workshopQueryOpts(workshopId: string) {
+  return queryOptions({
     queryKey: QUERY_KEYS.workshop(workshopId),
     queryFn: () => WorkshopsService.getWorkshopWorkshopsWorkshopIdGet(workshopId),
     enabled: !!workshopId,
-    staleTime: 10000, // Consider data stale after 10 seconds
     // Stop polling when the query is in an error state to avoid triggering
     // error-recovery side effects repeatedly. Polling resumes on next success.
     refetchInterval: (query) => query.state.status === 'error' ? false : 30000,
@@ -119,18 +170,114 @@ export function useWorkshop(workshopId: string) {
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
     retry: (failureCount, error) => {
-      // Don't retry on 404 errors - workshop doesn't exist
-      if (error && typeof error === 'object' && 'status' in error && error.status === 404) {
+      if (error && typeof error === 'object' && 'status' in error && (error as { status?: number }).status === 404) {
         return false;
       }
-      // Don't retry on 503 - backend is restarting, polling will pick it up
-      if (error && typeof error === 'object' && 'status' in error && error.status === 503) {
+      if (error && typeof error === 'object' && 'status' in error && (error as { status?: number }).status === 503) {
         return false;
       }
-      // Retry other errors up to 2 times
       return failureCount < 2;
     },
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
+  });
+}
+
+/** Full workshop object — use only when the component genuinely needs all fields. */
+export function useWorkshop(workshopId: string) {
+  return useQuery(workshopQueryOpts(workshopId));
+}
+
+// --- Selector hooks ---
+// Each shares the same cache entry as useWorkshop (same queryKey + queryFn).
+// Components only re-render when their selected slice changes.
+
+/** Phase/workflow state */
+export function useWorkshopPhase(workshopId: string) {
+  return useQuery({
+    ...workshopQueryOpts(workshopId),
+    select: (w: Workshop) => ({
+      mode: (w as Workshop & { mode?: 'workshop' | 'eval' }).mode ?? 'workshop',
+      current_phase: w.current_phase,
+      completed_phases: w.completed_phases,
+      discovery_started: w.discovery_started,
+      annotation_started: w.annotation_started,
+    }),
+  });
+}
+
+/** Display config — JSONPath and span filters */
+export function useWorkshopDisplayConfig(workshopId: string) {
+  return useQuery({
+    ...workshopQueryOpts(workshopId),
+    select: (w: Workshop) => ({
+      input_jsonpath: w.input_jsonpath,
+      output_jsonpath: w.output_jsonpath,
+      span_attribute_filter: w.span_attribute_filter,
+    }),
+  });
+}
+
+/** Workshop identity/metadata */
+export function useWorkshopMeta(workshopId: string) {
+  return useQuery({
+    ...workshopQueryOpts(workshopId),
+    select: (w: Workshop) => ({
+      id: w.id,
+      name: w.name,
+      description: w.description,
+      judge_name: w.judge_name,
+      created_at: w.created_at,
+    }),
+  });
+}
+
+/** Discovery question generation config */
+export function useWorkshopDiscoveryConfig(workshopId: string) {
+  return useQuery({
+    ...workshopQueryOpts(workshopId),
+    select: (w: Workshop) => ({
+      discovery_questions_model_name: w.discovery_questions_model_name,
+      discovery_randomize_traces: w.discovery_randomize_traces,
+      active_discovery_trace_ids: w.active_discovery_trace_ids,
+      discovery_mode: w.discovery_mode || 'analysis',
+      discovery_followups_enabled: w.discovery_followups_enabled ?? true,
+    }),
+  });
+}
+
+/** Annotation workflow config */
+export function useWorkshopAnnotationConfig(workshopId: string) {
+  return useQuery({
+    ...workshopQueryOpts(workshopId),
+    select: (w: Workshop) => ({
+      annotation_randomize_traces: w.annotation_randomize_traces,
+      show_participant_notes: w.show_participant_notes,
+      active_annotation_trace_ids: w.active_annotation_trace_ids,
+    }),
+  });
+}
+
+/** Auto-evaluation / judge config */
+export function useWorkshopEvalConfig(workshopId: string) {
+  return useQuery({
+    ...workshopQueryOpts(workshopId),
+    select: (w: Workshop) => ({
+      auto_evaluation_model: w.auto_evaluation_model,
+      auto_evaluation_prompt: w.auto_evaluation_prompt,
+      judge_name: w.judge_name,
+    }),
+  });
+}
+
+/** Summarization config */
+export function useWorkshopSummarizationConfig(workshopId: string) {
+  return useQuery({
+    ...workshopQueryOpts(workshopId),
+    select: (w: Workshop) => ({
+      summarization_enabled: w.summarization_enabled,
+      summarization_model: w.summarization_model,
+      summarization_guidance: w.summarization_guidance,
+    }),
   });
 }
 
@@ -143,6 +290,130 @@ export function useCreateWorkshop() {
     onSuccess: (workshop) => {
       queryClient.setQueryData(QUERY_KEYS.workshop(workshop.id), workshop);
     },
+  });
+}
+
+// Eval mode hooks
+export function useTraceCriteria(workshopId: string, traceId: string) {
+  return useQuery<TraceCriterion[]>({
+    queryKey: QUERY_KEYS.traceCriteria(workshopId, traceId),
+    queryFn: async () => {
+      const response = await fetch(`/workshops/${workshopId}/traces/${traceId}/criteria`);
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to fetch criteria' }));
+        throw new Error(error.detail || 'Failed to fetch criteria');
+      }
+      return response.json();
+    },
+    enabled: !!workshopId && !!traceId,
+  });
+}
+
+export function useCreateTraceCriterion(workshopId: string, traceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: {
+      text: string;
+      criterion_type: TraceCriterionType;
+      weight: number;
+      created_by: string;
+      source_finding_id?: string;
+    }): Promise<TraceCriterion> => {
+      const response = await fetch(`/workshops/${workshopId}/traces/${traceId}/criteria`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to create criterion' }));
+        throw new Error(error.detail || 'Failed to create criterion');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.traceCriteria(workshopId, traceId) });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.traceRubric(workshopId, traceId) });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.evalResults(workshopId, traceId) });
+    },
+  });
+}
+
+export function useUpdateTraceCriterion(workshopId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      criterionId,
+      updates,
+    }: {
+      criterionId: string;
+      updates: { text?: string; criterion_type?: TraceCriterionType; weight?: number };
+    }): Promise<TraceCriterion> => {
+      const response = await fetch(`/workshops/${workshopId}/criteria/${criterionId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to update criterion' }));
+        throw new Error(error.detail || 'Failed to update criterion');
+      }
+      return response.json();
+    },
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.traceCriteria(workshopId, updated.trace_id) });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.traceRubric(workshopId, updated.trace_id) });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.evalResults(workshopId, updated.trace_id) });
+    },
+  });
+}
+
+export function useDeleteTraceCriterion(workshopId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (criterionId: string): Promise<void> => {
+      const response = await fetch(`/workshops/${workshopId}/criteria/${criterionId}`, { method: 'DELETE' });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to delete criterion' }));
+        throw new Error(error.detail || 'Failed to delete criterion');
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['trace-criteria', workshopId] });
+      queryClient.invalidateQueries({ queryKey: ['trace-rubric', workshopId] });
+      queryClient.invalidateQueries({ queryKey: ['eval-results', workshopId] });
+    },
+  });
+}
+
+export function useTraceRubric(workshopId: string, traceId: string) {
+  return useQuery<TraceRubric | null>({
+    queryKey: QUERY_KEYS.traceRubric(workshopId, traceId),
+    queryFn: async () => {
+      const response = await fetch(`/workshops/${workshopId}/traces/${traceId}/rubric`);
+      if (response.status === 404) return null;
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to fetch trace rubric' }));
+        throw new Error(error.detail || 'Failed to fetch trace rubric');
+      }
+      return response.json();
+    },
+    enabled: !!workshopId && !!traceId,
+  });
+}
+
+export function useEvalResults(workshopId: string, traceId?: string) {
+  return useQuery<TraceEvalScore[]>({
+    queryKey: QUERY_KEYS.evalResults(workshopId, traceId),
+    queryFn: async () => {
+      const query = traceId ? `?trace_id=${encodeURIComponent(traceId)}` : '';
+      const response = await fetch(`/workshops/${workshopId}/eval-results${query}`);
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to fetch eval results' }));
+        throw new Error(error.detail || 'Failed to fetch eval results');
+      }
+      return response.json();
+    },
+    enabled: !!workshopId,
   });
 }
 
@@ -163,8 +434,6 @@ export function useTraces(workshopId: string, userId: string) {
       return response.json();
     },
     enabled: !!workshopId && !!userId,
-    // Balanced settings for real-time updates without causing performance issues
-    staleTime: 10 * 1000, // Data is fresh for 10 seconds
     gcTime: 5 * 60 * 1000, // Cache for 5 minutes
     retry: 3, // Retry failed requests 3 times
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
@@ -185,8 +454,6 @@ export function useAllTraces(workshopId: string) {
       return response.json();
     },
     enabled: !!workshopId,
-    // Optimized caching for better performance
-    staleTime: 30 * 1000, // Data is fresh for 30 seconds
     gcTime: 10 * 60 * 1000, // Cache for 10 minutes
     retry: 3,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
@@ -241,7 +508,6 @@ export function useUserFindings(workshopId: string, user: Pick<User, 'id'> | nul
       user?.id  // EVERYONE (including facilitators) gets only their own findings for personal progress
     ),
     enabled: !!workshopId && !!user?.id, // REQUIRE user to be logged in
-    staleTime: 30 * 1000, // Data is fresh for 30 seconds  
     refetchInterval: false, // DISABLED: Was causing Chrome hangs with excessive refetching
     refetchOnWindowFocus: false, // Disabled to prevent excessive refetching
   });
@@ -393,7 +659,6 @@ export function useUserAnnotations(workshopId: string, user: Pick<User, 'id'> | 
       );
     },
     enabled: !!workshopId && !!user?.id, // REQUIRE user to be logged in
-    staleTime: 10 * 1000, // Short stale time so navigation picks up recently saved scores
     refetchInterval: false, // Disable automatic refetching to avoid issues
     retry: 3, // Retry failed requests 3 times
   });
@@ -502,12 +767,10 @@ export function useSubmitAnnotation(workshopId: string) {
     onSuccess: (_, annotation) => {
       // Only invalidate THIS USER's annotation queries, not all users
       queryClient.invalidateQueries({ queryKey: ['annotations', workshopId, annotation.user_id] });
-      
-      // Invalidate workshop-level queries that don't include user-specific data
-      queryClient.invalidateQueries({ queryKey: ['workshop', workshopId] });
+
+      // IRR scores depend on annotations
       queryClient.invalidateQueries({ queryKey: ['irr', workshopId] });
-      queryClient.invalidateQueries({ queryKey: ['findings', workshopId] });
-      
+
       // Force immediate refetch for this user's annotations only
       queryClient.refetchQueries({ queryKey: ['annotations', workshopId, annotation.user_id] });
     },
@@ -539,6 +802,40 @@ export function useMLflowConfig(workshopId: string) {
       }
     },
     enabled: !!workshopId,
+  });
+}
+
+export interface AvailableModel {
+  name: string;
+  state: string;
+  task: string;
+}
+
+const AVAILABLE_MODELS_STALE_TIME = 5 * 60 * 1000; // 5 minutes
+
+async function fetchAvailableModels(workshopId: string): Promise<AvailableModel[]> {
+  const response = await fetch(`/workshops/${workshopId}/available-models`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch available models');
+  }
+  return response.json();
+}
+
+export function useAvailableModels(workshopId: string) {
+  return useQuery<AvailableModel[]>({
+    queryKey: QUERY_KEYS.availableModels(workshopId),
+    queryFn: () => fetchAvailableModels(workshopId),
+    enabled: !!workshopId,
+    staleTime: AVAILABLE_MODELS_STALE_TIME,
+  });
+}
+
+/** Prefetch available models into the query cache. */
+export function prefetchAvailableModels(queryClient: QueryClient, workshopId: string) {
+  return queryClient.prefetchQuery({
+    queryKey: QUERY_KEYS.availableModels(workshopId),
+    queryFn: () => fetchAvailableModels(workshopId),
+    staleTime: AVAILABLE_MODELS_STALE_TIME,
   });
 }
 
@@ -598,9 +895,8 @@ export function useToggleParticipantNotes(workshopId: string) {
       }
       return response.json();
     },
-    onSuccess: (workshop) => {
-      queryClient.setQueryData(QUERY_KEYS.workshop(workshopId), workshop);
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.workshop(workshopId) });
+    onSuccess: () => {
+      return queryClient.invalidateQueries({ queryKey: QUERY_KEYS.workshop(workshopId) });
     },
   });
 }
@@ -642,7 +938,6 @@ export function useParticipantNotes(workshopId: string, userId?: string, phase?:
       return response.json();
     },
     enabled: !!workshopId,
-    staleTime: 10 * 1000,
     refetchInterval: (query) => query.state.status === 'error' ? false : 30_000,
   });
 }
@@ -662,7 +957,6 @@ export function useAllParticipantNotes(workshopId: string, phase?: string) {
       return response.json();
     },
     enabled: !!workshopId,
-    staleTime: 5 * 1000,
     refetchInterval: (query) => query.state.status === 'error' ? false : 15_000,
   });
 }
@@ -740,10 +1034,8 @@ export function useUpdateJsonPathSettings(workshopId: string) {
       }
       return response.json();
     },
-    onSuccess: (workshop) => {
-      // Update workshop cache with new settings
-      queryClient.setQueryData(QUERY_KEYS.workshop(workshopId), workshop);
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.workshop(workshopId) });
+    onSuccess: () => {
+      return queryClient.invalidateQueries({ queryKey: QUERY_KEYS.workshop(workshopId) });
     },
   });
 }
@@ -797,9 +1089,8 @@ export function useUpdateSpanAttributeFilter(workshopId: string) {
       }
       return response.json();
     },
-    onSuccess: (workshop) => {
-      queryClient.setQueryData(QUERY_KEYS.workshop(workshopId), workshop);
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.workshop(workshopId) });
+    onSuccess: () => {
+      return queryClient.invalidateQueries({ queryKey: QUERY_KEYS.workshop(workshopId) });
     },
   });
 }
@@ -821,6 +1112,121 @@ export function usePreviewSpanFilter(workshopId: string) {
   });
 }
 
+// Summarization Settings hooks
+
+interface SummarizationSettingsUpdate {
+  summarization_enabled: boolean;
+  summarization_model?: string | null;
+  summarization_guidance?: string | null;
+}
+
+export function useUpdateSummarizationSettings(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (settings: SummarizationSettingsUpdate): Promise<Workshop> => {
+      const response = await fetch(`/workshops/${workshopId}/summarization-settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to update summarization settings' }));
+        throw new Error(error.detail || 'Failed to update summarization settings');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      return queryClient.invalidateQueries({ queryKey: QUERY_KEYS.workshop(workshopId) });
+    },
+  });
+}
+
+// Summarization Job polling & re-summarize hooks
+
+export function useSummarizationJob(workshopId: string, jobId: string | null) {
+  return useQuery({
+    queryKey: QUERY_KEYS.summarizationJob(workshopId, jobId ?? ''),
+    queryFn: async () => {
+      const response = await fetch(`/workshops/${workshopId}/summarization-job/${jobId}`);
+      if (!response.ok) throw new Error('Failed to fetch job status');
+      return response.json();
+    },
+    enabled: !!jobId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      if (status === 'completed' || status === 'failed' || status === 'cancelled') return false;
+      return 2000;
+    },
+  });
+}
+
+export function useSummarizationStatus(workshopId: string) {
+  return useQuery({
+    queryKey: QUERY_KEYS.summarizationStatus(workshopId),
+    queryFn: async () => {
+      const response = await fetch(`/workshops/${workshopId}/summarization-status`);
+      if (!response.ok) throw new Error('Failed to fetch summarization status');
+      return response.json();
+    },
+    refetchInterval: 30000,
+  });
+}
+
+interface ResummarizeRequest {
+  mode: 'all' | 'unsummarized' | 'failed';
+  trace_ids?: string[];
+}
+
+interface ResummarizeResponse {
+  job_id: string | null;
+  total: number;
+  message: string;
+}
+
+export function useResummarize(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (request: ResummarizeRequest): Promise<ResummarizeResponse> => {
+      const response = await fetch(`/workshops/${workshopId}/resummarize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to start summarization' }));
+        throw new Error(error.detail || 'Failed to start summarization');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.summarizationStatus(workshopId) });
+    },
+  });
+}
+
+export function useCancelSummarizationJob(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (jobId: string): Promise<{ status: string; job_id: string }> => {
+      const response = await fetch(`/workshops/${workshopId}/cancel-summarization-job/${jobId}`, {
+        method: 'POST',
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Failed to cancel job' }));
+        throw new Error(error.detail || 'Failed to cancel job');
+      }
+      return response.json();
+    },
+    onSuccess: (_data, jobId) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.summarizationJob(workshopId, jobId) });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.summarizationStatus(workshopId) });
+    },
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Discovery Feedback hooks (v2 Structured Feedback)
 // ---------------------------------------------------------------------------
@@ -832,7 +1238,7 @@ export interface DiscoveryFeedbackData {
   user_id: string;
   feedback_label: FeedbackLabel;
   comment: string;
-  followup_qna: Array<{ question: string; answer: string }>;
+  followup_qna: Array<{ question: string; answer: string; milestone_references?: string[] }>;
   created_at: string;
   updated_at: string;
 }
@@ -844,7 +1250,13 @@ export interface DiscoveryAnalysis {
   workshop_id: string;
   template_used: string;
   analysis_data: string;
-  findings: Array<{ text: string; evidence_trace_ids: string[]; priority: string }>;
+  findings: Array<{
+    text: string;
+    evidence_trace_ids: string[];
+    evidence_milestone_refs?: string[];
+    evidence_question_refs?: string[];
+    priority: string;
+  }>;
   disagreements: {
     high: Array<{
       trace_id: string;
@@ -886,7 +1298,6 @@ export function useDiscoveryAnalyses(workshopId: string, template?: string) {
       return response.json();
     },
     enabled: !!workshopId,
-    staleTime: 30 * 1000,
   });
 }
 
@@ -903,7 +1314,6 @@ export function useDiscoveryFeedback(workshopId: string, userId?: string) {
       return response.json();
     },
     enabled: !!workshopId,
-    staleTime: 10_000,
   });
 }
 
@@ -912,6 +1322,43 @@ export interface DiscoveryFeedbackWithUser extends DiscoveryFeedbackData {
   user_name: string;
   user_email: string;
   user_role: string;
+}
+
+export interface DiscoveryCommentData {
+  id: string;
+  workshop_id: string;
+  trace_id: string;
+  milestone_ref?: string | null;
+  parent_comment_id?: string | null;
+  user_id: string;
+  user_name: string;
+  user_email: string;
+  user_role: string;
+  author_type: string;
+  body: string;
+  upvotes: number;
+  downvotes: number;
+  score: number;
+  viewer_vote: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DiscoveryAgentRunData {
+  id: string;
+  workshop_id: string;
+  trace_id: string;
+  milestone_ref?: string | null;
+  trigger_comment_id: string;
+  status: string;
+  tool_calls_count: number;
+  partial_output: string;
+  final_output?: string | null;
+  error?: string | null;
+  created_by: string;
+  completed_at?: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 /** Fetch all discovery feedback with user details (facilitator-only) */
@@ -925,7 +1372,6 @@ export function useFacilitatorDiscoveryFeedback(workshopId: string) {
         workshopId,
       ) as unknown as Promise<DiscoveryFeedbackWithUser[]>,
     enabled: !!workshopId && isFacilitator,
-    staleTime: 10_000,
     refetchInterval: (query) => query.state.status === 'error' ? false : 30_000,
   });
 }
@@ -1013,13 +1459,39 @@ export function useUpdateDiscoveryModel(workshopId: string) {
   });
 }
 
+export function useUpdateDiscoverySettings(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    { message: string; discovery_mode: string; discovery_followups_enabled: boolean },
+    Error,
+    { discovery_mode?: 'analysis' | 'social'; discovery_followups_enabled?: boolean }
+  >({
+    mutationFn: async (data) => {
+      const response = await fetch(`/workshops/${workshopId}/discovery-settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ detail: 'Failed to update discovery settings' }));
+        throw new Error(err.detail || 'Failed to update discovery settings');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.workshop(workshopId) });
+    },
+  });
+}
+
 export function useSubmitFollowUpAnswer(workshopId: string) {
   const queryClient = useQueryClient();
 
   return useMutation<
     { feedback_id: string; qna_count: number; complete: boolean },
     Error,
-    { trace_id: string; user_id: string; question: string; answer: string }
+    { trace_id: string; user_id: string; question: string; answer: string; milestone_references?: string[] }
   >({
     mutationFn: async (data) => {
       const response = await fetch(`/workshops/${workshopId}/submit-followup-answer`, {
@@ -1059,6 +1531,129 @@ export function useRunDiscoveryAnalysis(workshopId: string) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.discoveryAnalyses(workshopId) });
+    },
+  });
+}
+
+export function useDiscoveryComments(
+  workshopId: string,
+  traceId: string,
+  milestoneRef?: string | null,
+  userId?: string,
+) {
+  return useQuery<DiscoveryCommentData[]>({
+    queryKey: QUERY_KEYS.discoveryComments(workshopId, traceId, milestoneRef, userId),
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.append('trace_id', traceId);
+      if (milestoneRef) params.append('milestone_ref', milestoneRef);
+      if (userId) params.append('user_id', userId);
+      const response = await fetch(`/workshops/${workshopId}/discovery-comments?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch discovery comments');
+      }
+      return response.json();
+    },
+    enabled: !!workshopId && !!traceId,
+    refetchInterval: (query) => query.state.status === 'error' ? false : 10_000,
+  });
+}
+
+export function useCreateDiscoveryComment(workshopId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    { comment: DiscoveryCommentData; assistant_comment?: DiscoveryCommentData; agent_run?: DiscoveryAgentRunData },
+    Error,
+    { trace_id: string; user_id: string; body: string; milestone_ref?: string | null; parent_comment_id?: string | null }
+  >({
+    mutationFn: async (data) => {
+      const response = await fetch(`/workshops/${workshopId}/discovery-comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ detail: 'Failed to create comment' }));
+        throw new Error(err.detail || 'Failed to create comment');
+      }
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.discoveryComments(workshopId, variables.trace_id, variables.milestone_ref || null, variables.user_id),
+      });
+    },
+  });
+}
+
+export function useVoteDiscoveryComment(workshopId: string) {
+  const queryClient = useQueryClient();
+  return useMutation<
+    DiscoveryCommentData,
+    Error,
+    { commentId: string; traceId: string; userId: string; value: -1 | 1; milestoneRef?: string | null }
+  >({
+    mutationFn: async ({ commentId, userId, value }) => {
+      const response = await fetch(`/workshops/${workshopId}/discovery-comments/${commentId}/vote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId, value }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ detail: 'Failed to vote on comment' }));
+        throw new Error(err.detail || 'Failed to vote on comment');
+      }
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.discoveryComments(workshopId, variables.traceId, variables.milestoneRef || null, variables.userId),
+      });
+    },
+  });
+}
+
+export function useDeleteDiscoveryComment(workshopId: string) {
+  const queryClient = useQueryClient();
+  return useMutation<
+    { deleted: boolean; comment_id: string },
+    Error,
+    { commentId: string; traceId: string; userId: string; milestoneRef?: string | null }
+  >({
+    mutationFn: async ({ commentId, userId }) => {
+      const response = await fetch(`/workshops/${workshopId}/discovery-comments/${commentId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ detail: 'Failed to delete comment' }));
+        throw new Error(err.detail || 'Failed to delete comment');
+      }
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.discoveryComments(workshopId, variables.traceId, variables.milestoneRef || null, variables.userId),
+      });
+    },
+  });
+}
+
+export function useDiscoveryAgentRun(workshopId: string, runId?: string | null) {
+  return useQuery<DiscoveryAgentRunData>({
+    queryKey: QUERY_KEYS.discoveryAgentRun(workshopId, runId || ''),
+    queryFn: async () => {
+      const response = await fetch(`/workshops/${workshopId}/discovery-agent-runs/${runId}`);
+      if (!response.ok) throw new Error('Failed to fetch discovery agent run');
+      return response.json();
+    },
+    enabled: !!workshopId && !!runId,
+    refetchInterval: (query) => {
+      const status = (query.state.data as DiscoveryAgentRunData | undefined)?.status;
+      if (!status || status === 'running') return 1500;
+      return false;
     },
   });
 }

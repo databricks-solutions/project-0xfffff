@@ -338,29 +338,107 @@ class TestTraceDisplayPipelineConsistency:
         assert span_ok is True
         assert span_extracted == EXPECTED_INPUT
 
-    def test_all_consumers_call_apply_span_filter_and_apply_jsonpath(self):
-        """Verify that all known backend consumers import and can call
-        both apply_span_filter and apply_jsonpath.
+    def test_get_display_text_applies_full_pipeline(self):
+        """get_display_text applies span filter then JSONPath."""
+        from server.utils.trace_display_utils import get_display_text
+        from server.models import Trace, Workshop
 
-        This is a structural check: the modules that consume trace data
-        must import both pipeline functions.
+        workshop = Workshop(
+            id="ws", name="test", facilitator_id="f",
+            input_jsonpath=INPUT_JSONPATH,
+            output_jsonpath=OUTPUT_JSONPATH,
+            span_attribute_filter=SPAN_FILTER_CONFIG,
+        )
+        trace = Trace(
+            id="t", workshop_id="ws", input=ROOT_INPUT, output=ROOT_OUTPUT,
+            context=TRACE_CONTEXT, trace_metadata={}, mlflow_trace_id="m",
+        )
+        result_input, result_output = get_display_text(trace, workshop)
+        assert result_input == EXPECTED_INPUT
+        assert result_output == EXPECTED_OUTPUT
+
+    def test_get_display_text_no_config(self):
+        """get_display_text returns raw input/output when no filters configured."""
+        from server.utils.trace_display_utils import get_display_text
+        from server.models import Trace, Workshop
+
+        workshop = Workshop(id="ws", name="test", facilitator_id="f")
+        trace = Trace(
+            id="t", workshop_id="ws", input=ROOT_INPUT, output=ROOT_OUTPUT,
+            context=TRACE_CONTEXT, trace_metadata={}, mlflow_trace_id="m",
+        )
+        result_input, result_output = get_display_text(trace, workshop)
+        assert result_input == ROOT_INPUT
+        assert result_output == ROOT_OUTPUT
+
+    def test_judge_service_applies_pipeline(
+        self, test_db, db_service, workshop, trace_with_spans,
+    ):
+        """JudgeService passes pipeline-transformed text to the judge, not raw trace data."""
+        from unittest.mock import patch
+        from server.services.judge_service import JudgeService
+        from server.models import JudgeEvaluationRequest, JudgePromptCreate
+
+        judge_svc = JudgeService(db_service)
+
+        # Create a judge prompt via the database service
+        prompt = db_service.create_judge_prompt("ws-pipeline", JudgePromptCreate(
+            prompt_text="Rate: {input} {output}",
+            model_name="demo",
+        ))
+
+        # Create an annotation so evaluation has ground truth
+        from server.database import AnnotationDB
+        ann = AnnotationDB(
+            id="ann-1", workshop_id="ws-pipeline", trace_id="t-1",
+            user_id="u-1", rating=3,
+        )
+        test_db.add(ann)
+        test_db.commit()
+
+        # Patch _simulate_judge_rating to capture what input/output it receives
+        captured = {}
+        original_simulate = judge_svc._simulate_judge_rating
+
+        def spy_simulate(prompt_text, input_text, output_text, human_rating):
+            captured["input"] = input_text
+            captured["output"] = output_text
+            return original_simulate(prompt_text, input_text, output_text, human_rating)
+
+        with patch.object(judge_svc, "_simulate_judge_rating", side_effect=spy_simulate):
+            judge_svc.evaluate_prompt("ws-pipeline", JudgeEvaluationRequest(
+                prompt_id=prompt.id, trace_ids=["t-1"],
+            ))
+
+        assert captured["input"] == EXPECTED_INPUT, (
+            f"Judge received raw input '{captured['input']}' instead of pipeline-transformed '{EXPECTED_INPUT}'"
+        )
+        assert captured["output"] == EXPECTED_OUTPUT, (
+            f"Judge received raw output '{captured['output']}' instead of pipeline-transformed '{EXPECTED_OUTPUT}'"
+        )
+
+    def test_all_consumers_use_display_pipeline(self):
+        """Verify that all known backend consumers use the trace display pipeline.
+
+        Services should use get_display_text (the shared helper) or the
+        low-level apply_span_filter + apply_jsonpath directly. This structural
+        check ensures no service reads trace.input/trace.output without
+        applying the pipeline.
         """
         import importlib
         import inspect
 
-        # Known consumers that must use the pipeline
-        consumer_modules = [
-            "server.routers.workshops",
+        # Services that use the shared helper
+        helper_consumers = [
             "server.services.discovery_analysis_service",
+            "server.services.judge_service",
+            "server.services.discovery_service",
         ]
 
-        for module_name in consumer_modules:
+        for module_name in helper_consumers:
             mod = importlib.import_module(module_name)
             source = inspect.getsource(mod)
 
-            assert "apply_span_filter" in source, (
-                f"{module_name} does not reference apply_span_filter"
-            )
-            assert "apply_jsonpath" in source, (
-                f"{module_name} does not reference apply_jsonpath"
+            assert "get_display_text" in source, (
+                f"{module_name} does not reference get_display_text"
             )
