@@ -555,10 +555,11 @@ async def _run_summarization_background(
 
     started_at = time.perf_counter()
     logger.info(
-        "Summarization background job starting job_id=%s traces=%d model=%s",
+        "Summarization background job starting job_id=%s traces=%d model=%s endpoint_url=%s",
         job_id,
         len(batch),
         model_name,
+        endpoint_url,
     )
     try:
         token = resolve_databricks_token()
@@ -673,6 +674,14 @@ async def resummarize_traces(
 
     # Create tracked job
     job = db_service.create_summarization_job(workshop_id=workshop_id, total=len(batch))
+    logger.info(
+        "Summarization job scheduled workshop_id=%s job_id=%s mode=%s traces=%d model=%s",
+        workshop_id,
+        job.id,
+        request.mode,
+        len(batch),
+        workshop.summarization_model,
+    )
 
     mlflow_config = db_service.get_mlflow_config(workshop_id)
     if not mlflow_config:
@@ -3203,12 +3212,20 @@ async def ingest_mlflow_traces(workshop_id: str, ingest_request: dict, db: Sessi
                             endpoint_url=f"{ingest_url}/serving-endpoints",
                             model_name=workshop.summarization_model,
                             guidance=workshop.summarization_guidance,
+                            use_case_description=workshop.description,
                             batch=batch,
                         ),
                         job_id=summ_job.id,
                     )
+                    logger.info(
+                        "Summarization job scheduled after ingestion workshop_id=%s job_id=%s traces=%d model=%s",
+                        workshop_id,
+                        summ_job.id,
+                        len(batch),
+                        workshop.summarization_model,
+                    )
             except Exception as e:
-                logger.warning(f"Failed to start background summarization: {e}")
+                logger.warning("Failed to start background summarization", exc_info=True)
 
         return {
             "message": f"Successfully ingested {trace_count} traces from MLflow",

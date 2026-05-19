@@ -71,9 +71,10 @@ def _list_sqlite_tables(db_path: str) -> list[str]:
 
 
 def _get_postgres_schema_name() -> str:
-    """Get the PostgreSQL schema name derived from PGAPPNAME."""
-    app_name = os.getenv("PGAPPNAME", "human_eval_workshop")
-    return app_name.replace("-", "_")
+    """Get the app-owned PostgreSQL schema name."""
+    from server.db_config import get_lakebase_schema_name
+
+    return get_lakebase_schema_name()
 
 
 def _list_postgres_tables(database_url: str) -> list[str]:

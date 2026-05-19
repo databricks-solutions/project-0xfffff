@@ -12,6 +12,7 @@ import os
 
 from alembic import context
 from sqlalchemy import create_engine
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.pool import NullPool
 
 from server.database import Base
@@ -83,8 +84,9 @@ def run_migrations_online() -> None:
     else:
         # Set search_path at the PostgreSQL protocol level so migrations
         # create tables in the app schema from the very first statement.
-        app_name = os.getenv("PGAPPNAME", "human_eval_workshop")
-        schema_name = app_name.replace("-", "_")
+        from server.db_config import get_lakebase_schema_name
+
+        schema_name = get_lakebase_schema_name()
         connect_args = {"options": f"-csearch_path={schema_name},public"}
 
     engine = create_engine(url, connect_args=connect_args, poolclass=NullPool)
@@ -95,19 +97,29 @@ def run_migrations_online() -> None:
         if not is_sqlite:
             from sqlalchemy import text
 
-            app_name = os.getenv("PGAPPNAME", "human_eval_workshop")
-            schema_name = app_name.replace("-", "_")
+            from server.db_config import get_lakebase_schema_name
+
+            schema_name = get_lakebase_schema_name()
             pg_user = os.getenv("PGUSER", "")
 
             # Create schema with ownership if it doesn't exist
             connection.execute(
                 text(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}" AUTHORIZATION "{pg_user}"')
             )
-            # Grant privileges on the schema to PGUSER
+
+            # Lakebase may provide a usable schema without granting the app
+            # service principal ownership/grant-option privileges. In that
+            # case, GRANT back to the current PGUSER fails even though the app
+            # can still use the schema. Treat the grant as best-effort so a
+            # pre-existing schema does not prevent startup.
             if pg_user:
-                connection.execute(
-                    text(f'GRANT ALL PRIVILEGES ON SCHEMA "{schema_name}" TO "{pg_user}"')
-                )
+                try:
+                    connection.execute(
+                        text(f'GRANT ALL PRIVILEGES ON SCHEMA "{schema_name}" TO "{pg_user}"')
+                    )
+                except ProgrammingError as e:
+                    connection.rollback()
+                    print(f"Warning: Could not grant schema privileges on {schema_name}: {e}")
             connection.execute(text(f'SET search_path TO "{schema_name}", public'))
             connection.commit()
 

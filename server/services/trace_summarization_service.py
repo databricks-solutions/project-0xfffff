@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import time
 from collections.abc import Callable
@@ -331,6 +332,7 @@ class TraceSummarizationService:
     # Retry settings for 429 rate limit errors
     MAX_429_RETRIES = 4
     INITIAL_BACKOFF_S = 2.0
+    DEFAULT_AGENT_RUN_TIMEOUT_S = 120.0
 
     def __init__(
         self,
@@ -340,6 +342,7 @@ class TraceSummarizationService:
         guidance: str | None = None,
         use_case_description: str | None = None,
         max_concurrency: int = 3,
+        agent_run_timeout_s: float | None = None,
     ):
         provider = OpenAIProvider(base_url=endpoint_url, api_key=token)
         model = OpenAIChatModel(model_name, provider=provider)
@@ -382,7 +385,20 @@ class TraceSummarizationService:
             retries=2,
         )
 
-        self.max_concurrency = max_concurrency
+        self.max_concurrency = int(os.getenv("TRACE_SUMMARIZATION_MAX_CONCURRENCY", str(max_concurrency)))
+        self.agent_run_timeout_s = float(
+            os.getenv(
+                "TRACE_SUMMARIZATION_AGENT_TIMEOUT_S",
+                str(agent_run_timeout_s or self.DEFAULT_AGENT_RUN_TIMEOUT_S),
+            )
+        )
+        self._trace_errors: dict[str, str] = {}
+        logger.info(
+            "Trace summarization service configured model=%s max_concurrency=%d agent_timeout_s=%.1f",
+            model_name,
+            self.max_concurrency,
+            self.agent_run_timeout_s,
+        )
 
     @classmethod
     def for_testing(
@@ -397,6 +413,8 @@ class TraceSummarizationService:
 
         instance = cls.__new__(cls)
         instance.max_concurrency = 5
+        instance.agent_run_timeout_s = cls.DEFAULT_AGENT_RUN_TIMEOUT_S
+        instance._trace_errors = {}
         instance._test_exec_result = exec_summary_result
         instance._test_milestone_result = milestone_result
         instance._test_raise_error = raise_error
@@ -464,6 +482,41 @@ class TraceSummarizationService:
                 raise
         raise RuntimeError("Unreachable retry loop exit")
 
+    async def _run_agent_step(self, step_name: str, coro_factory, trace_id: str | None, started_at: float):
+        """Run one agent step with a hard timeout and visible timing logs."""
+        step_started_at = time.perf_counter()
+        logger.info(
+            "Trace summarization %s starting trace_id=%s timeout_s=%.1f elapsed_s=%.2f",
+            step_name,
+            trace_id,
+            self.agent_run_timeout_s,
+            step_started_at - started_at,
+        )
+        try:
+            result = await asyncio.wait_for(
+                self._run_with_429_retry(coro_factory, trace_id=trace_id),
+                timeout=self.agent_run_timeout_s,
+            )
+            logger.info(
+                "Trace summarization %s complete trace_id=%s step_elapsed_s=%.2f elapsed_s=%.2f",
+                step_name,
+                trace_id,
+                time.perf_counter() - step_started_at,
+                time.perf_counter() - started_at,
+            )
+            return result
+        except TimeoutError:
+            logger.error(
+                "Trace summarization %s timed out trace_id=%s timeout_s=%.1f step_elapsed_s=%.2f elapsed_s=%.2f",
+                step_name,
+                trace_id,
+                self.agent_run_timeout_s,
+                time.perf_counter() - step_started_at,
+                time.perf_counter() - started_at,
+                exc_info=True,
+            )
+            raise
+
     async def summarize_trace(
         self,
         trace_context: dict,
@@ -482,6 +535,8 @@ class TraceSummarizationService:
 
         started_at = time.perf_counter()
         try:
+            if trace_id:
+                self._trace_errors.pop(trace_id, None)
             deps = TraceContext.from_dict(trace_context)
             logger.info(
                 "Trace summarization started trace_id=%s spans=%d",
@@ -490,35 +545,29 @@ class TraceSummarizationService:
             )
 
             # Pass 1: Executive summary (agent uses tools to explore)
-            exec_result = await self._run_with_429_retry(
+            exec_result = await self._run_agent_step(
+                "pass1",
                 lambda: self.summary_agent.run(
                     "Analyze this trace using your tools. Explore the structure, "
                     "inspect key spans, and produce an executive summary.",
                     deps=deps,
                 ),
-                trace_id=trace_id,
+                trace_id,
+                started_at,
             )
             executive_summary = exec_result.output.executive_summary
-            logger.debug(
-                "Trace summarization pass1 complete trace_id=%s elapsed_s=%.2f",
-                trace_id,
-                time.perf_counter() - started_at,
-            )
 
             # Pass 2: Milestones with span data refs
-            milestone_result = await self._run_with_429_retry(
+            milestone_result = await self._run_agent_step(
+                "pass2",
                 lambda: self.milestone_agent.run(
                     "Using this executive summary as a guide, extract milestones "
                     "with span data references.\n\n"
                     f"Executive summary: {executive_summary}",
                     deps=deps,
                 ),
-                trace_id=trace_id,
-            )
-            logger.debug(
-                "Trace summarization pass2 complete trace_id=%s elapsed_s=%.2f",
                 trace_id,
-                time.perf_counter() - started_at,
+                started_at,
             )
 
             # Post-processing: resolve refs to actual trace values
@@ -543,6 +592,8 @@ class TraceSummarizationService:
             )
             raise
         except Exception as e:
+            if trace_id:
+                self._trace_errors[trace_id] = f"{type(e).__name__}: {e}"
             logger.error(
                 "Trace summarization failed trace_id=%s error_type=%s error=%s elapsed_s=%.2f",
                 trace_id,
@@ -598,6 +649,11 @@ class TraceSummarizationService:
             async with semaphore:
                 try:
                     summary = await self.summarize_trace(trace["context"], trace_id=trace_id)
+                    if summary is None:
+                        error_msg = self._trace_errors.get(
+                            trace_id,
+                            "Trace summarization returned no summary; check app logs for details.",
+                        )
                 except asyncio.CancelledError:
                     logger.warning(
                         "Batch trace task cancelled trace_id=%s elapsed_s=%.2f",

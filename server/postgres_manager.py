@@ -318,7 +318,7 @@ class PostgresManager:
     # Initialisation
     # ------------------------------------------------------------------
     def __init__(self) -> None:
-        from .db_config import LakebaseConfig, get_credential_manager
+        from .db_config import LakebaseConfig, get_credential_manager, get_lakebase_schema_name
 
         self._config = LakebaseConfig.from_env()
         if self._config is None:
@@ -329,8 +329,7 @@ class PostgresManager:
 
         self._credential_manager = get_credential_manager()
         self._endpoint_name = os.getenv("ENDPOINT_NAME")
-        # Derive schema name the same way as db_config.py (hyphens → underscores)
-        self._schema_name = self._config.app_name.replace("-", "_")
+        self._schema_name = get_lakebase_schema_name(self._config)
         self._pool = None  # lazy init
         self._pool_created_at: float = 0
 

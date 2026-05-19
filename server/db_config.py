@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass
 from enum import Enum
@@ -44,6 +45,27 @@ class DatabaseBackend(Enum):
 
     SQLITE = "sqlite"
     POSTGRESQL = "postgresql"
+
+
+def _clean_identifier_part(value: str) -> str:
+    """Normalize a string for use inside a quoted PostgreSQL identifier."""
+    cleaned = re.sub(r"[^a-zA-Z0-9_]+", "_", value).strip("_").lower()
+    return cleaned or "app"
+
+
+def get_lakebase_schema_name(config: LakebaseConfig | None = None) -> str:
+    """Return the stable Lakebase schema name.
+
+    By default, keep the historical PGAPPNAME-derived schema so migrations
+    apply to the same schema across deployments. Operators can set
+    LAKEBASE_SCHEMA_NAME only when intentionally targeting a different schema.
+    """
+    explicit = os.getenv("LAKEBASE_SCHEMA_NAME")
+    if explicit:
+        return _clean_identifier_part(explicit)[:63]
+
+    app_name = (config.app_name if config else os.getenv("PGAPPNAME", "human_eval_workshop"))
+    return _clean_identifier_part(app_name)[:63]
 
 
 @dataclass
@@ -274,8 +296,7 @@ def create_engine_for_backend(backend: DatabaseBackend) -> Engine:
             "Set ENDPOINT_NAME for Lakebase Autoscaling deployments."
         )
 
-    # Derive schema name from PGAPPNAME (hyphens → underscores for SQL safety)
-    schema_name = config.app_name.replace("-", "_")
+    schema_name = get_lakebase_schema_name(config)
 
     # Build connection URL without password — do_connect injects it per-connection.
     # Reference: https://docs.databricks.com/aws/en/lakebase/connect/custom-app.html
@@ -336,11 +357,4 @@ def get_schema_name() -> str | None:
     if backend == DatabaseBackend.SQLITE:
         return None
 
-    # For Lakebase, create a schema name
-    app_name = os.getenv("PGAPPNAME", "human_eval_workshop")
-    user = os.getenv("PGUSER", "").replace("-", "_")
-
-    # Clean up schema name to be SQL-safe
-    schema_name = f"{app_name}_schema_{user}".replace("-", "_")
-
-    return schema_name
+    return get_lakebase_schema_name()

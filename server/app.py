@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 import time
+from logging import StreamHandler
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -38,7 +39,14 @@ def _configure_app_log_levels() -> None:
     """
     requested = os.getenv("APP_LOG_LEVEL") or os.getenv("UVICORN_LOG_LEVEL") or "INFO"
     level = getattr(logging, requested.upper(), logging.INFO)
-    logging.getLogger().setLevel(level)
+    root_logger = logging.getLogger()
+    if not root_logger.handlers:
+        handler = StreamHandler(sys.stdout)
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s")
+        )
+        root_logger.addHandler(handler)
+    root_logger.setLevel(level)
     logging.getLogger("server").setLevel(level)
     logging.getLogger("uvicorn.error").setLevel(level)
     logger.info("Configured app logger level level=%s", logging.getLevelName(level))
@@ -103,10 +111,10 @@ async def lifespan(app: FastAPI):
         from sqlalchemy import text
 
         from server.database import Base, engine
-        from server.db_config import LakebaseConfig
+        from server.db_config import LakebaseConfig, get_lakebase_schema_name
 
         lakebase_cfg = LakebaseConfig.from_env()
-        schema_name = lakebase_cfg.app_name.replace("-", "_") if lakebase_cfg else "human_eval_workshop"
+        schema_name = get_lakebase_schema_name(lakebase_cfg)
         pg_user = os.getenv("PGUSER", "")
 
         try:
